@@ -1,4 +1,4 @@
-// SessionStart hook v4.3.4：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒
+// SessionStart hook v4.3.5：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,10 +6,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, ARTIFACT_FILES, readFull } = paceUtils;
+const { isPaceProject, ARTIFACT_FILES, readFull, createTemplates } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-const TEMPLATES_DIR = path.join(__dirname, 'templates');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
 const cwd = process.cwd();
@@ -25,17 +24,9 @@ try { const df = path.join(PACE_RUNTIME, 'degraded'); if (fs.existsSync(df)) fs.
 const paceSignal = isPaceProject(cwd);
 const files = ARTIFACT_FILES;
 
-// 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 创建模板
+// T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
 if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(cwd, 'task.md'))) {
-  const created = [];
-  for (const file of files) {
-    const target = path.join(cwd, file);
-    const tmpl = path.join(TEMPLATES_DIR, file);
-    if (!fs.existsSync(target) && fs.existsSync(tmpl)) {
-      fs.copyFileSync(tmpl, target);
-      created.push(file);
-    }
-  }
+  const created = createTemplates(cwd);
   if (created.length > 0) {
     log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: CREATE_TEMPLATES | signal: ${paceSignal} | files: ${created.join(', ')}\n`);
   }

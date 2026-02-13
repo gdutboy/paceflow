@@ -1,5 +1,5 @@
-// pace-utils.js — PACE hooks 公共工具函数（v4.3.4）
-// 多信号激活判断，解决空项目 Superpowers 流程中 PACE 无法激活的问题
+// pace-utils.js — PACE hooks 公共工具函数（v4.3.5）
+// 多信号激活判断 + 懒创建模板 + .pace/disabled 豁免
 const fs = require('fs');
 const path = require('path');
 
@@ -32,6 +32,8 @@ function hasPlanFiles(cwd) {
  */
 function isPaceProject(cwd) {
   try {
+    // T-080: 豁免信号（最高优先级）— 用户主动禁用 PACE（.pace/disabled）
+    if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
     // 信号 1（最强）：已有任何 PACE artifact 文件
     if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return 'artifact';
     // 信号 2（强）：Superpowers plan 文件
@@ -70,4 +72,23 @@ function checkArchiveFormat(cwd, filename) {
   return null;
 }
 
-module.exports = { CODE_EXTS, ARTIFACT_FILES, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat };
+/**
+ * T-075: 从模板目录复制缺失的 artifact 文件到 cwd
+ * @param {string} cwd - 当前工作目录
+ * @returns {string[]} 创建的文件名列表
+ */
+function createTemplates(cwd) {
+  const TEMPLATES_DIR = path.join(__dirname, 'templates');
+  const created = [];
+  for (const file of ARTIFACT_FILES) {
+    const target = path.join(cwd, file);
+    const tmpl = path.join(TEMPLATES_DIR, file);
+    if (!fs.existsSync(target) && fs.existsSync(tmpl)) {
+      fs.copyFileSync(tmpl, target);
+      created.push(file);
+    }
+  }
+  return created;
+}
+
+module.exports = { CODE_EXTS, ARTIFACT_FILES, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat, createTemplates };

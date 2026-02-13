@@ -1,4 +1,4 @@
-// Stop hook v4.3.4：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
+// Stop hook v4.3.5：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -89,10 +89,12 @@ if (taskActive) {
   // task.md 不存在，但有其他 artifact → 不完整
   warnings.push(`检测到 ${existing.join(', ')} 但缺少 task.md，Artifact 不完整`);
 } else {
-  // 无任何 artifact：v4.3 多信号检测
+  // 无任何 artifact：v4.3.5 多信号检测
   const paceSignal = isPaceProject(cwd);
   if (paceSignal === 'superpowers' || paceSignal === 'manual') {
-    warnings.push(`检测到 PACE 激活信号（${paceSignal}）但无 Artifact 文件，本次工作可能缺少 PACE 追踪`);
+    // T-078 D2 修复：无 artifact 时仅记录日志，不加入 warnings（不阻止退出）
+    // 用户可能改主意不走 PACE 流程，此时 exit 2 阻止退出体验极差
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: SOFT_WARN | signal: ${paceSignal} | 无 artifact，仅记录不阻止\n`);
   } else {
     const codeCount = countCodeFiles(cwd);
     if (codeCount >= 3) {
