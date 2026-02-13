@@ -1,0 +1,129 @@
+// PostToolUse hook v4.3.4：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤）
+const fs = require('fs');
+const path = require('path');
+let paceUtils;
+try { paceUtils = require('./pace-utils'); } catch(e) {
+  process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
+  process.exit(0);
+}
+const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES } = paceUtils;
+
+const LOG = path.join(__dirname, 'pace-hooks.log');
+const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+const cwd = process.cwd();
+
+const PACE_RUNTIME = path.join(cwd, '.pace');
+
+// v4.3.3: 异步读取 stdin 获取工具信息，按工具类型过滤检查范围
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+  let toolName = '', filePath = '';
+  try {
+    const parsed = JSON.parse(input);
+    toolName = parsed.tool_name || '';
+    filePath = parsed.tool_input?.file_path || '';
+  } catch(e) {}
+
+  const warnings = [];
+  const fileName = filePath ? path.basename(filePath) : '';
+  const isArtifactEdit = ARTIFACT_FILES.includes(fileName);
+
+  const taskActive = readActive(cwd, 'task.md');
+
+  // v4.3.4: 检测 Stop 降级标记
+  const degradedFile = path.join(PACE_RUNTIME, 'degraded');
+  if (fs.existsSync(degradedFile)) {
+    try {
+      const degradedContent = fs.readFileSync(degradedFile, 'utf8').trim();
+      warnings.push(`Stop hook 已降级（连续阻止 3 次），请检查未通过的 PACE 检查项：${degradedContent.split('\n')[0]}`);
+    } catch(e) {
+      warnings.push(`Stop hook 已降级，请检查 .pace/degraded 文件`);
+    }
+  }
+
+  // v4.3.4: Claude Code Tasks API 同步提醒（W6）
+  if (toolName === 'TaskCreate' || toolName === 'TaskUpdate') {
+    const taskExists = fs.existsSync(path.join(cwd, 'task.md'));
+    if (taskExists) {
+      warnings.push(`检测到 ${toolName} 操作，请同步更新 task.md（PACE 权威状态源）`);
+    }
+  }
+
+  if (taskActive) {
+    // 0. ARCHIVE 格式检查（仅编辑 artifact 文件时）
+    if (isArtifactEdit) {
+      const archFmt = checkArchiveFormat(cwd, fileName);
+      if (archFmt) warnings.push(archFmt);
+    }
+
+    // 1. 检查 task.md 活跃区已完成项（每次都检查，核心提醒）
+    const doneCount = (taskActive.match(/- \[x\]|- \[-\]/g) || []).length;
+    if (doneCount > 0) {
+      warnings.push(`task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方`);
+
+      // 2. impl_plan 一致性（仅编辑 task.md 或 impl_plan 时）
+      if (fileName === 'task.md' || fileName === 'implementation_plan.md') {
+        const planActive = readActive(cwd, 'implementation_plan.md');
+        if (planActive) {
+          const pendingCount = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
+          if (pendingCount === 0 && planActive.includes('🔄')) {
+            warnings.push(`implementation_plan.md 仍有 🔄 进行中的变更，但任务已全部完成，请更新状态为 ✅`);
+          }
+        }
+      }
+
+      // 3. walkthrough 日期（仅编辑 task.md 或 walkthrough 时）
+      if (fileName === 'task.md' || fileName === 'walkthrough.md') {
+        const walkActive = readActive(cwd, 'walkthrough.md');
+        if (walkActive) {
+          const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+          const timeMatch = walkActive.match(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/);
+          const lastDate = timeMatch ? timeMatch[1] : null;
+          if (lastDate && lastDate !== today) {
+            warnings.push(`walkthrough.md 最近更新是 ${lastDate}，今天的工作尚未记录`);
+          }
+        } else if (!fs.existsSync(path.join(cwd, 'walkthrough.md'))) {
+          warnings.push(`walkthrough.md 不存在，请创建工作记录文件`);
+        }
+      }
+    }
+
+    // 4. findings.md ⚠️ 提醒（v4.3.4: 从 Stop 阻塞降级为 PostToolUse 软提醒）
+    const findingsActive = readActive(cwd, 'findings.md');
+    if (findingsActive) {
+      const unresolved = (findingsActive.match(/⚠️/g) || []).length;
+      if (unresolved > 0) {
+        warnings.push(`findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
+      }
+    }
+  } else {
+    // task.md 不存在时：v4.3 多信号检测
+    const paceSignal = isPaceProject(cwd);
+    if (paceSignal === 'superpowers' || paceSignal === 'manual') {
+      warnings.push(`检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在，请先创建 Artifact 文件`);
+    } else {
+      const codeCount = countCodeFiles(cwd);
+      if (codeCount >= 3) {
+        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件（G-8）`);
+      }
+    }
+  }
+
+  // v4：使用 JSON stdout 的 additionalContext，确保 AI 能看到
+  if (warnings.length > 0) {
+    const ctx = `PACE 提醒：${warnings.join('；')}`;
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: ctx
+      }
+    };
+    process.stdout.write(JSON.stringify(output));
+    log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: WARN | tool: ${toolName} | file: ${filePath || '-'} | checks: ${warnings.length} 项\n  output→AI: ${ctx}\n`);
+  } else {
+    log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: PASS | tool: ${toolName} | file: ${filePath || '-'} | checks: 全部通过\n`);
+  }
+});
