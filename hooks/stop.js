@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat } = paceUtils;
+const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -44,15 +44,14 @@ if (taskActive) {
   const archFmt2 = checkArchiveFormat(cwd, 'implementation_plan.md');
   if (archFmt2) warnings.push(archFmt2);
 
-  // 1. 检查未完成任务
-  const pendingCount = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
+  // 1. 统一使用 countByStatus（仅顶层任务）
+  const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
   if (pendingCount > 0) {
     warnings.push(`task.md 还有 ${pendingCount} 个未完成任务`);
   }
 
-  // 2. 检查活跃区已完成项（W1 正则统一 + W7 V/归档优先级）
-  const doneCount = (taskActive.match(/- \[x\]|- \[-\]/g) || []).length;
-  const xCount = (taskActive.match(/- \[x\]/g) || []).length;
+  // 2. 检查活跃区已完成项（W7 V/归档优先级，xCount 单独统计 [x] 不含 [-]）
+  const xCount = (taskActive.match(/^- \[x\]/gm) || []).length;
   if (xCount > 0) {
     if (!/^<!-- VERIFIED -->$/m.test(taskActive)) {
       // W7: 未验证时只报验证，不报归档
@@ -103,6 +102,16 @@ if (taskActive) {
   }
 }
 
+// TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 加入 warnings 统一处理
+const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
+if (fs.existsSync(twFlag) && taskActive) {
+  const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
+  if (pending === 0 && done === 0) {
+    warnings.push(`task.md 无活跃任务，请确认 TodoWrite 已清空（如有残留请清理）`);
+    try { fs.unlinkSync(twFlag); } catch(e) {}
+  }
+}
+
 if (warnings.length > 0) {
   const blockCount = getBlockCount();
   const checksDetail = warnings.map((w, i) => `  [${i+1}] ${w}`).join('\n');
@@ -125,22 +134,6 @@ if (warnings.length > 0) {
   setBlockCount(0);
   const degradedFile = path.join(PACE_RUNTIME, 'degraded');
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
-
-  // TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 提醒清理
-  const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
-  if (fs.existsSync(twFlag) && taskActive) {
-    const pendingNow = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
-    const doneNow = (taskActive.match(/- \[x\]|- \[-\]/g) || []).length;
-    if (pendingNow === 0 && doneNow === 0) {
-      // 清除 flag 避免重复 block
-      try { fs.unlinkSync(twFlag); } catch(e) {}
-      process.stderr.write(`task.md 无活跃任务，请确认 TodoWrite 已清空（如有残留请清理）\n`);
-      log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK | reason: TodoWrite 残留检测\n`);
-      setBlockCount(1);
-      process.exit(2);
-    }
-  }
-
   log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: PASS | checks: 全部通过\n`);
 }
 } catch(e) {
