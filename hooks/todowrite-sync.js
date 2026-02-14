@@ -1,5 +1,5 @@
-// PreToolUse:TodoWrite hook v4.3.6 方案 D：拦截 TodoWrite 调用，校验与 task.md 一致性
-// 非 PACE 项目时直接放行；PACE 项目时比对 task.md 活跃任务与 TodoWrite todos
+// PreToolUse:TaskCreate|TaskUpdate hook v4.3.7 方案 D：拦截 Task 操作，校验与 task.md 一致性
+// 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与 Task 操作的合理性
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -21,18 +21,19 @@ process.stdin.on('end', () => {
   try {
     const paceSignal = isPaceProject(cwd);
 
-    // 非 PACE 项目：直接放行，不干预
+    // 非 PACE 项目：直接放行
     if (!paceSignal) {
-      log(`[${ts()}] TodoWrite   | cwd: ${cwd}\n  action: SKIP | reason: 非 PACE 项目\n`);
+      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: SKIP | reason: 非 PACE 项目\n`);
       return;
     }
 
-    let todos = [];
+    let toolName = '', toolInput = {};
     try {
       const parsed = JSON.parse(input);
-      todos = parsed.tool_input?.todos || [];
+      toolName = parsed.tool_name || '';
+      toolInput = parsed.tool_input || {};
     } catch(e) {
-      log(`[${ts()}] TodoWrite   | cwd: ${cwd}\n  action: SKIP | reason: stdin 解析失败\n`);
+      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: SKIP | reason: stdin 解析失败\n`);
       return;
     }
 
@@ -40,29 +41,24 @@ process.stdin.on('end', () => {
     const hints = [];
 
     if (taskActive) {
-      // 只匹配顶层任务（行首无缩进），避免子任务导致数量偏差
+      // 只匹配顶层任务（行首无缩进）
       const pendingTasks = (taskActive.match(/^- \[[ \/!]\]/gm) || []).length;
       const doneTasks = (taskActive.match(/^- \[x\]|^- \[-\]/gm) || []).length;
       const totalActive = pendingTasks + doneTasks;
 
-      // 场景 1：task.md 无活跃任务但 TodoWrite 有项目 → 残留
-      if (totalActive === 0 && todos.length > 0) {
-        hints.push(`task.md 无活跃任务，但 TodoWrite 有 ${todos.length} 个残留项。请清空 TodoWrite。`);
+      // TaskCreate：task.md 无活跃任务时创建 todo → 可能是残留
+      if (toolName === 'TaskCreate' && totalActive === 0) {
+        hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。task.md 是任务权威来源，请确认是否需要先在 task.md 中添加任务。`);
       }
 
-      // 场景 2：task.md 有活跃任务但 TodoWrite 为空 → 缺同步
-      if (pendingTasks > 0 && todos.length === 0) {
-        hints.push(`task.md 有 ${pendingTasks} 个活跃任务，但 TodoWrite 正在被清空。如果任务仍在进行，建议保留对应的 todo 项。`);
-      }
-
-      // 场景 3：数量差异较大 → 提醒对齐（顶层任务比对）
-      if (todos.length > 0 && pendingTasks > 0 && Math.abs(todos.length - pendingTasks) > 3) {
-        hints.push(`TodoWrite（${todos.length} 项）与 task.md 顶层活跃任务（${pendingTasks} 项）数量差异较大，请确认是否对齐。`);
+      // TaskCreate：task.md 有活跃任务 → 注入同步提醒
+      if (toolName === 'TaskCreate' && pendingTasks > 0) {
+        hints.push(`task.md 是任务权威来源（${pendingTasks} 个活跃），请确保 TodoWrite 项与 task.md 对齐。`);
       }
     } else {
-      // task.md 不存在但 TodoWrite 有项目
-      if (todos.length > 0) {
-        hints.push(`task.md 不存在，TodoWrite 的 ${todos.length} 个 todo 项无法校验。如果这是 PACE 项目，请先创建 task.md。`);
+      // task.md 不存在但在创建 todo
+      if (toolName === 'TaskCreate') {
+        hints.push(`task.md 不存在。如果这是 PACE 项目，请先创建 task.md 再使用 TodoWrite。`);
       }
     }
 
@@ -75,11 +71,11 @@ process.stdin.on('end', () => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] TodoWrite   | cwd: ${cwd}\n  action: HINT | todos: ${todos.length} | hints: ${hints.join('; ')}\n`);
+      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: HINT | tool: ${toolName} | hints: ${hints.join('; ')}\n`);
     } else {
-      log(`[${ts()}] TodoWrite   | cwd: ${cwd}\n  action: PASS | todos: ${todos.length}\n`);
+      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: PASS | tool: ${toolName}\n`);
     }
   } catch(e) {
-    log(`[${ts()}] TodoWrite   | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`);
+    log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`);
   }
 });
