@@ -1,5 +1,6 @@
-// PreToolUse:TaskCreate|TaskUpdate hook v4.3.7 方案 D：拦截 Task 操作，校验与 task.md 一致性
-// 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与 Task 操作的合理性
+// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook v4.3.7 方案 D
+// 拦截 TodoWrite（批量）和 TaskCreate/TaskUpdate（单项）操作，校验与 task.md 一致性
+// 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与操作的合理性
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -37,6 +38,9 @@ process.stdin.on('end', () => {
       return;
     }
 
+    // 写入类操作：TodoWrite（批量替换）、TaskCreate（创建单项）
+    const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate');
+
     const taskActive = readActive(cwd, 'task.md');
     const hints = [];
 
@@ -46,18 +50,26 @@ process.stdin.on('end', () => {
       const doneTasks = (taskActive.match(/^- \[x\]|^- \[-\]/gm) || []).length;
       const totalActive = pendingTasks + doneTasks;
 
-      // TaskCreate：task.md 无活跃任务时创建 todo → 可能是残留
-      if (toolName === 'TaskCreate' && totalActive === 0) {
+      // 写入操作 + task.md 无活跃任务 → 可能是 compaction 残留
+      if (isWriteOp && totalActive === 0) {
         hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。task.md 是任务权威来源，请确认是否需要先在 task.md 中添加任务。`);
       }
 
-      // TaskCreate：task.md 有活跃任务 → 注入同步提醒
-      if (toolName === 'TaskCreate' && pendingTasks > 0) {
+      // 写入操作 + task.md 有活跃任务 → 同步提醒
+      if (isWriteOp && pendingTasks > 0) {
         hints.push(`task.md 是任务权威来源（${pendingTasks} 个活跃），请确保 TodoWrite 项与 task.md 对齐。`);
+      }
+
+      // TodoWrite 批量写入：数量差异检测
+      if (toolName === 'TodoWrite') {
+        const todos = toolInput.todos || [];
+        if (todos.length > 0 && pendingTasks > 0 && Math.abs(todos.length - pendingTasks) > 3) {
+          hints.push(`TodoWrite（${todos.length} 项）与 task.md 顶层活跃任务（${pendingTasks} 项）数量差异较大，请确认是否对齐。`);
+        }
       }
     } else {
       // task.md 不存在但在创建 todo
-      if (toolName === 'TaskCreate') {
+      if (isWriteOp) {
         hints.push(`task.md 不存在。如果这是 PACE 项目，请先创建 task.md 再使用 TodoWrite。`);
       }
     }
