@@ -96,12 +96,10 @@ process.stdin.on('end', () => {
     }
 
     // 4. findings.md ⚠️ 提醒（v4.3.4: 从 Stop 阻塞降级为 PostToolUse 软提醒）
-    // 🔒 表示已知限制（外部 bug 等），不计入未解决统计
+    // 🔒 替换 ⚠️ 表示已知限制，直接统计 ⚠️ 即可（🔒 条目无 ⚠️，自动排除）
     const findingsActive = readActive(cwd, 'findings.md');
     if (findingsActive) {
-      const allFlags = (findingsActive.match(/⚠️/g) || []).length;
-      const locked = (findingsActive.match(/🔒/g) || []).length;
-      const unresolved = allFlags - locked;
+      const unresolved = (findingsActive.match(/⚠️/g) || []).length;
       if (unresolved > 0) {
         warnings.push(`findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
       }
