@@ -1,4 +1,4 @@
-// PostToolUse hook v4.3.4：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤）
+// PostToolUse hook v4.3.6：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -87,6 +87,19 @@ process.stdin.on('end', () => {
           }
         } else if (!fs.existsSync(path.join(cwd, 'walkthrough.md'))) {
           warnings.push(`walkthrough.md 不存在，请创建工作记录文件`);
+        }
+      }
+    }
+
+    // v4.3.6 方案 C：编辑 task.md 后提醒同步 TodoWrite（复用 doneCount，避免与归档提醒重叠）
+    if (fileName === 'task.md') {
+      if (doneCount > 0) {
+        // 有已完成项时，归档提醒已在上方触发，只附加 TodoWrite 同步提示
+        warnings.push(`归档后请同步更新 TodoWrite（标记完成或清空）`);
+      } else {
+        const pendingForTodo = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
+        if (pendingForTodo > 0) {
+          warnings.push(`task.md 有 ${pendingForTodo} 个活跃任务，请用 TodoWrite 同步对应的 todo 项`);
         }
       }
     }

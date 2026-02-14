@@ -25,6 +25,8 @@
 
 SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCHIVE -->` 上方内容）。
 
+**任务优先级**：`task.md` 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准；task.md 无活跃任务时清空 TodoWrite。
+
 **AI 仅在以下情况主动读取文件**：
 - hook 注入为空但文件存在 → 降级读取全文
 - 需要归档区历史记录 → 读取 `<!-- ARCHIVE -->` 以下部分

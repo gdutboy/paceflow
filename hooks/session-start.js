@@ -1,4 +1,4 @@
-// SessionStart hook v4.3.5：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒
+// SessionStart hook v4.3.6：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -32,8 +32,9 @@ if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(cwd, 'ta
   }
 }
 
-// 提取活跃区注入上下文
+// 提取活跃区注入上下文（缓存 task.md 全文供后续复用）
 const found = [];
+let taskFullCached = null;
 
 for (const file of files) {
   const fp = path.join(cwd, file);
@@ -42,6 +43,9 @@ for (const file of files) {
   // v4.3.4: 单次读取消除双重 I/O
   const full = readFull(cwd, file);
   if (!full) continue;
+
+  // 缓存 task.md 全文
+  if (file === 'task.md') taskFullCached = full;
 
   process.stdout.write(`=== ${file} ===\n`);
   const archiveMatch = full.match(/^<!-- ARCHIVE -->$/m);
@@ -53,17 +57,35 @@ for (const file of files) {
   found.push(`${file}(${output.length})`);
 }
 
-// v4.3.1: 跨会话提醒 — 检测归档区中跳过的任务
+// v4.3.1: 跨会话提醒 — 检测归档区中跳过的任务（复用缓存）
 const taskFp = path.join(cwd, 'task.md');
-if (fs.existsSync(taskFp)) {
+if (!taskFullCached && fs.existsSync(taskFp)) {
+  try { taskFullCached = fs.readFileSync(taskFp, 'utf8'); } catch(e) {}
+}
+if (taskFullCached) {
   try {
-    const taskFull = fs.readFileSync(taskFp, 'utf8');
-    const skipped = taskFull.match(/- \[-\] .+/g) || [];
+    const skipped = taskFullCached.match(/- \[-\] .+/g) || [];
     if (skipped.length > 0) {
       process.stdout.write(`\n=== 跨会话提醒 ===\ntask.md 有 ${skipped.length} 个跳过的任务（[-]），请检查是否已完成需更新为 [x]：\n`);
       skipped.slice(-3).forEach(t => process.stdout.write(`  ${t}\n`));
       process.stdout.write('\n');
       log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SKIPPED_REMINDER | count: ${skipped.length}\n`);
+    }
+
+    // v4.3.6 方案 A：TodoWrite 同步指令注入
+    const archMatch = taskFullCached.match(/^<!-- ARCHIVE -->$/m);
+    const active = archMatch ? taskFullCached.slice(0, archMatch.index) : taskFullCached;
+    const hasPending = /- \[[ \/!]\]/.test(active);
+    const hasCompleted = /- \[[x\-]\]/.test(active);
+    if (hasPending) {
+      process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ task.md 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准。\n请用 TodoWrite 创建与 task.md 活跃任务对应的 todo 项。\n\n`);
+      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: TODOWRITE_SYNC | 有活跃任务，提醒同步 TodoWrite\n`);
+    } else if (hasCompleted) {
+      process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 活跃区有已完成/跳过任务待归档，无进行中任务。归档后再清空 TodoWrite。\n\n`);
+      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: TODOWRITE_SYNC | 有完成未归档，提醒归档后清空\n`);
+    } else {
+      process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 无活跃任务。如 TodoWrite 仍有残留项，请清空。\n\n`);
+      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: TODOWRITE_SYNC | 无活跃任务，提醒清空 TodoWrite\n`);
     }
   } catch(e) {}
 }
