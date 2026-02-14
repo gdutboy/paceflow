@@ -1,4 +1,4 @@
-// Stop hook v4.3.9：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
+// Stop hook：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -91,9 +91,8 @@ if (taskActive) {
   // 无任何 artifact：v4.3.5 多信号检测
   const paceSignal = isPaceProject(cwd);
   if (paceSignal === 'superpowers' || paceSignal === 'manual') {
-    // T-078 D2 修复：无 artifact 时仅记录日志，不加入 warnings（不阻止退出）
-    // 用户可能改主意不走 PACE 流程，此时 exit 2 阻止退出体验极差
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: SOFT_WARN | signal: ${paceSignal} | 无 artifact，仅记录不阻止\n`);
+    // T-078 D2 修复：无 artifact 时仅记录日志，不加入 warnings
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: SOFT_WARN | signal: ${paceSignal} | 无 artifact\n`);
   } else {
     const codeCount = countCodeFiles(cwd);
     if (codeCount >= 3) {
@@ -102,12 +101,12 @@ if (taskActive) {
   }
 }
 
-// TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 加入 warnings 统一处理
+// TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 仅 log + 清理 flag（不阻止退出，因 hook 无法查询 TodoWrite 实际状态）
 const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
 if (fs.existsSync(twFlag) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
   if (pending === 0 && done === 0) {
-    warnings.push(`task.md 无活跃任务，请确认 TodoWrite 已清空（如有残留请清理）`);
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TW_CLEANUP | TodoWrite flag 清理（无活跃任务）\n`);
     try { fs.unlinkSync(twFlag); } catch(e) {}
   }
 }
@@ -134,7 +133,7 @@ if (warnings.length > 0) {
   setBlockCount(0);
   const degradedFile = path.join(PACE_RUNTIME, 'degraded');
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
-  log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: PASS | checks: 全部通过\n`);
+  // PASS: 常规事件，不记录日志
 }
 } catch(e) {
   try { log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}

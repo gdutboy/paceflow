@@ -1,4 +1,4 @@
-// SessionStart hook v4.3.9：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
+// SessionStart hook：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, ARTIFACT_FILES, readFull, createTemplates } = paceUtils;
+const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -83,15 +83,12 @@ if (taskFullCached) {
     const hasCompleted = /- \[[x\-]\]/.test(active);
     if (hasPending) {
       process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ task.md 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准。\n请用 TodoWrite 创建与 task.md 活跃任务对应的 todo 项。\n\n`);
-      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: TODOWRITE_SYNC | 有活跃任务，提醒同步 TodoWrite\n`);
     } else if (hasCompleted) {
       process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 活跃区有已完成/跳过任务待归档，无进行中任务。归档后再清空 TodoWrite。\n\n`);
-      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: TODOWRITE_SYNC | 有完成未归档，提醒归档后清空\n`);
     } else {
       process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 无活跃任务。如 TodoWrite 仍有残留项，请清空。\n\n`);
-      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: TODOWRITE_SYNC | 无活跃任务，提醒清空 TodoWrite\n`);
     }
   } catch(e) {}
 }
 
-log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: INJECT | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n  output→AI: (原始文本注入，共 ${found.length} 个文件)\n`);
+log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);

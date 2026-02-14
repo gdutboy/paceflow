@@ -1,4 +1,4 @@
-// PostToolUse hook v4.3.9：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
+// PostToolUse hook：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, countByStatus } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -96,9 +96,12 @@ process.stdin.on('end', () => {
     }
 
     // 4. findings.md ⚠️ 提醒（v4.3.4: 从 Stop 阻塞降级为 PostToolUse 软提醒）
+    // 🔒 表示已知限制（外部 bug 等），不计入未解决统计
     const findingsActive = readActive(cwd, 'findings.md');
     if (findingsActive) {
-      const unresolved = (findingsActive.match(/⚠️/g) || []).length;
+      const allFlags = (findingsActive.match(/⚠️/g) || []).length;
+      const locked = (findingsActive.match(/🔒/g) || []).length;
+      const unresolved = allFlags - locked;
       if (unresolved > 0) {
         warnings.push(`findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
       }
@@ -127,9 +130,8 @@ process.stdin.on('end', () => {
     };
     process.stdout.write(JSON.stringify(output));
     log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: WARN | tool: ${toolName} | file: ${filePath || '-'} | checks: ${warnings.length} 项\n  output→AI: ${ctx}\n`);
-  } else {
-    log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: PASS | tool: ${toolName} | file: ${filePath || '-'} | checks: 全部通过\n`);
   }
+  // PASS: 常规事件，不记录日志
   } catch(e) {
     try { log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
   }

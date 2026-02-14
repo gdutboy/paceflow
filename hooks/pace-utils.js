@@ -1,8 +1,9 @@
-// pace-utils.js — PACE hooks 公共工具函数（v4.3.9）
+// pace-utils.js — PACE hooks 公共工具函数
 // 多信号激活判断 + 懒创建模板 + .pace/disabled 豁免 + 任务状态统计
 const fs = require('fs');
 const path = require('path');
 
+const PACE_VERSION = 'v4.4.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 
@@ -106,4 +107,4 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
   return { pending, done, total: pending + done };
 }
 
-module.exports = { CODE_EXTS, ARTIFACT_FILES, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat, createTemplates, countByStatus };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat, createTemplates, countByStatus };

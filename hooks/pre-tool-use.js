@@ -1,4 +1,4 @@
-// PreToolUse hook v4.3.9：多信号三级触发 + 懒创建模板 + off-by-one 修复 + C 阶段批准检查
+// PreToolUse hook：多信号三级触发 + 懒创建模板 + off-by-one 修复 + C 阶段批准检查
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -148,7 +148,7 @@ process.stdin.on('end', () => {
       return;
     }
 
-    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: SKIP | tool: ${toolName} | file: ${filePath || '-'}\n  reason: 第 1 个代码文件，不触发\n`);
+    // 第 1 个代码文件，不触发
     return;
   }
 
@@ -177,9 +177,8 @@ process.stdin.on('end', () => {
       }
     };
     process.stdout.write(JSON.stringify(output));
-    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: INJECT | tool: ${toolName} | file: ${filePath || '-'}\n  output→AI: ${ctx.replace(/\n/g, '\\n').substring(0, 300)}\n`);
   } else {
-    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: SKIP | tool: ${toolName} | file: ${filePath || '-'}\n  reason: task.md 不存在或无活跃任务\n`);
+    // SKIP / INJECT: 常规事件，不记录日志
   }
   } catch(e) {
     try { log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}

@@ -1,4 +1,4 @@
-// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook v4.3.9 方案 D
+// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook 方案 D
 // 拦截 TodoWrite（批量）和 TaskCreate/TaskUpdate（单项）操作，校验与 task.md 一致性
 // 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与操作的合理性
 const fs = require('fs');
@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, readActive, countByStatus } = paceUtils;
+const { PACE_VERSION, isPaceProject, readActive, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -24,7 +24,6 @@ process.stdin.on('end', () => {
 
     // 非 PACE 项目：直接放行
     if (!paceSignal) {
-      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: SKIP | reason: 非 PACE 项目\n`);
       return;
     }
 
@@ -34,13 +33,11 @@ process.stdin.on('end', () => {
       toolName = parsed.tool_name || '';
       toolInput = parsed.tool_input || {};
     } catch(e) {
-      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: SKIP | reason: stdin 解析失败\n`);
       return;
     }
 
     // TodoWrite 清空操作（空数组）直接放行，不产生 hint
     if (toolName === 'TodoWrite' && (toolInput.todos || []).length === 0) {
-      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: PASS | tool: TodoWrite | reason: 清空操作\n`);
       return;
     }
 
@@ -99,7 +96,7 @@ process.stdin.on('end', () => {
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: HINT | tool: ${toolName} | hints: ${hints.join('; ')}\n`);
     } else {
-      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: PASS | tool: ${toolName}\n`);
+      // PASS: 常规事件，不记录日志
     }
   } catch(e) {
     log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`);
