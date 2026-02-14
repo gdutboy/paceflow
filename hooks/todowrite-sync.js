@@ -1,4 +1,4 @@
-// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook v4.3.7 方案 D
+// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook v4.3.8 方案 D
 // 拦截 TodoWrite（批量）和 TaskCreate/TaskUpdate（单项）操作，校验与 task.md 一致性
 // 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与操作的合理性
 const fs = require('fs');
@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, readActive } = paceUtils;
+const { isPaceProject, readActive, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -38,6 +38,12 @@ process.stdin.on('end', () => {
       return;
     }
 
+    // TodoWrite 清空操作（空数组）直接放行，不产生 hint
+    if (toolName === 'TodoWrite' && (toolInput.todos || []).length === 0) {
+      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: PASS | tool: TodoWrite | reason: 清空操作\n`);
+      return;
+    }
+
     // 写入类操作：TodoWrite（批量替换）、TaskCreate（创建单项）
     const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate');
 
@@ -45,10 +51,8 @@ process.stdin.on('end', () => {
     const hints = [];
 
     if (taskActive) {
-      // 只匹配顶层任务（行首无缩进）
-      const pendingTasks = (taskActive.match(/^- \[[ \/!]\]/gm) || []).length;
-      const doneTasks = (taskActive.match(/^- \[x\]|^- \[-\]/gm) || []).length;
-      const totalActive = pendingTasks + doneTasks;
+      // W2: 统一使用 countByStatus（仅顶层任务）
+      const { pending: pendingTasks, done: doneTasks, total: totalActive } = countByStatus(taskActive, { topLevelOnly: true });
 
       // 写入操作 + task.md 无活跃任务 → 可能是 compaction 残留
       if (isWriteOp && totalActive === 0) {
@@ -58,6 +62,11 @@ process.stdin.on('end', () => {
       // 写入操作 + task.md 有活跃任务 → 同步提醒
       if (isWriteOp && pendingTasks > 0) {
         hints.push(`task.md 是任务权威来源（${pendingTasks} 个活跃），请确保 TodoWrite 项与 task.md 对齐。`);
+      }
+
+      // 写入操作 + 活跃区只有已完成项 → 提醒先归档
+      if (isWriteOp && pendingTasks === 0 && doneTasks > 0) {
+        hints.push(`task.md 活跃区有 ${doneTasks} 个已完成项待归档，无进行中任务。请先归档再操作 TodoWrite。`);
       }
 
       // TodoWrite 批量写入：数量差异检测

@@ -1,4 +1,4 @@
-// SessionStart hook v4.3.6：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
+// SessionStart hook v4.3.8：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -64,7 +64,12 @@ if (!taskFullCached && fs.existsSync(taskFp)) {
 }
 if (taskFullCached) {
   try {
-    const skipped = taskFullCached.match(/- \[-\] .+/g) || [];
+    // 提前计算 ARCHIVE 分割点（W3 跳过扫描 + 方案 A 共用）
+    const archMatch = taskFullCached.match(/^<!-- ARCHIVE -->$/m);
+    const active = archMatch ? taskFullCached.slice(0, archMatch.index) : taskFullCached;
+
+    // W3: 只扫描活跃区的跳过任务（避免已归档的历史 [-] 项永久计入提醒）
+    const skipped = active.match(/- \[-\] .+/g) || [];
     if (skipped.length > 0) {
       process.stdout.write(`\n=== 跨会话提醒 ===\ntask.md 有 ${skipped.length} 个跳过的任务（[-]），请检查是否已完成需更新为 [x]：\n`);
       skipped.slice(-3).forEach(t => process.stdout.write(`  ${t}\n`));
@@ -72,9 +77,7 @@ if (taskFullCached) {
       log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SKIPPED_REMINDER | count: ${skipped.length}\n`);
     }
 
-    // v4.3.6 方案 A：TodoWrite 同步指令注入
-    const archMatch = taskFullCached.match(/^<!-- ARCHIVE -->$/m);
-    const active = archMatch ? taskFullCached.slice(0, archMatch.index) : taskFullCached;
+    // v4.3.6 方案 A：TodoWrite 同步指令注入（复用 active）
     const hasPending = /- \[[ \/!]\]/.test(active);
     const hasCompleted = /- \[[x\-]\]/.test(active);
     if (hasPending) {

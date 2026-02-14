@@ -1,4 +1,4 @@
-// Stop hook v4.3.5：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
+// Stop hook v4.3.8：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
 const fs = require('fs');
 const path = require('path');
 let paceUtils;

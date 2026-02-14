@@ -20,6 +20,15 @@
             "command": "node <HOOKS_DIR>/pre-tool-use.js"
           }
         ]
+      },
+      {
+        "matcher": "TodoWrite|TaskCreate|TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node <HOOKS_DIR>/todowrite-sync.js"
+          }
+        ]
       }
     ],
     "PostToolUse": [

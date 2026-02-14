@@ -1,5 +1,5 @@
-// pace-utils.js — PACE hooks 公共工具函数（v4.3.5）
-// 多信号激活判断 + 懒创建模板 + .pace/disabled 豁免
+// pace-utils.js — PACE hooks 公共工具函数（v4.3.8）
+// 多信号激活判断 + 懒创建模板 + .pace/disabled 豁免 + 任务状态统计
 const fs = require('fs');
 const path = require('path');
 
@@ -91,4 +91,19 @@ function createTemplates(cwd) {
   return created;
 }
 
-module.exports = { CODE_EXTS, ARTIFACT_FILES, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat, createTemplates };
+/**
+ * W2+O5: 统一任务状态统计（集中管理正则，消除跨文件不一致）
+ * @param {string} text - 待统计的文本（通常是 task.md 活跃区）
+ * @param {object} opts - 选项
+ * @param {boolean} opts.topLevelOnly - true 时仅匹配行首顶层任务（^锚定），false 含子任务
+ * @returns {{pending: number, done: number, total: number}}
+ */
+function countByStatus(text, { topLevelOnly = false } = {}) {
+  const prefix = topLevelOnly ? '^' : '';
+  const flags = topLevelOnly ? 'gm' : 'g';
+  const pending = (text.match(new RegExp(`${prefix}- \\[[ /!]\\]`, flags)) || []).length;
+  const done = (text.match(new RegExp(`${prefix}- \\[x\\]|${prefix}- \\[-\\]`, flags)) || []).length;
+  return { pending, done, total: pending + done };
+}
+
+module.exports = { CODE_EXTS, ARTIFACT_FILES, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat, createTemplates, countByStatus };

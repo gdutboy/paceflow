@@ -1,4 +1,4 @@
-// PostToolUse hook v4.3.6：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
+// PostToolUse hook v4.3.8：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -44,14 +44,6 @@ process.stdin.on('end', () => {
     }
   }
 
-  // v4.3.4: Claude Code Tasks API 同步提醒（W6）
-  if (toolName === 'TaskCreate' || toolName === 'TaskUpdate') {
-    const taskExists = fs.existsSync(path.join(cwd, 'task.md'));
-    if (taskExists) {
-      warnings.push(`检测到 ${toolName} 操作，请同步更新 task.md（PACE 权威状态源）`);
-    }
-  }
-
   if (taskActive) {
     // 0. ARCHIVE 格式检查（仅编辑 artifact 文件时）
     if (isArtifactEdit) {
@@ -59,8 +51,8 @@ process.stdin.on('end', () => {
       if (archFmt) warnings.push(archFmt);
     }
 
-    // 1. 检查 task.md 活跃区已完成项（每次都检查，核心提醒）
-    const doneCount = (taskActive.match(/- \[x\]|- \[-\]/g) || []).length;
+    // 1. W2: 统一使用 countByStatus（仅顶层任务）
+    const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
     if (doneCount > 0) {
       warnings.push(`task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方`);
 
@@ -68,7 +60,6 @@ process.stdin.on('end', () => {
       if (fileName === 'task.md' || fileName === 'implementation_plan.md') {
         const planActive = readActive(cwd, 'implementation_plan.md');
         if (planActive) {
-          const pendingCount = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
           if (pendingCount === 0 && planActive.includes('🔄')) {
             warnings.push(`implementation_plan.md 仍有 🔄 进行中的变更，但任务已全部完成，请更新状态为 ✅`);
           }
@@ -97,9 +88,8 @@ process.stdin.on('end', () => {
         // 有已完成项时，归档提醒已在上方触发，只附加 TodoWrite 同步提示
         warnings.push(`归档后请同步更新 TodoWrite（标记完成或清空）`);
       } else {
-        const pendingForTodo = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
-        if (pendingForTodo > 0) {
-          warnings.push(`task.md 有 ${pendingForTodo} 个活跃任务，请用 TodoWrite 同步对应的 todo 项`);
+        if (pendingCount > 0) {
+          warnings.push(`task.md 有 ${pendingCount} 个活跃任务，请用 TodoWrite 同步对应的 todo 项`);
         }
       }
     }
