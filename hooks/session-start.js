@@ -19,6 +19,7 @@ const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
 try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
 try { const df = path.join(PACE_RUNTIME, 'degraded'); if (fs.existsSync(df)) fs.unlinkSync(df); } catch(e) {}
+try { const tw = path.join(PACE_RUNTIME, 'todowrite-used'); if (fs.existsSync(tw)) fs.unlinkSync(tw); } catch(e) {}
 
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);

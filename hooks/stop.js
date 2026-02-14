@@ -125,6 +125,22 @@ if (warnings.length > 0) {
   setBlockCount(0);
   const degradedFile = path.join(PACE_RUNTIME, 'degraded');
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
+
+  // TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 提醒清理
+  const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
+  if (fs.existsSync(twFlag) && taskActive) {
+    const pendingNow = (taskActive.match(/- \[[ \/!]\]/g) || []).length;
+    const doneNow = (taskActive.match(/- \[x\]|- \[-\]/g) || []).length;
+    if (pendingNow === 0 && doneNow === 0) {
+      // 清除 flag 避免重复 block
+      try { fs.unlinkSync(twFlag); } catch(e) {}
+      process.stderr.write(`task.md 无活跃任务，请确认 TodoWrite 已清空（如有残留请清理）\n`);
+      log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK | reason: TodoWrite 残留检测\n`);
+      setBlockCount(1);
+      process.exit(2);
+    }
+  }
+
   log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: PASS | checks: 全部通过\n`);
 }
 } catch(e) {
