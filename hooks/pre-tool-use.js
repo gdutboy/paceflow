@@ -1,4 +1,4 @@
-// PreToolUse hook v4.3.5：多信号三级触发 + 懒创建模板 + off-by-one 修复 + C 阶段批准检查
+// PreToolUse hook v4.3.9：多信号三级触发 + 懒创建模板 + off-by-one 修复 + C 阶段批准检查
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -18,6 +18,7 @@ let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
+  try {
   let toolName = '', filePath = '';
   try {
     const parsed = JSON.parse(input);
@@ -179,5 +180,8 @@ process.stdin.on('end', () => {
     log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: INJECT | tool: ${toolName} | file: ${filePath || '-'}\n  output→AI: ${ctx.replace(/\n/g, '\\n').substring(0, 300)}\n`);
   } else {
     log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: SKIP | tool: ${toolName} | file: ${filePath || '-'}\n  reason: task.md 不存在或无活跃任务\n`);
+  }
+  } catch(e) {
+    try { log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
   }
 });

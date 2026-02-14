@@ -1,4 +1,4 @@
-// PostToolUse hook v4.3.8：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
+// PostToolUse hook v4.3.9：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -20,6 +20,7 @@ let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
+  try {
   let toolName = '', filePath = '';
   try {
     const parsed = JSON.parse(input);
@@ -128,5 +129,8 @@ process.stdin.on('end', () => {
     log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: WARN | tool: ${toolName} | file: ${filePath || '-'} | checks: ${warnings.length} 项\n  output→AI: ${ctx}\n`);
   } else {
     log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: PASS | tool: ${toolName} | file: ${filePath || '-'} | checks: 全部通过\n`);
+  }
+  } catch(e) {
+    try { log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
   }
 });

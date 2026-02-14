@@ -1,4 +1,4 @@
-// pace-utils.js — PACE hooks 公共工具函数（v4.3.8）
+// pace-utils.js — PACE hooks 公共工具函数（v4.3.9）
 // 多信号激活判断 + 懒创建模板 + .pace/disabled 豁免 + 任务状态统计
 const fs = require('fs');
 const path = require('path');

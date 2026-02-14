@@ -1,4 +1,4 @@
-// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook v4.3.8 方案 D
+// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook v4.3.9 方案 D
 // 拦截 TodoWrite（批量）和 TaskCreate/TaskUpdate（单项）操作，校验与 task.md 一致性
 // 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与操作的合理性
 const fs = require('fs');

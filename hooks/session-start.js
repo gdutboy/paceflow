@@ -1,4 +1,4 @@
-// SessionStart hook v4.3.8：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
+// SessionStart hook v4.3.9：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + TodoWrite 同步
 const fs = require('fs');
 const path = require('path');
 let paceUtils;

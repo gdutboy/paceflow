@@ -1,4 +1,4 @@
-// Stop hook v4.3.8：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
+// Stop hook v4.3.9：有未完成项时 exit 2 阻止 Claude 停止 + 多信号检测 + 防无限循环
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus } = paceUtils;
+const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
