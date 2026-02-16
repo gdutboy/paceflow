@@ -253,6 +253,45 @@ Hooks 在项目根目录的 `.pace/` 子目录下维护运行时状态：
 
 ---
 
+## Subagent / Agent Teams 兼容性
+
+> 以下结论基于 2026-02-16 实测（Claude Code v2.x），可能随版本更新变化。
+
+### Subagent（Task 工具）
+
+Subagent 在主进程内执行，**共享相同的 hooks 配置**。实测所有 hook 均对 subagent 生效：
+
+| Hook | 行为 | 验证结果 |
+|------|------|----------|
+| PreToolUse (Write/Edit) | deny 阻止 subagent 写代码文件 | ✅ 生效 |
+| PreToolUse (TodoWrite) | additionalContext 提醒注入 | ✅ 生效 |
+| PostToolUse | 归档提醒正常触发 | ✅ 生效 |
+
+> **注意**：GitHub #21460 声称 hooks 不对 subagent 生效，与实测矛盾（可能已修复或仅影响 plugin 级 hooks）。
+
+### Agent Teams（实验性功能）
+
+Agent Teams 的 teammate 是**独立的 Claude Code 进程**，各自加载 `settings.json` 中的 hooks。实测全部 5 个 hook 事件均对 teammate 生效：
+
+| Hook | 行为 | 验证结果 |
+|------|------|----------|
+| SessionStart | 为 teammate 注入项目上下文 | ✅ 生效 |
+| PreToolUse (Write/Edit) | deny 阻止 teammate 写代码文件 | ✅ 生效 |
+| PreToolUse (TodoWrite) | additionalContext 提醒注入 | ✅ 生效 |
+| PostToolUse | 归档提醒正常触发 | ✅ 生效 |
+| Stop | TodoWrite 残留清理提醒 | ✅ 生效 |
+
+### 已知限制
+
+| 编号 | 问题 | 影响 | 状态 |
+|------|------|------|------|
+| 🔒 1 | todowrite-sync 无法区分团队任务与 PACE 任务 | teammate 的 TaskCreate/TaskUpdate 触发不相关 HINT（仅提醒，不阻止） | 等待官方 `agent_id` 字段支持 |
+| 🔒 2 | 多 teammate 并发修改 `.pace/` 状态文件 | `stop-block-count` / `degraded` 理论竞态风险 | Agent Teams 实验性功能，单 teammate 未触发 |
+
+**根本原因**：PreToolUse stdin JSON 不包含 `agent_id` / `agent_type` 字段，hook 无法区分请求来源（主进程 / subagent / teammate）。相关 feature request：#16126、#14859、#16424。
+
+---
+
 ## 日志
 
 所有 hook 共享日志文件 `~/.claude/hooks/pace/pace-hooks.log`。
