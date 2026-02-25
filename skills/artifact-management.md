@@ -160,3 +160,9 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 - [templates/implementation_plan.md](templates/implementation_plan.md) — 实施计划模板
 - [templates/walkthrough.md](templates/walkthrough.md) — 工作记录模板
 - [templates/findings.md](templates/findings.md) — 调研记录模板
+
+---
+
+## 关联 Skill
+
+- **[pace-knowledge](../pace-knowledge.md)** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。

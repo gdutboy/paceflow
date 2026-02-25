@@ -61,8 +61,8 @@ process.stdin.on('end', () => {
       if (fileName === 'task.md' || fileName === 'implementation_plan.md') {
         const planActive = readActive(cwd, 'implementation_plan.md');
         if (planActive) {
-          if (pendingCount === 0 && planActive.includes('🔄')) {
-            warnings.push(`implementation_plan.md 仍有 🔄 进行中的变更，但任务已全部完成，请更新状态为 ✅`);
+          if (pendingCount === 0 && /^- \[\/\]/m.test(planActive)) {
+            warnings.push(`implementation_plan.md 仍有 [/] 进行中的变更，但任务已全部完成，请更新状态为 [x]`);
           }
         }
       }
@@ -102,6 +102,14 @@ process.stdin.on('end', () => {
       const unresolved = (findingsActive.match(/⚠️/g) || []).length;
       if (unresolved > 0) {
         warnings.push(`findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
+      }
+
+      // 5. 否定决策理由提醒：编辑 findings.md 时检测"保持现状"缺理由
+      if (fileName === 'findings.md') {
+        const keepCount = (findingsActive.match(/保持现状/g) || []).length;
+        if (keepCount > 0) {
+          warnings.push(`findings.md 有 ${keepCount} 条"保持现状"条目，请确认已记录否定理由（为什么不做）`);
+        }
       }
     }
   } else {

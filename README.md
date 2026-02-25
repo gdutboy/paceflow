@@ -1,6 +1,6 @@
 # PACEflow — Claude Code 工作流强制执行系统
 
-> **版本**: v4.4.0
+> **版本**: v4.4.1
 > **运行时**: Node.js
 > **平台**: Windows / macOS / Linux（需 Claude Code CLI）
 
@@ -37,10 +37,11 @@ paceflow/
 │       ├── implementation_plan.md               #     实施计划模板
 │       ├── walkthrough.md                       #     工作记录模板
 │       └── findings.md                          #     调研记录模板
-├── skills/                                      # Skill 文件（3 个）
+├── skills/                                      # Skill 文件（4 个）
 │   ├── pace-workflow.md                         #   PACE 协议核心流程
 │   ├── artifact-management.md                   #   Artifact 文件管理规则
 │   ├── change-management.md                     #   变更 ID 管理模块
+│   ├── pace-knowledge.md                        #   Obsidian 知识库笔记管理
 │   └── templates/                               #   Skill 模板文件（7 个）
 │       ├── artifact-spec.md                     #     spec.md 模板
 │       ├── artifact-task.md                     #     task.md 模板
@@ -83,6 +84,10 @@ mkdir -p ~/.claude/skills/change-management
 cp skills/pace-workflow.md ~/.claude/skills/pace-workflow/SKILL.md
 cp skills/artifact-management.md ~/.claude/skills/artifact-management/SKILL.md
 cp skills/change-management.md ~/.claude/skills/change-management/SKILL.md
+
+# pace-knowledge
+mkdir -p ~/.claude/skills/pace-knowledge
+cp skills/pace-knowledge.md ~/.claude/skills/pace-knowledge/pace-knowledge.md
 
 # 复制 artifact-management 模板
 mkdir -p ~/.claude/skills/artifact-management/templates
@@ -167,6 +172,19 @@ cp rules/CLAUDE.md ~/.claude/CLAUDE.md
 ### Write 保护
 
 PreToolUse 拦截对已存在的 `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` 的 Write 操作（应使用 Edit 工具）。
+
+### Obsidian 知识中枢（v4.4.1）
+
+SessionStart 自动注入与当前项目关联的 `thoughts/` 和 `knowledge/` 笔记摘要。PreToolUse 在 Write 到知识库目录时注入模板提醒。
+
+| 组件 | 机制 | 作用 |
+|------|------|------|
+| `pace-utils.js` `scanRelatedNotes()` | 扫描 Vault 中 frontmatter `projects` 匹配的笔记 | 返回 L0 摘要列表（最多 5 条） |
+| `session-start.js` | 非 compact 事件时调用 scanRelatedNotes | 注入相关讨论和知识到上下文 |
+| `pre-tool-use.js` | Write 到 `thoughts/`/`knowledge/` 时 | additionalContext 提醒遵循模板 |
+| `pace-knowledge` skill | 定义 frontmatter 结构和 L0/L1/L2 分层 | AI 创建笔记时参考 |
+
+**前置条件**：需在 `pace-utils.js` 中配置 `VAULT_PATH` 指向 Obsidian Vault 路径。
 
 ### TodoWrite 同步（4 层方案）
 
@@ -313,6 +331,7 @@ Agent Teams 的 teammate 是**独立的 Claude Code 进程**，各自加载 `set
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v4.4.1 | 2026-02-25 | Obsidian 知识中枢集成（scanRelatedNotes 注入 + pace-knowledge skill + PreToolUse 模板提醒 + Artifact 索引格式迁移）|
 | v4.4.0 | 2026-02-14 | 系统审视改进（🔒 已知限制状态 + PACE_VERSION 集中化 + 日志精简 + findings 计数修复）|
 | v4.3.9 | 2026-02-14 | 3-Agent 审查修复（try-catch + 版本同步 + 未使用 import 清理）|
 | v4.3.8 | 2026-02-14 | ticket6 审查修复（countByStatus 统一 + [-] 扫描范围 + 死代码清理）|

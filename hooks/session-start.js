@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates } = paceUtils;
+const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, scanRelatedNotes } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -20,6 +20,14 @@ try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
 try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
 try { const df = path.join(PACE_RUNTIME, 'degraded'); if (fs.existsSync(df)) fs.unlinkSync(df); } catch(e) {}
 try { const tw = path.join(PACE_RUNTIME, 'todowrite-used'); if (fs.existsSync(tw)) fs.unlinkSync(tw); } catch(e) {}
+
+// 读取 stdin 获取事件类型（compact 时跳过 thoughts 注入）
+let eventType = 'startup';
+try {
+  const stdinData = fs.readFileSync(0, 'utf8');
+  const parsed = JSON.parse(stdinData);
+  eventType = parsed.type || 'startup';
+} catch(e) {}
 
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
@@ -89,6 +97,31 @@ if (taskFullCached) {
       process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 无活跃任务。如 TodoWrite 仍有残留项，请清空。\n\n`);
     }
   } catch(e) {}
+}
+
+// T-117: Git 状态注入（辅助跨会话上下文恢复）
+try {
+  const { execSync } = require('child_process');
+  const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', timeout: 5000 }).trim();
+  const lastCommit = execSync('git log --oneline -1', { cwd, encoding: 'utf8', timeout: 5000 }).trim();
+  if (branch && lastCommit) {
+    process.stdout.write(`=== Git 状态 ===\n分支: ${branch}\n最近提交: ${lastCommit}\n\n`);
+  }
+} catch(e) {} // 非 git 项目静默跳过
+
+// 相关 thoughts/knowledge 注入（compact 不注入，保持轻量）
+if (eventType !== 'compact') {
+  try {
+    const projectName = path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
+    const notes = scanRelatedNotes(projectName);
+    if (notes.length > 0) {
+      process.stdout.write(`=== 相关讨论 (thoughts/) ===\n`);
+      notes.slice(0, 5).forEach(n => {
+        process.stdout.write(`[${n.status}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`);
+      });
+      process.stdout.write('\n');
+    }
+  } catch(e) {} // Vault 不可用静默跳过
 }
 
 log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);

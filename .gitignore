@@ -1,0 +1,8 @@
+# PACEflow 运行时文件
+.pace/
+
+# Claude Code 项目配置
+.claude/
+
+# Hook 日志
+hooks/pace-hooks.log

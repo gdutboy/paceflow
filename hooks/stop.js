@@ -67,8 +67,8 @@ if (taskActive) {
 
   // 3. 检查 implementation_plan.md 状态一致性
   const planActive = readActive(cwd, 'implementation_plan.md');
-  if (planActive && pendingCount === 0 && doneCount > 0 && planActive.includes('🔄')) {
-    warnings.push(`implementation_plan.md 仍有 🔄 进行中，但任务已全部完成`);
+  if (planActive && pendingCount === 0 && doneCount > 0 && /^- \[\/\]/m.test(planActive)) {
+    warnings.push(`implementation_plan.md 仍有 [/] 进行中，但任务已全部完成`);
   }
 
   // 4. 检查 walkthrough.md

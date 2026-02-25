@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates, VAULT_PATH } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -67,6 +67,27 @@ process.stdin.on('end', () => {
       };
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_WRITE_ARTIFACT | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+      return;
+    }
+  }
+
+  // v4.4.1: Obsidian 知识库笔记模板提醒（Write 到 thoughts/knowledge 时注入 additionalContext）
+  if (toolName === 'Write' && VAULT_PATH && filePath.endsWith('.md')) {
+    const nf = normalizedFile;
+    const vp = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
+    const vpSlash = vp.endsWith('/') ? vp : vp + '/';
+    let dirName = '';
+    if (nf.startsWith(vpSlash + 'thoughts/')) dirName = 'thoughts';
+    else if (nf.startsWith(vpSlash + 'knowledge/')) dirName = 'knowledge';
+    if (dirName && path.basename(filePath) !== 'README.md') {
+      const ctx = `写入 ${dirName}/ 笔记，请遵循 pace-knowledge skill 模板：frontmatter 必含 summary/status/projects 字段，正文用 ## 摘要（L1）+ ## 详情（L2）结构。`;
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          additionalContext: ctx
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
       return;
     }
   }
