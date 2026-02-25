@@ -55,7 +55,7 @@ flowchart TD
 ### A (Artifact - 计划)
 
 1. 创建/更新 `task.md`
-2. 累积更新 `implementation_plan.md`
+2. 累积更新 `implementation_plan.md`（变更索引添加 `[ ]` 条目）
 3. 读取 `skills/change-management/SKILL.md` 执行变更 ID 管理
 
 **Superpowers 衔接**：`implementation_plan.md` 活跃变更详情中引用 Superpowers plan 文件路径：
@@ -71,11 +71,12 @@ flowchart TD
 - 重读 `task.md` - 确认任务范围未偏离
 - 重读 `implementation_plan.md` - 确认技术方案一致
 
-**获批后**：在 `task.md` 活跃区添加 `<!-- APPROVED -->` 标记，或将首个任务标为 `[/]` 进行中。
+**获批后**：在 `task.md` 活跃区添加 `<!-- APPROVED -->` 标记，或将首个任务标为 `[/]` 进行中。同时将 `implementation_plan.md` 变更索引状态从 `[ ]` 改为 `[/]`。
 
-> [!note] v4.3.2 Hook 强制
+> [!note] v4.3.2+ Hook 强制
 > PreToolUse 会检查活跃区是否有 `<!-- APPROVED -->` 标记或 `[/]` 任务。
 > 若所有任务为 `[ ]` 且无 APPROVED 标记，写代码文件会被 **deny**。
+> v4.4.3 起还会检查 `implementation_plan.md` 是否有 `[/]` 进行中的变更索引，无则 **deny**。
 
 **严禁批准前修改代码。**
 

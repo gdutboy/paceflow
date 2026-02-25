@@ -20,6 +20,8 @@ try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
 try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
 try { const df = path.join(PACE_RUNTIME, 'degraded'); if (fs.existsSync(df)) fs.unlinkSync(df); } catch(e) {}
 try { const tw = path.join(PACE_RUNTIME, 'todowrite-used'); if (fs.existsSync(tw)) fs.unlinkSync(tw); } catch(e) {}
+try { const ar = path.join(PACE_RUNTIME, 'archive-reminded'); if (fs.existsSync(ar)) fs.unlinkSync(ar); } catch(e) {}
+try { const fr = path.join(PACE_RUNTIME, 'findings-reminded'); if (fs.existsSync(fr)) fs.unlinkSync(fr); } catch(e) {}
 
 // 读取 stdin 获取事件类型（compact 时跳过 thoughts 注入）
 let eventType = 'startup';

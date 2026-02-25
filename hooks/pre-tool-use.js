@@ -1,4 +1,4 @@
-// PreToolUse hook：多信号三级触发 + 懒创建模板 + off-by-one 修复 + C 阶段批准检查
+// PreToolUse hook：多信号三级触发 + 懒创建模板 + C 阶段批准 + E 阶段 impl_plan [/] 检查
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates, VAULT_PATH } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates, VAULT_PATH, readActive } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -186,6 +186,26 @@ process.stdin.on('end', () => {
     process.stdout.write(JSON.stringify(output));
     log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_C_PHASE | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
     return;
+  }
+
+  // v4.4.3: E 阶段前提检查 — implementation_plan.md 需有 [/] 进行中的变更索引
+  if (isCodeFile && isInsideProject && hasActiveTasks && hasApproval) {
+    const planActive = readActive(cwd, 'implementation_plan.md');
+    if (planActive === null || !/^- \[\/\]/m.test(planActive)) {
+      const reason = planActive === null
+        ? `implementation_plan.md 不存在。请先在 A 阶段创建变更索引（CHG-YYYYMMDD-NN），标记为 [/] 进行中后再写代码。`
+        : `implementation_plan.md 无进行中的变更索引（[/]）。请先将当前变更的索引状态从 [ ] 改为 [/] 后再写代码。`;
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_E_PHASE | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+      return;
+    }
   }
 
   // 正常情况：注入 task.md 活跃区

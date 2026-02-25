@@ -21,11 +21,13 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-  let toolName = '', filePath = '';
+  let toolName = '', filePath = '', oldString = '', newString = '';
   try {
     const parsed = JSON.parse(input);
     toolName = parsed.tool_name || '';
     filePath = parsed.tool_input?.file_path || '';
+    oldString = parsed.tool_input?.old_string || '';
+    newString = parsed.tool_input?.new_string || '';
   } catch(e) {}
 
   const warnings = [];
@@ -54,34 +56,13 @@ process.stdin.on('end', () => {
 
     // 1. W2: 统一使用 countByStatus（仅顶层任务）
     const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
-    if (doneCount > 0) {
+    // H3: 归档提醒 → 每会话首次（Stop exit 2 兜底）
+    const archiveRemindedFile = path.join(PACE_RUNTIME, 'archive-reminded');
+    if (doneCount > 0 && !fs.existsSync(archiveRemindedFile)) {
       warnings.push(`task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方`);
-
-      // 2. impl_plan 一致性（仅编辑 task.md 或 impl_plan 时）
-      if (fileName === 'task.md' || fileName === 'implementation_plan.md') {
-        const planActive = readActive(cwd, 'implementation_plan.md');
-        if (planActive) {
-          if (pendingCount === 0 && /^- \[\/\]/m.test(planActive)) {
-            warnings.push(`implementation_plan.md 仍有 [/] 进行中的变更，但任务已全部完成，请更新状态为 [x]`);
-          }
-        }
-      }
-
-      // 3. walkthrough 日期（仅编辑 task.md 或 walkthrough 时）
-      if (fileName === 'task.md' || fileName === 'walkthrough.md') {
-        const walkActive = readActive(cwd, 'walkthrough.md');
-        if (walkActive) {
-          const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-          const timeMatch = walkActive.match(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/);
-          const lastDate = timeMatch ? timeMatch[1] : null;
-          if (lastDate && lastDate !== today) {
-            warnings.push(`walkthrough.md 最近更新是 ${lastDate}，今天的工作尚未记录`);
-          }
-        } else if (!fs.existsSync(path.join(cwd, 'walkthrough.md'))) {
-          warnings.push(`walkthrough.md 不存在，请创建工作记录文件`);
-        }
-      }
+      try { fs.writeFileSync(archiveRemindedFile, '1', 'utf8'); } catch(e) {}
     }
+    // H4(impl_plan 一致性) + H5(walkthrough 日期) 已删除：Stop W3/W4 完全覆盖
 
     // v4.3.6 方案 C：编辑 task.md 后提醒同步 TodoWrite（复用 doneCount，避免与归档提醒重叠）
     if (fileName === 'task.md') {
@@ -95,16 +76,27 @@ process.stdin.on('end', () => {
       }
     }
 
-    // 4. findings.md ⚠️ 提醒（v4.3.4: 从 Stop 阻塞降级为 PostToolUse 软提醒）
-    // 🔒 替换 ⚠️ 表示已知限制，直接统计 ⚠️ 即可（🔒 条目无 ⚠️，自动排除）
+    // APPROVED/VERIFIED 自签检测：Edit 添加标记时提醒用户确认
+    if (fileName === 'task.md' && newString) {
+      const markers = ['<!-- APPROVED -->', '<!-- VERIFIED -->'];
+      for (const marker of markers) {
+        if (newString.includes(marker) && !oldString.includes(marker)) {
+          warnings.push(`检测到 ${marker} 被添加到 task.md，请确认此操作已获用户审核`);
+        }
+      }
+    }
+
+    // H7: findings.md ⚠️ 提醒 → 每会话首次
+    const findingsRemindedFile = path.join(PACE_RUNTIME, 'findings-reminded');
     const findingsActive = readActive(cwd, 'findings.md');
     if (findingsActive) {
       const unresolved = (findingsActive.match(/⚠️/g) || []).length;
-      if (unresolved > 0) {
+      if (unresolved > 0 && !fs.existsSync(findingsRemindedFile)) {
         warnings.push(`findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
+        try { fs.writeFileSync(findingsRemindedFile, '1', 'utf8'); } catch(e) {}
       }
 
-      // 5. 否定决策理由提醒：编辑 findings.md 时检测"保持现状"缺理由
+      // H8: 否定决策理由提醒：编辑 findings.md 时检测"保持现状"缺理由
       if (fileName === 'findings.md') {
         const keepCount = (findingsActive.match(/保持现状/g) || []).length;
         if (keepCount > 0) {
