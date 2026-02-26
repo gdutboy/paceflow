@@ -11,7 +11,7 @@ const SETTINGS_PATH = path.join(HOME, '.claude', 'settings.json');
 const HOOKS_TEMPLATES = path.join(__dirname, 'hooks', 'templates');
 const SKILLS_TEMPLATES = path.join(__dirname, 'skills', 'templates');
 
-// 需要检查的 9 个 PACE hook 脚本名（排除可选的 enforce-bash-permissions.ps1）
+// 需要检查的 7 个 PACE hook 脚本名
 const EXPECTED_HOOKS = [
   'session-start.js',
   'pre-tool-use.js',
@@ -20,8 +20,6 @@ const EXPECTED_HOOKS = [
   'todowrite-sync.js',
   'pre-compact.js',
   'config-guard.js',
-  'teammate-idle.js',
-  'task-completed.js',
 ];
 
 // 模板文件映射：hooks 模板名 → skills 模板名（artifact- 前缀）

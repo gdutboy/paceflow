@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates, VAULT_PATH, readActive } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates, VAULT_PATH, readActive, isTeammate } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -25,6 +25,15 @@ process.stdin.on('end', () => {
     toolName = parsed.tool_name || '';
     filePath = parsed.tool_input?.file_path || '';
   } catch(e) {}
+
+  // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
+  function denyOrHint(reason) {
+    if (isTeammate()) {
+      return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${reason}` } };
+    }
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } };
+  }
+  const teammateTag = isTeammate() ? '_TEAMMATE' : '';
 
   const taskFp = path.join(cwd, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
@@ -120,15 +129,9 @@ process.stdin.on('end', () => {
       } else {
         reason = `检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请先创建 Artifact 文件（spec.md / task.md / implementation_plan.md / walkthrough.md），参考 G-8 的 PACE 执行流程。`;
       }
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason
-        }
-      };
+      const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY | signal: ${paceSignal} | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: ${paceSignal} | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
       return;
     }
 
@@ -140,15 +143,9 @@ process.stdin.on('end', () => {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
         const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先在 task.md 中定义任务，获取用户批准后再写代码。`;
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason
-          }
-        };
+        const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
+        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
         return;
       }
     }
@@ -176,15 +173,9 @@ process.stdin.on('end', () => {
   // v4.3.2: C 阶段检查 — 有活跃任务但未获批准时 deny
   if (isCodeFile && isInsideProject && hasActiveTasks && !hasApproval) {
     const reason = `task.md 有待做任务但未获用户批准。请先执行 C 阶段（Check）：询问用户是否批准计划，获批后在 task.md 活跃区添加 <!-- APPROVED --> 标记或将任务标为 [/] 进行中。`;
-    const output = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: reason
-      }
-    };
+    const output = denyOrHint(reason);
     process.stdout.write(JSON.stringify(output));
-    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_C_PHASE | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_C_PHASE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
     return;
   }
 
@@ -195,15 +186,9 @@ process.stdin.on('end', () => {
       const reason = planActive === null
         ? `implementation_plan.md 不存在。请先在 A 阶段创建变更索引（CHG-YYYYMMDD-NN），标记为 [/] 进行中后再写代码。`
         : `implementation_plan.md 无进行中的变更索引（[/]）。请先将当前变更的索引状态从 [ ] 改为 [/] 后再写代码。`;
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason
-        }
-      };
+      const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_E_PHASE | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_E_PHASE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
       return;
     }
   }

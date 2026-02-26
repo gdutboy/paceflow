@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, readActive, countByStatus } = paceUtils;
+const { PACE_VERSION, isPaceProject, readActive, countByStatus, isTeammate } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -24,6 +24,11 @@ process.stdin.on('end', () => {
 
     // 非 PACE 项目：直接放行
     if (!paceSignal) {
+      return;
+    }
+
+    // v4.7: teammate 静默——避免 Agent Teams 共享任务的假阳性
+    if (isTeammate()) {
       return;
     }
 

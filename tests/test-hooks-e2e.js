@@ -321,57 +321,54 @@ test('22. 正常配置通过', () => {
 });
 
 // ============================================================
-// 8. teammate-idle.js (2)
+// 8. teammate 降级测试 (3)
 // ============================================================
-console.log('\n--- teammate-idle.js ---');
+console.log('\n--- teammate 降级 ---');
 
-test('23. 非 PACE 项目跳过', () => {
-  const dir = makeTmpDir('ti-empty');
-  const r = runHook('teammate-idle.js', { cwd: dir });
-  assert.strictEqual(r.code, 0);
-});
-
-test('24. 注入 PACE 上下文', () => {
-  const dir = makePaceProject('ti-inject', {
-    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] T-001 待办任务\n- [/] T-002 进行中任务\n\n<!-- ARCHIVE -->\n',
+test('23. pre-tool-use teammate 降级为 additionalContext', () => {
+  const dir = makePaceProject('tm-ptu', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n',
   });
-  const r = runHook('teammate-idle.js', { cwd: dir });
+  const stdin = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'app.js') } });
+  // 设置 CLAUDE_CODE_TEAM_NAME 模拟 teammate
+  const origTeam = process.env.CLAUDE_CODE_TEAM_NAME;
+  process.env.CLAUDE_CODE_TEAM_NAME = 'test-team';
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  if (origTeam === undefined) delete process.env.CLAUDE_CODE_TEAM_NAME;
+  else process.env.CLAUDE_CODE_TEAM_NAME = origTeam;
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('PACE'), '应包含 PACE');
-  assert.ok(r.stdout.includes('活跃任务'), '应包含活跃任务');
-  assert.ok(r.stdout.includes('约束提醒'), '应包含约束提醒');
+  assert.ok(r.stdout.includes('additionalContext'), '应包含 additionalContext');
+  assert.ok(!r.stdout.includes('"deny"'), 'teammate 不应 deny');
+  assert.ok(r.stdout.includes('teammate'), '应提及 teammate');
 });
 
-// ============================================================
-// 9. task-completed.js (3)
-// ============================================================
-console.log('\n--- task-completed.js ---');
+test('24. stop.js teammate 降级为 exit 0', () => {
+  const dir = makePaceProject('tm-stop', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] T-001 待办任务\n\n<!-- ARCHIVE -->\n',
+    walkthrough: `# 工作记录\n\n**时间**: ${getToday()}T10:00:00+08:00\n\n测试\n\n<!-- ARCHIVE -->\n`,
+  });
+  const origTeam = process.env.CLAUDE_CODE_TEAM_NAME;
+  process.env.CLAUDE_CODE_TEAM_NAME = 'test-team';
+  const r = runHook('stop.js', { cwd: dir, stdin: '{}' });
+  if (origTeam === undefined) delete process.env.CLAUDE_CODE_TEAM_NAME;
+  else process.env.CLAUDE_CODE_TEAM_NAME = origTeam;
+  assert.strictEqual(r.code, 0, 'teammate 应 exit 0（不阻止）');
+  assert.ok(r.stdout.includes('additionalContext'), '应包含 additionalContext');
+  assert.ok(r.stdout.includes('teammate'), '应提及 teammate');
+});
 
-test('25. 非 PACE 项目放行', () => {
-  const dir = makeTmpDir('tc-empty');
-  const r = runHook('task-completed.js', { cwd: dir });
+test('25. todowrite-sync teammate 静默', () => {
+  const dir = makePaceProject('tm-tw', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] T-001 待办任务\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({ tool_name: 'TaskCreate', tool_input: { subject: 'team task' } });
+  const origTeam = process.env.CLAUDE_CODE_TEAM_NAME;
+  process.env.CLAUDE_CODE_TEAM_NAME = 'test-team';
+  const r = runHook('todowrite-sync.js', { cwd: dir, stdin });
+  if (origTeam === undefined) delete process.env.CLAUDE_CODE_TEAM_NAME;
+  else process.env.CLAUDE_CODE_TEAM_NAME = origTeam;
   assert.strictEqual(r.code, 0);
-});
-
-test('26. 缺 VERIFIED 阻止', () => {
-  const today = getToday();
-  const dir = makePaceProject('tc-no-verified', {
-    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [x] T-001 已完成任务\n\n<!-- ARCHIVE -->\n',
-    walkthrough: `# 工作记录\n\n**时间**: ${today}T10:00:00+08:00\n\n测试记录\n\n<!-- ARCHIVE -->\n`,
-  });
-  const r = runHook('task-completed.js', { cwd: dir });
-  assert.strictEqual(r.code, 2, '应 exit 2');
-  assert.ok(r.stderr.includes('VERIFIED'), 'stderr 应含 VERIFIED');
-});
-
-test('27. 全部通过', () => {
-  const today = getToday();
-  const dir = makePaceProject('tc-pass', {
-    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [x] T-001 已完成任务\n<!-- VERIFIED -->\n\n<!-- ARCHIVE -->\n',
-    walkthrough: `# 工作记录\n\n**时间**: ${today}T10:00:00+08:00\n\n测试记录\n\n<!-- ARCHIVE -->\n`,
-  });
-  const r = runHook('task-completed.js', { cwd: dir });
-  assert.strictEqual(r.code, 0, '应 exit 0');
+  assert.strictEqual(r.stdout, '', 'teammate 应静默无输出');
 });
 
 // ============================================================

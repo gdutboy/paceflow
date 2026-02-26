@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -133,6 +133,14 @@ if (lastMessage && warnings.length === 0) {
 }
 
 if (warnings.length > 0) {
+  // v4.7: teammate 降级 — 不阻止，仅输出 additionalContext 提醒
+  if (isTeammate()) {
+    const ctx = `PACE 提醒（teammate 模式，不阻止）：${warnings.join('；')}`;
+    const output = { hookSpecificOutput: { hookEventName: "Stop", additionalContext: ctx } };
+    process.stdout.write(JSON.stringify(output));
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TEAMMATE_SOFT | team: ${process.env.CLAUDE_CODE_TEAM_NAME}\n  checks: ${warnings.join('; ')}\n`);
+    // exit 0 放行
+  } else {
   const blockCount = getBlockCount();
   const checksDetail = warnings.map((w, i) => `  [${i+1}] ${w}`).join('\n');
   if (blockCount >= MAX_BLOCKS) {
@@ -149,6 +157,7 @@ if (warnings.length > 0) {
     log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK (${blockCount + 1}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  stderr→AI: ${stderrMsg}\n`);
     process.exit(2);
   }
+  } // 关闭 isTeammate else
 } else {
   // 检查全部通过，重置计数器 + 清除降级标记
   setBlockCount(0);

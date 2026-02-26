@@ -64,28 +64,6 @@
         ]
       }
     ],
-    "TeammateIdle": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node <HOOKS_DIR>/teammate-idle.js"
-          }
-        ]
-      }
-    ],
-    "TaskCompleted": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node <HOOKS_DIR>/task-completed.js"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",

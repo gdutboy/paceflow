@@ -3,10 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v4.6.0';
+const PACE_VERSION = 'v4.7.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
+
+/** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
+function isTeammate() {
+  return !!process.env.CLAUDE_CODE_TEAM_NAME;
+}
 
 /** 统计 cwd 根目录下的代码文件数量 */
 function countCodeFiles(cwd) {
@@ -170,4 +175,4 @@ function scanRelatedNotes(projectName) {
   return results;
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, readActive, readFull, checkArchiveFormat, createTemplates, countByStatus, scanRelatedNotes };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, readActive, readFull, checkArchiveFormat, createTemplates, countByStatus, scanRelatedNotes };
