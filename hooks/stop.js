@@ -31,6 +31,14 @@ function setBlockCount(n) {
 }
 
 try {
+// v4.5: 读取 stdin 获取 last_assistant_message
+let lastMessage = '';
+try {
+  const stdinData = fs.readFileSync(0, 'utf8');
+  const parsed = JSON.parse(stdinData);
+  lastMessage = parsed.last_assistant_message || '';
+} catch(e) {} // 解析失败不影响后续
+
 // 检查 artifact 文件是否存在
 const artifactFiles = ARTIFACT_FILES;
 const existing = artifactFiles.filter(f => fs.existsSync(path.join(cwd, f)));
@@ -108,6 +116,19 @@ if (fs.existsSync(twFlag) && taskActive) {
   if (pending === 0 && done === 0) {
     log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TW_CLEANUP | TodoWrite flag 清理（无活跃任务）\n`);
     try { fs.unlinkSync(twFlag); } catch(e) {}
+  }
+}
+
+// v4.5: 交叉验证 — AI 声称完成但 artifact 不一致
+if (lastMessage && warnings.length === 0) {
+  if (/(?:任务完成|已完成所有|全部完成|归档完毕)/.test(lastMessage)) {
+    const ta = readActive(cwd, 'task.md');
+    if (ta) {
+      const { pending } = countByStatus(ta, { topLevelOnly: true });
+      if (pending > 0) {
+        warnings.push(`AI 声称完成，但 task.md 还有 ${pending} 个活跃任务`);
+      }
+    }
   }
 }
 

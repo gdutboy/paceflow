@@ -35,6 +35,29 @@ try {
 const paceSignal = isPaceProject(cwd);
 const files = ARTIFACT_FILES;
 
+// v4.5: compact 事件读取 PreCompact 快照
+if (eventType === 'compact') {
+  const snapFile = path.join(PACE_RUNTIME, 'pre-compact-state.json');
+  try {
+    if (fs.existsSync(snapFile)) {
+      const snap = JSON.parse(fs.readFileSync(snapFile, 'utf8'));
+      const lines = [`=== Compact 恢复（快照 ${snap.timestamp}）===`];
+      if (snap.artifacts?.['task.md']?.inProgress?.length > 0) {
+        lines.push('进行中任务:');
+        snap.artifacts['task.md'].inProgress.forEach(t => lines.push(`  ${t}`));
+      }
+      if (snap.artifacts?.['task.md']?.pending > 0) {
+        lines.push(`待办任务: ${snap.artifacts['task.md'].pending} 个`);
+      }
+      if (snap.runtime?.degraded) {
+        lines.push('⚠️ Stop hook 已降级');
+      }
+      process.stdout.write(lines.join('\n') + '\n\n');
+      fs.unlinkSync(snapFile); // 一次性消费
+    }
+  } catch(e) {}
+}
+
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
 if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(cwd, 'task.md'))) {
   const created = createTemplates(cwd);
@@ -100,6 +123,40 @@ if (taskFullCached) {
     }
   } catch(e) {}
 }
+
+// findings [ ] 过期提醒（每日首次 session）
+try {
+  const findingsActive = paceUtils.readActive(cwd, 'findings.md');
+  if (findingsActive) {
+    const today = new Date();
+    const yyyy = today.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    const ageFlag = path.join(PACE_RUNTIME, `findings-age-${yyyy}`);
+    if (!fs.existsSync(ageFlag)) {
+      const aged = [];
+      const openLines = findingsActive.match(/^- \[ \] .+$/gm) || [];
+      for (const line of openLines) {
+        const dm = line.match(/\[date:: (\d{4}-\d{2}-\d{2})\]/);
+        if (!dm) continue;
+        const days = Math.floor((today - new Date(dm[1])) / 86400000);
+        if (days >= 14) {
+          const title = (line.match(/^- \[ \] (.+?)(?:\s*[#\[]|$)/) || [])[1] || line.slice(6, 60);
+          aged.push({ title, days });
+        }
+      }
+      if (aged.length > 0) {
+        process.stdout.write(`\n=== Findings 过期提醒 ===\n以下 findings 超过 14 天未流转，请决定采纳 [x] 或否定 [-]：\n`);
+        aged.forEach(f => process.stdout.write(`  (${f.days}天) ${f.title}\n`));
+        process.stdout.write('\n');
+      }
+      try { fs.writeFileSync(ageFlag, '1', 'utf8'); } catch(e) {}
+      // 清理过期去重标记
+      try {
+        const flags = fs.readdirSync(PACE_RUNTIME).filter(f => f.startsWith('findings-age-') && f !== `findings-age-${yyyy}`);
+        flags.forEach(f => { try { fs.unlinkSync(path.join(PACE_RUNTIME, f)); } catch(e) {} });
+      } catch(e) {}
+    }
+  }
+} catch(e) {}
 
 // T-117: Git 状态注入（辅助跨会话上下文恢复）
 try {

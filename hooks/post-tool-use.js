@@ -86,6 +86,31 @@ process.stdin.on('end', () => {
       }
     }
 
+    // H9: CHG 完成时检查关联 findings 状态（实时 hook）
+    if (fileName === 'implementation_plan.md' && newString) {
+      const chgDone = newString.match(/^- \[x\] (CHG-\d{8}-\d{2})/gm);
+      const chgOld = oldString.match(/^- \[x\] (CHG-\d{8}-\d{2})/gm);
+      // 只检测本次新标为 [x] 的 CHG
+      if (chgDone) {
+        const oldSet = new Set((chgOld || []).map(m => m.match(/CHG-\d{8}-\d{2}/)[0]));
+        const newlyDone = chgDone.map(m => m.match(/CHG-\d{8}-\d{2}/)[0]).filter(id => !oldSet.has(id));
+        if (newlyDone.length > 0) {
+          const fa = readActive(cwd, 'findings.md');
+          if (fa) {
+            const stale = [];
+            for (const chgId of newlyDone) {
+              const re = new RegExp(`^- \\[ \\] .+\\[change:: ${chgId}\\]`, 'gm');
+              const hits = fa.match(re) || [];
+              hits.forEach(h => stale.push({ chgId, line: h.slice(6, 60) }));
+            }
+            if (stale.length > 0) {
+              warnings.push(`CHG 已完成但关联 finding 仍为 [ ]：${stale.map(s => s.chgId + ' → ' + s.line).join('；')}，请更新为 [x]`);
+            }
+          }
+        }
+      }
+    }
+
     // H7: findings.md ⚠️ 提醒 → 每会话首次
     const findingsRemindedFile = path.join(PACE_RUNTIME, 'findings-reminded');
     const findingsActive = readActive(cwd, 'findings.md');
@@ -96,8 +121,20 @@ process.stdin.on('end', () => {
         try { fs.writeFileSync(findingsRemindedFile, '1', 'utf8'); } catch(e) {}
       }
 
-      // H8: 否定决策理由提醒：编辑 findings.md 时检测"保持现状"缺理由
+      // H8: 否定决策理由提醒（增强版 v4.5）
       if (fileName === 'findings.md') {
+        // 扩展：[-] 条目理由 < 10 字
+        const skippedLines = findingsActive.match(/^- \[-\] .+$/gm) || [];
+        for (const line of skippedLines) {
+          // 提取"—"或"："后的理由部分
+          const reasonMatch = line.match(/[—:：]\s*(.+)$/);
+          const reason = reasonMatch ? reasonMatch[1].trim() : '';
+          if (reason.length < 10) {
+            warnings.push(`findings [-] 条目理由不足: "${line.slice(6, 50)}..." 请补充否定决策理由`);
+            break; // 只报第一个
+          }
+        }
+        // 原有"保持现状"检测保留
         const keepCount = (findingsActive.match(/保持现状/g) || []).length;
         if (keepCount > 0) {
           warnings.push(`findings.md 有 ${keepCount} 条"保持现状"条目，请确认已记录否定理由（为什么不做）`);
