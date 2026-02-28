@@ -36,6 +36,10 @@ SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCH
 - 新项目或技术栈变更时，根据关键词自动搜索
 - 发现跨项目可复用经验时，双写到项目 `findings.md` 和全局经验库
 
+**Corrections 捕获**：被用户纠正时（"不对"、"别这样"、"我说的是"、"错了"等），必须将纠正内容记录到 `findings.md` 的 `## Corrections 记录` 区（错误行为 + 正确做法 + 触发场景 + 根本原因）。禁止仅口头承认而不持久化。
+
+**Corrections 双写**：写入 correction 后，立即评估是否跨项目通用经验。通用经验同步写入 `knowledge/` 对应笔记（追加或新建），并在 correction 条目补 `[knowledge:: 笔记名]`；仅限本项目的补 `[knowledge:: project-only]`。
+
 ---
 
 ## G-4. 编码标准

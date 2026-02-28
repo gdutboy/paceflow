@@ -111,6 +111,22 @@ process.stdin.on('end', () => {
       }
     }
 
+    // H10: implementation_plan.md 活跃区详情归档提醒 → 每会话首次
+    const implArchiveRemindedFile = path.join(PACE_RUNTIME, 'impl-archive-reminded');
+    if (!fs.existsSync(implArchiveRemindedFile)) {
+      const planActive = readActive(cwd, 'implementation_plan.md');
+      if (planActive) {
+        const doneIndex = planActive.match(/^- \[(?:x|-)\] (CHG-\d{8}-\d{2})/gm) || [];
+        const doneIds = new Set(doneIndex.map(m => m.match(/CHG-\d{8}-\d{2}/)[0]));
+        const detailHeaders = planActive.match(/^### (CHG-\d{8}-\d{2})/gm) || [];
+        const staleDetails = detailHeaders.map(h => h.match(/CHG-\d{8}-\d{2}/)[0]).filter(id => doneIds.has(id));
+        if (staleDetails.length > 0) {
+          warnings.push(`implementation_plan.md 活跃区有 ${staleDetails.length} 个已完成变更详情未归档：${staleDetails.join(', ')}，请更新状态并移至 ARCHIVE 下方`);
+          try { fs.writeFileSync(implArchiveRemindedFile, '1', 'utf8'); } catch(e) {}
+        }
+      }
+    }
+
     // H7: findings.md ⚠️ 提醒 → 每会话首次
     const findingsRemindedFile = path.join(PACE_RUNTIME, 'findings-reminded');
     const findingsActive = readActive(cwd, 'findings.md');
@@ -123,6 +139,11 @@ process.stdin.on('end', () => {
 
       // H8: 否定决策理由提醒（增强版 v4.5）
       if (fileName === 'findings.md') {
+        // H11: Correction 双写提醒 — 检测新增 correction，提醒同步写入 knowledge/
+        if (newString && /### Correction:/.test(newString)) {
+          warnings.push('检测到新 Correction 写入 findings.md。请评估是否为跨项目通用经验：如果是，同步写入 knowledge/ 对应笔记并在 correction 条目补 [knowledge:: 笔记名]；如果仅限本项目，补 [knowledge:: project-only]');
+        }
+
         // 扩展：[-] 条目理由 < 10 字
         const skippedLines = findingsActive.match(/^- \[-\] .+$/gm) || [];
         for (const line of skippedLines) {
