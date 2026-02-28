@@ -6,17 +6,23 @@ const path = require('path');
 const PACE_VERSION = 'v4.7.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
-const VAULT_PATH = 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
+const VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
 
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
 function isTeammate() {
   return !!process.env.CLAUDE_CODE_TEAM_NAME;
 }
 
-/** 统计 cwd 根目录下的代码文件数量 */
+// W-6: 模块级缓存，避免 isPaceProject + 外部调用重复扫描目录
+let _codeCountCache = { cwd: null, count: 0 };
+
+/** 统计 cwd 根目录下的代码文件数量（同 cwd 自动缓存） */
 function countCodeFiles(cwd) {
+  if (_codeCountCache.cwd === cwd) return _codeCountCache.count;
   try {
-    return fs.readdirSync(cwd).filter(f => CODE_EXTS.some(ext => f.endsWith(ext))).length;
+    const count = fs.readdirSync(cwd).filter(f => CODE_EXTS.some(ext => f.endsWith(ext))).length;
+    _codeCountCache = { cwd, count };
+    return count;
   } catch(e) { return 0; }
 }
 
@@ -74,7 +80,8 @@ function checkArchiveFormat(cwd, filename) {
   const content = readFull(cwd, filename);
   if (!content) return null;
   const hasCorrect = /^<!-- ARCHIVE -->$/m.test(content);
-  const hasWrong = /^##\s*ARCHIVE/m.test(content) || /^#\s*ARCHIVE/m.test(content);
+  // I-6: 匹配所有级别的错误标题格式（# ARCHIVE ~ ###### ARCHIVE）
+  const hasWrong = /^#{1,6}\s+ARCHIVE/m.test(content);
   if (hasWrong && !hasCorrect) return `${filename} 使用了错误的 ARCHIVE 标记格式（应为 <!-- ARCHIVE -->）`;
   return null;
 }
@@ -97,12 +104,21 @@ function createTemplates(cwd) {
   }
   // 新项目自动创建 Obsidian Junction（模板首次创建时执行）
   if (created.length > 0 && VAULT_PATH) {
+    // S-6: .pace/ 目录自动创建 .gitignore（运行时文件不应入库）
+    try {
+      const paceDir = path.join(cwd, '.pace');
+      const gitignorePath = path.join(paceDir, '.gitignore');
+      if (!fs.existsSync(gitignorePath)) {
+        fs.mkdirSync(paceDir, { recursive: true });
+        fs.writeFileSync(gitignorePath, '*\n', 'utf8');
+      }
+    } catch(e) {}
     try {
       const projectName = path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
       const projectsDir = path.join(VAULT_PATH, 'projects');
       const junctionTarget = path.join(projectsDir, projectName);
       if (fs.existsSync(projectsDir) && !fs.existsSync(junctionTarget)) {
-        require('child_process').execSync(`cmd /c mklink /J "${junctionTarget}" "${cwd}"`, { timeout: 5000 });
+        fs.symlinkSync(cwd, junctionTarget, 'junction');
         created.push(`junction:projects/${projectName}`);
         // Home.md 追加项目入口
         const homePath = path.join(VAULT_PATH, 'Home.md');
@@ -152,7 +168,7 @@ function scanRelatedNotes(projectName) {
       for (const file of files) {
         try {
           const content = fs.readFileSync(path.join(dirPath, file), 'utf8');
-          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
           if (!fmMatch) continue;
           const fm = fmMatch[1];
           // 解析 projects 字段

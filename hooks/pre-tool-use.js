@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, createTemplates, VAULT_PATH, readActive, isTeammate } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -63,7 +63,7 @@ process.stdin.on('end', () => {
 
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && isPaceProject(cwd)) {
-    const PROTECTED_ARTIFACTS = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+    const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
     const fileName = path.basename(filePath);
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
       const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。`;

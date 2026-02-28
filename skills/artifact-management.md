@@ -124,18 +124,18 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 ### 变更状态 (Change Status)
 
 ```
-📝 规划中 ─┬─→ 🔄 进行中 ─┬─→ ✅ 完成
-           │              │
-           └─→ ❌ 废弃    └─→ ⏸️ 暂停 ─→ 🔄 进行中
+[ ] 规划中 ─┬─→ [/] 进行中 ─┬─→ [x] 完成
+            │               │
+            └─→ [-] 废弃    └─→ [!] 暂停 ─→ [/] 进行中
 ```
 
 | 状态 | 含义 | 触发条件 |
 |------|------|----------|
-| 📝 规划中 | 方案已创建，待确认 | PACE 的 A 阶段完成 |
-| 🔄 进行中 | 用户已批准，正在实施 | PACE 的 C 阶段用户确认 |
-| ✅ 完成 | 所有任务完成并验证 | PACE 的 E 阶段完成 |
-| ❌ 废弃 | 需求取消或方案作废 | 用户明确取消 |
-| ⏸️ 暂停 | 阻塞或等待外部依赖 | 用户要求暂停 |
+| `[ ]` 规划中 | 方案已创建，待确认 | PACE 的 A 阶段完成 |
+| `[/]` 进行中 | 用户已批准，正在实施 | PACE 的 C 阶段用户确认 |
+| `[x]` 完成 | 所有任务完成并验证 | PACE 的 E 阶段完成 |
+| `[-]` 废弃 | 需求取消或方案作废 | 用户明确取消 |
+| `[!]` 暂停 | 阻塞或等待外部依赖 | 用户要求暂停 |
 
 ---
 
@@ -158,7 +158,7 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 ## 变更 ID 规范
 
-遵循 **[change-management](../change-management/SKILL.md)** 中的定义。
+遵循 **[change-management](change-management.md)** 中的定义。
 
 ---
 
@@ -176,4 +176,4 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 ## 关联 Skill
 
-- **[pace-knowledge](../pace-knowledge.md)** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。
+- **[pace-knowledge](pace-knowledge.md)** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。

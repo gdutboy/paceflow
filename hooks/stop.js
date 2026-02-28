@@ -9,9 +9,22 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
+const MAX_LOG_SIZE = 512 * 1024; // W-8: 日志上限 512KB，超过则截断保留后半
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+const log = (msg) => {
+  try {
+    // W-8: 日志轮转——超过上限时截断保留后半部分
+    try {
+      const stat = fs.statSync(LOG);
+      if (stat.size > MAX_LOG_SIZE) {
+        const content = fs.readFileSync(LOG, 'utf8');
+        fs.writeFileSync(LOG, content.slice(content.length >> 1), 'utf8');
+      }
+    } catch(e) {} // 文件不存在等错误忽略
+    fs.appendFileSync(LOG, msg);
+  } catch(e) {}
+};
 const cwd = process.cwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
@@ -55,7 +68,9 @@ if (taskActive) {
   // 1. 统一使用 countByStatus（仅顶层任务）
   const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
   if (pendingCount > 0) {
-    warnings.push(`task.md 还有 ${pendingCount} 个未完成任务`);
+    // S-3: 包含进度信息（已完成/总数）
+    const total = pendingCount + doneCount;
+    warnings.push(`task.md 还有 ${pendingCount} 个未完成任务（进度 ${doneCount}/${total}）`);
   }
 
   // 2. 检查活跃区已完成项（W7 V/归档优先级，xCount 单独统计 [x] 不含 [-]）
@@ -79,14 +94,16 @@ if (taskActive) {
     warnings.push(`implementation_plan.md 仍有 [/] 进行中，但任务已全部完成`);
   }
 
-  // 4. 检查 walkthrough.md
+  // 4. 检查 walkthrough.md（C-2: matchAll 取最后日期 + W-5: 无日期分支）
   const walkActive = readActive(cwd, 'walkthrough.md');
   if (walkActive && (doneCount > 0 || pendingCount > 0)) {
-    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-    const timeMatch = walkActive.match(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/);
-    const lastDate = timeMatch ? timeMatch[1] : null;
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }); // I-5: sv-SE locale 返回 ISO 格式日期（YYYY-MM-DD），无需手动拼接
+    const allDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/g)];
+    const lastDate = allDates.length > 0 ? allDates[allDates.length - 1][1] : null;
     if (lastDate && lastDate !== today) {
       warnings.push(`walkthrough.md 最近更新是 ${lastDate}，今天的工作尚未记录`);
+    } else if (!lastDate) {
+      warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录`);
     }
   } else if (!fs.existsSync(path.join(cwd, 'walkthrough.md'))) {
     warnings.push(`walkthrough.md 不存在，缺少工作记录`);

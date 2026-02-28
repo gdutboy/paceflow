@@ -56,7 +56,7 @@ flowchart TD
 
 1. 创建/更新 `task.md`
 2. 累积更新 `implementation_plan.md`（变更索引添加 `[ ]` 条目）
-3. 读取 `skills/change-management/SKILL.md` 执行变更 ID 管理
+3. 读取 `skills/change-management.md` 执行变更 ID 管理
 4. **findings 反向关联**：如果本次变更源自 findings.md 调研结论，在对应 finding 条目补 `[change:: CHG-ID]` 并将状态更新为 `[x]`
 
 **Superpowers 衔接**：`implementation_plan.md` 活跃变更详情中引用 Superpowers plan 文件路径：
@@ -88,7 +88,7 @@ flowchart TD
 2. 累积更新 `walkthrough.md`
 3. 技术栈变更时同步更新 `spec.md`
 
-**并行执行**：标记 `[P]` 的任务可分配给 subagent 或 Agent Teams teammate 并行执行，参见 [artifact-management](../artifact-management/SKILL.md#并行任务标记-p) 中的标记规范。
+**并行执行**：标记 `[P]` 的任务可分配给 subagent 或 Agent Teams teammate 并行执行，参见 [artifact-management](artifact-management.md#并行任务标记-p) 中的标记规范。
 
 **执行中检查**：
 - 每完成 5 个子任务后，重读 `task.md` 确认方向正确

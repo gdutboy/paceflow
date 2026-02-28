@@ -32,15 +32,22 @@ process.stdin.on('end', () => {
       configStr = input;
     }
 
-    // 检测 disableAllHooks
-    if (/disableAllHooks.*true/i.test(configStr)) {
-      process.stderr.write('PACE: 禁止禁用所有 hooks（disableAllHooks），这会导致 PACE 保护完全失效。如需临时禁用，请使用 .pace/disabled 标记。\n');
-      log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: DENY | reason: disableAllHooks=true\n`);
-      process.exit(2);
+    // C-1+W-1: 检测 disableAllHooks（ConfigChange 不支持 exit 2，改用 additionalContext 强警告）
+    if (/"disableAllHooks"\s*:\s*true/.test(configStr)) {
+      const ctx = `⚠️ 严重警告：检测到 disableAllHooks=true，这会导致 PACE 保护完全失效。如需临时禁用单个项目，请使用 .pace/disabled 标记而非禁用全部 hooks。请立即撤回此配置变更。`;
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "ConfigChange",
+          additionalContext: ctx
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: WARN | reason: disableAllHooks=true\n`);
+      return;
     }
 
-    // 检测删除 PACE hook 条目
-    if (/\/pace\//i.test(configStr) && /delete|remove/i.test(configStr)) {
+    // W-2: 检测删除 PACE hook 条目（收紧：需匹配 hooks/pace/ 路径）
+    if (/hooks\/pace\//i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
       const ctx = `检测到可能删除 PACE hook 配置，请确认这是有意操作。删除后 PACE 保护将部分失效。`;
       const output = {
         hookSpecificOutput: {

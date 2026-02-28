@@ -305,12 +305,13 @@ test('20. 非 PACE 项目放行', () => {
   assert.strictEqual(r.code, 0);
 });
 
-test('21. disableAllHooks 阻止', () => {
+test('21. disableAllHooks 警告（additionalContext）', () => {
   const dir = makePaceProject('cg-disable');
-  const stdin = JSON.stringify({ disableAllHooks: true });
+  const stdin = JSON.stringify({ tool_input: { "disableAllHooks": true } });
   const r = runHook('config-guard.js', { cwd: dir, stdin });
-  assert.strictEqual(r.code, 2, '应 exit 2');
-  assert.ok(r.stderr.includes('禁止'), 'stderr 应含"禁止"');
+  assert.strictEqual(r.code, 0, 'ConfigChange 不支持 exit 2，应 exit 0');
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('严重警告'), 'additionalContext 应含"严重警告"');
 });
 
 test('22. 正常配置通过', () => {

@@ -45,10 +45,11 @@ paceflow/
 │   ├── config-guard.js       # ConfigChange — 配置保护
 │   ├── pre-compact.js        # PreCompact — Compact 快照
 │   └── templates/            # 5 个 Artifact 模板
-├── skills/                   # 3 个 Skill 定义
+├── skills/                   # 4 个 Skill 定义
 │   ├── pace-workflow.md      # PACE P-A-C-E-V 流程
 │   ├── artifact-management.md # Artifact 文件管理规则
-│   └── change-management.md  # 变更 ID 生成与管理
+│   ├── change-management.md  # 变更 ID 生成与管理
+│   └── pace-knowledge.md     # Obsidian 知识库笔记管理
 ├── config/
 │   └── settings-hooks-excerpt.json  # settings.json hooks 配置示例
 ├── rules/
@@ -232,7 +233,7 @@ blockCount < 3 ?
 
 | 检查 | 行为 | 说明 |
 |------|------|------|
-| disableAllHooks=true | exit 2 阻止 | 防止用户意外禁用全部 hook |
+| disableAllHooks=true | additionalContext ⚠️ 强警告 | 防止用户意外禁用全部 hook |
 | 删除 PACE hook 配置 | additionalContext 提醒 | 检测到 `/pace/` + delete/remove 关键词 |
 
 ### 3.8 pre-compact.js（PreCompact）
@@ -302,6 +303,17 @@ blockCount < 3 ?
 - 变更索引格式（`- [状态] CHG-ID 标题 #change [tasks:: T-NNN~T-NNN]`）
 - 各 PACE 阶段的变更管理动作
 - findings 反向关联（A 阶段第 4 步回写 `[change:: CHG-ID]`）
+
+### 4.4 pace-knowledge（Obsidian 知识库笔记管理）
+
+**触发条件**：操作 Obsidian Vault 的 `thoughts/` 或 `knowledge/` 目录时自动激活
+
+**内容**：
+- `thoughts/` 笔记：酝酿中的想法（`discussing` → `concluded` → `archived`）
+- `knowledge/` 笔记：跨项目可复用经验（从项目 findings 中提炼）
+- frontmatter 必含 `summary`/`status`/`projects` 字段
+- L0/L1/L2 信息分层：`summary`（~50 tokens）→ `## 摘要`（~300-500 tokens）→ `## 详情`（不限）
+- SessionStart 自动注入 L0 匹配结果
 
 ---
 
@@ -621,7 +633,7 @@ summary: "[一句话项目描述]"
 
 | 常量 | 值 | 说明 |
 |------|-----|------|
-| `PACE_VERSION` | `'v4.7.0'` | 集中版本号，6 脚本引用 |
+| `PACE_VERSION` | `'v4.7.0'` | 集中版本号，其他脚本引用 |
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
 | `VAULT_PATH` | `'C:/Users/Xiao/OneDrive/Documents/Obsidian'` | Obsidian Vault 路径 |

@@ -17,11 +17,11 @@ activation-conditions:
 
 当检测到复杂任务时，执行以下步骤：
 
-1. **检查 `implementation_plan.md`** — 是否存在？使用 [templates/implementation_plan.md](templates/implementation_plan.md) 创建
+1. **检查 `implementation_plan.md`** — 是否存在？使用 [templates/change-implementation_plan.md](templates/change-implementation_plan.md) 创建
 2. **生成变更 ID** — 格式 `CHG-YYYYMMDD-NN`
-3. **更新索引表** — 插入新条目，状态设为 📝 规划中
-4. **追加变更详情** — 使用 [templates/change_record.md](templates/change_record.md) 模板
-5. **随任务进度更新状态** — 批准后 🔄 进行中，完成后 ✅ 完成
+3. **更新索引表** — 插入新条目，状态设为 `[ ]` 规划中
+4. **追加变更详情** — 使用 [templates/change-record.md](templates/change-record.md) 模板
+5. **随任务进度更新状态** — 批准后 `[/]` 进行中，完成后 `[x]` 完成
 
 ---
 
@@ -48,7 +48,7 @@ NN         = 当天序号（两位数，从 01 开始）
 
 ## 状态流转
 
-详细状态定义与流转图请参阅 **[artifact-management](../artifact-management/SKILL.md#变更状态-change-status)**。
+详细状态定义与流转图请参阅 **[artifact-management](artifact-management.md#变更状态-change-status)**。
 
 ---
 
@@ -59,9 +59,9 @@ NN         = 当天序号（两位数，从 01 开始）
 | PACE 阶段 | 自动执行动作 |
 |-----------|-------------|
 | **P (Plan)** | 分析任务，判断是否需要变更 ID |
-| **A (Artifact)** | ① 生成变更 ID<br>② 更新索引表（📝 规划中）<br>③ 追加变更详情<br>④ 回写 findings `[change:: CHG-ID]` + 状态 `[x]` |
-| **C (Check)** | 用户确认后，状态改为 🔄 进行中 |
-| **E (Execute)** | ① 关联 task.md 任务<br>② 完成后状态改为 ✅ 完成<br>③ 添加完成标记<br>④ 写入 walkthrough.md |
+| **A (Artifact)** | ① 生成变更 ID<br>② 更新索引表（`[ ]` 规划中）<br>③ 追加变更详情<br>④ 回写 findings `[change:: CHG-ID]` + 状态 `[x]` |
+| **C (Check)** | 用户确认后，状态改为 `[/]` 进行中 |
+| **E (Execute)** | ① 关联 task.md 任务<br>② 完成后状态改为 `[x]` 完成<br>③ 添加完成标记<br>④ 写入 walkthrough.md |
 
 ---
 
@@ -142,14 +142,8 @@ NN         = 当天序号（两位数，从 01 开始）
 
 ## 模板文件
 
-- [templates/implementation_plan.md](templates/implementation_plan.md) — 完整 Implementation Plan 模板
-- [templates/change_record.md](templates/change_record.md) — 单条变更记录模板
-
----
-
-## 使用示例
-
-见 [examples/example_workflow.md](examples/example_workflow.md)
+- [templates/change-implementation_plan.md](templates/change-implementation_plan.md) — 完整 Implementation Plan 模板
+- [templates/change-record.md](templates/change-record.md) — 单条变更记录模板
 
 ---
 
@@ -157,9 +151,8 @@ NN         = 当天序号（两位数，从 01 开始）
 
 任务完成前必须验证：
 
-- [ ] 变更索引表状态已更新为 ✅ 完成
+- [ ] 变更索引表状态已更新为 `[x]` 完成
 - [ ] 关联任务已填写
-- [ ] 统计概览数值正确
 - [ ] 完成标记已添加（含时间戳）
 - [ ] walkthrough.md 已记录
 - [ ] **findings.md 关联条目状态已更新**（源自 finding 的变更须回写 `[x]`）
