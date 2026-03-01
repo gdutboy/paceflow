@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_LOG_SIZE = 512 * 1024; // W-8: 日志上限 512KB，超过则截断保留后半
@@ -54,7 +54,8 @@ try {
 
 // 检查 artifact 文件是否存在
 const artifactFiles = ARTIFACT_FILES;
-const existing = artifactFiles.filter(f => fs.existsSync(path.join(cwd, f)));
+const artDir = getArtifactDir(cwd);
+const existing = artifactFiles.filter(f => fs.existsSync(path.join(artDir, f)));
 
 const taskActive = readActive(cwd, 'task.md');
 
@@ -105,7 +106,7 @@ if (taskActive) {
     } else if (!lastDate) {
       warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录`);
     }
-  } else if (!fs.existsSync(path.join(cwd, 'walkthrough.md'))) {
+  } else if (!fs.existsSync(path.join(artDir, 'walkthrough.md'))) {
     warnings.push(`walkthrough.md 不存在，缺少工作记录`);
   }
 

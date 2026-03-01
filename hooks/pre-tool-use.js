@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -35,7 +35,8 @@ process.stdin.on('end', () => {
   }
   const teammateTag = isTeammate() ? '_TEAMMATE' : '';
 
-  const taskFp = path.join(cwd, 'task.md');
+  const artDir = getArtifactDir(cwd);
+  const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
 
   // 读取活跃区内容（复用于 hasActiveTasks + hasApproval + inject）
@@ -55,11 +56,35 @@ process.stdin.on('end', () => {
 
   const isCodeFile = CODE_EXTS.some(ext => filePath.endsWith(ext));
 
-  // v4.3.1: 项目外文件豁免
+  // v4.3.1: 项目外文件豁免（CWD 和 vault artifact 目录均视为"项目内"）
   const normalizedFile = filePath.replace(/\\/g, '/').toLowerCase();
   const normalizedCwd = cwd.replace(/\\/g, '/').toLowerCase();
   const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
-  const isInsideProject = normalizedFile.startsWith(cwdWithSlash);
+  let isInsideProject = normalizedFile.startsWith(cwdWithSlash);
+  if (!isInsideProject && artDir !== cwd) {
+    const normalizedArtDir = artDir.replace(/\\/g, '/').toLowerCase();
+    const artDirWithSlash = normalizedArtDir.endsWith('/') ? normalizedArtDir : normalizedArtDir + '/';
+    isInsideProject = normalizedFile.startsWith(artDirWithSlash);
+  }
+
+  // v4.8: artifact 已迁移到 vault 时，拦截对 CWD 中 artifact 文件的 Write/Edit 并重定向
+  if ((toolName === 'Write' || toolName === 'Edit') && artDir !== cwd && isPaceProject(cwd)) {
+    const fileName = path.basename(filePath);
+    if (ARTIFACT_FILES.includes(fileName) && normalizedFile.startsWith(cwdWithSlash)) {
+      const correctPath = path.join(artDir, fileName).replace(/\\/g, '/');
+      const reason = `artifact 文件已迁移到 Obsidian vault。请将 file_path 修改为：${correctPath}`;
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_REDIRECT | tool: ${toolName} | file: ${filePath}\n  redirect: ${correctPath}\n`);
+      return;
+    }
+  }
 
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && isPaceProject(cwd)) {
@@ -77,6 +102,24 @@ process.stdin.on('end', () => {
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_WRITE_ARTIFACT | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
       return;
+    }
+  }
+
+  // T-206: Write 新建 artifact 文件时，注入对应模板内容引导格式
+  if (toolName === 'Write' && isInsideProject && isPaceProject(cwd)) {
+    const fileName = path.basename(filePath);
+    if (ARTIFACT_FILES.includes(fileName) && !fs.existsSync(path.join(artDir, fileName))) {
+      const TEMPLATES_DIR = path.join(__dirname, 'templates');
+      const tmpl = path.join(TEMPLATES_DIR, fileName);
+      if (fs.existsSync(tmpl)) {
+        try {
+          const tmplContent = fs.readFileSync(tmpl, 'utf8');
+          const ctx = `新建 ${fileName}：请严格按照以下官方模板格式，保留双区结构（<!-- ARCHIVE --> 分隔符）和注释说明：\n\n${tmplContent}`;
+          const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: ctx } };
+          process.stdout.write(JSON.stringify(output));
+          return;
+        } catch(e) {}
+      }
     }
   }
 

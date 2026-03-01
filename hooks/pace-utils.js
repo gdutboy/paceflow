@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v4.7.0';
+const PACE_VERSION = 'v4.8.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
@@ -11,6 +11,33 @@ const VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Docume
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
 function isTeammate() {
   return !!process.env.CLAUDE_CODE_TEAM_NAME;
+}
+
+/** 从 cwd 提取项目名（小写+连字符格式） */
+function getProjectName(cwd) {
+  return path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
+ * 获取 artifact 文件的实际存储目录
+ * 优先级：vault 有 artifact → vault | CWD 有 artifact → CWD | 新项目 → vault（默认）| 无 vault → CWD
+ * @param {string} cwd - 当前工作目录
+ * @returns {string} artifact 目录路径
+ */
+function getArtifactDir(cwd) {
+  if (!VAULT_PATH) return cwd;
+  const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+  try {
+    // vault 有 artifact → vault（迁移后）
+    if (fs.existsSync(vaultDir) &&
+        ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) {
+      return vaultDir;
+    }
+  } catch(e) {}
+  // CWD 有 artifact → CWD（未迁移项目，向后兼容）
+  if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return cwd;
+  // 新项目 → vault（默认目标）
+  return vaultDir;
 }
 
 // W-6: 模块级缓存，避免 isPaceProject + 外部调用重复扫描目录
@@ -47,8 +74,15 @@ function isPaceProject(cwd) {
   try {
     // T-080: 豁免信号（最高优先级）— 用户主动禁用 PACE（.pace/disabled）
     if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
-    // 信号 1（最强）：已有任何 PACE artifact 文件
+    // 信号 1（最强）：已有任何 PACE artifact 文件（CWD 或 vault）
     if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return 'artifact';
+    if (VAULT_PATH) {
+      const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+      try {
+        if (fs.existsSync(vaultDir) &&
+            ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) return 'artifact';
+      } catch(e) {}
+    }
     // 信号 2（强）：Superpowers plan 文件
     if (hasPlanFiles(cwd)) return 'superpowers';
     // 信号 3（强）：手动激活标记
@@ -59,18 +93,20 @@ function isPaceProject(cwd) {
   return false;
 }
 
-/** 读取文件活跃区（<!-- ARCHIVE --> 上方内容） */
+/** 读取文件活跃区（<!-- ARCHIVE --> 上方内容），artifact 文件自动解析 vault 目录 */
 function readActive(cwd, filename) {
-  const fp = path.join(cwd, filename);
+  const dir = ARTIFACT_FILES.includes(filename) ? getArtifactDir(cwd) : cwd;
+  const fp = path.join(dir, filename);
   if (!fs.existsSync(fp)) return null;
   const content = fs.readFileSync(fp, 'utf8');
   const m = content.match(/^<!-- ARCHIVE -->$/m);
   return m ? content.slice(0, m.index) : content;
 }
 
-/** 读取文件全文 */
+/** 读取文件全文，artifact 文件自动解析 vault 目录 */
 function readFull(cwd, filename) {
-  const fp = path.join(cwd, filename);
+  const dir = ARTIFACT_FILES.includes(filename) ? getArtifactDir(cwd) : cwd;
+  const fp = path.join(dir, filename);
   if (!fs.existsSync(fp)) return null;
   return fs.readFileSync(fp, 'utf8');
 }
@@ -87,52 +123,47 @@ function checkArchiveFormat(cwd, filename) {
 }
 
 /**
- * T-075: 从模板目录复制缺失的 artifact 文件到 cwd
+ * 确保 PACE 项目基础设施就绪（幂等）
+ * - .pace/.gitignore（运行时文件不入库）
+ * - vault 项目目录存在（artifact 存储位置）
+ * @param {string} cwd - 当前工作目录
+ */
+function ensureProjectInfra(cwd) {
+  // .pace/.gitignore
+  try {
+    const paceDir = path.join(cwd, '.pace');
+    const gitignorePath = path.join(paceDir, '.gitignore');
+    if (!fs.existsSync(gitignorePath)) {
+      fs.mkdirSync(paceDir, { recursive: true });
+      fs.writeFileSync(gitignorePath, '*\n', 'utf8');
+    }
+  } catch(e) {}
+  // vault 项目目录
+  if (!VAULT_PATH) return;
+  try {
+    const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+    fs.mkdirSync(vaultDir, { recursive: true });
+  } catch(e) {}
+}
+
+/**
+ * T-075: 从模板目录复制缺失的 artifact 文件到 artifact 目录（vault 或 cwd）
  * @param {string} cwd - 当前工作目录
  * @returns {string[]} 创建的文件名列表
  */
 function createTemplates(cwd) {
   const TEMPLATES_DIR = path.join(__dirname, 'templates');
+  const artDir = getArtifactDir(cwd);
+  // 确保目标目录存在（vault 模式下可能尚未创建）
+  try { fs.mkdirSync(artDir, { recursive: true }); } catch(e) {}
   const created = [];
   for (const file of ARTIFACT_FILES) {
-    const target = path.join(cwd, file);
+    const target = path.join(artDir, file);
     const tmpl = path.join(TEMPLATES_DIR, file);
     if (!fs.existsSync(target) && fs.existsSync(tmpl)) {
       fs.copyFileSync(tmpl, target);
       created.push(file);
     }
-  }
-  // 新项目自动创建 Obsidian Junction（模板首次创建时执行）
-  if (created.length > 0 && VAULT_PATH) {
-    // S-6: .pace/ 目录自动创建 .gitignore（运行时文件不应入库）
-    try {
-      const paceDir = path.join(cwd, '.pace');
-      const gitignorePath = path.join(paceDir, '.gitignore');
-      if (!fs.existsSync(gitignorePath)) {
-        fs.mkdirSync(paceDir, { recursive: true });
-        fs.writeFileSync(gitignorePath, '*\n', 'utf8');
-      }
-    } catch(e) {}
-    try {
-      const projectName = path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
-      const projectsDir = path.join(VAULT_PATH, 'projects');
-      const junctionTarget = path.join(projectsDir, projectName);
-      if (fs.existsSync(projectsDir) && !fs.existsSync(junctionTarget)) {
-        fs.symlinkSync(cwd, junctionTarget, 'junction');
-        created.push(`junction:projects/${projectName}`);
-        // Home.md 追加项目入口
-        const homePath = path.join(VAULT_PATH, 'Home.md');
-        try {
-          const home = fs.readFileSync(homePath, 'utf8');
-          const displayName = path.basename(cwd);
-          const entry = `- [[projects/${projectName}/spec|${displayName}]]`;
-          if (!home.includes(`projects/${projectName}/`)) {
-            const updated = home.replace(/\n## 酝酿中/, `${entry}\n\n## 酝酿中`);
-            if (updated !== home) fs.writeFileSync(homePath, updated, 'utf8');
-          }
-        } catch(e2) {}
-      }
-    } catch(e) {}
   }
   return created;
 }
@@ -155,7 +186,7 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
 /**
  * 扫描 thoughts/ 和 knowledge/ 中与指定项目相关的笔记
  * 解析 frontmatter 的 projects/summary/status 字段，返回 L0 摘要
- * @param {string} projectName - 当前项目名（小写连字符格式）
+ * @param {string} projectName - 当前项目名（小写连字符格式，或由 getProjectName 生成）
  * @returns {Array<{title: string, summary: string, status: string}>}
  */
 function scanRelatedNotes(projectName) {
@@ -191,4 +222,4 @@ function scanRelatedNotes(projectName) {
   return results;
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, readActive, readFull, checkArchiveFormat, createTemplates, countByStatus, scanRelatedNotes };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes };

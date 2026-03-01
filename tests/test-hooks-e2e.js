@@ -13,6 +13,12 @@ let passed = 0;
 let failed = 0;
 let tmpDirs = [];
 
+// 全局 VAULT_PATH 隔离：runHook 子进程继承此环境变量，避免在真实 Obsidian vault 创建垃圾 junction
+const _origVaultPath = process.env.PACE_VAULT_PATH;
+const _vaultTmpDir = path.join(os.tmpdir(), `pace-e2e-vault-${Date.now()}`);
+fs.mkdirSync(path.join(_vaultTmpDir, 'projects'), { recursive: true });
+process.env.PACE_VAULT_PATH = _vaultTmpDir;
+
 // --- 工具函数 ---
 
 function makeTmpDir(label) {
@@ -23,6 +29,10 @@ function makeTmpDir(label) {
 }
 
 function cleanup() {
+  // 恢复全局 VAULT_PATH
+  if (_origVaultPath === undefined) delete process.env.PACE_VAULT_PATH;
+  else process.env.PACE_VAULT_PATH = _origVaultPath;
+  try { fs.rmSync(_vaultTmpDir, { recursive: true, force: true }); } catch (e) {}
   for (const dir of tmpDirs) {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   }
@@ -370,6 +380,131 @@ test('25. todowrite-sync teammate 静默', () => {
   else process.env.CLAUDE_CODE_TEAM_NAME = origTeam;
   assert.strictEqual(r.code, 0);
   assert.strictEqual(r.stdout, '', 'teammate 应静默无输出');
+});
+
+// ============================================================
+// 9. 基础设施解耦 + 模板引导 (3)
+// ============================================================
+console.log('\n--- 基础设施解耦 + 模板引导 ---');
+
+test('26. ensureProjectInfra 幂等：artifact 存在但无 .pace', () => {
+  const dir = makePaceProject('infra-idempotent');
+  // artifact 已存在（makePaceProject 创建了 task.md），但无 .pace 目录
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', '.gitignore')), '.gitignore 不应预先存在');
+  // 重定向 VAULT_PATH 到临时目录，避免污染真实 Obsidian vault
+  const origVault = process.env.PACE_VAULT_PATH;
+  process.env.PACE_VAULT_PATH = dir;
+  // 清除模块缓存以使新 VAULT_PATH 生效
+  delete require.cache[require.resolve(path.join(HOOKS_DIR, 'pace-utils'))];
+  const paceUtils = require(path.join(HOOKS_DIR, 'pace-utils'));
+  paceUtils.ensureProjectInfra(dir);
+  assert.ok(fs.existsSync(path.join(dir, '.pace', '.gitignore')), '.gitignore 应被创建');
+  // 二次调用不应报错（幂等）
+  paceUtils.ensureProjectInfra(dir);
+  assert.ok(fs.existsSync(path.join(dir, '.pace', '.gitignore')), '二次调用后 .gitignore 仍存在');
+  // 恢复环境变量 + 清除缓存
+  if (origVault === undefined) delete process.env.PACE_VAULT_PATH;
+  else process.env.PACE_VAULT_PATH = origVault;
+  delete require.cache[require.resolve(path.join(HOOKS_DIR, 'pace-utils'))];
+});
+
+test('27. session-start paceSignal=artifact → .gitignore 仍创建', () => {
+  const dir = makePaceProject('ss-infra', {
+    specContent: '# Spec\n\ntest\n\n<!-- ARCHIVE -->\n',
+  });
+  // artifact 信号激活但无 .pace 目录
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', '.gitignore')), '.gitignore 不应预先存在');
+  const r = runHook('session-start.js', { cwd: dir, stdin: '{"type":"startup"}' });
+  assert.strictEqual(r.code, 0);
+  assert.ok(fs.existsSync(path.join(dir, '.pace', '.gitignore')), 'session-start 应创建 .gitignore');
+});
+
+test('28. pre-tool-use Write 新建 artifact → 模板引导', () => {
+  // 只有 spec.md 存在（触发 artifact 信号），task.md 不存在
+  const dir = makeTmpDir('ptu-tmpl');
+  fs.writeFileSync(path.join(dir, 'spec.md'), '# Spec\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const stdin = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: path.join(dir, 'task.md') } });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('additionalContext'), '应包含 additionalContext');
+  assert.ok(r.stdout.includes('<!-- ARCHIVE -->'), '模板内容应含 ARCHIVE 标记');
+  assert.ok(r.stdout.includes('新建 task.md'), '应提及新建文件名');
+  assert.ok(!r.stdout.includes('"deny"'), '不应 deny（是引导不是阻止）');
+});
+
+// ============================================================
+// 10. Vault artifact 存储迁移 (4)
+// ============================================================
+console.log('\n--- Vault artifact 存储迁移 ---');
+
+/** 创建 vault-only PACE 项目（artifact 仅在 vault，CWD 无 artifact） */
+function makeVaultProject(label, opts = {}) {
+  const dir = makeTmpDir(label);
+  const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
+  const vaultProjDir = path.join(_vaultTmpDir, 'projects', projectName);
+  fs.mkdirSync(vaultProjDir, { recursive: true });
+  const taskContent = opts.taskContent || '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n';
+  fs.writeFileSync(path.join(vaultProjDir, 'task.md'), taskContent, 'utf8');
+  if (opts.specContent) fs.writeFileSync(path.join(vaultProjDir, 'spec.md'), opts.specContent, 'utf8');
+  if (opts.implPlan) fs.writeFileSync(path.join(vaultProjDir, 'implementation_plan.md'), opts.implPlan, 'utf8');
+  if (opts.walkthrough) fs.writeFileSync(path.join(vaultProjDir, 'walkthrough.md'), opts.walkthrough, 'utf8');
+  if (opts.paceRuntime) {
+    fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+    for (const [name, content] of Object.entries(opts.paceRuntime)) {
+      fs.writeFileSync(path.join(dir, '.pace', name), content, 'utf8');
+    }
+  }
+  return { cwd: dir, vaultDir: vaultProjDir };
+}
+
+test('29. Write artifact 到 CWD → deny + 重定向到 vault', () => {
+  const { cwd: dir, vaultDir } = makeVaultProject('vault-write-redirect', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [/] CHG-20260301-01 测试 #change\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: path.join(dir, 'task.md') } });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), '应 deny 写入 CWD');
+  assert.ok(r.stdout.includes('迁移'), '应提及迁移');
+  assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')), '应包含 vault 路径');
+});
+
+test('30. Edit artifact 到 CWD → deny + 重定向到 vault', () => {
+  const { cwd: dir, vaultDir } = makeVaultProject('vault-edit-redirect');
+  // CWD 中放一个旧的 task.md（模拟迁移残留）
+  fs.writeFileSync(path.join(dir, 'task.md'), '# old\n', 'utf8');
+  const stdin = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'task.md') } });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  // 注意：CWD 也有 artifact，getArtifactDir 优先检查 vault → vault 有 → artDir=vault → artDir !== cwd → 触发重定向
+  // 但实际上 getArtifactDir 先检查 vault，vault 有 → 返回 vault。CWD 也有 artifact 但 vault 优先。
+  assert.ok(r.stdout.includes('"deny"'), '应 deny 编辑 CWD artifact');
+  assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')), '应包含正确 vault 路径');
+});
+
+test('31. session-start 注入 artifact 目录路径', () => {
+  const { cwd: dir, vaultDir } = makeVaultProject('vault-ss-inject', {
+    specContent: '# Spec\n\ntest\n\n<!-- ARCHIVE -->\n',
+  });
+  const r = runHook('session-start.js', { cwd: dir, stdin: '{"type":"startup"}' });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('=== Artifact 目录 ==='), '应注入 artifact 目录段');
+  assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')), '路径应指向 vault');
+  assert.ok(r.stdout.includes('=== task.md ==='), '应注入 task.md 内容');
+});
+
+test('32. getArtifactDir 无 VAULT_PATH → fallback CWD', () => {
+  const origVault = process.env.PACE_VAULT_PATH;
+  process.env.PACE_VAULT_PATH = '';
+  delete require.cache[require.resolve(path.join(HOOKS_DIR, 'pace-utils'))];
+  const pu = require(path.join(HOOKS_DIR, 'pace-utils'));
+  const dir = makeTmpDir('no-vault');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# test\n', 'utf8');
+  assert.strictEqual(pu.getArtifactDir(dir), dir, '无 VAULT_PATH 应 fallback 到 CWD');
+  // 恢复
+  process.env.PACE_VAULT_PATH = origVault || _vaultTmpDir;
+  delete require.cache[require.resolve(path.join(HOOKS_DIR, 'pace-utils'))];
 });
 
 // ============================================================

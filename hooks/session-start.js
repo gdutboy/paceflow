@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, scanRelatedNotes } = paceUtils;
+const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -35,6 +35,7 @@ try {
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
 const files = ARTIFACT_FILES;
+const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
 
 // v4.5: compact 事件读取 PreCompact 快照
 if (eventType === 'compact') {
@@ -59,8 +60,13 @@ if (eventType === 'compact') {
   } catch(e) {}
 }
 
+// T-204: 基础设施幂等确保（junction + .gitignore），不依赖模板是否创建
+if (paceSignal) {
+  try { ensureProjectInfra(cwd); } catch(e) {}
+}
+
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
-if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(cwd, 'task.md'))) {
+if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
   if (created.length > 0) {
     log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: CREATE_TEMPLATES | signal: ${paceSignal} | files: ${created.join(', ')}\n`);
@@ -72,7 +78,7 @@ const found = [];
 let taskFullCached = null;
 
 for (const file of files) {
-  const fp = path.join(cwd, file);
+  const fp = path.join(artDir, file);
   if (!fs.existsSync(fp)) continue;
 
   // v4.3.4: 单次读取消除双重 I/O
@@ -92,8 +98,13 @@ for (const file of files) {
   found.push(`${file}(${output.length})`);
 }
 
+// v4.8: artifact 存储在 vault 时，注入目录路径指引 AI 读写
+if (artDir !== cwd && found.length > 0) {
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${artDir.replace(/\\/g, '/')}/\n请使用此路径读写 artifact 文件。\n\n`);
+}
+
 // v4.3.1: 跨会话提醒 — 检测归档区中跳过的任务（复用缓存）
-const taskFp = path.join(cwd, 'task.md');
+const taskFp = path.join(artDir, 'task.md');
 if (!taskFullCached && fs.existsSync(taskFp)) {
   try { taskFullCached = fs.readFileSync(taskFp, 'utf8'); } catch(e) {}
 }
@@ -172,7 +183,7 @@ try {
 // 相关 thoughts/knowledge 注入（compact 不注入，保持轻量）
 if (eventType !== 'compact') {
   try {
-    const projectName = path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
+    const projectName = getProjectName(cwd);
     const notes = scanRelatedNotes(projectName);
     if (notes.length > 0) {
       process.stdout.write(`=== 相关讨论 (thoughts/) ===\n`);

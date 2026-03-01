@@ -8,7 +8,7 @@ const path = require('path');
 const os = require('os');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName } = paceUtils;
 
 let passed = 0;
 let failed = 0;
@@ -163,6 +163,59 @@ test('错误格式 ## ARCHIVE → 返回错误消息', () => {
 test('文件不存在 → null', () => {
   const dir = makeTmpDir('caf-missing');
   assert.strictEqual(checkArchiveFormat(dir, 'nonexistent.md'), null);
+});
+
+// ============================================================
+// 5. getProjectName() — 2 个测试
+// ============================================================
+console.log('\n--- getProjectName ---');
+
+test('正常目录名 → 小写连字符', () => {
+  assert.strictEqual(getProjectName('/foo/My Project'), 'my-project');
+});
+
+test('已小写无空格 → 原样返回', () => {
+  assert.strictEqual(getProjectName('/foo/paceflow-hooks'), 'paceflow-hooks');
+});
+
+// ============================================================
+// 6. getArtifactDir() — 4 个测试
+// ============================================================
+console.log('\n--- getArtifactDir ---');
+
+test('CWD 有 artifact → 返回 CWD', () => {
+  const dir = makeTmpDir('gad-cwd');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# test\n');
+  // getArtifactDir 先检查 vault，vault 无 artifact → 检查 CWD → 有 → 返回 CWD
+  assert.strictEqual(getArtifactDir(dir), dir);
+});
+
+test('vault 有 artifact → 返回 vault', () => {
+  const dir = makeTmpDir('gad-vault');
+  const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  fs.mkdirSync(vaultDir, { recursive: true });
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# test\n');
+  tmpDirs.push(vaultDir); // 清理
+  assert.strictEqual(getArtifactDir(dir), vaultDir);
+});
+
+test('vault 和 CWD 都有 → vault 优先', () => {
+  const dir = makeTmpDir('gad-both');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# cwd\n');
+  const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  fs.mkdirSync(vaultDir, { recursive: true });
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# vault\n');
+  tmpDirs.push(vaultDir);
+  assert.strictEqual(getArtifactDir(dir), vaultDir);
+});
+
+test('新项目（无 artifact）→ vault 目录', () => {
+  const dir = makeTmpDir('gad-new');
+  const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
+  const expected = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  assert.strictEqual(getArtifactDir(dir), expected);
 });
 
 // ============================================================
