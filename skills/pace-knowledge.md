@@ -153,4 +153,4 @@ CLI 通过 IPC 与 Obsidian 通信，提供比 fs 更安全的笔记操作。MCP
 
 Obsidian 未运行或 CLI 不可用时，回退到 fs 直接操作（Read/Write/Edit 工具）。判断方式：
 - MCP 工具调用失败 → 回退 fs
-- Hook 层（pace-utils/session-start 等）始终使用 fs，不依赖 CLI（延迟 <5ms vs CLI 100-500ms）
+- Hook 层读取操作始终使用 fs（延迟 <5ms vs CLI 100-500ms），仅 post-tool-use H12 索引刷新用 fire-and-forget spawn 调用 CLI

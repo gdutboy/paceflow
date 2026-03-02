@@ -508,7 +508,7 @@ test('32. getArtifactDir 无 VAULT_PATH → fallback CWD', () => {
 });
 
 // ============================================================
-// 9. Obsidian CLI 索引刷新 (2)
+// 10. Obsidian CLI 索引刷新 (3)
 // ============================================================
 console.log('\n--- Obsidian CLI 索引刷新 ---');
 
@@ -533,6 +533,19 @@ test('34. post-tool-use 非 artifact 文件 → 无 cli-refresh-done flag', () =
   const r = runHook('post-tool-use.js', { cwd: dir, stdin });
   assert.strictEqual(r.code, 0);
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'cli-refresh-done')), 'non-artifact 不应触发 refresh');
+});
+
+test('35. post-tool-use artifact 在 vault 外（CWD）→ 无 cli-refresh-done flag', () => {
+  const { cwd: dir } = makeVaultProject('cli-outside-vault', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
+  });
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  // artifact 路径在 CWD 内而非 vault 内
+  const taskPath = path.join(dir, 'task.md').replace(/\\/g, '/');
+  const stdin = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: taskPath, old_string: 'x', new_string: 'y' } });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'cli-refresh-done')), 'vault 外 artifact 不应触发 CLI refresh');
 });
 
 // ============================================================

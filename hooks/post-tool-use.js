@@ -176,16 +176,18 @@ process.stdin.on('end', () => {
   }
 
   // H12: Obsidian 索引刷新 — artifact 写入后异步触发（每会话 1 次，fire-and-forget）
+  // 无论 CLI 是否成功，每会话只触发一次（flag 在 spawn 后立即写入）
   const cliRefreshFile = path.join(PACE_RUNTIME, 'cli-refresh-done');
   if (isArtifactEdit && filePath && VAULT_PATH && !fs.existsSync(cliRefreshFile)) {
     try {
-      const normFile = filePath.replace(/\\/g, '/');
-      const normVault = VAULT_PATH.replace(/\\/g, '/');
+      // Windows 大小写不敏感，比较时统一小写（与 pre-tool-use.js 一致）
+      const normFile = filePath.replace(/\\/g, '/').toLowerCase();
+      const normVault = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
       if (normFile.startsWith(normVault + '/')) {
         const relPath = path.relative(VAULT_PATH, filePath).replace(/\\/g, '/');
         const { spawn } = require('child_process');
         // fire-and-forget：CLI 读取文件促进 Obsidian 感知外部变更
-        const child = spawn('obsidian', ['read', `file=${relPath}`], {
+        const child = spawn('obsidian', ['read', '--file', relPath], {
           detached: true,
           stdio: 'ignore',
           windowsHide: true
@@ -194,7 +196,7 @@ process.stdin.on('end', () => {
         fs.writeFileSync(cliRefreshFile, '1', 'utf8');
       }
     } catch(e) {
-      // CLI 不可用（未安装/Obsidian 未运行），静默跳过
+      // CLI 不可用（未安装/Obsidian 未运行），静默跳过，不写 flag 允许下次重试
     }
   }
 
