@@ -23,6 +23,7 @@ try { const tw = path.join(PACE_RUNTIME, 'todowrite-used'); if (fs.existsSync(tw
 try { const ar = path.join(PACE_RUNTIME, 'archive-reminded'); if (fs.existsSync(ar)) fs.unlinkSync(ar); } catch(e) {}
 try { const fr = path.join(PACE_RUNTIME, 'findings-reminded'); if (fs.existsSync(fr)) fs.unlinkSync(fr); } catch(e) {}
 try { const ir = path.join(PACE_RUNTIME, 'impl-archive-reminded'); if (fs.existsSync(ir)) fs.unlinkSync(ir); } catch(e) {}
+try { const cr = path.join(PACE_RUNTIME, 'cli-refresh-done'); if (fs.existsSync(cr)) fs.unlinkSync(cr); } catch(e) {}
 
 // 读取 stdin 获取事件类型（compact 时跳过 thoughts 注入）
 let eventType = 'startup';

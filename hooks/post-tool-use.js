@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, countByStatus } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -172,6 +172,29 @@ process.stdin.on('end', () => {
       if (codeCount >= 3) {
         warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件（G-8）`);
       }
+    }
+  }
+
+  // H12: Obsidian 索引刷新 — artifact 写入后异步触发（每会话 1 次，fire-and-forget）
+  const cliRefreshFile = path.join(PACE_RUNTIME, 'cli-refresh-done');
+  if (isArtifactEdit && filePath && VAULT_PATH && !fs.existsSync(cliRefreshFile)) {
+    try {
+      const normFile = filePath.replace(/\\/g, '/');
+      const normVault = VAULT_PATH.replace(/\\/g, '/');
+      if (normFile.startsWith(normVault + '/')) {
+        const relPath = path.relative(VAULT_PATH, filePath).replace(/\\/g, '/');
+        const { spawn } = require('child_process');
+        // fire-and-forget：CLI 读取文件促进 Obsidian 感知外部变更
+        const child = spawn('obsidian', ['read', `file=${relPath}`], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true
+        });
+        child.unref();
+        fs.writeFileSync(cliRefreshFile, '1', 'utf8');
+      }
+    } catch(e) {
+      // CLI 不可用（未安装/Obsidian 未运行），静默跳过
     }
   }
 
