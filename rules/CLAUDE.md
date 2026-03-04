@@ -55,6 +55,8 @@ SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCH
 **交付**：使用 Edit 工具修改代码，严禁粘贴未修改的大段代码。
 **禁止绕过**：禁止通过 Bash（`echo`/`cat`/heredoc）创建或修改代码文件来绕过 PACE 保护，必须使用 Write/Edit 工具。
 
+**Subagent 分流**：研究/探索/搜索任务（预计 5+ 次 Grep/Glob/Read/WebSearch）优先分流到 subagent，一个 subagent 一个明确任务，保持主上下文窗口干净。定向搜索（找特定文件/函数/类）可直接在主上下文执行。
+
 ---
 
 ## G-5. 沟通风格
