@@ -288,6 +288,51 @@ test('scanRelatedNotes: VAULT_PATH 空值 → 空数组不报错', () => {
 });
 
 // ============================================================
+// 7. resolveProjectCwd() — 3 个测试
+// ============================================================
+console.log('\n--- resolveProjectCwd ---');
+
+test('resolveProjectCwd: 当前目录有 .pace → 返回当前目录', () => {
+  const dir = makeTmpDir('rpc-here');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  const origCwd = process.cwd;
+  process.cwd = () => dir;
+  try {
+    const result = paceUtils.resolveProjectCwd();
+    assert.strictEqual(result, dir);
+  } finally {
+    process.cwd = origCwd;
+  }
+});
+
+test('resolveProjectCwd: 子目录 → 向上找到 .pace 所在目录', () => {
+  const projectRoot = makeTmpDir('rpc-parent');
+  fs.mkdirSync(path.join(projectRoot, '.pace'), { recursive: true });
+  const subDir = path.join(projectRoot, 'subdir', 'deep');
+  fs.mkdirSync(subDir, { recursive: true });
+  const origCwd = process.cwd;
+  process.cwd = () => subDir;
+  try {
+    const result = paceUtils.resolveProjectCwd();
+    assert.strictEqual(result, projectRoot);
+  } finally {
+    process.cwd = origCwd;
+  }
+});
+
+test('resolveProjectCwd: 无 .pace → fallback process.cwd()', () => {
+  const noProjectDir = makeTmpDir('rpc-nopace');
+  const origCwd = process.cwd;
+  process.cwd = () => noProjectDir;
+  try {
+    const result = paceUtils.resolveProjectCwd();
+    assert.strictEqual(result, noProjectDir);
+  } finally {
+    process.cwd = origCwd;
+  }
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

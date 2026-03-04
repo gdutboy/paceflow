@@ -13,6 +13,21 @@ function isTeammate() {
   return !!process.env.CLAUDE_CODE_TEAM_NAME;
 }
 
+/**
+ * 从 process.cwd() 向上搜索 .pace/ 目录，定位项目根
+ * 防止 CWD 漂移到子目录时 getProjectName 返回错误项目名
+ * @returns {string} 项目根目录（有 .pace/ 的最近祖先目录，或 process.cwd() fallback）
+ */
+function resolveProjectCwd() {
+  const startDir = process.cwd();
+  let dir = startDir;
+  for (let i = 0; i < 5 && dir !== path.dirname(dir); i++) {
+    if (fs.existsSync(path.join(dir, '.pace'))) return dir;
+    dir = path.dirname(dir);
+  }
+  return startDir;
+}
+
 /** 从 cwd 提取项目名（小写+连字符格式） */
 function getProjectName(cwd) {
   // I-1: 空值/极端路径防御
@@ -247,4 +262,4 @@ function createLogger(logPath) {
   };
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, resolveProjectCwd, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger };
