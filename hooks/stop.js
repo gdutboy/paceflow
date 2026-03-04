@@ -13,7 +13,7 @@ const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
-const cwd = process.cwd();
+const cwd = paceUtils.resolveProjectCwd ? paceUtils.resolveProjectCwd() : process.cwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
