@@ -288,47 +288,42 @@ test('scanRelatedNotes: VAULT_PATH 空值 → 空数组不报错', () => {
 });
 
 // ============================================================
-// 7. resolveProjectCwd() — 3 个测试
+// 7. resolveProjectCwd() — 3 个测试（CLAUDE_PROJECT_DIR 环境变量）
 // ============================================================
 console.log('\n--- resolveProjectCwd ---');
 
-test('resolveProjectCwd: 当前目录有 .pace → 返回当前目录', () => {
-  const dir = makeTmpDir('rpc-here');
-  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
-  const origCwd = process.cwd;
-  process.cwd = () => dir;
+test('resolveProjectCwd: CLAUDE_PROJECT_DIR 设置 → 返回规范化路径', () => {
+  const origEnv = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = 'C:/Users/test/project';
   try {
     const result = paceUtils.resolveProjectCwd();
-    assert.strictEqual(result, dir);
+    assert.strictEqual(result, path.resolve('C:/Users/test/project'));
   } finally {
-    process.cwd = origCwd;
+    if (origEnv === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = origEnv;
   }
 });
 
-test('resolveProjectCwd: 子目录 → 向上找到 .pace 所在目录', () => {
-  const projectRoot = makeTmpDir('rpc-parent');
-  fs.mkdirSync(path.join(projectRoot, '.pace'), { recursive: true });
-  const subDir = path.join(projectRoot, 'subdir', 'deep');
-  fs.mkdirSync(subDir, { recursive: true });
-  const origCwd = process.cwd;
-  process.cwd = () => subDir;
+test('resolveProjectCwd: CLAUDE_PROJECT_DIR 未设置 → fallback process.cwd()', () => {
+  const origEnv = process.env.CLAUDE_PROJECT_DIR;
+  delete process.env.CLAUDE_PROJECT_DIR;
   try {
     const result = paceUtils.resolveProjectCwd();
-    assert.strictEqual(result, projectRoot);
+    assert.strictEqual(result, process.cwd());
   } finally {
-    process.cwd = origCwd;
+    if (origEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = origEnv;
   }
 });
 
-test('resolveProjectCwd: 无 .pace → fallback process.cwd()', () => {
-  const noProjectDir = makeTmpDir('rpc-nopace');
-  const origCwd = process.cwd;
-  process.cwd = () => noProjectDir;
+test('resolveProjectCwd: CLAUDE_PROJECT_DIR 空字符串 → fallback process.cwd()', () => {
+  const origEnv = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = '';
   try {
     const result = paceUtils.resolveProjectCwd();
-    assert.strictEqual(result, noProjectDir);
+    assert.strictEqual(result, process.cwd());
   } finally {
-    process.cwd = origCwd;
+    if (origEnv === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = origEnv;
   }
 });
 

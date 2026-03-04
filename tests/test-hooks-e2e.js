@@ -39,12 +39,14 @@ function cleanup() {
 }
 
 /** 运行 hook 脚本，返回 { code, stdout, stderr } */
-function runHook(hookName, { cwd, stdin = '' }) {
+function runHook(hookName, { cwd, stdin = '', env = {} }) {
   const hookPath = path.join(HOOKS_DIR, hookName);
+  const mergedEnv = { ...process.env, ...env };
   try {
     const stdout = execFileSync('node', [hookPath], {
       cwd, input: stdin, encoding: 'utf8', timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: mergedEnv,
     });
     return { code: 0, stdout, stderr: '' };
   } catch (e) {
@@ -549,14 +551,13 @@ test('35. post-tool-use artifact 在 vault 外（CWD）→ 无 cli-refresh-done 
 });
 
 // ============================================================
-// 12. CWD 漂移防御 (2)
+// 12. CWD 漂移防御 (2) — CLAUDE_PROJECT_DIR 环境变量
 // ============================================================
 console.log('\n--- CWD 漂移防御 ---');
 
-test('36. stop.js CWD 在子目录 → 仍读正确的 task.md', () => {
-  // 创建项目根 + .pace/ 目录
+test('36. stop.js CWD 在子目录 → CLAUDE_PROJECT_DIR 指向项目根', () => {
+  // 创建项目根（不再需要 .pace/ 目录）
   const projectRoot = makeTmpDir('cwd-drift-stop');
-  fs.mkdirSync(path.join(projectRoot, '.pace'), { recursive: true });
   // 创建 vault 项目（匹配 projectRoot 的 basename）
   const projectName = path.basename(projectRoot).toLowerCase().replace(/\s+/g, '-');
   const vaultProjDir = path.join(_vaultTmpDir, 'projects', projectName);
@@ -570,18 +571,16 @@ test('36. stop.js CWD 在子目录 → 仍读正确的 task.md', () => {
   const result = runHook('stop.js', {
     cwd: subDir,
     stdin: JSON.stringify({ stop_hook_active: true }),
+    env: { CLAUDE_PROJECT_DIR: projectRoot },
   });
-  // resolveProjectCwd 应向上找到 projectRoot → 正确的项目名 → 正确的 vault task.md
-  // exit 2 说明 stop.js 成功读到了 task.md 中的未完成任务（漂移修复生效）
+  // CLAUDE_PROJECT_DIR 指向 projectRoot → 正确的项目名 → 正确的 vault task.md
   assert.ok(result.code === 0 || result.code === 2, 'CWD 漂移时不应崩溃（exit 0 或 2 均可）');
-  // 关键验证：stderr 提及未完成任务 → 证明正确读取了 vault 中的 task.md
   assert.ok(result.stderr.includes('未完成') || result.stderr.includes('task.md'),
     '应从正确的 vault task.md 读取到任务状态');
 });
 
-test('37. session-start.js CWD 在子目录 → 仍注入正确 artifact', () => {
+test('37. session-start.js CWD 在子目录 → CLAUDE_PROJECT_DIR 指向项目根', () => {
   const projectRoot = makeTmpDir('cwd-drift-ss');
-  fs.mkdirSync(path.join(projectRoot, '.pace'), { recursive: true });
   const projectName = path.basename(projectRoot).toLowerCase().replace(/\s+/g, '-');
   const vaultProjDir = path.join(_vaultTmpDir, 'projects', projectName);
   fs.mkdirSync(vaultProjDir, { recursive: true });
@@ -595,9 +594,10 @@ test('37. session-start.js CWD 在子目录 → 仍注入正确 artifact', () =>
   const result = runHook('session-start.js', {
     cwd: subDir,
     stdin: JSON.stringify({ type: 'startup' }),
+    env: { CLAUDE_PROJECT_DIR: projectRoot },
   });
   assert.strictEqual(result.code, 0, 'CWD 漂移时 session-start 不应崩溃');
-  // 应注入 artifact 内容（从 vault，通过 resolveProjectCwd 找到正确项目）
+  // CLAUDE_PROJECT_DIR 让 resolveProjectCwd 返回 projectRoot → 正确注入 artifact
   assert.ok(result.stdout.includes('=== task.md ===') || result.stdout === '',
     'CWD 子目录时应正常注入或静默');
 });

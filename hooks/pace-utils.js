@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v4.8.0';
+const PACE_VERSION = 'v4.8.1';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
@@ -14,18 +14,14 @@ function isTeammate() {
 }
 
 /**
- * 从 process.cwd() 向上搜索 .pace/ 目录，定位项目根
- * 防止 CWD 漂移到子目录时 getProjectName 返回错误项目名
- * @returns {string} 项目根目录（有 .pace/ 的最近祖先目录，或 process.cwd() fallback）
+ * 获取项目根目录，优先使用 CLAUDE_PROJECT_DIR 环境变量（Claude Code hook 进程自动设置）
+ * fallback 到 process.cwd()（非 hook 环境或环境变量缺失时）
+ * @returns {string} 项目根目录
  */
 function resolveProjectCwd() {
-  const startDir = process.cwd();
-  let dir = startDir;
-  for (let i = 0; i < 5 && dir !== path.dirname(dir); i++) {
-    if (fs.existsSync(path.join(dir, '.pace'))) return dir;
-    dir = path.dirname(dir);
-  }
-  return startDir;
+  return process.env.CLAUDE_PROJECT_DIR
+    ? path.resolve(process.env.CLAUDE_PROJECT_DIR)
+    : process.cwd();
 }
 
 /** 从 cwd 提取项目名（小写+连字符格式） */
