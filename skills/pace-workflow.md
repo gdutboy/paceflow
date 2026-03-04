@@ -47,6 +47,9 @@ flowchart TD
 2. **获得用户批准后**：在 `task.md` 添加 `<!-- APPROVED -->` + 将首个任务标为 `[/]`
 3. **每个 Task 完成后**：同步更新 `task.md` 状态（`[/]` → `[x]`）
 
+> 如果忘记桥接，PreToolUse hook 会 DENY 并给出精确步骤（subagent 可自救）。
+> 详见 [pace-bridge](pace-bridge.md) skill。
+
 **搜索资源优先级**：
 1. **Context7 MCP**：库/框架官方文档（优先）
 2. **互联网搜索**：通用问题、Stack Overflow、博客

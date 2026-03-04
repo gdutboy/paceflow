@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, listPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -157,7 +157,15 @@ process.stdin.on('end', () => {
       // T-076: 场景化 DENY 消息
       let reason;
       if (paceSignal === 'superpowers' && hasPlanFiles(cwd)) {
-        reason = `${createdMsg}检测到 Superpowers 计划文件（docs/plans/）。请从 docs/plans/ 读取计划，将任务同步到 task.md，获取用户批准后再写代码。`;
+        const planFiles = listPlanFiles(cwd);
+        const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+        const artPath = artDir.replace(/\\/g, '/');
+        reason = `${createdMsg}检测到 Superpowers 计划文件：${fileList}。` +
+          `请执行桥接（artifact 为 .md 文件，Edit 不受此限制）：` +
+          `(1) Read ${planFiles[0] ? 'docs/plans/' + planFiles[0] : 'docs/plans/'} 提取任务列表；` +
+          `(2) Edit ${artPath}/implementation_plan.md 添加 - [/] CHG-YYYYMMDD-NN 变更索引；` +
+          `(3) Edit ${artPath}/task.md 添加 - [ ] T-NNN 任务 + <!-- APPROVED --> 标记，首个任务标为 [/]；` +
+          `(4) 桥接完成后重试写代码。或使用 /pace-bridge skill。`;
       } else if (paceSignal === 'superpowers') {
         reason = `${createdMsg}检测到 Superpowers 信号但无计划文件。请先执行 P-A-C 流程。`;
       } else if (taskFileExists || createdFiles.includes('task.md')) {

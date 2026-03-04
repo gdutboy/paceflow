@@ -333,6 +333,33 @@ test('resolveProjectCwd: 无 .pace → fallback process.cwd()', () => {
 });
 
 // ============================================================
+// 8. listPlanFiles() — 3 个测试
+// ============================================================
+console.log('\n--- listPlanFiles ---');
+
+test('listPlanFiles: 无 docs/plans/ 返回空数组', () => {
+  const dir = makeTmpDir('lp-empty');
+  assert.deepStrictEqual(paceUtils.listPlanFiles(dir), []);
+});
+
+test('listPlanFiles: 有 plan 文件按日期降序', () => {
+  const dir = makeTmpDir('lp-sort');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-01-feature-a.md'), '');
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-feature-b.md'), '');
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', 'README.md'), '');
+  const result = paceUtils.listPlanFiles(dir);
+  assert.deepStrictEqual(result, ['2026-03-04-feature-b.md', '2026-03-01-feature-a.md']);
+});
+
+test('listPlanFiles: 非日期格式文件被过滤', () => {
+  const dir = makeTmpDir('lp-filter');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', 'random-notes.md'), '');
+  assert.deepStrictEqual(paceUtils.listPlanFiles(dir), []);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

@@ -18,12 +18,13 @@ const HOOKS_SRC = path.join(__dirname, 'hooks');
 const SKILLS_SRC = path.join(__dirname, 'skills');
 const CONFIG_SRC = path.join(__dirname, 'config', 'settings-hooks-excerpt.json');
 
-// I-11: skill .md 文件到子目录的映射（硬编码合理：4 个 skill 稳定且映射关系明确）
+// I-11: skill .md 文件到子目录的映射（硬编码合理：5 个 skill 稳定且映射关系明确）
 const SKILL_MAP = {
   'pace-workflow.md': 'pace-workflow',
   'artifact-management.md': 'artifact-management',
   'change-management.md': 'change-management',
   'pace-knowledge.md': 'pace-knowledge',
+  'pace-bridge.md': 'pace-bridge',
 };
 
 // 统计计数

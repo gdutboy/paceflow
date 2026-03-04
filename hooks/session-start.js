@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName } = paceUtils;
+const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, hasPlanFiles, listPlanFiles } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -124,6 +124,20 @@ if (taskFullCached) {
       skipped.slice(-3).forEach(t => process.stdout.write(`  ${t}\n`));
       process.stdout.write('\n');
       log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SKIPPED_REMINDER | count: ${skipped.length}\n`);
+    }
+
+    // Superpowers 桥接检测：有 plan 文件但 task.md 无活跃任务
+    if (paceSignal && hasPlanFiles(cwd)) {
+      const hasActive = active && /- \[[ \/!]\]/.test(active);
+      if (!hasActive) {
+        const planFiles = listPlanFiles(cwd);
+        const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+        process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
+        process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
+        process.stdout.write(`请在派 subagent 前执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。\n`);
+        process.stdout.write(`详见 /pace-bridge skill。\n\n`);
+        log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SUPERPOWERS_BRIDGE_HINT | plans: ${fileList}\n`);
+      }
     }
 
     // v4.3.6 方案 A：TodoWrite 同步指令注入（复用 active）

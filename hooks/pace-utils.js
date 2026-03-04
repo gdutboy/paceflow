@@ -83,6 +83,22 @@ function hasPlanFiles(cwd) {
 }
 
 /**
+ * 列出 docs/plans/ 中的 Superpowers 计划文件（按日期降序）
+ * @param {string} cwd - 项目根目录
+ * @returns {string[]} 文件名列表（最新在前）
+ */
+function listPlanFiles(cwd) {
+  const plansDir = path.join(cwd, 'docs', 'plans');
+  try {
+    if (!fs.existsSync(plansDir)) return [];
+    return fs.readdirSync(plansDir)
+      .filter(f => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f))
+      .sort()
+      .reverse();
+  } catch(e) { return []; }
+}
+
+/**
  * 多信号 PACE 激活判断
  * @param {string} cwd - 当前工作目录
  * @returns {'artifact'|'superpowers'|'manual'|'code-count'|false}
@@ -262,4 +278,4 @@ function createLogger(logPath) {
   };
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, resolveProjectCwd, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, resolveProjectCwd, countCodeFiles, hasPlanFiles, listPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger };

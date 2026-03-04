@@ -603,6 +603,63 @@ test('37. session-start.js CWD 在子目录 → 仍注入正确 artifact', () =>
 });
 
 // ============================================================
+// 13. Superpowers 桥接 (3)
+// ============================================================
+console.log('\n--- Superpowers 桥接 ---');
+
+test('38. pre-tool-use superpowers 信号 DENY 含桥接步骤', () => {
+  // 只创建 docs/plans/（不创建 artifact），让 isPaceProject 返回 'superpowers'
+  const dir = makeTmpDir('sp-bridge');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-test.md'), '# Test Plan\n');
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  const stdin = JSON.stringify({
+    tool_name: 'Write',
+    tool_input: { file_path: path.join(dir, 'src', 'index.js'), content: '// test' }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny',
+    'superpowers + 无活跃任务应 DENY');
+  assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('pace-bridge'),
+    'DENY 消息应包含 pace-bridge 引导');
+  assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('2026-03-04-test.md'),
+    'DENY 消息应包含实际 plan 文件名');
+});
+
+test('39. todowrite-sync superpowers 信号 DENY', () => {
+  // 只创建 docs/plans/（不创建 task.md），让 isPaceProject 返回 'superpowers'
+  const dir = makeTmpDir('sp-tw-deny');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-test.md'), '# Plan\n');
+  const stdin = JSON.stringify({
+    tool_name: 'TodoWrite',
+    tool_input: { todos: [{ content: 'test', status: 'pending', activeForm: 'Testing' }] }
+  });
+  const r = runHook('todowrite-sync.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny',
+    'superpowers + 无 task.md 时应 DENY TodoWrite');
+});
+
+test('40. session-start superpowers 桥接提醒注入', () => {
+  // 只创建 docs/plans/ + 空 task.md（有 artifact 但无活跃任务）
+  const dir = makePaceProject('sp-ss-hint', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n'
+  });
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-test.md'), '# Plan\n');
+  const stdin = JSON.stringify({ session_id: 'test', hook_event_name: 'SessionStart' });
+  const r = runHook('session-start.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('Superpowers 桥接提醒'),
+    'SessionStart 应注入桥接提醒');
+  assert.ok(r.stdout.includes('2026-03-04-test.md'),
+    '提醒应包含实际 plan 文件名');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

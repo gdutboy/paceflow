@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, readActive, countByStatus, isTeammate } = paceUtils;
+const { PACE_VERSION, isPaceProject, readActive, countByStatus, isTeammate, hasPlanFiles, listPlanFiles, getArtifactDir } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -64,6 +64,21 @@ process.stdin.on('end', () => {
 
       // W-9: totalActive=0 说明活跃区有内容但无顶层任务行（如只有标题/注释），视为无任务
       if (isWriteOp && totalActive === 0) {
+        // Superpowers 场景：升级为 DENY（精确条件，不影响其他 TodoWrite 使用）
+        if (paceSignal === 'superpowers' && hasPlanFiles(cwd)) {
+          const planFiles = listPlanFiles(cwd);
+          const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+          const denyOutput = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: `检测到 Superpowers 计划文件（${fileList}）但 task.md 无活跃任务。请先执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG。详见 /pace-bridge skill。`
+            }
+          };
+          process.stdout.write(JSON.stringify(denyOutput));
+          log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required\n`);
+          return;
+        }
         hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。task.md 是任务权威来源，请确认是否需要先在 task.md 中添加任务。`);
       }
 
@@ -87,6 +102,20 @@ process.stdin.on('end', () => {
     } else {
       // task.md 不存在但在创建 todo
       if (isWriteOp) {
+        if (paceSignal === 'superpowers' && hasPlanFiles(cwd)) {
+          const planFiles = listPlanFiles(cwd);
+          const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+          const denyOutput = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: `检测到 Superpowers 计划文件（${fileList}）但 task.md 不存在。请先执行桥接：Read plan → 创建 task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG。详见 /pace-bridge skill。`
+            }
+          };
+          process.stdout.write(JSON.stringify(denyOutput));
+          log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required (no task.md)\n`);
+          return;
+        }
         hints.push(`task.md 不存在。如果这是 PACE 项目，请先创建 task.md 再使用 TodoWrite。`);
       }
     }
