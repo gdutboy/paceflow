@@ -57,3 +57,25 @@ Edit 活跃区添加：
 - **artifact 文件是 .md**，不在 CODE_EXTS 中，Edit 操作不受"无活跃任务 DENY"限制
 - 使用 **Edit** 修改已有 artifact，不要用 Write 覆盖
 - 并发 subagent：第一个完成桥接后，后续 subagent 自动通过
+
+## auto-APPROVED 说明
+
+pace-bridge 自动在 task.md 写入 `<!-- APPROVED -->`，这是设计行为而非遗漏：
+- 用户在 brainstorming 中已参与设计决策（What to build）
+- writing-plans 已生成详细实施计划（How to build）
+- 格式转换是机械性操作，不引入新的设计决策
+- 用户通过事后审阅 task.md 发现问题可随时叫停
+
+此行为等价于 PACE C 阶段的 `<!-- APPROVED -->`，使 C 阶段被吸收。
+
+## 转换摘要格式
+
+桥接完成后，**必须**输出以下结构化摘要供用户事后审阅：
+
+```
+=== pace-bridge 转换摘要 ===
+源计划: docs/plans/YYYY-MM-DD-<feature>.md
+变更 ID: CHG-YYYYMMDD-NN
+任务范围: T-NNN ~ T-NNN（共 N 个）
+执行方式推荐: subagent-driven-development / executing-plans / dispatching-parallel-agents
+```

@@ -35,61 +35,102 @@ flowchart TD
 
 ## PACE 流程步骤
 
-### P (Plan - 推理)
+### P (Plan - 设计)
 
-分析代码上下文、识别依赖、风险评估。
+**默认使用 brainstorming skill** 探索设计空间：
 
-**Superpowers 衔接**：如果 `docs/plans/` 下已有 Superpowers 设计/计划文件，P 阶段读取其内容作为输入，补充风险评估而非重做规划。
+invoke `superpowers:brainstorming` — 完整 6 步流程：
+1. 探索项目上下文
+2. 提问澄清需求
+3. 提出 2-3 方案 + trade-offs
+4. 逐段展示设计
+5. 写设计文档 → `docs/plans/YYYY-MM-DD-<topic>-design.md` + git commit
+6. 自动 invoke `superpowers:writing-plans` → `docs/plans/YYYY-MM-DD-<feature>.md`
 
-**Superpowers → PACE 同步**（强制）：
-当执行 Superpowers 的 writing-plans 或 executing-plans 流程时：
-1. **writing-plans 完成后**：读取 plan 文件中的 Task 列表，转写为 `task.md` 的 `- [ ] T-NNN` 格式
-2. **获得用户批准后**：在 `task.md` 添加 `<!-- APPROVED -->` + 将首个任务标为 `[/]`
-3. **每个 Task 完成后**：同步更新 `task.md` 状态（`[/]` → `[x]`）
+P 阶段完成标志：`docs/plans/` 中有新的计划文件。
 
-> 如果忘记桥接，PreToolUse hook 会 DENY 并给出精确步骤（subagent 可自救）。
-> 详见 [pace-bridge](pace-bridge.md) skill。
+**降级条件**（不使用 brainstorming，回退 PACE 原生规划）：
+- HOTFIX / 紧急修复
+- 用户已给出完整需求，无需设计探索
+- 用户明确说"直接做"/"不需要 brainstorming"
+
+降级时：直接分析代码上下文、识别依赖、风险评估，然后进入 A 阶段手动创建 artifacts。
 
 **搜索资源优先级**：
 1. **Context7 MCP**：库/框架官方文档（优先）
 2. **互联网搜索**：通用问题、Stack Overflow、博客
 3. **GitHub Issues/Discussions**：特定库的已知问题
 
-### A (Artifact - 计划)
+### A (Artifact - 准备)
 
-1. 创建/更新 `task.md`
+**Superpowers 流程**（P 阶段使用了 brainstorming）：
+
+invoke `pace-bridge` skill — 自动完成以下步骤：
+1. 读取 `docs/plans/` 最新计划文件，提取任务列表
+2. 生成 CHG-ID（`CHG-YYYYMMDD-NN`）+ T-NNN 编号
+3. 写入 `implementation_plan.md` 变更索引（`[/]` 状态）
+4. 写入 `task.md` 活跃任务 + `<!-- APPROVED -->`（auto-APPROVED，详见 [pace-bridge](pace-bridge.md) skill）
+5. 输出转换摘要供事后审阅
+
+A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan 有 `[/]` 条目。
+
+**降级流程**（P 阶段未使用 brainstorming）：
+1. 手动创建/更新 `task.md`
 2. 累积更新 `implementation_plan.md`（变更索引添加 `[ ]` 条目）
-3. 读取 `skills/change-management.md` 执行变更 ID 管理
-4. **findings 反向关联**：如果本次变更源自 findings.md 调研结论，在对应 finding 条目补 `[change:: CHG-ID]` 并将状态更新为 `[x]`
+3. 读取 [change-management](change-management.md) skill 执行变更 ID 管理
+4. 进入 C 阶段等待用户审批
+
+**findings 反向关联**：如果本次变更源自 findings.md 调研结论，在对应 finding 条目补 `[change:: CHG-ID]` 并将状态更新为 `[x]`。
 
 > **Artifact 存储位置**：所有 Artifact 文件存储在 Obsidian Vault（`VAULT_PATH/projects/<projectName>/`），PreToolUse hook 自动将 CWD 路径重定向到 vault 路径。详细的 artifact 结构和 Write vs Edit 规则参见 [artifact-management](artifact-management.md)。
 
-**Superpowers 衔接**：`implementation_plan.md` 活跃变更详情中引用 Superpowers plan 文件路径：
-```markdown
-**实施方案**: docs/plans/YYYY-MM-DD-feature.md
-```
-
 ### C (Check - 确认)
 
+**Superpowers 流程**：pace-bridge 已在 A 阶段自动标记 `<!-- APPROVED -->`（auto-APPROVED），因为用户在 brainstorming 中已参与设计决策，writing-plans 中已审阅实施计划。C 阶段被吸收，直接进入 E 阶段。
+
+**降级流程**（未使用 Superpowers 时）：
 **停止执行**，询问用户：是否批准该计划？
 
-**前置检查**（询问确认前必须执行）：
+前置检查（询问确认前必须执行）：
 - 重读 `task.md` - 确认任务范围未偏离
 - 重读 `implementation_plan.md` - 确认技术方案一致
 
-**获批后**：在 `task.md` 活跃区添加 `<!-- APPROVED -->` 标记，或将首个任务标为 `[/]` 进行中。同时将 `implementation_plan.md` 变更索引状态从 `[ ]` 改为 `[/]`。
+获批后：在 `task.md` 活跃区添加 `<!-- APPROVED -->` 标记，将首个任务标为 `[/]`。同时将 `implementation_plan.md` 变更索引状态从 `[ ]` 改为 `[/]`。
+
+**严禁批准前修改代码。**
 
 > [!note] v4.8.0 Hook 强制
 > PreToolUse 会检查活跃区是否有 `<!-- APPROVED -->` 标记或 `[/]` 任务。
 > 若所有任务为 `[ ]` 且无 APPROVED 标记，写代码文件会被 **deny**。
 > v4.4.3 起还会检查 `implementation_plan.md` 是否有 `[/]` 进行中的变更索引，无则 **deny**。
 
-**严禁批准前修改代码。**
-
 ### E (Execute - 执行)
 
-获批后执行：
-1. 更新 `task.md` 进度
+**Superpowers 流程**：
+
+**Step 1 — Worktree 隔离**（推荐）：
+`EnterWorktree` 创建隔离分支。PACEflow 在 worktree 中完全可用（`resolveProjectCwd` 向上搜索 `.pace/`，vault artifacts 正常访问）。
+
+降级条件（不使用 worktree）：HOTFIX / 单文件修改 / 用户指定不用。
+
+**Step 2 — 选择执行方式**：
+
+| 条件 | 执行 skill | 说明 |
+|------|-----------|------|
+| task 有依赖 / 高风险 / 核心模块 | `superpowers:executing-plans` | 每 3 task 停下等人工反馈 |
+| 独立 task + 不同 domain | `superpowers:dispatching-parallel-agents` | 多 agent 真并行 |
+| 独立 task + 同 domain（**默认**） | `superpowers:subagent-driven-development` | 自动 Spec + Code Quality 双审 |
+| 降级（HOTFIX / 简单任务） | 直接执行 | 不使用 Superpowers |
+
+**Step 3 — TDD 开发方法**（推荐）：
+invoke `superpowers:test-driven-development` — 写失败测试 → 确认失败 → 写最小实现 → 确认通过 → commit。
+降级条件：HOTFIX / UI 样式改动 / 无测试框架。
+
+**Step 4 — 收尾**：
+invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 merge/PR/keep/discard。
+
+**执行中维护**：
+1. 更新 `task.md` 进度（`[/]` → `[x]`）
 2. 累积更新 `walkthrough.md`
 3. 技术栈变更时同步更新 `spec.md`
 
@@ -100,6 +141,8 @@ flowchart TD
 - 对话超过 20 轮时，主动重读核心 Artifact 刷新上下文
 
 ### V (Verify - 验证)
+
+**推荐**：invoke `superpowers:verification-before-completion` — 确保所有完成声称都有新鲜验证证据（IDENTIFY → RUN → READ → VERIFY → CLAIM）。
 
 **测试要求**：
 - **必须测试**：API 端点、数据处理函数、安全相关逻辑
