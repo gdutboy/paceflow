@@ -1,6 +1,6 @@
-# PACEflow v4.7.0 功能与状态全景参考手册
+# PACEflow v4.8.0 功能与状态全景参考手册
 
-> **最后更新**：2026-02-27 | **版本**：v4.7.0
+> **最后更新**：2026-03-04 | **版本**：v4.8.0
 
 ---
 
@@ -633,10 +633,10 @@ summary: "[一句话项目描述]"
 
 | 常量 | 值 | 说明 |
 |------|-----|------|
-| `PACE_VERSION` | `'v4.7.0'` | 集中版本号，其他脚本引用 |
+| `PACE_VERSION` | `'v4.8.0'` | 集中版本号，其他脚本引用 |
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
-| `VAULT_PATH` | `'C:/Users/Xiao/OneDrive/Documents/Obsidian'` | Obsidian Vault 路径 |
+| `VAULT_PATH` | `process.env.PACE_VAULT_PATH \|\| 'C:/Users/Xiao/OneDrive/Documents/Obsidian'` | Obsidian Vault 路径（支持 `PACE_VAULT_PATH` 环境变量覆盖） |
 
 **函数**：
 
@@ -649,9 +649,13 @@ summary: "[一句话项目描述]"
 | `readActive(cwd, filename)` | 读取 ARCHIVE 上方活跃区 |
 | `readFull(cwd, filename)` | 读取文件全文 |
 | `checkArchiveFormat(cwd, filename)` | 检查 ARCHIVE 标记格式 |
-| `createTemplates(cwd)` | 懒创建 Artifact 模板 + Obsidian Junction |
+| `getProjectName(cwd)` | 提取项目名（小写+连字符） |
+| `getArtifactDir(cwd)` | vault 优先级 artifact 路径解析（唯一解析器） |
+| `ensureProjectInfra(cwd)` | 确保 .pace/.gitignore + vault 项目目录 |
+| `createTemplates(cwd)` | 懒创建 Artifact 模板 |
 | `countByStatus(text, opts)` | 统一任务状态统计（pending/done/total） |
 | `scanRelatedNotes(projectName)` | 扫描 Obsidian 相关笔记 |
+| `createLogger(logPath)` | 共享日志轮转函数（512KB 上限） |
 
 ---
 
@@ -690,7 +694,7 @@ summary: "[一句话项目描述]"
 
 ### 11.4 test-hooks-e2e.js（E2E 测试）
 
-覆盖所有 hook 的 stdin/stdout/exit code 协议行为（25 个测试用例），包括：
+覆盖所有 hook 的 stdin/stdout/exit code 协议行为（35+ 个测试用例），包括：
 - SessionStart 注入
 - PreToolUse deny/pass
 - PostToolUse 提醒
@@ -759,3 +763,5 @@ function isTeammate() {
 | v4.6.0 | ConfigChange hook + PreCompact hook |
 | v4.7.0 | Agent Teams 全量适配（isTeammate() + DENY 降级 + 静默放行） |
 | v4.7.0+ | impl_plan 详情归档提醒（H10）+ Correction 双写提醒（H11 → knowledge/） |
+| v4.7.1 | 基础设施解耦（ensureProjectInfra 独立）+ Write 新建 artifact 模板注入 |
+| v4.8.0 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一） |

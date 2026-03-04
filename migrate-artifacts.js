@@ -1,3 +1,4 @@
+// @deprecated — 一次性迁移脚本，v4.8.0 迁移完成后不再需要
 // migrate-artifacts.js — 将 PACE artifact 从 junction 指向的 CWD 迁移到 vault 实际目录
 // 用法: node migrate-artifacts.js [--dry-run] [--cleanup]
 //   --dry-run  仅预览，不执行任何修改
@@ -5,8 +6,16 @@
 const fs = require('fs');
 const path = require('path');
 
-const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
-const VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
+// W-14: 从 pace-utils 导入共享常量
+let ARTIFACT_FILES, VAULT_PATH;
+try {
+  const paceUtils = require('./hooks/pace-utils');
+  ARTIFACT_FILES = paceUtils.ARTIFACT_FILES;
+  VAULT_PATH = paceUtils.VAULT_PATH;
+} catch(e) {
+  ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+  VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
+}
 const projectsDir = path.join(VAULT_PATH, 'projects');
 
 const dryRun = process.argv.includes('--dry-run');

@@ -12,7 +12,8 @@ const { PACE_VERSION, isPaceProject, readActive, countByStatus, isTeammate } = p
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 
 let input = '';
@@ -61,7 +62,7 @@ process.stdin.on('end', () => {
       // W2: 统一使用 countByStatus（仅顶层任务）
       const { pending: pendingTasks, done: doneTasks, total: totalActive } = countByStatus(taskActive, { topLevelOnly: true });
 
-      // 写入操作 + task.md 无活跃任务 → 可能是 compaction 残留
+      // W-9: totalActive=0 说明活跃区有内容但无顶层任务行（如只有标题/注释），视为无任务
       if (isWriteOp && totalActive === 0) {
         hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。task.md 是任务权威来源，请确认是否需要先在 task.md 中添加任务。`);
       }

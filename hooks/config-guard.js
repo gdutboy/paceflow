@@ -10,7 +10,8 @@ const { isPaceProject } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 
 // 异步读取 stdin
@@ -32,8 +33,16 @@ process.stdin.on('end', () => {
       configStr = input;
     }
 
-    // C-1+W-1: 检测 disableAllHooks（ConfigChange 不支持 exit 2，改用 additionalContext 强警告）
-    if (/"disableAllHooks"\s*:\s*true/.test(configStr)) {
+    // W-10: 使用 JSON.parse 替代正则检测 disableAllHooks
+    let hasDisableAll = false;
+    try {
+      const configObj = JSON.parse(configStr);
+      hasDisableAll = configObj.disableAllHooks === true;
+    } catch(e) {
+      // 解析失败回退正则
+      hasDisableAll = /"disableAllHooks"\s*:\s*true/.test(configStr);
+    }
+    if (hasDisableAll) {
       const ctx = `⚠️ 严重警告：检测到 disableAllHooks=true，这会导致 PACE 保护完全失效。如需临时禁用单个项目，请使用 .pace/disabled 标记而非禁用全部 hooks。请立即撤回此配置变更。`;
       const output = {
         hookSpecificOutput: {

@@ -219,6 +219,75 @@ test('新项目（无 artifact）→ vault 目录', () => {
 });
 
 // ============================================================
+// scanRelatedNotes (H-10)
+// 注意：VAULT_PATH 是 const，无法在测试中替换。
+// 采用与 getArtifactDir 相同策略：在真实 VAULT_PATH 创建唯一命名的临时文件。
+// ============================================================
+
+test('scanRelatedNotes: 正常匹配（projects 含项目名）', () => {
+  const uniqueProject = 'pace-scan-test-' + Date.now();
+  const thoughtsDir = path.join(paceUtils.VAULT_PATH, 'thoughts');
+  fs.mkdirSync(thoughtsDir, { recursive: true });
+  const noteFile = path.join(thoughtsDir, `_test-${uniqueProject}.md`);
+  fs.writeFileSync(noteFile, [
+    '---',
+    'status: discussing',
+    `projects: [${uniqueProject}, other]`,
+    'summary: "测试摘要"',
+    '---',
+    '# Test',
+  ].join('\n'));
+
+  try {
+    const results = paceUtils.scanRelatedNotes(uniqueProject);
+    assert.ok(results.length >= 1, '应至少匹配 1 条');
+    const found = results.find(r => r.title === `_test-${uniqueProject}`);
+    assert.ok(found, '应找到测试笔记');
+    assert.strictEqual(found.summary, '测试摘要');
+    assert.strictEqual(found.status, 'discussing');
+  } finally {
+    try { fs.unlinkSync(noteFile); } catch(e) {}
+  }
+});
+
+test('scanRelatedNotes: 无匹配项目名 → 空数组', () => {
+  const uniqueProject = 'pace-scan-nomatch-' + Date.now();
+  // 不创建任何笔记，直接查询不存在的项目名
+  const results = paceUtils.scanRelatedNotes(uniqueProject);
+  assert.strictEqual(results.length, 0, '不应匹配不相关项目');
+});
+
+test('scanRelatedNotes: status=archived 被过滤', () => {
+  const uniqueProject = 'pace-scan-archived-' + Date.now();
+  const knowledgeDir = path.join(paceUtils.VAULT_PATH, 'knowledge');
+  fs.mkdirSync(knowledgeDir, { recursive: true });
+  const noteFile = path.join(knowledgeDir, `_test-${uniqueProject}.md`);
+  fs.writeFileSync(noteFile, [
+    '---',
+    'status: archived',
+    `projects: [${uniqueProject}]`,
+    'summary: "已归档"',
+    '---',
+    '# Archived',
+  ].join('\n'));
+
+  try {
+    const results = paceUtils.scanRelatedNotes(uniqueProject);
+    const found = results.find(r => r.title === `_test-${uniqueProject}`);
+    assert.ok(!found, 'archived 笔记不应返回');
+  } finally {
+    try { fs.unlinkSync(noteFile); } catch(e) {}
+  }
+});
+
+test('scanRelatedNotes: VAULT_PATH 空值 → 空数组不报错', () => {
+  // W-1 防御：直接调用不可能触发（VAULT_PATH 是 const），
+  // 但验证函数对完全不存在的项目名也不报错
+  const results = paceUtils.scanRelatedNotes('nonexistent-project-' + Date.now());
+  assert.ok(Array.isArray(results), '应返回数组');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

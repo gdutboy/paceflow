@@ -10,7 +10,8 @@ const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, 
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
@@ -18,12 +19,10 @@ const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 // v4: 重置 Stop 防无限循环计数器 + 清除降级标记 + 确保 .pace/ 目录存在
 try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
 try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
-try { const df = path.join(PACE_RUNTIME, 'degraded'); if (fs.existsSync(df)) fs.unlinkSync(df); } catch(e) {}
-try { const tw = path.join(PACE_RUNTIME, 'todowrite-used'); if (fs.existsSync(tw)) fs.unlinkSync(tw); } catch(e) {}
-try { const ar = path.join(PACE_RUNTIME, 'archive-reminded'); if (fs.existsSync(ar)) fs.unlinkSync(ar); } catch(e) {}
-try { const fr = path.join(PACE_RUNTIME, 'findings-reminded'); if (fs.existsSync(fr)) fs.unlinkSync(fr); } catch(e) {}
-try { const ir = path.join(PACE_RUNTIME, 'impl-archive-reminded'); if (fs.existsSync(ir)) fs.unlinkSync(ir); } catch(e) {}
-try { const cr = path.join(PACE_RUNTIME, 'cli-refresh-done'); if (fs.existsSync(cr)) fs.unlinkSync(cr); } catch(e) {}
+// I-2: 重置运行时 flag 文件（循环替代 6 个独立 try-catch）
+for (const flag of ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done']) {
+  try { const fp = path.join(PACE_RUNTIME, flag); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
+}
 
 // 读取 stdin 获取事件类型（compact 时跳过 thoughts 注入）
 let eventType = 'startup';
@@ -32,6 +31,9 @@ try {
   const parsed = JSON.parse(stdinData);
   eventType = parsed.type || 'startup';
 } catch(e) {}
+
+// H-3: 顶层 try-catch 安全网（内部 try-catch 保留不变）
+try {
 
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
@@ -137,6 +139,8 @@ if (taskFullCached) {
   } catch(e) {}
 }
 
+// W-5: findings 过期提醒仅对 PACE 项目生效
+if (paceSignal) {
 // findings [ ] 过期提醒（每日首次 session）
 try {
   const findingsActive = paceUtils.readActive(cwd, 'findings.md');
@@ -170,6 +174,7 @@ try {
     }
   }
 } catch(e) {}
+} // W-5: 关闭 paceSignal 守卫
 
 // T-117: Git 状态注入（辅助跨会话上下文恢复）
 try {
@@ -197,3 +202,8 @@ if (eventType !== 'compact') {
 }
 
 log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);
+
+} catch(e) {
+  // H-3: 顶层异常捕获，静默放行
+  try { log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+}

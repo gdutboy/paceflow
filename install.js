@@ -18,7 +18,7 @@ const HOOKS_SRC = path.join(__dirname, 'hooks');
 const SKILLS_SRC = path.join(__dirname, 'skills');
 const CONFIG_SRC = path.join(__dirname, 'config', 'settings-hooks-excerpt.json');
 
-// skill .md 文件到子目录的映射
+// I-11: skill .md 文件到子目录的映射（硬编码合理：4 个 skill 稳定且映射关系明确）
 const SKILL_MAP = {
   'pace-workflow.md': 'pace-workflow',
   'artifact-management.md': 'artifact-management',
@@ -198,7 +198,18 @@ function patchSettings() {
   // 读取或创建 settings.json
   let settings;
   if (fs.existsSync(SETTINGS_PATH)) {
-    settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
+    // W-11: 修改前备份
+    if (!dryRun) {
+      fs.copyFileSync(SETTINGS_PATH, SETTINGS_PATH + '.bak');
+    }
+    try {
+      settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
+    } catch(e) {
+      // W-12: 解析失败提供清晰错误提示
+      console.error(`❌ settings.json 格式错误: ${e.message}`);
+      console.log('  备份已保存: ' + SETTINGS_PATH + '.bak');
+      process.exit(1);
+    }
   } else {
     settings = {};
     log('  📦 settings.json 不存在，将创建新文件');

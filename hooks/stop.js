@@ -9,22 +9,10 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-const MAX_LOG_SIZE = 512 * 1024; // W-8: 日志上限 512KB，超过则截断保留后半
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => {
-  try {
-    // W-8: 日志轮转——超过上限时截断保留后半部分
-    try {
-      const stat = fs.statSync(LOG);
-      if (stat.size > MAX_LOG_SIZE) {
-        const content = fs.readFileSync(LOG, 'utf8');
-        fs.writeFileSync(LOG, content.slice(content.length >> 1), 'utf8');
-      }
-    } catch(e) {} // 文件不存在等错误忽略
-    fs.appendFileSync(LOG, msg);
-  } catch(e) {}
-};
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
@@ -67,6 +55,7 @@ if (taskActive) {
   if (archFmt2) warnings.push(archFmt2);
 
   // 1. 统一使用 countByStatus（仅顶层任务）
+  // I-4: doneCount = [x] + [-]（countByStatus 设计），xCount 下方单独统计纯 [x]
   const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
   if (pendingCount > 0) {
     // S-3: 包含进度信息（已完成/总数）
@@ -97,7 +86,8 @@ if (taskActive) {
 
   // 4. 检查 walkthrough.md（C-2: matchAll 取最后日期 + W-5: 无日期分支）
   const walkActive = readActive(cwd, 'walkthrough.md');
-  if (walkActive && (doneCount > 0 || pendingCount > 0)) {
+  // W-6: walkActive 可能为空字符串（文件存在但活跃区为空），需额外判断
+  if (walkActive !== null && walkActive.trim() && (doneCount > 0 || pendingCount > 0)) {
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }); // I-5: sv-SE locale 返回 ISO 格式日期（YYYY-MM-DD），无需手动拼接
     const allDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/g)];
     const lastDate = allDates.length > 0 ? allDates[allDates.length - 1][1] : null;
@@ -140,9 +130,9 @@ if (fs.existsSync(twFlag) && taskActive) {
 // v4.5: 交叉验证 — AI 声称完成但 artifact 不一致
 if (lastMessage && warnings.length === 0) {
   if (/(?:任务完成|已完成所有|全部完成|归档完毕)/.test(lastMessage)) {
-    const ta = readActive(cwd, 'task.md');
-    if (ta) {
-      const { pending } = countByStatus(ta, { topLevelOnly: true });
+    // I-3: 复用上方已读取的 taskActive，避免重复 readActive
+    if (taskActive) {
+      const { pending } = countByStatus(taskActive, { topLevelOnly: true });
       if (pending > 0) {
         warnings.push(`AI 声称完成，但 task.md 还有 ${pending} 个活跃任务`);
       }
@@ -159,22 +149,23 @@ if (warnings.length > 0) {
     log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TEAMMATE_SOFT | team: ${process.env.CLAUDE_CODE_TEAM_NAME}\n  checks: ${warnings.join('; ')}\n`);
     // exit 0 放行
   } else {
-  const blockCount = getBlockCount();
-  const checksDetail = warnings.map((w, i) => `  [${i+1}] ${w}`).join('\n');
-  if (blockCount >= MAX_BLOCKS) {
-    // v4.3.3: 降级时写入标记文件，让 PostToolUse 提醒 AI
-    try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
-    try { fs.writeFileSync(path.join(PACE_RUNTIME, 'degraded'), `降级时间: ${ts()}\n未通过检查:\n${checksDetail}\n`, 'utf8'); } catch(e) {}
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: DOWNGRADE (${blockCount}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  note: 已写入 .pace/degraded\n`);
-    // exit 0：不阻止，仅记录
-  } else {
-    // v4：exit 2 阻止 Claude 停止，stderr 反馈给 Claude
-    setBlockCount(blockCount + 1);
-    const stderrMsg = `PACE 检查未通过，请先修复：${warnings.join('；')}`;
-    process.stderr.write(stderrMsg + '\n');
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK (${blockCount + 1}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  stderr→AI: ${stderrMsg}\n`);
-    process.exit(2);
-  }
+    // W-7: 修正缩进（与 if 分支对齐）
+    const blockCount = getBlockCount();
+    const checksDetail = warnings.map((w, i) => `  [${i+1}] ${w}`).join('\n');
+    if (blockCount >= MAX_BLOCKS) {
+      // v4.3.3: 降级时写入标记文件，让 PostToolUse 提醒 AI
+      try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
+      try { fs.writeFileSync(path.join(PACE_RUNTIME, 'degraded'), `降级时间: ${ts()}\n未通过检查:\n${checksDetail}\n`, 'utf8'); } catch(e) {}
+      log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: DOWNGRADE (${blockCount}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  note: 已写入 .pace/degraded\n`);
+      // exit 0：不阻止，仅记录
+    } else {
+      // v4：exit 2 阻止 Claude 停止，stderr 反馈给 Claude
+      setBlockCount(blockCount + 1);
+      const stderrMsg = `PACE 检查未通过，请先修复：${warnings.join('；')}`;
+      process.stderr.write(stderrMsg + '\n');
+      log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK (${blockCount + 1}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  stderr→AI: ${stderrMsg}\n`);
+      process.exit(2);
+    }
   } // 关闭 isTeammate else
 } else {
   // 检查全部通过，重置计数器 + 清除降级标记

@@ -292,7 +292,9 @@ const warnCount = results.filter(r => r.startsWith('⚠️')).length;
 const errCount = results.filter(r => r.startsWith('❌')).length;
 
 console.log('------------------');
-const parts = [`结果: ${passCount}/5 通过`];
+// W-13: 动态计算总数（替代硬编码 /5）
+const total = passCount + warnCount + errCount;
+const parts = [`结果: ${passCount}/${total} 通过`];
 if (warnCount > 0) parts.push(`${warnCount} 警告`);
 if (errCount > 0) parts.push(`${errCount} 错误`);
 console.log(parts.join(', '));

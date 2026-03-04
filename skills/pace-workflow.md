@@ -25,7 +25,7 @@ flowchart TD
 
 > 豁免条件详见 **User Rule G-8**
 >
-> **v4.3.1 Hook 行为**：
+> **v4.8.0 Hook 行为**：
 > - `isPaceProject()` 四信号优先级：`artifact` > `superpowers` > `manual` > `code-count`
 > - `hasActiveTasks`：仅 `[ ]`/`[/]`/`[!]` 算活跃任务，`[x]`/`[-]` 不算
 > - `isInsideProject`：项目外文件（如 `~/.claude/hooks/`）豁免 PACE 检查
@@ -59,6 +59,8 @@ flowchart TD
 3. 读取 `skills/change-management.md` 执行变更 ID 管理
 4. **findings 反向关联**：如果本次变更源自 findings.md 调研结论，在对应 finding 条目补 `[change:: CHG-ID]` 并将状态更新为 `[x]`
 
+> **Artifact 存储位置**：所有 Artifact 文件存储在 Obsidian Vault（`VAULT_PATH/projects/<projectName>/`），PreToolUse hook 自动将 CWD 路径重定向到 vault 路径。详细的 artifact 结构和 Write vs Edit 规则参见 [artifact-management](artifact-management.md)。
+
 **Superpowers 衔接**：`implementation_plan.md` 活跃变更详情中引用 Superpowers plan 文件路径：
 ```markdown
 **实施方案**: docs/plans/YYYY-MM-DD-feature.md
@@ -74,7 +76,7 @@ flowchart TD
 
 **获批后**：在 `task.md` 活跃区添加 `<!-- APPROVED -->` 标记，或将首个任务标为 `[/]` 进行中。同时将 `implementation_plan.md` 变更索引状态从 `[ ]` 改为 `[/]`。
 
-> [!note] v4.3.2+ Hook 强制
+> [!note] v4.8.0 Hook 强制
 > PreToolUse 会检查活跃区是否有 `<!-- APPROVED -->` 标记或 `[/]` 任务。
 > 若所有任务为 `[ ]` 且无 APPROVED 标记，写代码文件会被 **deny**。
 > v4.4.3 起还会检查 `implementation_plan.md` 是否有 `[/]` 进行中的变更索引，无则 **deny**。
@@ -107,7 +109,7 @@ flowchart TD
 
 **验证通过后**：在 `task.md` 活跃区添加 `<!-- VERIFIED -->` 标记。
 
-> [!note] v4.3.2 Hook 强制
+> [!note] v4.8.0 Hook 强制
 > Stop hook 会检查活跃区是否有 `[x]` 完成项但无 `<!-- VERIFIED -->` 标记。
 > 若未验证，退出会被 **block**："请执行 V 阶段验证后添加标记"。
 

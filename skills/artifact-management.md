@@ -7,6 +7,8 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 管理核心 Artifact 文件的创建、更新和维护。
 
+> **存储位置**：所有 Artifact 文件存储在 Obsidian Vault（`VAULT_PATH/projects/<projectName>/`）。`getArtifactDir(cwd)` 为唯一路径解析器，PreToolUse hook 自动将 CWD 路径重定向到 vault 路径。`.pace/` 运行时状态保留在项目 CWD。
+
 ---
 
 ## 核心 Artifact 文件
@@ -166,11 +168,11 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 创建新 Artifact 时，使用以下模板：
 
-- [templates/spec.md](templates/spec.md) — 项目规格模板
-- [templates/task.md](templates/task.md) — 任务清单模板
-- [templates/implementation_plan.md](templates/implementation_plan.md) — 实施计划模板
-- [templates/walkthrough.md](templates/walkthrough.md) — 工作记录模板
-- [templates/findings.md](templates/findings.md) — 调研记录模板
+- [templates/artifact-spec.md](templates/artifact-spec.md) — 项目规格模板
+- [templates/artifact-task.md](templates/artifact-task.md) — 任务清单模板
+- [templates/artifact-implementation_plan.md](templates/artifact-implementation_plan.md) — 实施计划模板
+- [templates/artifact-walkthrough.md](templates/artifact-walkthrough.md) — 工作记录模板
+- [templates/artifact-findings.md](templates/artifact-findings.md) — 调研记录模板
 
 ---
 

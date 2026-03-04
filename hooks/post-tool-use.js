@@ -10,7 +10,8 @@ const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, checkArchiveFor
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 
 const PACE_RUNTIME = path.join(cwd, '.pace');
@@ -192,7 +193,10 @@ process.stdin.on('end', () => {
           stdio: 'ignore',
           windowsHide: true
         });
+        // H-1: 防御性 error 监听（fire-and-forget 模式下 ENOENT 等不会未捕获）
+        child.on('error', () => {});
         child.unref();
+        // W-4: flag 在 spawn 后写入——若 spawn 同步抛错（ENOENT），catch 捕获，flag 不写入，允许下次重试
         fs.writeFileSync(cliRefreshFile, '1', 'utf8');
       }
     } catch(e) {
@@ -200,7 +204,7 @@ process.stdin.on('end', () => {
     }
   }
 
-  // v4：使用 JSON stdout 的 additionalContext，确保 AI 能看到
+  // I-8: warnings 通过 additionalContext 输出给 AI（单条拼接，非逐条输出）
   if (warnings.length > 0) {
     const ctx = `PACE 提醒：${warnings.join('；')}`;
     const output = {

@@ -10,7 +10,8 @@ const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, CODE_EXTS, AR
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 
 // v4: 异步读取 stdin 获取工具信息
@@ -35,19 +36,14 @@ process.stdin.on('end', () => {
   }
   const teammateTag = isTeammate() ? '_TEAMMATE' : '';
 
+  // W-3: 缓存 isPaceProject 结果（避免多次调用）
+  const paceSignal = isPaceProject(cwd);
   const artDir = getArtifactDir(cwd);
   const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
 
-  // 读取活跃区内容（复用于 hasActiveTasks + hasApproval + inject）
-  let taskActiveContent = '';
-  if (taskFileExists) {
-    try {
-      const content = fs.readFileSync(taskFp, 'utf8');
-      const archiveMatch = content.match(/^<!-- ARCHIVE -->$/m);
-      taskActiveContent = archiveMatch ? content.slice(0, archiveMatch.index) : content;
-    } catch(e) {}
-  }
+  // W-2: 使用 readActive 替换手动读取（内部自动解析 vault 路径）
+  let taskActiveContent = readActive(cwd, 'task.md') || '';
 
   // v4.3.1: 仅 [ ]/[/]/[!] 算活跃任务，[x]/[-] 不算
   const hasActiveTasks = /- \[[ \/!]\]/.test(taskActiveContent);
@@ -68,7 +64,7 @@ process.stdin.on('end', () => {
   }
 
   // v4.8: artifact 已迁移到 vault 时，拦截对 CWD 中 artifact 文件的 Write/Edit 并重定向
-  if ((toolName === 'Write' || toolName === 'Edit') && artDir !== cwd && isPaceProject(cwd)) {
+  if ((toolName === 'Write' || toolName === 'Edit') && artDir !== cwd && paceSignal) {
     const fileName = path.basename(filePath);
     if (ARTIFACT_FILES.includes(fileName) && normalizedFile.startsWith(cwdWithSlash)) {
       const correctPath = path.join(artDir, fileName).replace(/\\/g, '/');
@@ -87,7 +83,7 @@ process.stdin.on('end', () => {
   }
 
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
-  if (toolName === 'Write' && isInsideProject && isPaceProject(cwd)) {
+  if (toolName === 'Write' && isInsideProject && paceSignal) {
     const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
     const fileName = path.basename(filePath);
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
@@ -106,7 +102,7 @@ process.stdin.on('end', () => {
   }
 
   // T-206: Write 新建 artifact 文件时，注入对应模板内容引导格式
-  if (toolName === 'Write' && isInsideProject && isPaceProject(cwd)) {
+  if (toolName === 'Write' && isInsideProject && paceSignal) {
     const fileName = path.basename(filePath);
     if (ARTIFACT_FILES.includes(fileName) && !fs.existsSync(path.join(artDir, fileName))) {
       const TEMPLATES_DIR = path.join(__dirname, 'templates');
@@ -146,7 +142,7 @@ process.stdin.on('end', () => {
 
   // v4.3.5: 多信号三级触发（仅对项目内代码文件 + 无活跃任务时生效）
   if (isCodeFile && isInsideProject && !hasActiveTasks) {
-    const paceSignal = isPaceProject(cwd);
+    // W-3: 使用顶层缓存的 paceSignal
     const codeCount = countCodeFiles(cwd);
 
     // 第一级：强信号 DENY（superpowers/manual/artifact/code-count）
@@ -195,9 +191,10 @@ process.stdin.on('end', () => {
 
     // 第三级：软提醒（1-2 个代码文件）
     if (codeCount >= 1) {
-      const isNewFile2 = toolName === 'Write' && !fs.existsSync(filePath);
-      const displayCount2 = codeCount + (isNewFile2 ? 1 : 0);
-      const ctx = `提醒：这是项目中的第 ${displayCount2} 个代码文件，如果这是正式项目，建议先创建 PACE Artifact 文件（task.md 等）再继续写代码。`;
+      // I-9: 变量名语义化
+      const isNewFileForHint = toolName === 'Write' && !fs.existsSync(filePath);
+      const displayCountForHint = codeCount + (isNewFileForHint ? 1 : 0);
+      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件，如果这是正式项目，建议先创建 PACE Artifact 文件（task.md 等）再继续写代码。`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -205,7 +202,7 @@ process.stdin.on('end', () => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: SOFT_WARN | codeCount: ${displayCount2} | tool: ${toolName} | file: ${filePath}\n  output→AI: ${ctx}\n`);
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: SOFT_WARN | codeCount: ${displayCountForHint} | tool: ${toolName} | file: ${filePath}\n  output→AI: ${ctx}\n`);
       return;
     }
 

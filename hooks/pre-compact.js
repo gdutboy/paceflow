@@ -10,7 +10,8 @@ const { isPaceProject, readActive, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-const log = (msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} };
+// W-8: 使用共享日志轮转函数
+const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
 const cwd = process.cwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 
@@ -36,10 +37,14 @@ try {
     };
   }
 
-  // 收集运行时状态
+  // I-5: 收集运行时状态（含 blockCount 供 compact 恢复判断降级进度）
+  const blockCountFile = path.join(PACE_RUNTIME, 'stop-block-count');
+  let blockCount = 0;
+  try { blockCount = parseInt(fs.readFileSync(blockCountFile, 'utf8').trim(), 10) || 0; } catch(e) {}
   snapshot.runtime = {
     degraded: fs.existsSync(path.join(PACE_RUNTIME, 'degraded')),
-    todowriteUsed: fs.existsSync(path.join(PACE_RUNTIME, 'todowrite-used'))
+    todowriteUsed: fs.existsSync(path.join(PACE_RUNTIME, 'todowrite-used')),
+    blockCount
   };
 
   // 写入快照文件

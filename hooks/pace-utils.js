@@ -15,6 +15,8 @@ function isTeammate() {
 
 /** 从 cwd 提取项目名（小写+连字符格式） */
 function getProjectName(cwd) {
+  // I-1: 空值/极端路径防御
+  if (!cwd || cwd === '.' || cwd === '/' || cwd === '\\') return 'unknown-project';
   return path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
 }
 
@@ -190,6 +192,8 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
  * @returns {Array<{title: string, summary: string, status: string}>}
  */
 function scanRelatedNotes(projectName) {
+  // W-1: VAULT_PATH 空值防御
+  if (!VAULT_PATH) return [];
   const results = [];
   for (const dir of ['thoughts', 'knowledge']) {
     const dirPath = path.join(VAULT_PATH, dir);
@@ -222,4 +226,25 @@ function scanRelatedNotes(projectName) {
   return results;
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes };
+const MAX_LOG_SIZE = 512 * 1024;
+/**
+ * 创建带日志轮转的 logger 函数（512KB 上限，超过截断保留后半）
+ * @param {string} logPath - 日志文件路径
+ * @returns {function(string): void}
+ */
+function createLogger(logPath) {
+  return (msg) => {
+    try {
+      try {
+        const stat = fs.statSync(logPath);
+        if (stat.size > MAX_LOG_SIZE) {
+          const content = fs.readFileSync(logPath, 'utf8');
+          fs.writeFileSync(logPath, content.slice(content.length >> 1), 'utf8');
+        }
+      } catch(e) {}
+      fs.appendFileSync(logPath, msg);
+    } catch(e) {}
+  };
+}
+
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, countCodeFiles, hasPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger };
