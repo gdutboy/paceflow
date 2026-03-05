@@ -264,6 +264,64 @@ function patchSettings() {
   }
 }
 
+/**
+ * 清理旧版手动安装遗留的无前缀模板文件和旧 SKILL 文件名
+ * install.js 保留 artifact-/change- 前缀，但早期 README 手动安装会去掉前缀
+ */
+function cleanupOldTemplates() {
+  // artifact-management: 无 artifact- 前缀的旧模板
+  const artDir = path.join(SKILLS_TARGET, 'artifact-management', 'templates');
+  const OLD_ART = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+  for (const f of OLD_ART) {
+    const fp = path.join(artDir, f);
+    try {
+      if (fs.existsSync(fp)) {
+        if (!dryRun) fs.unlinkSync(fp);
+        log(`  🗑️  artifact-management/templates/${f} (旧文件清理)`);
+      }
+    } catch(e) {}
+  }
+  // change-management: 无 change- 前缀或下划线变体的旧模板
+  const chgDir = path.join(SKILLS_TARGET, 'change-management', 'templates');
+  const OLD_CHG = ['change_record.md', 'implementation_plan.md'];
+  for (const f of OLD_CHG) {
+    const fp = path.join(chgDir, f);
+    try {
+      if (fs.existsSync(fp)) {
+        if (!dryRun) fs.unlinkSync(fp);
+        log(`  🗑️  change-management/templates/${f} (旧文件清理)`);
+      }
+    } catch(e) {}
+  }
+  // 旧版 SKILL 文件名（现统一为 SKILL.md）
+  const OLD_SKILL_NAMES = {
+    'artifact-management': 'artifact-management.md',
+    'pace-knowledge': 'pace-knowledge.md',
+  };
+  for (const [dir, oldName] of Object.entries(OLD_SKILL_NAMES)) {
+    const fp = path.join(SKILLS_TARGET, dir, oldName);
+    try {
+      if (fs.existsSync(fp)) {
+        if (!dryRun) fs.unlinkSync(fp);
+        log(`  🗑️  ${dir}/${oldName} (旧 SKILL 文件名清理)`);
+      }
+    } catch(e) {}
+  }
+  // 旧版遗留目录
+  const OLD_DIRS = [
+    path.join(SKILLS_TARGET, 'change-management', 'examples'),
+    path.join(SKILLS_TARGET, 'change-management', 'scripts'),
+  ];
+  for (const dir of OLD_DIRS) {
+    try {
+      if (fs.existsSync(dir)) {
+        if (!dryRun) fs.rmSync(dir, { recursive: true, force: true });
+        log(`  🗑️  ${path.relative(SKILLS_TARGET, dir)}/ (旧目录清理)`);
+      }
+    } catch(e) {}
+  }
+}
+
 // === 主流程 ===
 try {
   console.log('PACEflow 安装脚本');
@@ -273,6 +331,7 @@ try {
 
   installHooks();
   installSkills();
+  cleanupOldTemplates();
   patchSettings();
 
   console.log('\n==================');

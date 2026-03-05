@@ -206,7 +206,7 @@ if (eventType !== 'compact') {
     const projectName = getProjectName(cwd);
     const notes = scanRelatedNotes(projectName);
     if (notes.length > 0) {
-      process.stdout.write(`=== 相关讨论 (thoughts/) ===\n`);
+      process.stdout.write(`=== 相关讨论 (thoughts/ + knowledge/) ===\n`);
       notes.slice(0, 5).forEach(n => {
         process.stdout.write(`[${n.status}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`);
       });

@@ -47,13 +47,8 @@ process.stdin.on('end', () => {
       return;
     }
 
-    // 标记本会话使用过 TodoWrite（供 Stop hook 检测残留）
-    const PACE_RUNTIME = path.join(cwd, '.pace');
-    try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
-    try { fs.writeFileSync(path.join(PACE_RUNTIME, 'todowrite-used'), ts(), 'utf8'); } catch(e) {}
-
-    // 写入类操作：TodoWrite（批量替换）、TaskCreate（创建单项）
-    const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate');
+    // 写入类操作：TodoWrite（批量替换）、TaskCreate（创建单项）、TaskUpdate（更新单项）
+    const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate');
 
     const taskActive = readActive(cwd, 'task.md');
     const hints = [];
@@ -118,6 +113,13 @@ process.stdin.on('end', () => {
         }
         hints.push(`task.md 不存在。如果这是 PACE 项目，请先创建 task.md 再使用 TodoWrite。`);
       }
+    }
+
+    // 标记本会话使用过 TodoWrite（供 Stop hook 检测残留）—— 仅写入操作且通过 DENY 检查后才标记
+    if (isWriteOp) {
+      const PACE_RUNTIME = path.join(cwd, '.pace');
+      try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
+      try { fs.writeFileSync(path.join(PACE_RUNTIME, 'todowrite-used'), ts(), 'utf8'); } catch(e) {}
     }
 
     if (hints.length > 0) {

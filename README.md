@@ -1,6 +1,6 @@
 # PACEflow — Claude Code 工作流强制执行系统
 
-> **版本**: v4.8.0
+> **版本**: v4.8.1
 > **运行时**: Node.js
 > **平台**: Windows / macOS / Linux（需 Claude Code CLI）
 
@@ -39,8 +39,9 @@ paceflow/
 │       ├── implementation_plan.md               #     实施计划模板
 │       ├── walkthrough.md                       #     工作记录模板
 │       └── findings.md                          #     调研记录模板
-├── skills/                                      # Skill 文件（4 个）
+├── skills/                                      # Skill 文件（5 个）
 │   ├── pace-workflow.md                         #   PACE 协议核心流程
+│   ├── pace-bridge.md                           #   Superpowers → PACEflow 桥接
 │   ├── artifact-management.md                   #   Artifact 文件管理规则
 │   ├── change-management.md                     #   变更 ID 管理模块
 │   ├── pace-knowledge.md                        #   Obsidian 知识库笔记管理
@@ -87,22 +88,26 @@ cp skills/pace-workflow.md ~/.claude/skills/pace-workflow/SKILL.md
 cp skills/artifact-management.md ~/.claude/skills/artifact-management/SKILL.md
 cp skills/change-management.md ~/.claude/skills/change-management/SKILL.md
 
+# pace-bridge
+mkdir -p ~/.claude/skills/pace-bridge
+cp skills/pace-bridge.md ~/.claude/skills/pace-bridge/SKILL.md
+
 # pace-knowledge
 mkdir -p ~/.claude/skills/pace-knowledge
-cp skills/pace-knowledge.md ~/.claude/skills/pace-knowledge/pace-knowledge.md
+cp skills/pace-knowledge.md ~/.claude/skills/pace-knowledge/SKILL.md
 
-# 复制 artifact-management 模板
+# 复制 artifact-management 模板（保留 artifact- 前缀）
 mkdir -p ~/.claude/skills/artifact-management/templates
-cp skills/templates/artifact-spec.md ~/.claude/skills/artifact-management/templates/spec.md
-cp skills/templates/artifact-task.md ~/.claude/skills/artifact-management/templates/task.md
-cp skills/templates/artifact-implementation_plan.md ~/.claude/skills/artifact-management/templates/implementation_plan.md
-cp skills/templates/artifact-walkthrough.md ~/.claude/skills/artifact-management/templates/walkthrough.md
-cp skills/templates/artifact-findings.md ~/.claude/skills/artifact-management/templates/findings.md
+cp skills/templates/artifact-spec.md ~/.claude/skills/artifact-management/templates/artifact-spec.md
+cp skills/templates/artifact-task.md ~/.claude/skills/artifact-management/templates/artifact-task.md
+cp skills/templates/artifact-implementation_plan.md ~/.claude/skills/artifact-management/templates/artifact-implementation_plan.md
+cp skills/templates/artifact-walkthrough.md ~/.claude/skills/artifact-management/templates/artifact-walkthrough.md
+cp skills/templates/artifact-findings.md ~/.claude/skills/artifact-management/templates/artifact-findings.md
 
-# 复制 change-management 模板
+# 复制 change-management 模板（保留 change- 前缀）
 mkdir -p ~/.claude/skills/change-management/templates
-cp skills/templates/change-record.md ~/.claude/skills/change-management/templates/change_record.md
-cp skills/templates/change-implementation_plan.md ~/.claude/skills/change-management/templates/implementation_plan.md
+cp skills/templates/change-record.md ~/.claude/skills/change-management/templates/change-record.md
+cp skills/templates/change-implementation_plan.md ~/.claude/skills/change-management/templates/change-implementation_plan.md
 ```
 
 ### 3. 配置 settings.json
@@ -342,6 +347,7 @@ Agent Teams 的 teammate 是**独立的 Claude Code 进程**，各自加载 `set
 | v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + DENY 降级 + 静默放行 + 废弃 2 无效 hook）|
 | v4.7.1 | 2026-02-28 | 基础设施解耦（ensureProjectInfra 独立）+ Write 新建 artifact 模板注入 |
 | v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一）|
+| v4.8.1 | 2026-03-05 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
 | v4.4.0 | 2026-02-14 | 系统审视改进（🔒 已知限制状态 + PACE_VERSION 集中化 + 日志精简 + findings 计数修复）|
 | v4.3.9 | 2026-02-14 | 3-Agent 审查修复（try-catch + 版本同步 + 未使用 import 清理）|
 | v4.3.8 | 2026-02-14 | ticket6 审查修复（countByStatus 统一 + [-] 扫描范围 + 死代码清理）|

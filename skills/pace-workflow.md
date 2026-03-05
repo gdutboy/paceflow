@@ -109,7 +109,7 @@ A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan
 **Superpowers 流程**：
 
 **Step 1 — Worktree 隔离**（推荐）：
-`EnterWorktree` 创建隔离分支。PACEflow 在 worktree 中完全可用（`resolveProjectCwd` 向上搜索 `.pace/`，vault artifacts 正常访问）。
+`EnterWorktree` 创建隔离分支。PACEflow 在 worktree 中完全可用（`resolveProjectCwd` 使用 `CLAUDE_PROJECT_DIR` 环境变量定位项目根，vault artifacts 正常访问）。
 
 降级条件（不使用 worktree）：HOTFIX / 单文件修改 / 用户指定不用。
 
