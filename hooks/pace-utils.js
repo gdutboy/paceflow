@@ -31,6 +31,9 @@ function getProjectName(cwd) {
   return path.basename(cwd).toLowerCase().replace(/\s+/g, '-');
 }
 
+// T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
+let _artifactDirCache = { cwd: null, dir: null };
+
 /**
  * 获取 artifact 文件的实际存储目录
  * 优先级：vault 有 artifact → vault | CWD 有 artifact → CWD | 新项目 → vault（默认）| 无 vault → CWD
@@ -38,19 +41,27 @@ function getProjectName(cwd) {
  * @returns {string} artifact 目录路径
  */
 function getArtifactDir(cwd) {
-  if (!VAULT_PATH) return cwd;
+  if (_artifactDirCache.cwd === cwd) return _artifactDirCache.dir;
+  let result = cwd;
   const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
   try {
     // vault 有 artifact → vault（迁移后）
     if (fs.existsSync(vaultDir) &&
         ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) {
-      return vaultDir;
+      result = vaultDir;
+      _artifactDirCache = { cwd, dir: result };
+      return result;
     }
   } catch(e) {}
   // CWD 有 artifact → CWD（未迁移项目，向后兼容）
-  if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return cwd;
+  if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) {
+    _artifactDirCache = { cwd, dir: cwd };
+    return cwd;
+  }
   // 新项目 → vault（默认目标）
-  return vaultDir;
+  result = vaultDir;
+  _artifactDirCache = { cwd, dir: result };
+  return result;
 }
 
 // W-6: 模块级缓存，避免 isPaceProject + 外部调用重复扫描目录
@@ -105,13 +116,11 @@ function isPaceProject(cwd) {
     if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
     // 信号 1（最强）：已有任何 PACE artifact 文件（CWD 或 vault）
     if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return 'artifact';
-    if (VAULT_PATH) {
-      const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-      try {
-        if (fs.existsSync(vaultDir) &&
-            ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) return 'artifact';
-      } catch(e) {}
-    }
+    const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+    try {
+      if (fs.existsSync(vaultDir) &&
+          ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) return 'artifact';
+    } catch(e) {}
     // 信号 2（强）：Superpowers plan 文件
     if (hasPlanFiles(cwd)) return 'superpowers';
     // 信号 3（强）：手动激活标记
@@ -168,7 +177,6 @@ function ensureProjectInfra(cwd) {
     }
   } catch(e) {}
   // vault 项目目录
-  if (!VAULT_PATH) return;
   try {
     const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
     fs.mkdirSync(vaultDir, { recursive: true });
@@ -190,8 +198,10 @@ function createTemplates(cwd) {
     const target = path.join(artDir, file);
     const tmpl = path.join(TEMPLATES_DIR, file);
     if (!fs.existsSync(target) && fs.existsSync(tmpl)) {
-      fs.copyFileSync(tmpl, target);
-      created.push(file);
+      try {
+        fs.copyFileSync(tmpl, target);
+        created.push(file);
+      } catch(e) {}
     }
   }
   return created;
@@ -219,8 +229,6 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
  * @returns {Array<{title: string, summary: string, status: string}>}
  */
 function scanRelatedNotes(projectName) {
-  // W-1: VAULT_PATH 空值防御
-  if (!VAULT_PATH) return [];
   const results = [];
   for (const dir of ['thoughts', 'knowledge']) {
     const dirPath = path.join(VAULT_PATH, dir);

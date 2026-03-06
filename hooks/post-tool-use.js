@@ -6,13 +6,13 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH } = paceUtils;
+const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
-const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
-const cwd = paceUtils.resolveProjectCwd ? paceUtils.resolveProjectCwd() : process.cwd();
+const log = paceUtils.createLogger(LOG);
+const cwd = paceUtils.resolveProjectCwd();
 
 const PACE_RUNTIME = path.join(cwd, '.pace');
 
@@ -88,6 +88,8 @@ process.stdin.on('end', () => {
     }
 
     // H9: CHG 完成时检查关联 findings 状态（实时 hook）
+    // T-282: 提前读取 findings 活跃区，供 H9 和 H7 共用
+    const findingsActive = readActive(cwd, 'findings.md');
     if (fileName === 'implementation_plan.md' && newString) {
       const chgDone = newString.match(/^- \[x\] (CHG-\d{8}-\d{2})/gm);
       const chgOld = oldString.match(/^- \[x\] (CHG-\d{8}-\d{2})/gm);
@@ -95,42 +97,59 @@ process.stdin.on('end', () => {
       if (chgDone) {
         const oldSet = new Set((chgOld || []).map(m => m.match(/CHG-\d{8}-\d{2}/)[0]));
         const newlyDone = chgDone.map(m => m.match(/CHG-\d{8}-\d{2}/)[0]).filter(id => !oldSet.has(id));
-        if (newlyDone.length > 0) {
-          const fa = readActive(cwd, 'findings.md');
-          if (fa) {
+        if (newlyDone.length > 0 && findingsActive) {
             const stale = [];
             for (const chgId of newlyDone) {
               const re = new RegExp(`^- \\[ \\] .+\\[change:: ${chgId}\\]`, 'gm');
-              const hits = fa.match(re) || [];
+              const hits = findingsActive.match(re) || [];
               hits.forEach(h => stale.push({ chgId, line: h.slice(6, 60) }));
             }
             if (stale.length > 0) {
               warnings.push(`CHG 已完成但关联 finding 仍为 [ ]：${stale.map(s => s.chgId + ' → ' + s.line).join('；')}，请更新为 [x]`);
             }
-          }
         }
       }
     }
 
+    // T-282: 一次性读取 impl_plan 活跃区，供 H10 和 H13 共用
+    const planActive = readActive(cwd, 'implementation_plan.md');
+
     // H10: implementation_plan.md 活跃区详情归档提醒 → 每会话首次
     const implArchiveRemindedFile = path.join(PACE_RUNTIME, 'impl-archive-reminded');
-    if (!fs.existsSync(implArchiveRemindedFile)) {
-      const planActive = readActive(cwd, 'implementation_plan.md');
-      if (planActive) {
-        const doneIndex = planActive.match(/^- \[(?:x|-)\] (CHG-\d{8}-\d{2})/gm) || [];
-        const doneIds = new Set(doneIndex.map(m => m.match(/CHG-\d{8}-\d{2}/)[0]));
-        const detailHeaders = planActive.match(/^### (CHG-\d{8}-\d{2})/gm) || [];
-        const staleDetails = detailHeaders.map(h => h.match(/CHG-\d{8}-\d{2}/)[0]).filter(id => doneIds.has(id));
+    if (planActive && !fs.existsSync(implArchiveRemindedFile)) {
+        const doneIndex = planActive.match(/^- \[(?:x|-)\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
+        const doneIds = new Set(doneIndex.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
+        const detailHeaders = planActive.match(/^### ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
+        const staleDetails = detailHeaders.map(h => h.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]).filter(id => doneIds.has(id));
         if (staleDetails.length > 0) {
           warnings.push(`implementation_plan.md 活跃区有 ${staleDetails.length} 个已完成变更详情未归档：${staleDetails.join(', ')}，请更新状态并移至 ARCHIVE 下方`);
           try { fs.writeFileSync(implArchiveRemindedFile, '1', 'utf8'); } catch(e) {}
         }
-      }
     }
 
-    // H7: findings.md ⚠️ 提醒 → 每会话首次
+    // H13: impl_plan 详情缺失检测 — 索引有 [x] 但全文无对应详情段落 → 每会话首次
+    const implDetailRemindedFile = path.join(PACE_RUNTIME, 'impl-detail-reminded');
+    if (planActive && !fs.existsSync(implDetailRemindedFile)) {
+        const doneIndexH13 = planActive.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
+        if (doneIndexH13.length > 0) {
+          const planFull = readFull(cwd, 'implementation_plan.md');
+          if (planFull) {
+            const doneIdsH13 = doneIndexH13.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
+            const missingDetails = doneIdsH13.filter(id => {
+              const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
+            });
+            if (missingDetails.length > 0) {
+              const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
+              warnings.push(`implementation_plan.md 有已完成变更缺少详情段落：${display}，请补充 "### CHG-..." 记录具体变更内容`);
+              try { fs.writeFileSync(implDetailRemindedFile, '1', 'utf8'); } catch(e) {}
+            }
+          }
+        }
+    }
+
+    // H7: findings.md ⚠️ 提醒 → 每会话首次（复用上方 findingsActive）
     const findingsRemindedFile = path.join(PACE_RUNTIME, 'findings-reminded');
-    const findingsActive = readActive(cwd, 'findings.md');
     if (findingsActive) {
       const unresolved = (findingsActive.match(/⚠️/g) || []).length;
       if (unresolved > 0 && !fs.existsSync(findingsRemindedFile)) {

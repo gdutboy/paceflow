@@ -11,8 +11,8 @@ const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
-const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
-const cwd = paceUtils.resolveProjectCwd ? paceUtils.resolveProjectCwd() : process.cwd();
+const log = paceUtils.createLogger(LOG);
+const cwd = paceUtils.resolveProjectCwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 
@@ -20,7 +20,7 @@ const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
 try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
 // I-2: 重置运行时 flag 文件（循环替代 6 个独立 try-catch）
-for (const flag of ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done']) {
+for (const flag of ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done', 'impl-detail-reminded']) {
   try { const fp = path.join(PACE_RUNTIME, flag); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
 }
 

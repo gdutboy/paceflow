@@ -660,6 +660,62 @@ test('40. session-start superpowers 桥接提醒注入', () => {
 });
 
 // ============================================================
+// 14. post-tool-use H9/H10/H13 检测 (3)
+// ============================================================
+console.log('\n--- post-tool-use H9/H10/H13 ---');
+
+test('41. H9: CHG 完成时关联 finding 仍为 [ ] → 提醒', () => {
+  const dir = makePaceProject('pou-h9', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260306-01 测试变更 #change\n\n<!-- ARCHIVE -->\n',
+    findings: '# 调研记录\n\n## 摘要索引\n\n- [ ] 测试发现 #finding [date:: 2026-03-06] [change:: CHG-20260306-01]\n\n<!-- ARCHIVE -->\n',
+  });
+  // 模拟编辑 impl_plan：old_string 有 [/]，new_string 改为 [x]
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '- [/] CHG-20260306-01 测试变更 #change',
+      new_string: '- [x] CHG-20260306-01 测试变更 #change',
+    }
+  });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('finding 仍为'), 'H9 应提醒关联 finding 未更新');
+  assert.ok(r.stdout.includes('CHG-20260306-01'), '应包含具体 CHG ID');
+});
+
+test('42. H10: impl_plan 活跃区有已完成详情 → 归档提醒', () => {
+  const dir = makePaceProject('pou-h10', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260306-01 测试变更 #change\n\n### CHG-20260306-01: 测试变更\n\n测试详情段落\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(dir, 'app.js'), old_string: 'a', new_string: 'b' }
+  });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('已完成变更详情未归档'), 'H10 应提醒详情未归档');
+  assert.ok(r.stdout.includes('CHG-20260306-01'), '应包含具体 CHG ID');
+});
+
+test('43. H13: impl_plan 索引有 [x] 但全文无详情段落 → 缺失提醒', () => {
+  const dir = makePaceProject('pou-h13', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260306-01 测试变更 #change\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(dir, 'app.js'), old_string: 'a', new_string: 'b' }
+  });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('缺少详情段落'), 'H13 应提醒详情缺失');
+  assert.ok(r.stdout.includes('CHG-20260306-01'), '应包含具体 CHG ID');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

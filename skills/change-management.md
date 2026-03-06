@@ -62,6 +62,7 @@ NN         = 当天序号（两位数，从 01 开始）
 | **A (Artifact)** | ① 生成变更 ID<br>② 更新索引表（`[ ]` 规划中）<br>③ 追加变更详情<br>④ 回写 findings `[change:: CHG-ID]` + 状态 `[x]` |
 | **C (Check)** | 用户确认后，状态改为 `[/]` 进行中 |
 | **E (Execute)** | ① 关联 task.md 任务<br>② 完成后状态改为 `[x]` 完成<br>③ 添加完成标记<br>④ 写入 walkthrough.md |
+| **V (Verify)** | ① 验证通过后添加 `<!-- VERIFIED -->`<br>② 确认 findings 关联已更新 |
 
 ---
 

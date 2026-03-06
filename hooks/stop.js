@@ -12,8 +12,8 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
-const log = paceUtils.createLogger ? paceUtils.createLogger(LOG) : ((msg) => { try { fs.appendFileSync(LOG, msg); } catch(e) {} });
-const cwd = paceUtils.resolveProjectCwd ? paceUtils.resolveProjectCwd() : process.cwd();
+const log = paceUtils.createLogger(LOG);
+const cwd = paceUtils.resolveProjectCwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
@@ -84,17 +84,29 @@ if (taskActive) {
     warnings.push(`implementation_plan.md 仍有 [/] 进行中，但任务已全部完成`);
   }
 
-  // 4. 检查 walkthrough.md（C-2: matchAll 取最后日期 + W-5: 无日期分支）
+  // 4. 检查 walkthrough.md（索引表日期 + 详情段落日期 + 分层报告）
   const walkActive = readActive(cwd, 'walkthrough.md');
   // W-6: walkActive 可能为空字符串（文件存在但活跃区为空），需额外判断
   if (walkActive !== null && walkActive.trim() && (doneCount > 0 || pendingCount > 0)) {
-    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }); // I-5: sv-SE locale 返回 ISO 格式日期（YYYY-MM-DD），无需手动拼接
-    const allDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/g)];
-    const lastDate = allDates.length > 0 ? allDates[allDates.length - 1][1] : null;
-    if (lastDate && lastDate !== today) {
-      warnings.push(`walkthrough.md 最近更新是 ${lastDate}，今天的工作尚未记录`);
-    } else if (!lastDate) {
-      warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录`);
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }); // I-5: sv-SE locale 返回 ISO 格式日期（YYYY-MM-DD）
+    // 详情段落日期（**时间**: YYYY-MM-DD 或 **追加时间**: YYYY-MM-DD）
+    const detailDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4}-\d{2}-\d{2})/g)];
+    // 索引表日期（| YYYY-MM-DD |）
+    const indexDates = [...walkActive.matchAll(/^\| (\d{4}-\d{2}-\d{2}) \|/gm)];
+    const hasDetailToday = detailDates.some(m => m[1] === today);
+    const hasIndexToday = indexDates.some(m => m[1] === today);
+    if (!hasDetailToday && !hasIndexToday) {
+      // 索引和详情都没有今天的记录
+      const allDates = [...detailDates.map(m => m[1]), ...indexDates.map(m => m[1])];
+      const latest = allDates.sort().pop() || null;
+      if (latest) {
+        warnings.push(`walkthrough.md 最近更新是 ${latest}，今天的工作尚未记录`);
+      } else {
+        warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录`);
+      }
+    } else if (hasIndexToday && !hasDetailToday) {
+      // 索引有今天的记录但详情没有 → 提醒补写详情段落
+      warnings.push(`walkthrough.md 索引已更新但缺少详情段落，请补充 "## YYYY-MM-DD 摘要" 记录具体变更内容`);
     }
   } else if (!fs.existsSync(path.join(artDir, 'walkthrough.md'))) {
     warnings.push(`walkthrough.md 不存在，缺少工作记录`);

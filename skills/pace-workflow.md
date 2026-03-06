@@ -1,6 +1,6 @@
 ---
 name: pace-workflow PACE工作流
-description: PACE 协议核心工作流程（Plan-Artifact-Check-Execute）。当任务满足以下条件时自动激活：(1) 涉及 3+ 文件修改，(2) 需要新增依赖或修改配置，(3) 预计 10+ 工具调用，(4) 涉及架构设计或技术选型，(5) 用户明确要求规划/设计/分析，(6) 单文件修改 100+ 行，(7) 核心模块/关键算法重构。指导 PACE 工作流（Plan-Artifact-Check-Execute）及验证阶段。
+description: PACE 协议核心工作流程（Plan-Artifact-Check-Execute-Verify）。当任务满足以下条件时自动激活：(1) 涉及 3+ 文件修改，(2) 需要新增依赖或修改配置，(3) 预计 10+ 工具调用，(4) 涉及架构设计或技术选型，(5) 用户明确要求规划/设计/分析，(6) 单文件修改 100+ 行，(7) 核心模块/关键算法重构。指导 PACE 工作流（Plan-Artifact-Check-Execute-Verify）及验证阶段。
 ---
 
 # PACE 协议工作流程
@@ -15,7 +15,7 @@ flowchart TD
     B -->|是| C[跳过 PACE]
     B -->|否| D{Hook 自动检测}
     D -->|artifact 已存在| E[启用 PACE]
-    D -->|superpowers plan| E
+    D -->|superpowers| E
     D -->|.pace-enabled| E
     D -->|3+ 代码文件| E
     D -->|无信号| F{AI 自行判断}
@@ -25,7 +25,7 @@ flowchart TD
 
 > 豁免条件详见 **User Rule G-8**
 >
-> **v4.8.0 Hook 行为**：
+> **v4.8.1 Hook 行为**：
 > - `isPaceProject()` 四信号优先级：`artifact` > `superpowers` > `manual` > `code-count`
 > - `hasActiveTasks`：仅 `[ ]`/`[/]`/`[!]` 算活跃任务，`[x]`/`[-]` 不算
 > - `isInsideProject`：项目外文件（如 `~/.claude/hooks/`）豁免 PACE 检查
@@ -99,8 +99,8 @@ A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan
 
 **严禁批准前修改代码。**
 
-> [!note] v4.8.0 Hook 强制
-> PreToolUse 会检查活跃区是否有 `<!-- APPROVED -->` 标记或 `[/]` 任务。
+> [!note] v4.8.1 Hook 强制
+> PreToolUse 会检查活跃区是否有 `<!-- APPROVED -->` 标记或 `[/]`/`[!]` 任务。
 > 若所有任务为 `[ ]` 且无 APPROVED 标记，写代码文件会被 **deny**。
 > v4.4.3 起还会检查 `implementation_plan.md` 是否有 `[/]` 进行中的变更索引，无则 **deny**。
 
@@ -155,7 +155,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 
 **验证通过后**：在 `task.md` 活跃区添加 `<!-- VERIFIED -->` 标记。
 
-> [!note] v4.8.0 Hook 强制
+> [!note] v4.8.1 Hook 强制
 > Stop hook 会检查活跃区是否有 `[x]` 完成项但无 `<!-- VERIFIED -->` 标记。
 > 若未验证，退出会被 **block**："请执行 V 阶段验证后添加标记"。
 

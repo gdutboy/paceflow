@@ -59,6 +59,11 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 - 新内容写入活跃区（ARCHIVE 标记上方）
 - 已完成项从活跃区移至归档区（ARCHIVE 标记下方）
 
+**排列顺序**（统一倒序：新→旧）：
+- **活跃区索引/条目**：最新的在最上方（新增条目插入索引顶部）
+- **活跃区详情段落**：最新详情在上，旧详情在下
+- **归档区**：最近归档的在 `<!-- ARCHIVE -->` 下方最前
+
 **归档操作必须原子化**：使用单次 `Edit` 操作完成，`old_string` 跨越被归档内容和 `<!-- ARCHIVE -->` 标记，`new_string` 把内容移到标记之后。**禁止拆分为两次 Edit**（先删除再插入），中间失败会丢数据。
 
 **task.md 归档时机**：
@@ -68,6 +73,7 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 ### 禁止事项
 
 **严禁**使用 `Write` 工具覆盖以下文件：
+- `task.md`（已存在时）
 - `implementation_plan.md`
 - `walkthrough.md`
 - `findings.md`
@@ -160,7 +166,12 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 ## 变更 ID 规范
 
-遵循 **[change-management](change-management.md)** 中的定义。
+| 格式 | 说明 | 示例 |
+|------|------|------|
+| `CHG-YYYYMMDD-NN` | 常规变更，日期+当日序号 | CHG-20260305-01 |
+| `HOTFIX-YYYYMMDD-NN` | 紧急修复 | HOTFIX-20260304-01 |
+
+**生成规则**：读取 `implementation_plan.md` 变更索引中当日最大序号，+1 生成新 ID。详细的变更管理流程参见 **change-management** skill。
 
 ---
 

@@ -1,5 +1,5 @@
 // verify.js — PACEflow 健康检查脚本
-// 执行 5 组检查：语法验证、源码-生产一致性、settings.json 完整性、版本号一致性、模板同步
+// 执行 6 组检查：语法验证、源码-生产一致性、settings.json 完整性、版本号一致性、模板同步、Skill 文件一致性
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -8,8 +8,10 @@ const HOME = process.env.HOME || process.env.USERPROFILE;
 const HOOKS_DIR = path.join(__dirname, 'hooks');
 const PROD_DIR = path.join(HOME, '.claude', 'hooks', 'pace');
 const SETTINGS_PATH = path.join(HOME, '.claude', 'settings.json');
+const SKILLS_TARGET = path.join(HOME, '.claude', 'skills');
 const HOOKS_TEMPLATES = path.join(__dirname, 'hooks', 'templates');
 const SKILLS_TEMPLATES = path.join(__dirname, 'skills', 'templates');
+const SKILLS_SRC = path.join(__dirname, 'skills');
 
 // 需要检查的 7 个 PACE hook 脚本名
 const EXPECTED_HOOKS = [
@@ -29,6 +31,15 @@ const TEMPLATE_MAP = {
   'implementation_plan.md': 'artifact-implementation_plan.md',
   'walkthrough.md': 'artifact-walkthrough.md',
   'findings.md': 'artifact-findings.md',
+};
+
+// Skill 文件映射：源码文件名 → 生产目录名（与 install.js SKILL_MAP 一致）
+const SKILL_MAP = {
+  'pace-workflow.md': 'pace-workflow',
+  'artifact-management.md': 'artifact-management',
+  'change-management.md': 'change-management',
+  'pace-knowledge.md': 'pace-knowledge',
+  'pace-bridge.md': 'pace-bridge',
 };
 
 let hasError = false;
@@ -271,6 +282,55 @@ function checkTemplates() {
   }
 }
 
+/**
+ * 第 6 组：Skill 文件一致性
+ * 比较源码 skills/*.md 与生产 ~/.claude/skills/{name}/SKILL.md
+ */
+function checkSkills() {
+  try {
+    const skillNames = Object.keys(SKILL_MAP);
+    let matched = 0;
+    const issues = [];
+
+    for (const srcName of skillNames) {
+      const dirName = SKILL_MAP[srcName];
+      const srcPath = path.join(SKILLS_SRC, srcName);
+      const prodPath = path.join(SKILLS_TARGET, dirName, 'SKILL.md');
+
+      if (!fs.existsSync(srcPath)) {
+        issues.push(`❌ 源码缺失: skills/${srcName}`);
+        hasError = true;
+        continue;
+      }
+      if (!fs.existsSync(prodPath)) {
+        issues.push(`❌ 生产缺失: ${dirName}/SKILL.md`);
+        hasError = true;
+        continue;
+      }
+
+      const srcBuf = fs.readFileSync(srcPath);
+      const prodBuf = fs.readFileSync(prodPath);
+
+      if (Buffer.compare(srcBuf, prodBuf) === 0) {
+        matched++;
+      } else {
+        issues.push(`⚠️ Skill 不一致: ${srcName} ≠ ${dirName}/SKILL.md`);
+        hasWarning = true;
+      }
+    }
+
+    if (issues.length === 0) {
+      results.push(`✅ Skill 一致性: ${matched}/${skillNames.length} 一致`);
+    } else {
+      results.push(`⚠️ Skill 一致性: ${matched}/${skillNames.length} 一致`);
+      results.push(...issues);
+    }
+  } catch (e) {
+    results.push(`❌ Skill 一致性: ${e.message}`);
+    hasError = true;
+  }
+}
+
 // 执行所有检查
 console.log('PACEflow 健康检查');
 console.log('==================');
@@ -280,6 +340,7 @@ checkSourceVsProd();
 checkSettings();
 checkVersion();
 checkTemplates();
+checkSkills();
 
 // 输出结果
 for (const line of results) {
