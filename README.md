@@ -39,12 +39,13 @@ paceflow/
 │       ├── implementation_plan.md               #     实施计划模板
 │       ├── walkthrough.md                       #     工作记录模板
 │       └── findings.md                          #     调研记录模板
-├── skills/                                      # Skill 文件（5 个）
+├── skills/                                      # Skill 文件（6 个）
 │   ├── pace-workflow.md                         #   PACE 协议核心流程
 │   ├── pace-bridge.md                           #   Superpowers → PACEflow 桥接
 │   ├── artifact-management.md                   #   Artifact 文件管理规则
 │   ├── change-management.md                     #   变更 ID 管理模块
 │   ├── pace-knowledge.md                        #   Obsidian 知识库笔记管理
+│   ├── paceflow-audit.md                        #   全面审查（5-agent 并行审查框架）
 │   └── templates/                               #   Skill 模板文件（7 个）
 │       ├── artifact-spec.md                     #     spec.md 模板
 │       ├── artifact-task.md                     #     task.md 模板
@@ -218,9 +219,9 @@ task.md 是任务权威来源，TodoWrite 是辅助显示。4 层缓解 compacti
 
 | Hook | 输入 | 成功输出 | 阻止方式 |
 |------|------|----------|----------|
-| SessionStart | - | stdout 纯文本（注入 AI 上下文）| N/A |
+| SessionStart | stdin JSON（eventType）| stdout 纯文本（注入 AI 上下文）| N/A |
 | PreToolUse | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext / permissionDecision）| `permissionDecision: "deny"` |
-| PreToolUse:TodoWrite | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext）| N/A（仅提醒）|
+| PreToolUse:TodoWrite | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext / permissionDecision）| `permissionDecision: "deny"`（Superpowers 桥接）|
 | PostToolUse | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext）| N/A（仅提醒）|
 | Stop | stdin JSON（stop_hook_active）| stderr + exit 2 | `exit 2`（stderr 反馈给 AI）|
 | PreCompact | stdin JSON（compact 上下文）| stdout JSON（additionalContext，快照注入）| N/A |
@@ -275,6 +276,7 @@ Hooks 在项目根目录的 `.pace/` 子目录下维护运行时状态：
 | `.pace/degraded` | 降级标记（连续 3 次 block 后）| Stop 写入，PostToolUse 读取，SessionStart 清除 |
 | `.pace/todowrite-used` | 本会话是否使用过 TodoWrite | todowrite-sync 写入，Stop 检测，SessionStart 清除 |
 | `.pace/disabled` | 豁免标记（禁用 PACE）| 用户手动创建 |
+| `.pace/synced-plans` | 已桥接 plan 文件名列表 | pace-bridge skill 写入 |
 
 建议将 `.pace/` 加入 `.gitignore`。
 
@@ -340,14 +342,14 @@ Agent Teams 的 teammate 是**独立的 Claude Code 进程**，各自加载 `set
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
-| v4.4.1 | 2026-02-25 | Obsidian 知识中枢集成（scanRelatedNotes 注入 + pace-knowledge skill + PreToolUse 模板提醒 + Artifact 索引格式迁移）|
-| v4.4.3 | 2026-02-25 | E 阶段前提检查（impl_plan 需 `[/]`）|
-| v4.5.0 | 2026-02-25 | Compact 快照 + Stop stdin 交叉验证 + Findings 否定理由增强 |
-| v4.6.0 | 2026-02-25 | ConfigChange hook + PreCompact hook（6→8 个 hook 脚本）|
-| v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + DENY 降级 + 静默放行 + 废弃 2 无效 hook）|
-| v4.7.1 | 2026-02-28 | 基础设施解耦（ensureProjectInfra 独立）+ Write 新建 artifact 模板注入 |
-| v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一）|
 | v4.8.1 | 2026-03-05 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
+| v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一）|
+| v4.7.1 | 2026-02-28 | 基础设施解耦（ensureProjectInfra 独立）+ Write 新建 artifact 模板注入 |
+| v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + DENY 降级 + 静默放行 + 废弃 2 无效 hook）|
+| v4.6.0 | 2026-02-25 | ConfigChange hook + PreCompact hook（6→8 个 hook 脚本）|
+| v4.5.0 | 2026-02-25 | Compact 快照 + Stop stdin 交叉验证 + Findings 否定理由增强 |
+| v4.4.3 | 2026-02-25 | E 阶段前提检查（impl_plan 需 `[/]`）|
+| v4.4.1 | 2026-02-25 | Obsidian 知识中枢集成（scanRelatedNotes 注入 + pace-knowledge skill + PreToolUse 模板提醒 + Artifact 索引格式迁移）|
 | v4.4.0 | 2026-02-14 | 系统审视改进（🔒 已知限制状态 + PACE_VERSION 集中化 + 日志精简 + findings 计数修复）|
 | v4.3.9 | 2026-02-14 | 3-Agent 审查修复（try-catch + 版本同步 + 未使用 import 清理）|
 | v4.3.8 | 2026-02-14 | ticket6 审查修复（countByStatus 统一 + [-] 扫描范围 + 死代码清理）|

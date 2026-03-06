@@ -9,6 +9,7 @@ description: 将 Superpowers 计划文件（docs/plans/）桥接到 PACEflow art
 ## 触发场景
 
 - PreToolUse DENY 消息包含"检测到 Superpowers 计划文件"
+- TodoWrite/TaskCreate DENY 消息包含"Superpowers 计划文件"
 - SessionStart 注入"Superpowers 桥接提醒"
 - 用户手动调用 `/pace-bridge`
 
@@ -51,6 +52,12 @@ Edit 活跃区添加：
 
 ### Step 5：验证
 确认 task.md 有 `[/]` 任务 + `<!-- APPROVED -->` + implementation_plan.md 有 `[/]` 变更。
+
+### Step 6：标记已同步
+将已桥接的 plan 文件名写入 `.pace/synced-plans`（每行一个文件名），防止后续 session 重复提示桥接。
+```bash
+# 示例：echo "2026-03-04-superpowers-paceflow-fusion.md" >> .pace/synced-plans
+```
 
 ## 重要提示
 

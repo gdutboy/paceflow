@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -22,6 +22,9 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   try {
+  // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
+  if (!isPaceProject(cwd)) return;
+
   let toolName = '', filePath = '', oldString = '', newString = '';
   try {
     const parsed = JSON.parse(input);
@@ -32,6 +35,14 @@ process.stdin.on('end', () => {
   } catch(e) {}
 
   const warnings = [];
+  // W-dry-4: 每会话首次提醒辅助函数（flag 检查+写入去重）
+  function warnOnce(flagName, message) {
+    const flagFile = path.join(PACE_RUNTIME, flagName);
+    if (fs.existsSync(flagFile)) return false;
+    warnings.push(message);
+    try { fs.writeFileSync(flagFile, '1', 'utf8'); } catch(e) {}
+    return true;
+  }
   const fileName = filePath ? path.basename(filePath) : '';
   const isArtifactEdit = ARTIFACT_FILES.includes(fileName);
 
@@ -58,11 +69,7 @@ process.stdin.on('end', () => {
     // 1. W2: 统一使用 countByStatus（仅顶层任务）
     const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
     // H3: 归档提醒 → 每会话首次（Stop exit 2 兜底）
-    const archiveRemindedFile = path.join(PACE_RUNTIME, 'archive-reminded');
-    if (doneCount > 0 && !fs.existsSync(archiveRemindedFile)) {
-      warnings.push(`task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方`);
-      try { fs.writeFileSync(archiveRemindedFile, '1', 'utf8'); } catch(e) {}
-    }
+    if (doneCount > 0) warnOnce('archive-reminded', `task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方`);
     // H4(impl_plan 一致性) + H5(walkthrough 日期) 已删除：Stop W3/W4 完全覆盖
 
     // v4.3.6 方案 C：编辑 task.md 后提醒同步 TodoWrite（复用 doneCount，避免与归档提醒重叠）
@@ -91,12 +98,12 @@ process.stdin.on('end', () => {
     // T-282: 提前读取 findings 活跃区，供 H9 和 H7 共用
     const findingsActive = readActive(cwd, 'findings.md');
     if (fileName === 'implementation_plan.md' && newString) {
-      const chgDone = newString.match(/^- \[x\] (CHG-\d{8}-\d{2})/gm);
-      const chgOld = oldString.match(/^- \[x\] (CHG-\d{8}-\d{2})/gm);
-      // 只检测本次新标为 [x] 的 CHG
+      const chgDone = newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm);
+      const chgOld = oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm);
+      // 只检测本次新标为 [x] 的 CHG/HOTFIX
       if (chgDone) {
-        const oldSet = new Set((chgOld || []).map(m => m.match(/CHG-\d{8}-\d{2}/)[0]));
-        const newlyDone = chgDone.map(m => m.match(/CHG-\d{8}-\d{2}/)[0]).filter(id => !oldSet.has(id));
+        const oldSet = new Set((chgOld || []).map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
+        const newlyDone = chgDone.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]).filter(id => !oldSet.has(id));
         if (newlyDone.length > 0 && findingsActive) {
             const stale = [];
             for (const chgId of newlyDone) {
@@ -115,21 +122,18 @@ process.stdin.on('end', () => {
     const planActive = readActive(cwd, 'implementation_plan.md');
 
     // H10: implementation_plan.md 活跃区详情归档提醒 → 每会话首次
-    const implArchiveRemindedFile = path.join(PACE_RUNTIME, 'impl-archive-reminded');
-    if (planActive && !fs.existsSync(implArchiveRemindedFile)) {
+    if (planActive && !fs.existsSync(path.join(PACE_RUNTIME, 'impl-archive-reminded'))) {
         const doneIndex = planActive.match(/^- \[(?:x|-)\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
         const doneIds = new Set(doneIndex.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
         const detailHeaders = planActive.match(/^### ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
         const staleDetails = detailHeaders.map(h => h.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]).filter(id => doneIds.has(id));
         if (staleDetails.length > 0) {
-          warnings.push(`implementation_plan.md 活跃区有 ${staleDetails.length} 个已完成变更详情未归档：${staleDetails.join(', ')}，请更新状态并移至 ARCHIVE 下方`);
-          try { fs.writeFileSync(implArchiveRemindedFile, '1', 'utf8'); } catch(e) {}
+          warnOnce('impl-archive-reminded', `implementation_plan.md 活跃区有 ${staleDetails.length} 个已完成变更详情未归档：${staleDetails.join(', ')}，请更新状态并移至 ARCHIVE 下方`);
         }
     }
 
     // H13: impl_plan 详情缺失检测 — 索引有 [x] 但全文无对应详情段落 → 每会话首次
-    const implDetailRemindedFile = path.join(PACE_RUNTIME, 'impl-detail-reminded');
-    if (planActive && !fs.existsSync(implDetailRemindedFile)) {
+    if (planActive && !fs.existsSync(path.join(PACE_RUNTIME, 'impl-detail-reminded'))) {
         const doneIndexH13 = planActive.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
         if (doneIndexH13.length > 0) {
           const planFull = readFull(cwd, 'implementation_plan.md');
@@ -141,21 +145,16 @@ process.stdin.on('end', () => {
             });
             if (missingDetails.length > 0) {
               const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
-              warnings.push(`implementation_plan.md 有已完成变更缺少详情段落：${display}，请补充 "### CHG-..." 记录具体变更内容`);
-              try { fs.writeFileSync(implDetailRemindedFile, '1', 'utf8'); } catch(e) {}
+              warnOnce('impl-detail-reminded', `implementation_plan.md 有已完成变更缺少详情段落：${display}，请补充 "### CHG-..." 记录具体变更内容`);
             }
           }
         }
     }
 
     // H7: findings.md ⚠️ 提醒 → 每会话首次（复用上方 findingsActive）
-    const findingsRemindedFile = path.join(PACE_RUNTIME, 'findings-reminded');
     if (findingsActive) {
       const unresolved = (findingsActive.match(/⚠️/g) || []).length;
-      if (unresolved > 0 && !fs.existsSync(findingsRemindedFile)) {
-        warnings.push(`findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
-        try { fs.writeFileSync(findingsRemindedFile, '1', 'utf8'); } catch(e) {}
-      }
+      if (unresolved > 0) warnOnce('findings-reminded', `findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
 
       // H8: 否定决策理由提醒（增强版 v4.5）
       if (fileName === 'findings.md') {

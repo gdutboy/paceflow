@@ -40,11 +40,14 @@ const SKILL_MAP = {
   'change-management.md': 'change-management',
   'pace-knowledge.md': 'pace-knowledge',
   'pace-bridge.md': 'pace-bridge',
+  'paceflow-audit.md': 'paceflow-audit',
 };
 
 let hasError = false;
 let hasWarning = false;
 const results = [];
+// 每个检查组的结果：'pass' | 'warn' | 'error'
+const groupStatus = [];
 
 /**
  * 第 1 组：语法验证
@@ -335,26 +338,31 @@ function checkSkills() {
 console.log('PACEflow 健康检查');
 console.log('==================');
 
-checkSyntax();
-checkSourceVsProd();
-checkSettings();
-checkVersion();
-checkTemplates();
-checkSkills();
+const checks = [checkSyntax, checkSourceVsProd, checkSettings, checkVersion, checkTemplates, checkSkills];
+for (const check of checks) {
+  const before = results.length;
+  check();
+  // 每个检查函数的第一行 push 是组级摘要，据其前缀判断组状态
+  if (results.length > before) {
+    const summary = results[before];
+    if (summary.startsWith('✅')) groupStatus.push('pass');
+    else if (summary.startsWith('⚠️')) groupStatus.push('warn');
+    else groupStatus.push('error');
+  }
+}
 
 // 输出结果
 for (const line of results) {
   console.log(line);
 }
 
-// 统计通过/警告/错误
-const passCount = results.filter(r => r.startsWith('✅')).length;
-const warnCount = results.filter(r => r.startsWith('⚠️')).length;
-const errCount = results.filter(r => r.startsWith('❌')).length;
+// 统计通过/警告/错误（基于 groupStatus 数组，每组一个状态）
+const passCount = groupStatus.filter(s => s === 'pass').length;
+const warnCount = groupStatus.filter(s => s === 'warn').length;
+const errCount = groupStatus.filter(s => s === 'error').length;
 
 console.log('------------------');
-// W-13: 动态计算总数（替代硬编码 /5）
-const total = passCount + warnCount + errCount;
+const total = groupStatus.length;
 const parts = [`结果: ${passCount}/${total} 通过`];
 if (warnCount > 0) parts.push(`${warnCount} 警告`);
 if (errCount > 0) parts.push(`${errCount} 错误`);

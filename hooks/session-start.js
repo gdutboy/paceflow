@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, hasPlanFiles, listPlanFiles } = paceUtils;
+const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, hasUnsyncedPlanFiles, listUnsyncedPlanFiles } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -19,8 +19,8 @@ const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 // v4: 重置 Stop 防无限循环计数器 + 清除降级标记 + 确保 .pace/ 目录存在
 try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
 try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
-// I-2: 重置运行时 flag 文件（循环替代 6 个独立 try-catch）
-for (const flag of ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done', 'impl-detail-reminded']) {
+// W-code-4: 使用 SESSION_SCOPED_FLAGS 常量（与 pace-utils 保持同步）
+for (const flag of SESSION_SCOPED_FLAGS) {
   try { const fp = path.join(PACE_RUNTIME, flag); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
 }
 
@@ -126,11 +126,11 @@ if (taskFullCached) {
       log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SKIPPED_REMINDER | count: ${skipped.length}\n`);
     }
 
-    // Superpowers 桥接检测：有 plan 文件但 task.md 无活跃任务
-    if (paceSignal && hasPlanFiles(cwd)) {
+    // Superpowers 桥接检测：有未同步的 plan 文件但 task.md 无活跃任务
+    if (paceSignal && hasUnsyncedPlanFiles(cwd)) {
       const hasActive = active && /- \[[ \/!]\]/.test(active);
       if (!hasActive) {
-        const planFiles = listPlanFiles(cwd);
+        const planFiles = listUnsyncedPlanFiles(cwd);
         const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
         process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
         process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);

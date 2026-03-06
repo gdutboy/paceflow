@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir } = paceUtils;
+const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -17,6 +17,9 @@ const cwd = paceUtils.resolveProjectCwd();
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
+
+// H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
+if (!isPaceProject(cwd)) process.exit(0);
 
 // 防无限循环：读取连续阻止计数
 function getBlockCount() {
@@ -40,10 +43,9 @@ try {
   lastMessage = parsed.last_assistant_message || '';
 } catch(e) {} // 解析失败不影响后续
 
-// 检查 artifact 文件是否存在
-const artifactFiles = ARTIFACT_FILES;
+// I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
 const artDir = getArtifactDir(cwd);
-const existing = artifactFiles.filter(f => fs.existsSync(path.join(artDir, f)));
+const existing = ARTIFACT_FILES.filter(f => fs.existsSync(path.join(artDir, f)));
 
 const taskActive = readActive(cwd, 'task.md');
 

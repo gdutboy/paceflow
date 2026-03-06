@@ -716,6 +716,83 @@ test('43. H13: impl_plan 索引有 [x] 但全文无详情段落 → 缺失提醒
 });
 
 // ============================================================
+// 11. synced-plans + H-1 guard + DENY 精确化
+// ============================================================
+console.log('\n--- synced-plans / H-1 guard / DENY precision ---');
+
+test('44. pre-tool-use: 旧 plan 已同步不再 DENY', () => {
+  const dir = makePaceProject('ptu-synced', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n',
+    paceRuntime: { 'synced-plans': '2026-03-04-old-plan.md\n' },
+  });
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-old-plan.md'), '');
+  const stdin = JSON.stringify({
+    tool_name: 'Write',
+    tool_input: { file_path: path.join(dir, 'app.js'), content: 'console.log("test")' }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  if (r.stdout.includes('permissionDecision')) {
+    const parsed = JSON.parse(r.stdout);
+    const reason = parsed?.hookSpecificOutput?.permissionDecisionReason || '';
+    assert.ok(!reason.includes('桥接'), '已同步的 plan 不应触发桥接 DENY');
+  }
+});
+
+test('45. session-start: 旧 plan 已同步不提醒桥接', () => {
+  const dir = makePaceProject('ss-synced', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
+    paceRuntime: { 'synced-plans': '2026-03-04-old-plan.md\n' },
+  });
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-old-plan.md'), '');
+  const stdin = JSON.stringify({ eventType: 'startup' });
+  const r = runHook('session-start.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('桥接提醒'), '已同步的 plan 不应触发桥接提醒');
+});
+
+test('46. stop.js: .pace/disabled → exit 0 放行', () => {
+  const dir = makePaceProject('stop-disabled', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] T-001 未完成\n\n<!-- ARCHIVE -->\n',
+    paceRuntime: { disabled: '1' },
+  });
+  const stdin = JSON.stringify({ stop_hook_active: true });
+  const r = runHook('stop.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0, 'disabled 项目应 exit 0 放行');
+});
+
+test('47. post-tool-use: .pace/disabled → 无警告输出', () => {
+  const dir = makePaceProject('pou-disabled', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [x] T-001 已完成\n\n<!-- ARCHIVE -->\n',
+    paceRuntime: { disabled: '1' },
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(dir, 'app.js'), old_string: 'a', new_string: 'b' }
+  });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stdout.trim(), '', 'disabled 项目不应有任何输出');
+});
+
+test('48. pre-tool-use: 全 [x]/[-] → DENY 消息含归档提示', () => {
+  const dir = makePaceProject('ptu-alldone', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [x] T-001 已完成\n- [-] T-002 已跳过\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260307-01 测试 #change\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Write',
+    tool_input: { file_path: path.join(dir, 'app.js'), content: 'test' }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.ok(r.stdout.includes('permissionDecision'), '应有 DENY');
+  const parsed = JSON.parse(r.stdout);
+  const reason = parsed?.hookSpecificOutput?.permissionDecisionReason || '';
+  assert.ok(reason.includes('归档'), 'W-flow-1: 全完成时应提示归档');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

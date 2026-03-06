@@ -1,6 +1,5 @@
 ---
 name: change-management 变更管理
-version: "1.0.0"
 description: 变更 ID 管理模块，由 pace-workflow 的 A 阶段调用。管理 implementation_plan.md 中的变更索引、状态追踪和跨 Artifact 联动。
 activation-conditions:
   - "由 pace-workflow 的 A (Artifact) 阶段调用"
@@ -28,13 +27,14 @@ activation-conditions:
 ## 变更 ID 格式
 
 ```
-CHG-YYYYMMDD-NN
+CHG-YYYYMMDD-NN       （常规变更）
+HOTFIX-YYYYMMDD-NN    （紧急修复）
 
-CHG        = 固定前缀（Change 缩写）
+CHG/HOTFIX = 固定前缀
 YYYYMMDD   = 创建日期（如 20260117）
 NN         = 当天序号（两位数，从 01 开始）
 
-示例：CHG-20260117-01、CHG-20260117-02
+示例：CHG-20260117-01、HOTFIX-20260304-01
 ```
 
 ### 生成规则

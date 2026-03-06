@@ -24,23 +24,18 @@ process.stdin.on('end', () => {
     if (!paceSignal) return;
 
     // 尝试解析 stdin 获取配置内容
-    let configStr = '';
+    let configObj = null;
     try {
       const parsed = JSON.parse(input);
-      // ConfigChange stdin 格式可能是 tool_input 或完整 settings
-      configStr = JSON.stringify(parsed.tool_input || parsed);
-    } catch(e) {
-      configStr = input;
-    }
+      configObj = parsed.tool_input || parsed;
+    } catch(e) {}
 
-    // W-10: 使用 JSON.parse 替代正则检测 disableAllHooks
+    // I-style-1: 直接在对象上检测 disableAllHooks（消除 stringify→parse 冗余）
     let hasDisableAll = false;
-    try {
-      const configObj = JSON.parse(configStr);
+    if (configObj) {
       hasDisableAll = configObj.disableAllHooks === true;
-    } catch(e) {
-      // 解析失败回退正则
-      hasDisableAll = /"disableAllHooks"\s*:\s*true/.test(configStr);
+    } else {
+      hasDisableAll = /"disableAllHooks"\s*:\s*true/.test(input);
     }
     if (hasDisableAll) {
       const ctx = `⚠️ 严重警告：检测到 disableAllHooks=true，这会导致 PACE 保护完全失效。如需临时禁用单个项目，请使用 .pace/disabled 标记而非禁用全部 hooks。请立即撤回此配置变更。`;
@@ -56,6 +51,7 @@ process.stdin.on('end', () => {
     }
 
     // W-2: 检测删除 PACE hook 条目（收紧：需匹配 hooks/pace/ 路径）
+    const configStr = configObj ? JSON.stringify(configObj) : input;
     if (/hooks\/pace\//i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
       const ctx = `检测到可能删除 PACE hook 配置，请确认这是有意操作。删除后 PACE 保护将部分失效。`;
       const output = {

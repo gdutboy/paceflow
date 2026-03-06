@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, countCodeFiles, hasPlanFiles, listPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -156,23 +156,23 @@ process.stdin.on('end', () => {
 
       // T-076: 场景化 DENY 消息
       let reason;
-      if (paceSignal === 'superpowers' && hasPlanFiles(cwd)) {
-        const planFiles = listPlanFiles(cwd);
-        const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
-        const artPath = artDir.replace(/\\/g, '/');
-        reason = `${createdMsg}检测到 Superpowers 计划文件：${fileList}。` +
-          `请执行桥接（artifact 为 .md 文件，Edit 不受此限制）：` +
-          `(1) Read ${planFiles[0] ? 'docs/plans/' + planFiles[0] : 'docs/plans/'} 提取任务列表；` +
-          `(2) Edit ${artPath}/implementation_plan.md 添加 - [/] CHG-YYYYMMDD-NN 变更索引；` +
-          `(3) Edit ${artPath}/task.md 添加 - [ ] T-NNN 任务 + <!-- APPROVED --> 标记，首个任务标为 [/]；` +
-          `(4) 桥接完成后重试写代码。或使用 /pace-bridge skill。`;
+      // W-dry-2: 使用 formatBridgeHint 消除重复的 listPlanFiles + 格式化代码
+      const bridgeHint = formatBridgeHint(cwd, artDir);
+      if (paceSignal === 'superpowers' && bridgeHint) {
+        reason = `${createdMsg}检测到 Superpowers 计划文件：${bridgeHint.fileList}。请执行桥接：${bridgeHint.bridgeSteps}`;
       } else if (paceSignal === 'superpowers') {
         reason = `${createdMsg}检测到 Superpowers 信号但无计划文件。请先执行 P-A-C 流程。`;
       } else if (taskFileExists || createdFiles.includes('task.md')) {
-        reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
-        reason += hasPlanFiles(cwd)
-          ? `检测到 docs/plans/ 中有计划文件，请将计划中的任务同步到 task.md 后再写代码。`
-          : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。`;
+        // W-flow-1: 区分"全部完成待归档"和"无任务"
+        const hasDoneItems = /- \[[x\-]\]/.test(taskActiveContent);
+        if (hasDoneItems) {
+          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先归档已完成任务，再定义新任务后写代码。`;
+        } else {
+          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
+          reason += hasUnsyncedPlanFiles(cwd)
+            ? `检测到 docs/plans/ 中有未同步的计划文件，请将计划中的任务同步到 task.md 后再写代码。`
+            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。`;
+        }
       } else {
         reason = `检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请先创建 Artifact 文件（spec.md / task.md / implementation_plan.md / walkthrough.md），参考 G-8 的 PACE 执行流程。`;
       }
@@ -214,7 +214,7 @@ process.stdin.on('end', () => {
       return;
     }
 
-    // 第 1 个代码文件，不触发
+    // W-code-6: 当前无代码文件，不触发
     return;
   }
 

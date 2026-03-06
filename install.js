@@ -18,13 +18,14 @@ const HOOKS_SRC = path.join(__dirname, 'hooks');
 const SKILLS_SRC = path.join(__dirname, 'skills');
 const CONFIG_SRC = path.join(__dirname, 'config', 'settings-hooks-excerpt.json');
 
-// I-11: skill .md 文件到子目录的映射（硬编码合理：5 个 skill 稳定且映射关系明确）
+// I-11: skill .md 文件到子目录的映射（硬编码合理：映射关系明确）
 const SKILL_MAP = {
   'pace-workflow.md': 'pace-workflow',
   'artifact-management.md': 'artifact-management',
   'change-management.md': 'change-management',
   'pace-knowledge.md': 'pace-knowledge',
   'pace-bridge.md': 'pace-bridge',
+  'paceflow-audit.md': 'paceflow-audit',
 };
 
 // 统计计数
@@ -32,9 +33,12 @@ let installed = 0;
 let updated = 0;
 let skipped = 0;
 
-/** 当前日期字符串 YYYYMMDD */
+/** 当前日期时间字符串 YYYYMMDD-HHmmss */
 function dateStamp() {
-  return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const d = new Date();
+  const date = d.toISOString().slice(0, 10).replace(/-/g, '');
+  const time = d.toTimeString().slice(0, 8).replace(/:/g, '');
+  return `${date}-${time}`;
 }
 
 /** 输出带可选 [DRY RUN] 前缀的消息 */

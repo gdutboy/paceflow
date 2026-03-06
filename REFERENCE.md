@@ -45,12 +45,13 @@ paceflow/
 │   ├── config-guard.js       # ConfigChange — 配置保护
 │   ├── pre-compact.js        # PreCompact — Compact 快照
 │   └── templates/            # 5 个 Artifact 模板
-├── skills/                   # 5 个 Skill 定义
+├── skills/                   # 6 个 Skill 定义
 │   ├── pace-workflow.md      # PACE P-A-C-E-V 流程
 │   ├── pace-bridge.md        # Superpowers → PACEflow 桥接
 │   ├── artifact-management.md # Artifact 文件管理规则
 │   ├── change-management.md  # 变更 ID 生成与管理
-│   └── pace-knowledge.md     # Obsidian 知识库笔记管理
+│   ├── pace-knowledge.md     # Obsidian 知识库笔记管理
+│   └── paceflow-audit.md     # 全面审查（5-agent 并行审查框架）
 ├── config/
 │   └── settings-hooks-excerpt.json  # settings.json hooks 配置示例
 ├── rules/
@@ -128,10 +129,12 @@ V（验证测试）──FAIL──→ 返回 E 修复
 
 **触发**：新会话启动、恢复、清屏、Compact 恢复
 
+**输入**：stdin JSON（含 `eventType`: `startup|resume|clear|compact`）
+
 | 编号 | 功能 | 说明 |
 |------|------|------|
 | S1 | 重置防循环计数器 | `.pace/stop-block-count` 清零 |
-| S2 | 清除单会话标记 | 删除 `degraded`、`todowrite-used`、`archive-reminded`、`findings-reminded`、`impl-archive-reminded` |
+| S2 | 清除单会话标记 | 删除 `degraded`、`todowrite-used`、`archive-reminded`、`findings-reminded`、`impl-archive-reminded`、`impl-detail-reminded` |
 | S3 | Compact 快照恢复 | 读取 `pre-compact-state.json`，注入进行中任务摘要 |
 | S4 | 懒创建模板 | 非 'artifact' 信号 + 无 task.md → 自动创建 5 个 Artifact 文件 |
 | S5 | 活跃区注入 | 逐个读取 5 个 Artifact 文件的 `<!-- ARCHIVE -->` 上方内容 |
@@ -180,6 +183,7 @@ V（验证测试）──FAIL──→ 返回 E 修复
 | H9 | CHG 完成时 findings 关联检查 | 实时 | CHG 标 `[x]` 但关联 finding 仍为 `[ ]` → 提醒更新 |
 | H10 | impl_plan 详情归档提醒 | 每会话首次 | 索引已完成但详情区还在活跃区 → 提醒归档 |
 | H11 | Correction 双写提醒 | 每次 | Edit findings.md 写入 `### Correction:` → 提醒同步到 knowledge/ |
+| H13 | impl_plan 详情缺失检测 | 每会话首次 | 索引 `[x]`/`[-]` 但 ARCHIVE 无对应 `### CHG-` 详情 → 提醒补充 |
 | C | TodoWrite 同步提醒 | 编辑 task.md 时 | 提醒同步 TodoWrite 状态 |
 
 **输出方式**：全部为 additionalContext（信息性，不阻止）
@@ -226,7 +230,7 @@ blockCount < 3 ?
 
 **运行时效果**：写入 `.pace/todowrite-used` 标记
 
-**输出方式**：全部为 additionalContext HINT（不阻止操作）
+**输出方式**：additionalContext HINT（不阻止）；Superpowers 桥接场景可 `permissionDecision: "deny"`
 
 ### 3.7 config-guard.js（ConfigChange）
 
@@ -593,7 +597,9 @@ summary: "[一句话项目描述]"
 | `findings-reminded` | PostToolUse H7 | PostToolUse | Findings 提醒已触发 | 每会话清除 |
 | `impl-archive-reminded` | PostToolUse H10 | PostToolUse | Impl_plan 详情归档提醒已触发 | 每会话清除 |
 | `findings-age-YYYY-MM-DD` | SessionStart S8 | SessionStart | 每日首次过期扫描标记 | 每日一个 |
+| `impl-detail-reminded` | PostToolUse H13 | PostToolUse | impl_plan 详情缺失提醒已触发 | 每会话清除 |
 | `pre-compact-state.json` | PreCompact | SessionStart S3 | Compact 快照 | 下次 Compact 覆盖 |
+| `synced-plans` | pace-bridge skill | pre-tool-use / session-start | 已桥接的 plan 文件名列表 | 持久（追加写入） |
 
 ---
 
@@ -638,6 +644,7 @@ summary: "[一句话项目描述]"
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
 | `VAULT_PATH` | `process.env.PACE_VAULT_PATH \|\| 'C:/Users/Xiao/OneDrive/Documents/Obsidian'` | Obsidian Vault 路径（支持 `PACE_VAULT_PATH` 环境变量覆盖） |
+| `SESSION_SCOPED_FLAGS` | `['degraded', 'todowrite-used', 'archive-reminded', ...]` | SessionStart 每次清除的单会话标记列表 |
 
 **函数**：
 
@@ -657,6 +664,11 @@ summary: "[一句话项目描述]"
 | `countByStatus(text, opts)` | 统一任务状态统计（pending/done/total） |
 | `scanRelatedNotes(projectName)` | 扫描 Obsidian 相关笔记 |
 | `createLogger(logPath)` | 共享日志轮转函数（512KB 上限） |
+| `resolveProjectCwd()` | 从 CLAUDE_PROJECT_DIR 获取项目根目录 |
+| `listPlanFiles(cwd)` | 列出 docs/plans/ 中的计划文件 |
+| `hasUnsyncedPlanFiles(cwd)` | 检测未桥接的 Superpowers plan 文件 |
+| `listUnsyncedPlanFiles(cwd)` | 列出未桥接的 plan 文件 |
+| `formatBridgeHint(cwd, artDir)` | 生成 Superpowers 桥接提示（文件列表+步骤） |
 
 ---
 
@@ -679,7 +691,7 @@ summary: "[一句话项目描述]"
 
 ### 11.2 verify.js（健康检查）
 
-**5 组检查**：
+**6 组检查**：
 
 | 组 | 检查内容 |
 |----|---------|
@@ -688,6 +700,7 @@ summary: "[一句话项目描述]"
 | Settings | settings.json 包含所有预期 hook 事件 |
 | 版本 | 所有脚本 require 的 PACE_VERSION 一致 |
 | 模板 | hooks/templates/ 与 skills/templates/ 同步 |
+| Skill | Skill 源码与生产 SKILL.md 字节一致性 |
 
 ### 11.3 test-pace-utils.js（单元测试）
 
@@ -695,7 +708,7 @@ summary: "[一句话项目描述]"
 
 ### 11.4 test-hooks-e2e.js（E2E 测试）
 
-覆盖所有 hook 的 stdin/stdout/exit code 协议行为（35+ 个测试用例），包括：
+覆盖所有 hook 的 stdin/stdout/exit code 协议行为（48 个测试用例），包括：
 - SessionStart 注入
 - PreToolUse deny/pass
 - PostToolUse 提醒

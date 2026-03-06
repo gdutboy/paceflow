@@ -355,6 +355,45 @@ test('listPlanFiles: 非日期格式文件被过滤', () => {
 });
 
 // ============================================================
+// 9. hasUnsyncedPlanFiles() / listUnsyncedPlanFiles() — 4 个测试
+// ============================================================
+console.log('\n--- hasUnsyncedPlanFiles / listUnsyncedPlanFiles ---');
+
+test('hasUnsyncedPlanFiles: 无 docs/plans/ → false', () => {
+  const dir = makeTmpDir('usp-empty');
+  assert.strictEqual(paceUtils.hasUnsyncedPlanFiles(dir), false);
+});
+
+test('hasUnsyncedPlanFiles: 全部已同步 → false', () => {
+  const dir = makeTmpDir('usp-allsynced');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-01-feature-a.md'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'synced-plans'), '2026-03-01-feature-a.md\n');
+  assert.strictEqual(paceUtils.hasUnsyncedPlanFiles(dir), false);
+});
+
+test('hasUnsyncedPlanFiles: 部分未同步 → true + listUnsyncedPlanFiles 仅返回未同步', () => {
+  const dir = makeTmpDir('usp-partial');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-01-feature-a.md'), '');
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-04-feature-b.md'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'synced-plans'), '2026-03-01-feature-a.md\n');
+  assert.strictEqual(paceUtils.hasUnsyncedPlanFiles(dir), true);
+  const unsynced = paceUtils.listUnsyncedPlanFiles(dir);
+  assert.deepStrictEqual(unsynced, ['2026-03-04-feature-b.md']);
+});
+
+test('hasUnsyncedPlanFiles: 无 synced-plans 文件 → 全部视为未同步', () => {
+  const dir = makeTmpDir('usp-nosync');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-01-feature-a.md'), '');
+  assert.strictEqual(paceUtils.hasUnsyncedPlanFiles(dir), true);
+  assert.deepStrictEqual(paceUtils.listUnsyncedPlanFiles(dir), ['2026-03-01-feature-a.md']);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();
