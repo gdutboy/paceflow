@@ -134,25 +134,11 @@ sources:
 
 ---
 
-## Obsidian CLI 命令参考
+## Obsidian 操作指引
 
-**前置条件**：Obsidian 桌面版运行中 + Settings → General → CLI 已启用 + obsidian-cli-rest 插件已安装
+操作 Obsidian 笔记时，优先调用 plugin skill：
 
-CLI 通过 IPC 与 Obsidian 通信，提供比 fs 更安全的笔记操作。MCP server（obsidian-cli-rest）已配置，AI 可直接通过 MCP 工具调用。
-
-### 推荐命令
-
-| 场景 | CLI 命令 | 替代方式 | 优势 |
-|------|---------|---------|------|
-| 搜索笔记 | `obsidian search query="关键词"` | Grep 扫描 vault | 使用 Obsidian 内置索引，支持全文搜索 |
-| 读取笔记 | `obsidian read file="路径"` | Read 工具 | 解析 wikilink/embed，返回渲染内容 |
-| 创建笔记 | `obsidian create file="路径" content="..."` | Write 工具 | 自动触发索引更新 |
-| 追加内容 | `obsidian append file="路径" content="..."` | Edit 工具 | 不破坏现有内容结构 |
-| 编辑属性 | `obsidian property:set file="路径" property="key" value="val"` | 手动编辑 frontmatter | 不破坏 YAML 格式 |
-| 查询任务 | `obsidian tasks` | Grep 正则匹配 | 使用 Tasks 插件索引 |
-
-### Fallback 策略
-
-Obsidian 未运行或 CLI 不可用时，回退到 fs 直接操作（Read/Write/Edit 工具）。判断方式：
-- MCP 工具调用失败 → 回退 fs
-- Hook 层读取操作始终使用 fs（延迟 <5ms vs CLI 100-500ms），仅 post-tool-use H12 索引刷新用 fire-and-forget spawn 调用 CLI
+- **CLI 操作**（搜索/创建/追加/属性编辑）→ 调用 `obsidian:obsidian-cli`
+- **Markdown 语法**（wikilinks/callouts/embeds/properties）→ 调用 `obsidian:obsidian-markdown`
+- **Obsidian 未运行**时 → 回退 fs 直接操作（Read/Write/Edit 工具）
+- **Hook 层**始终使用 fs（延迟 <5ms），仅 post-tool-use H12 用 fire-and-forget spawn 调用 CLI

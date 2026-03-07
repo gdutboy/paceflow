@@ -1,0 +1,12 @@
+{
+  "name": "paceflow",
+  "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify protocol with hooks",
+  "version": "5.0.0",
+  "author": {
+    "name": "paceaitian"
+  },
+  "homepage": "https://github.com/paceaitian/paceflow",
+  "repository": "https://github.com/paceaitian/paceflow",
+  "license": "MIT",
+  "keywords": ["workflow", "pace", "hooks", "planning", "artifacts"]
+}

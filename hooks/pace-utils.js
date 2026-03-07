@@ -3,10 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v4.8.1';
+const PACE_VERSION = 'v5.0.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
-const VAULT_PATH = process.env.PACE_VAULT_PATH || 'C:/Users/Xiao/OneDrive/Documents/Obsidian';
+const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 
 // W-code-4: 会话级 flag 文件集中管理（session-start 重置用）
 const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done', 'impl-detail-reminded'];

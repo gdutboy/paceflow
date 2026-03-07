@@ -178,16 +178,16 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 ## 模板文件
 
-创建新 Artifact 时，使用以下模板：
+创建新 Artifact 时，hooks 自动使用以下模板（位于 `hooks/templates/`）：
 
-- [templates/artifact-spec.md](templates/artifact-spec.md) — 项目规格模板
-- [templates/artifact-task.md](templates/artifact-task.md) — 任务清单模板
-- [templates/artifact-implementation_plan.md](templates/artifact-implementation_plan.md) — 实施计划模板
-- [templates/artifact-walkthrough.md](templates/artifact-walkthrough.md) — 工作记录模板
-- [templates/artifact-findings.md](templates/artifact-findings.md) — 调研记录模板
+- `spec.md` — 项目规格模板
+- `task.md` — 任务清单模板
+- `implementation_plan.md` — 实施计划模板
+- `walkthrough.md` — 工作记录模板
+- `findings.md` — 调研记录模板
 
 ---
 
 ## 关联 Skill
 
-- **[pace-knowledge](pace-knowledge.md)** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。
+- **[pace-knowledge](../pace-knowledge/SKILL.md)** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。

@@ -1,5 +1,5 @@
 // verify.js — PACEflow 健康检查脚本
-// 执行 6 组检查：语法验证、源码-生产一致性、settings.json 完整性、版本号一致性、模板同步、Skill 文件一致性
+// 执行 7 组检查：语法验证、源码-生产一致性、settings.json 完整性、版本号一致性、模板完整性、Skill 文件一致性、Plugin 结构
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -10,7 +10,6 @@ const PROD_DIR = path.join(HOME, '.claude', 'hooks', 'pace');
 const SETTINGS_PATH = path.join(HOME, '.claude', 'settings.json');
 const SKILLS_TARGET = path.join(HOME, '.claude', 'skills');
 const HOOKS_TEMPLATES = path.join(__dirname, 'hooks', 'templates');
-const SKILLS_TEMPLATES = path.join(__dirname, 'skills', 'templates');
 const SKILLS_SRC = path.join(__dirname, 'skills');
 
 // 需要检查的 7 个 PACE hook 脚本名
@@ -24,24 +23,15 @@ const EXPECTED_HOOKS = [
   'config-guard.js',
 ];
 
-// 模板文件映射：hooks 模板名 → skills 模板名（artifact- 前缀）
-const TEMPLATE_MAP = {
-  'spec.md': 'artifact-spec.md',
-  'task.md': 'artifact-task.md',
-  'implementation_plan.md': 'artifact-implementation_plan.md',
-  'walkthrough.md': 'artifact-walkthrough.md',
-  'findings.md': 'artifact-findings.md',
-};
-
-// Skill 文件映射：源码文件名 → 生产目录名（与 install.js SKILL_MAP 一致）
-const SKILL_MAP = {
-  'pace-workflow.md': 'pace-workflow',
-  'artifact-management.md': 'artifact-management',
-  'change-management.md': 'change-management',
-  'pace-knowledge.md': 'pace-knowledge',
-  'pace-bridge.md': 'pace-bridge',
-  'paceflow-audit.md': 'paceflow-audit',
-};
+// v5.0.0: Skill 目录名列表（源码 skills/<name>/SKILL.md）
+const SKILL_DIRS = [
+  'pace-workflow',
+  'artifact-management',
+  'change-management',
+  'pace-knowledge',
+  'pace-bridge',
+  'paceflow-audit',
+];
 
 let hasError = false;
 let hasWarning = false;
@@ -237,71 +227,52 @@ function checkVersion() {
 }
 
 /**
- * 第 5 组：模板同步
- * 比较 hooks/templates/ 和 skills/templates/ 中的对应模板内容
+ * 第 5 组：模板完整性
+ * v5.0.0: 模板统一到 hooks/templates/，仅检查文件存在性
  */
 function checkTemplates() {
   try {
-    const templateNames = Object.keys(TEMPLATE_MAP);
-    let matched = 0;
+    const expectedTemplates = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+    let found = 0;
     const issues = [];
 
-    for (const hooksName of templateNames) {
-      const skillsName = TEMPLATE_MAP[hooksName];
-      const hooksPath = path.join(HOOKS_TEMPLATES, hooksName);
-      const skillsPath = path.join(SKILLS_TEMPLATES, skillsName);
-
-      if (!fs.existsSync(hooksPath)) {
-        issues.push(`❌ hooks 模板缺失: ${hooksName}`);
-        hasError = true;
-        continue;
-      }
-      if (!fs.existsSync(skillsPath)) {
-        issues.push(`❌ skills 模板缺失: ${skillsName}`);
-        hasError = true;
-        continue;
-      }
-
-      const hooksBuf = fs.readFileSync(hooksPath);
-      const skillsBuf = fs.readFileSync(skillsPath);
-
-      if (Buffer.compare(hooksBuf, skillsBuf) === 0) {
-        matched++;
+    for (const name of expectedTemplates) {
+      const filePath = path.join(HOOKS_TEMPLATES, name);
+      if (fs.existsSync(filePath)) {
+        found++;
       } else {
-        issues.push(`⚠️ 模板不同步: ${hooksName} ≠ ${skillsName}`);
-        hasWarning = true;
+        issues.push(`❌ 模板缺失: hooks/templates/${name}`);
+        hasError = true;
       }
     }
 
     if (issues.length === 0) {
-      results.push(`✅ 模板同步: ${matched}/${templateNames.length} 一致`);
+      results.push(`✅ 模板完整性: ${found}/${expectedTemplates.length} 存在`);
     } else {
-      results.push(`⚠️ 模板同步: ${matched}/${templateNames.length} 一致`);
+      results.push(`❌ 模板完整性: ${found}/${expectedTemplates.length} 存在`);
       results.push(...issues);
     }
   } catch (e) {
-    results.push(`❌ 模板同步: ${e.message}`);
+    results.push(`❌ 模板完整性: ${e.message}`);
     hasError = true;
   }
 }
 
 /**
  * 第 6 组：Skill 文件一致性
- * 比较源码 skills/*.md 与生产 ~/.claude/skills/{name}/SKILL.md
+ * v5.0.0: 源码 skills/<name>/SKILL.md 与生产 ~/.claude/skills/<name>/SKILL.md 比较
  */
 function checkSkills() {
   try {
-    const skillNames = Object.keys(SKILL_MAP);
     let matched = 0;
     const issues = [];
 
-    for (const srcName of skillNames) {
-      const dirName = SKILL_MAP[srcName];
-      const srcPath = path.join(SKILLS_SRC, srcName);
+    for (const dirName of SKILL_DIRS) {
+      const srcPath = path.join(SKILLS_SRC, dirName, 'SKILL.md');
       const prodPath = path.join(SKILLS_TARGET, dirName, 'SKILL.md');
 
       if (!fs.existsSync(srcPath)) {
-        issues.push(`❌ 源码缺失: skills/${srcName}`);
+        issues.push(`❌ 源码缺失: skills/${dirName}/SKILL.md`);
         hasError = true;
         continue;
       }
@@ -317,15 +288,15 @@ function checkSkills() {
       if (Buffer.compare(srcBuf, prodBuf) === 0) {
         matched++;
       } else {
-        issues.push(`⚠️ Skill 不一致: ${srcName} ≠ ${dirName}/SKILL.md`);
+        issues.push(`⚠️ Skill 不一致: ${dirName}/SKILL.md`);
         hasWarning = true;
       }
     }
 
     if (issues.length === 0) {
-      results.push(`✅ Skill 一致性: ${matched}/${skillNames.length} 一致`);
+      results.push(`✅ Skill 一致性: ${matched}/${SKILL_DIRS.length} 一致`);
     } else {
-      results.push(`⚠️ Skill 一致性: ${matched}/${skillNames.length} 一致`);
+      results.push(`⚠️ Skill 一致性: ${matched}/${SKILL_DIRS.length} 一致`);
       results.push(...issues);
     }
   } catch (e) {
@@ -334,11 +305,101 @@ function checkSkills() {
   }
 }
 
+/**
+ * 第 7 组：Plugin 结构完整性
+ * 检查 .claude-plugin/plugin.json、hooks/hooks.json 和 skills 目录结构
+ */
+function checkPlugin() {
+  try {
+    const pluginJsonPath = path.join(__dirname, '.claude-plugin', 'plugin.json');
+    const hooksJsonPath = path.join(__dirname, 'hooks', 'hooks.json');
+    const issues = [];
+
+    // 检查 plugin.json
+    if (!fs.existsSync(pluginJsonPath)) {
+      issues.push(`❌ Plugin 缺失: .claude-plugin/plugin.json`);
+      hasError = true;
+    } else {
+      try {
+        const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+        if (!pluginJson.name) {
+          issues.push(`❌ plugin.json: 缺少 name 字段`);
+          hasError = true;
+        }
+      } catch (e) {
+        issues.push(`❌ plugin.json: JSON 解析失败 - ${e.message}`);
+        hasError = true;
+      }
+    }
+
+    // 检查 hooks.json
+    if (!fs.existsSync(hooksJsonPath)) {
+      issues.push(`❌ Plugin 缺失: hooks/hooks.json`);
+      hasError = true;
+    } else {
+      try {
+        const hooksJson = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+        if (!hooksJson.hooks) {
+          issues.push(`❌ hooks.json: 缺少 hooks 配置`);
+          hasError = true;
+        } else {
+          // 检查所有预期 hook 脚本是否注册
+          const allCommands = [];
+          for (const entries of Object.values(hooksJson.hooks)) {
+            for (const entry of entries) {
+              if (Array.isArray(entry.hooks)) {
+                for (const h of entry.hooks) {
+                  if (h.command) allCommands.push(h.command);
+                }
+              }
+            }
+          }
+          const missing = EXPECTED_HOOKS.filter(script => !allCommands.some(cmd => cmd.includes(script)));
+          if (missing.length > 0) {
+            issues.push(`⚠️ hooks.json: 缺少 ${missing.join(', ')} 注册`);
+            hasWarning = true;
+          }
+        }
+      } catch (e) {
+        issues.push(`❌ hooks.json: JSON 解析失败 - ${e.message}`);
+        hasError = true;
+      }
+    }
+
+    // 检查 skills 目录结构
+    let skillsOk = 0;
+    for (const dirName of SKILL_DIRS) {
+      const skillPath = path.join(SKILLS_SRC, dirName, 'SKILL.md');
+      if (fs.existsSync(skillPath)) {
+        skillsOk++;
+      } else {
+        issues.push(`❌ skills 目录结构: ${dirName}/SKILL.md 缺失`);
+        hasError = true;
+      }
+    }
+
+    if (issues.length === 0) {
+      results.push(`✅ Plugin 结构: plugin.json + hooks.json + ${skillsOk} skills 完整`);
+    } else {
+      const errorCount = issues.filter(i => i.startsWith('❌')).length;
+      if (errorCount > 0) {
+        results.push(`❌ Plugin 结构: ${issues.length} 个问题`);
+      } else {
+        results.push(`⚠️ Plugin 结构: ${issues.length} 个问题`);
+      }
+      results.push(...issues);
+    }
+  } catch (e) {
+    results.push(`❌ Plugin 结构: ${e.message}`);
+    hasError = true;
+  }
+}
+
 // 执行所有检查
 console.log('PACEflow 健康检查');
 console.log('==================');
 
-const checks = [checkSyntax, checkSourceVsProd, checkSettings, checkVersion, checkTemplates, checkSkills];
+const checks = [checkSyntax, checkSourceVsProd, checkSettings, checkVersion, checkTemplates, checkSkills, checkPlugin];
 for (const check of checks) {
   const before = results.length;
   check();

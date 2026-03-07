@@ -1,6 +1,6 @@
 // install.js — PACEflow 安装脚本
 // 将 hooks、skills、settings.json 配置安装到用户的 ~/.claude/ 目录
-// 用法: node install.js [--dry-run] [--force]
+// 用法: node install.js [--dry-run] [--force] [--plugin] [--migrate]
 
 const fs = require('fs');
 const path = require('path');
@@ -8,6 +8,8 @@ const path = require('path');
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const force = args.includes('--force');
+const pluginMode = args.includes('--plugin');
+const migrateMode = args.includes('--migrate');
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
 const HOOKS_TARGET = path.join(HOME, '.claude', 'hooks', 'pace');
@@ -18,15 +20,15 @@ const HOOKS_SRC = path.join(__dirname, 'hooks');
 const SKILLS_SRC = path.join(__dirname, 'skills');
 const CONFIG_SRC = path.join(__dirname, 'config', 'settings-hooks-excerpt.json');
 
-// I-11: skill .md 文件到子目录的映射（硬编码合理：映射关系明确）
-const SKILL_MAP = {
-  'pace-workflow.md': 'pace-workflow',
-  'artifact-management.md': 'artifact-management',
-  'change-management.md': 'change-management',
-  'pace-knowledge.md': 'pace-knowledge',
-  'pace-bridge.md': 'pace-bridge',
-  'paceflow-audit.md': 'paceflow-audit',
-};
+// v5.0.0: skill 目录名列表（源码结构 skills/<name>/SKILL.md）
+const SKILL_DIRS = [
+  'pace-workflow',
+  'artifact-management',
+  'change-management',
+  'pace-knowledge',
+  'pace-bridge',
+  'paceflow-audit',
+];
 
 // 统计计数
 let installed = 0;
@@ -141,54 +143,39 @@ function installHooks() {
 
 /**
  * 步骤 2：安装 skills 到 ~/.claude/skills/
- * 每个 .md skill 文件映射到对应子目录下的 SKILL.md
- * skills/templates/ 下的文件按前缀分组复制到对应 skill 目录的 templates/ 子目录
+ * v5.0.0: 源码结构 skills/<name>/SKILL.md，含可选 templates/ 子目录
  */
 function installSkills() {
   log('\n[2/3] 安装 Skills...');
 
-  // 安装 skill .md 文件
-  const skillFiles = fs.readdirSync(SKILLS_SRC).filter(f => f.endsWith('.md'));
-  for (const file of skillFiles) {
-    const dirName = SKILL_MAP[file];
-    if (!dirName) continue; // 未知 skill 文件跳过
-
+  for (const dirName of SKILL_DIRS) {
+    const srcDir = path.join(SKILLS_SRC, dirName);
     const targetDir = path.join(SKILLS_TARGET, dirName);
+
+    // 安装 SKILL.md
+    const srcSkill = path.join(srcDir, 'SKILL.md');
+    if (!fs.existsSync(srcSkill)) continue;
+
     if (!dryRun) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
-    installFile(
-      path.join(SKILLS_SRC, file),
-      path.join(targetDir, 'SKILL.md'),
-      `${dirName}/SKILL.md`
-    );
-  }
+    installFile(srcSkill, path.join(targetDir, 'SKILL.md'), `${dirName}/SKILL.md`);
 
-  // 安装 skills/templates/ 下的文件到对应 skill 目录的 templates/ 子目录
-  const skillTemplatesDir = path.join(SKILLS_SRC, 'templates');
-  if (fs.existsSync(skillTemplatesDir)) {
-    const templateFiles = fs.readdirSync(skillTemplatesDir).filter(f => f.endsWith('.md'));
-
-    // 按前缀分组：artifact-*.md → artifact-management, change-*.md → change-management
-    for (const file of templateFiles) {
-      let targetSkillDir;
-      if (file.startsWith('artifact-')) {
-        targetSkillDir = 'artifact-management';
-      } else if (file.startsWith('change-')) {
-        targetSkillDir = 'change-management';
-      } else {
-        continue; // 无法归类的模板跳过
-      }
-
-      const targetDir = path.join(SKILLS_TARGET, targetSkillDir, 'templates');
+    // 安装 templates/ 子目录（如 change-management/templates/）
+    const srcTemplatesDir = path.join(srcDir, 'templates');
+    if (fs.existsSync(srcTemplatesDir)) {
+      const targetTemplatesDir = path.join(targetDir, 'templates');
       if (!dryRun) {
-        fs.mkdirSync(targetDir, { recursive: true });
+        fs.mkdirSync(targetTemplatesDir, { recursive: true });
       }
-      installFile(
-        path.join(skillTemplatesDir, file),
-        path.join(targetDir, file),
-        `${targetSkillDir}/templates/${file}`
-      );
+      const templateFiles = fs.readdirSync(srcTemplatesDir).filter(f => f.endsWith('.md'));
+      for (const file of templateFiles) {
+        installFile(
+          path.join(srcTemplatesDir, file),
+          path.join(targetTemplatesDir, file),
+          `${dirName}/templates/${file}`
+        );
+      }
     }
   }
 }
@@ -270,7 +257,7 @@ function patchSettings() {
 
 /**
  * 清理旧版手动安装遗留的无前缀模板文件和旧 SKILL 文件名
- * install.js 保留 artifact-/change- 前缀，但早期 README 手动安装会去掉前缀
+ * v5.0.0: 新增 artifact-management/templates/ 清理（模板统一到 hooks/templates/）
  */
 function cleanupOldTemplates() {
   // artifact-management: 无 artifact- 前缀的旧模板
@@ -282,6 +269,17 @@ function cleanupOldTemplates() {
       if (fs.existsSync(fp)) {
         if (!dryRun) fs.unlinkSync(fp);
         log(`  🗑️  artifact-management/templates/${f} (旧文件清理)`);
+      }
+    } catch(e) {}
+  }
+  // v5.0.0: artifact-management/templates/ 的 artifact-*.md 旧副本（已统一到 hooks/templates/）
+  const OLD_ART_PREFIXED = ['artifact-spec.md', 'artifact-task.md', 'artifact-implementation_plan.md', 'artifact-walkthrough.md', 'artifact-findings.md'];
+  for (const f of OLD_ART_PREFIXED) {
+    const fp = path.join(artDir, f);
+    try {
+      if (fs.existsSync(fp)) {
+        if (!dryRun) fs.unlinkSync(fp);
+        log(`  🗑️  artifact-management/templates/${f} (v5.0.0 模板统一清理)`);
       }
     } catch(e) {}
   }
@@ -326,6 +324,98 @@ function cleanupOldTemplates() {
   }
 }
 
+/**
+ * 递归复制目录（--plugin 模式使用）
+ */
+function copyDirRecursive(src, dest) {
+  if (!dryRun) fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === 'node_modules' || entry.name === '.git') continue;
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      installFile(srcPath, destPath, path.relative(__dirname, srcPath));
+    }
+  }
+}
+
+/**
+ * --plugin 模式：将 paceflow 安装到本地 plugin 缓存
+ * 仅复制 plugin 需要的目录：.claude-plugin/、hooks/、skills/、rules/
+ */
+function installAsPlugin() {
+  const pj = JSON.parse(fs.readFileSync(path.join(__dirname, '.claude-plugin', 'plugin.json'), 'utf8'));
+  const version = pj.version || '0.0.0';
+  const PLUGIN_CACHE = path.join(HOME, '.claude', 'plugins', 'marketplaces', 'paceaitian-paceflow', 'paceflow', version);
+  log(`\n[Plugin] 安装 paceflow@${version} 到本地 plugin 缓存...`);
+
+  const PLUGIN_CONTENT = ['.claude-plugin', 'hooks', 'skills', 'rules'];
+  for (const dir of PLUGIN_CONTENT) {
+    const srcDir = path.join(__dirname, dir);
+    if (fs.existsSync(srcDir)) {
+      copyDirRecursive(srcDir, path.join(PLUGIN_CACHE, dir));
+    }
+  }
+  // 复制根目录 README.md（如有）
+  const readme = path.join(__dirname, 'README.md');
+  if (fs.existsSync(readme)) {
+    installFile(readme, path.join(PLUGIN_CACHE, 'README.md'), 'README.md');
+  }
+
+  log(`\n✅ Plugin 已安装到 ${PLUGIN_CACHE}`);
+}
+
+/**
+ * --migrate 模式：清理旧版手动安装（settings.json hooks + ~/.claude/hooks/pace/ + skills）
+ */
+function migrateFromManual() {
+  log('\n[Migrate] 清理旧版手动安装...');
+
+  // 1. 清理 settings.json 中的 PACE hook 条目
+  if (fs.existsSync(SETTINGS_PATH)) {
+    if (!dryRun) fs.copyFileSync(SETTINGS_PATH, SETTINGS_PATH + '.bak');
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
+    if (settings.hooks) {
+      let removed = 0;
+      for (const eventType of Object.keys(settings.hooks)) {
+        const entries = settings.hooks[eventType];
+        if (!Array.isArray(entries)) continue;
+        const before = entries.length;
+        settings.hooks[eventType] = entries.filter(entry => {
+          const cmds = (entry.hooks || []).map(h => h.command || '').join('');
+          return !cmds.includes('/pace/');
+        });
+        removed += before - settings.hooks[eventType].length;
+        if (settings.hooks[eventType].length === 0) delete settings.hooks[eventType];
+      }
+      if (!dryRun) {
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
+      }
+      log(`  🗑️  settings.json: 移除 ${removed} 个 PACE hook 条目（已备份 .bak）`);
+    }
+  }
+
+  // 2. 清理旧 hooks 目录
+  if (fs.existsSync(HOOKS_TARGET)) {
+    if (!dryRun) fs.rmSync(HOOKS_TARGET, { recursive: true, force: true });
+    log(`  🗑️  ${HOOKS_TARGET} 已删除`);
+  }
+
+  // 3. 清理旧 skills 目录中的 PACE skills
+  for (const dirName of SKILL_DIRS) {
+    const skillDir = path.join(SKILLS_TARGET, dirName);
+    if (fs.existsSync(skillDir)) {
+      if (!dryRun) fs.rmSync(skillDir, { recursive: true, force: true });
+      log(`  🗑️  skills/${dirName}/ 已删除`);
+    }
+  }
+
+  log('\n✅ 旧版手动安装已清理');
+}
+
 // === 主流程 ===
 try {
   console.log('PACEflow 安装脚本');
@@ -333,16 +423,22 @@ try {
   if (dryRun) console.log('[DRY RUN] 预览模式，不会执行任何操作\n');
   if (force) console.log('[FORCE] 强制模式，不一致文件直接覆盖不备份\n');
 
-  installHooks();
-  installSkills();
-  cleanupOldTemplates();
-  patchSettings();
+  if (migrateMode) {
+    migrateFromManual();
+  } else if (pluginMode) {
+    installAsPlugin();
+  } else {
+    installHooks();
+    installSkills();
+    cleanupOldTemplates();
+    patchSettings();
+  }
 
   console.log('\n==================');
-  log(`安装完成: ${installed} 安装, ${updated} 更新, ${skipped} 跳过`);
+  log(`完成: ${installed} 安装, ${updated} 更新, ${skipped} 跳过`);
 
-  if (!dryRun) {
-    console.log('\n⚠️  settings.json 修改后需要重启 Claude Code 才能生效');
+  if (!dryRun && !migrateMode) {
+    console.log('\n⚠️  重启 Claude Code 后生效');
   }
 } catch (err) {
   console.error(`\n❌ 安装失败: ${err.message}`);
