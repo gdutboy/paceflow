@@ -346,7 +346,7 @@ function copyDirRecursive(src, dest) {
 
 /**
  * --plugin 模式：将 paceflow 安装到本地 plugin 缓存
- * 仅复制 plugin 需要的目录：.claude-plugin/、hooks/、skills/、rules/
+ * 仅复制 plugin 需要的目录：.claude-plugin/、hooks/、skills/
  */
 function installAsPlugin() {
   const pj = JSON.parse(fs.readFileSync(path.join(__dirname, '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -354,7 +354,7 @@ function installAsPlugin() {
   const PLUGIN_CACHE = path.join(HOME, '.claude', 'plugins', 'marketplaces', 'paceaitian-paceflow', 'paceflow', version);
   log(`\n[Plugin] 安装 paceflow@${version} 到本地 plugin 缓存...`);
 
-  const PLUGIN_CONTENT = ['.claude-plugin', 'hooks', 'skills', 'rules'];
+  const PLUGIN_CONTENT = ['.claude-plugin', 'hooks', 'skills'];
   for (const dir of PLUGIN_CONTENT) {
     const srcDir = path.join(__dirname, dir);
     if (fs.existsSync(srcDir)) {

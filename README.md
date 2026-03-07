@@ -56,8 +56,7 @@ paceflow/
 │   └── paceflow-audit/SKILL.md                  #   全面审查（5-agent 并行审查框架）
 ├── config/                                      # 配置参考（手动安装用）
 │   └── settings-hooks-excerpt.json              #   settings.json hooks 段配置示例
-└── rules/                                       # 规则文件
-    └── CLAUDE.md                                #   全局规则（G-1 ~ G-12）
+└── tests/                                       # 测试脚本
 ```
 
 ---
@@ -106,16 +105,6 @@ node paceflow/install.js --migrate
 # 2. 安装 Plugin
 claude plugin install paceflow@paceaitian/paceflow
 ```
-
-### 全局规则
-
-将 `rules/CLAUDE.md` 复制为全局规则文件：
-
-```bash
-cp rules/CLAUDE.md ~/.claude/CLAUDE.md
-```
-
-> 根据个人偏好修改 G-5（沟通风格）、G-11（环境）等规则。
 
 ### 重启 Claude Code
 

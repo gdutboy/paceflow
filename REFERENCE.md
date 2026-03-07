@@ -59,8 +59,6 @@ paceflow/
 │   └── paceflow-audit/SKILL.md                  #   全面审查（5-agent 并行审查框架）
 ├── config/
 │   └── settings-hooks-excerpt.json              #   settings.json hooks 配置示例（手动安装用）
-├── rules/
-│   └── CLAUDE.md                                #   全局规则模板（G-1 ~ G-12）
 └── tests/                                       #   测试脚本
 ```
 
