@@ -1,9 +1,0 @@
-{
-  "plugins": [
-    {
-      "name": "paceflow",
-      "source": "./",
-      "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify protocol with hooks"
-    }
-  ]
-}
