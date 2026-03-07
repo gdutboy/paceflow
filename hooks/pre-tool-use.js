@@ -6,10 +6,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
@@ -20,11 +19,13 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-  let toolName = '', filePath = '';
+  let toolName = '', filePath = '', oldString = '', newString = '';
   try {
     const parsed = JSON.parse(input);
     toolName = parsed.tool_name || '';
     filePath = parsed.tool_input?.file_path || '';
+    oldString = parsed.tool_input?.old_string || '';
+    newString = parsed.tool_input?.new_string || '';
   } catch(e) {}
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
@@ -51,6 +52,7 @@ process.stdin.on('end', () => {
   const hasApproval = /- \[[\/!]\]/.test(taskActiveContent) || /^<!-- APPROVED -->$/m.test(taskActiveContent);
 
   const isCodeFile = CODE_EXTS.some(ext => filePath.endsWith(ext));
+  const fileName = filePath ? path.basename(filePath) : '';
 
   // v4.3.1: 项目外文件豁免（CWD 和 vault artifact 目录均视为"项目内"）
   const normalizedFile = filePath.replace(/\\/g, '/').toLowerCase();
@@ -65,7 +67,6 @@ process.stdin.on('end', () => {
 
   // v4.8: artifact 已迁移到 vault 时，拦截对 CWD 中 artifact 文件的 Write/Edit 并重定向
   if ((toolName === 'Write' || toolName === 'Edit') && artDir !== cwd && paceSignal) {
-    const fileName = path.basename(filePath);
     if (ARTIFACT_FILES.includes(fileName) && normalizedFile.startsWith(cwdWithSlash)) {
       const correctPath = path.join(artDir, fileName).replace(/\\/g, '/');
       const reason = `artifact 文件已迁移到 Obsidian vault。请将 file_path 修改为：${correctPath}`;
@@ -85,7 +86,6 @@ process.stdin.on('end', () => {
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && paceSignal) {
     const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
-    const fileName = path.basename(filePath);
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
       const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。`;
       const output = {
@@ -103,7 +103,6 @@ process.stdin.on('end', () => {
 
   // T-206: Write 新建 artifact 文件时，注入对应模板内容引导格式
   if (toolName === 'Write' && isInsideProject && paceSignal) {
-    const fileName = path.basename(filePath);
     if (ARTIFACT_FILES.includes(fileName) && !fs.existsSync(path.join(artDir, fileName))) {
       const TEMPLATES_DIR = path.join(__dirname, 'templates');
       const tmpl = path.join(TEMPLATES_DIR, fileName);
@@ -136,6 +135,69 @@ process.stdin.on('end', () => {
         }
       };
       process.stdout.write(JSON.stringify(output));
+      return;
+    }
+  }
+
+  // v5.0.1: impl_plan 详情守门 — 标 [x] 前必须有 ### CHG-ID 详情段落
+  if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
+    // 检测 new_string 中新出现的 [x] CHG-ID（对比 old_string 排除已有的）
+    const newDone = (newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
+      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
+    const oldDone = new Set((oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
+      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
+    const newlyCompleted = newDone.filter(id => !oldDone.has(id));
+    if (newlyCompleted.length > 0) {
+      const planFull = readFull(cwd, 'implementation_plan.md');
+      if (planFull) {
+        const missing = newlyCompleted.filter(id => {
+          const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
+        });
+        if (missing.length > 0) {
+          const reason = `不能将 ${missing.join(', ')} 标记为已完成 [x]：缺少详情段落（### ${missing[0]} ...）。请先在 implementation_plan.md 添加详情记录具体变更内容，再标记索引为 [x]。`;
+          const output = denyOrHint(reason);
+          process.stdout.write(JSON.stringify(output));
+          log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_DETAIL${teammateTag} | missing: ${missing.join(', ')}\n`);
+          return;
+        }
+      }
+    }
+
+    // T-325: 创建阶段详情守门 — 添加新 [ ]/[/] 索引时必须有 ### CHG-ID 详情段落
+    const newPendingIds = (newString.match(/^- \[[ \/]\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
+      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
+    const oldAnyIds = new Set((oldString.match(/^- \[.\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
+      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
+    const newlyAddedIds = newPendingIds.filter(id => !oldAnyIds.has(id));
+    if (newlyAddedIds.length > 0) {
+      const planFull325 = readFull(cwd, 'implementation_plan.md');
+      const missing325 = newlyAddedIds.filter(id => {
+        const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 同一次 Edit 中同时包含索引和详情 → 放行
+        if (new RegExp(`^### ${esc}`, 'm').test(newString)) return false;
+        // 已有详情段落 → 放行
+        if (planFull325 && new RegExp(`^### ${esc}`, 'm').test(planFull325)) return false;
+        return true;
+      });
+      if (missing325.length > 0) {
+        const reason = `添加新变更索引 ${missing325.join(', ')} 时必须同时写入详情段落（### ${missing325[0]} ...）。请在同一次 Edit 中包含索引和详情，或先添加详情再添加索引。`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_CREATE${teammateTag} | missing: ${missing325.join(', ')}\n`);
+        return;
+      }
+    }
+  }
+
+  // v5.0.1: native plan 桥接引导 — 检测 .pace/current-native-plan + task.md 无任务
+  if (isCodeFile && isInsideProject && !hasActiveTasks && paceSignal) {
+    const nativePlan = getNativePlanPath(cwd);
+    if (nativePlan) {
+      const reason = `检测到未桥接的原生计划文件：${nativePlan}。请先 Read 该文件，将计划内容桥接到 task.md + implementation_plan.md（PACE A 阶段），然后删除 .pace/current-native-plan。`;
+      const output = denyOrHint(reason);
+      process.stdout.write(JSON.stringify(output));
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_NATIVE_PLAN${teammateTag} | plan: ${nativePlan}\n`);
       return;
     }
   }

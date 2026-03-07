@@ -172,7 +172,7 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 | `CHG-YYYYMMDD-NN` | 常规变更，日期+当日序号 | CHG-20260305-01 |
 | `HOTFIX-YYYYMMDD-NN` | 紧急修复 | HOTFIX-20260304-01 |
 
-**生成规则**：读取 `implementation_plan.md` 变更索引中当日最大序号，+1 生成新 ID。详细的变更管理流程参见 **change-management** skill。
+**生成规则**：读取 `implementation_plan.md` 变更索引中当日最大序号，+1 生成新 ID。详细的变更管理流程参见 `paceflow:change-management` skill。
 
 ---
 
@@ -190,4 +190,4 @@ description: Artifact 文件管理规则。当操作核心 Artifact 文件时自
 
 ## 关联 Skill
 
-- **[pace-knowledge](../pace-knowledge/SKILL.md)** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。
+- **`paceflow:pace-knowledge`** — 管理 Obsidian Vault 中 thoughts/ 和 knowledge/ 笔记。findings.md 中发现跨项目通用经验时，参考此 skill 提取到 knowledge/。

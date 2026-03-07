@@ -9,7 +9,7 @@ const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthr
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 
 // W-code-4: 会话级 flag 文件集中管理（session-start 重置用）
-const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done', 'impl-detail-reminded'];
+const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done'];
 
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
 function isTeammate() {
@@ -25,6 +25,11 @@ function resolveProjectCwd() {
   return process.env.CLAUDE_PROJECT_DIR
     ? path.resolve(process.env.CLAUDE_PROJECT_DIR)
     : process.cwd();
+}
+
+/** 生成中国时区时间戳字符串 */
+function ts() {
+  return new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
 
 /** 从 cwd 提取项目名（小写+连字符格式） */
@@ -108,12 +113,7 @@ function hasPlanFiles(cwd) {
  * @returns {boolean}
  */
 function hasUnsyncedPlanFiles(cwd) {
-  const plans = listPlanFiles(cwd);
-  if (plans.length === 0) return false;
-  const syncedPath = path.join(cwd, '.pace', 'synced-plans');
-  let synced = [];
-  try { synced = fs.readFileSync(syncedPath, 'utf8').split('\n').filter(Boolean); } catch(e) {}
-  return plans.some(f => !synced.includes(f));
+  return listUnsyncedPlanFiles(cwd).length > 0;
 }
 
 /**
@@ -252,6 +252,33 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
 }
 
 /**
+ * 检查 impl_plan 全文中所有 [x] 索引是否有对应 ### CHG-ID 详情段落
+ * @param {string} planFull - implementation_plan.md 全文
+ * @returns {string[]} 缺少详情的 CHG/HOTFIX-ID 列表
+ */
+function findMissingImplDetails(planFull) {
+  if (!planFull) return [];
+  const doneIndex = planFull.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
+  if (doneIndex.length === 0) return [];
+  return doneIndex
+    .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0])
+    .filter(id => {
+      const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
+    });
+}
+
+/**
+ * 读取 AI 记录的 native plan 文件路径
+ * @param {string} cwd - 项目根目录
+ * @returns {string|null} plan 文件路径或 null
+ */
+function getNativePlanPath(cwd) {
+  const fp = path.join(cwd, '.pace', 'current-native-plan');
+  try { return fs.readFileSync(fp, 'utf8').trim() || null; } catch(e) { return null; }
+}
+
+/**
  * 扫描 thoughts/ 和 knowledge/ 中与指定项目相关的笔记
  * 解析 frontmatter 的 projects/summary/status 字段，返回 L0 摘要
  * @param {string} projectName - 当前项目名（小写连字符格式，或由 getProjectName 生成）
@@ -267,7 +294,8 @@ function scanRelatedNotes(projectName) {
       for (const file of files) {
         try {
           const content = fs.readFileSync(path.join(dirPath, file), 'utf8');
-          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+          // I-7: 处理 BOM（UTF-8 BOM \uFEFF 可能出现在文件开头）
+          const fmMatch = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---/);
           if (!fmMatch) continue;
           const fm = fmMatch[1];
           // 解析 projects 字段
@@ -304,7 +332,10 @@ function createLogger(logPath) {
         if (stat.size > MAX_LOG_SIZE) {
           // W-code-2: 使用 Buffer 直接操作字节，避免字节/字符混淆
           const buf = fs.readFileSync(logPath);
-          fs.writeFileSync(logPath, buf.slice(buf.length >> 1));
+          // W-1: 截断后对齐到换行符，防止 UTF-8 多字节字符被截断
+          const half = buf.slice(buf.length >> 1);
+          const nlIdx = half.indexOf(10); // 0x0A = \n
+          fs.writeFileSync(logPath, nlIdx >= 0 ? half.slice(nlIdx + 1) : half);
         }
       } catch(e) {}
       fs.appendFileSync(logPath, msg);
@@ -328,4 +359,4 @@ function formatBridgeHint(cwd, artDir) {
   return { fileList, bridgeSteps };
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, resolveProjectCwd, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, getNativePlanPath };

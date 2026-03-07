@@ -394,6 +394,40 @@ test('hasUnsyncedPlanFiles: 无 synced-plans 文件 → 全部视为未同步', 
 });
 
 // ============================================================
+// 10. findMissingImplDetails() — 5 个测试
+// ============================================================
+console.log('\n--- findMissingImplDetails ---');
+
+test('findMissingImplDetails — 全部有详情返回空', () => {
+  const plan = `- [x] CHG-20260307-01 标题\n\n### CHG-20260307-01\n\n- 内容`;
+  const result = paceUtils.findMissingImplDetails(plan);
+  assert.deepStrictEqual(result, []);
+});
+
+test('findMissingImplDetails — 缺详情返回 CHG-ID', () => {
+  const plan = `- [x] CHG-20260307-01 标题\n- [x] CHG-20260307-02 标题\n\n### CHG-20260307-01\n\n- 内容`;
+  const result = paceUtils.findMissingImplDetails(plan);
+  assert.deepStrictEqual(result, ['CHG-20260307-02']);
+});
+
+test('findMissingImplDetails — [/] 和 [ ] 不检查', () => {
+  const plan = `- [/] CHG-20260307-01 标题\n- [ ] CHG-20260307-02 标题`;
+  const result = paceUtils.findMissingImplDetails(plan);
+  assert.deepStrictEqual(result, []);
+});
+
+test('findMissingImplDetails — HOTFIX 前缀支持', () => {
+  const plan = `- [x] HOTFIX-20260307-01 标题`;
+  const result = paceUtils.findMissingImplDetails(plan);
+  assert.deepStrictEqual(result, ['HOTFIX-20260307-01']);
+});
+
+test('findMissingImplDetails — null/空输入返回空', () => {
+  assert.deepStrictEqual(paceUtils.findMissingImplDetails(null), []);
+  assert.deepStrictEqual(paceUtils.findMissingImplDetails(''), []);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();

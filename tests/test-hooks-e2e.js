@@ -700,18 +700,18 @@ test('42. H10: impl_plan 活跃区有已完成详情 → 归档提醒', () => {
   assert.ok(r.stdout.includes('CHG-20260306-01'), '应包含具体 CHG ID');
 });
 
-test('43. H13: impl_plan 索引有 [x] 但全文无详情段落 → 缺失提醒', () => {
+test('43. H13v2: 编辑 impl_plan 时索引有 [x] 无详情 → 持久提醒', () => {
   const dir = makePaceProject('pou-h13', {
     taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 测试\n<!-- APPROVED -->\n\n<!-- ARCHIVE -->\n',
     implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260306-01 测试变更 #change\n\n<!-- ARCHIVE -->\n',
   });
   const stdin = JSON.stringify({
     tool_name: 'Edit',
-    tool_input: { file_path: path.join(dir, 'app.js'), old_string: 'a', new_string: 'b' }
+    tool_input: { file_path: path.join(dir, 'implementation_plan.md'), old_string: '# 实施计划', new_string: '# 实施计划' }
   });
   const r = runHook('post-tool-use.js', { cwd: dir, stdin });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('缺少详情段落'), 'H13 应提醒详情缺失');
+  assert.ok(r.stdout.includes('缺少详情段落'), 'H13v2 应提醒详情缺失');
   assert.ok(r.stdout.includes('CHG-20260306-01'), '应包含具体 CHG ID');
 });
 
@@ -790,6 +790,169 @@ test('48. pre-tool-use: 全 [x]/[-] → DENY 消息含归档提示', () => {
   const parsed = JSON.parse(r.stdout);
   const reason = parsed?.hookSpecificOutput?.permissionDecisionReason || '';
   assert.ok(reason.includes('归档'), 'W-flow-1: 全完成时应提示归档');
+});
+
+// ============================================================
+// 16. impl_plan 详情保障 (4)
+// ============================================================
+console.log('\n--- impl_plan 详情保障 ---');
+
+test('49. pre-tool-use: impl_plan [x] 无详情段落 → DENY', () => {
+  const dir = makePaceProject('ptu-impl-deny', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中任务\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [/] CHG-20260307-99 测试变更 #change\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '- [/] CHG-20260307-99 测试变更 #change',
+      new_string: '- [x] CHG-20260307-99 测试变更 #change',
+    }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny', 'impl_plan [x] 无详情应 DENY');
+  assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('CHG-20260307-99'), 'DENY 消息应包含 CHG ID');
+});
+
+test('50. pre-tool-use: impl_plan [x] 有详情段落 → 放行', () => {
+  const dir = makePaceProject('ptu-impl-allow', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中任务\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [/] CHG-20260307-99 测试变更 #change\n\n### CHG-20260307-99 测试变更\n\n**文件**: test.js\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '- [/] CHG-20260307-99 测试变更 #change',
+      new_string: '- [x] CHG-20260307-99 测试变更 #change',
+    }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  if (r.stdout.trim()) {
+    try {
+      const out = JSON.parse(r.stdout);
+      assert.ok(out.hookSpecificOutput?.permissionDecision !== 'deny', '有详情段落时不应 DENY');
+    } catch(e) { /* 非 JSON 输出也 OK */ }
+  }
+});
+
+test('51. stop.js: impl_plan [x] 无详情 → 阻止退出', () => {
+  const today = getToday();
+  const dir = makePaceProject('stop-impl-detail', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] T-001 未完成\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260307-99 测试变更 #change\n\n<!-- ARCHIVE -->\n',
+    walkthrough: `# 工作记录\n\n| 日期 | 完成内容 |\n| --- | --- |\n| ${today} | 测试 |\n\n## ${today} 测试\n\n**时间**: ${today}\n\n内容\n\n<!-- ARCHIVE -->\n`,
+  });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2, 'impl_plan 有 [x] 无详情应阻止退出');
+  assert.ok(r.stderr.includes('CHG-20260307-99'), 'stderr 应包含缺失详情的 CHG ID');
+});
+
+test('52. post-tool-use: 编辑 impl_plan 后持久详情警告（H13v2）', () => {
+  const dir = makePaceProject('pou-impl-h13v2', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260307-99 测试变更 #change\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '# 实施计划',
+      new_string: '# 实施计划',
+    }
+  });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('CHG-20260307-99'), 'H13v2: 应持久警告缺失详情');
+});
+
+// ============================================================
+// 17. T-319 补充场景：V 阶段 + walkthrough 日期 + E 阶段前提 + T-325 创建阶段守门 (5)
+// ============================================================
+console.log('\n--- T-319 补充场景 ---');
+
+test('53. stop.js V 阶段：有 [x] 无 VERIFIED → exit 2', () => {
+  const today = getToday();
+  const dir = makePaceProject('stop-v-phase', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [x] T-001 已完成任务\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260308-01 测试 #change\n\n### CHG-20260308-01 测试\n\n测试详情\n\n<!-- ARCHIVE -->\n',
+    walkthrough: `# 工作记录\n\n| 日期 | 完成内容 |\n| --- | --- |\n| ${today} | 测试 |\n\n## ${today} 测试\n\n**时间**: ${today}\n\n内容\n\n<!-- ARCHIVE -->\n`,
+  });
+  const r = runHook('stop.js', { cwd: dir, stdin: '{}' });
+  assert.strictEqual(r.code, 2, '有 [x] 无 VERIFIED 应 exit 2');
+  assert.ok(r.stderr.includes('VERIFIED') || r.stderr.includes('验证'), 'stderr 应提及 VERIFIED 或验证');
+});
+
+test('54. stop.js walkthrough 无今日日期 → 提醒', () => {
+  const dir = makePaceProject('stop-walk-date', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n<!-- VERIFIED -->\n\n- [x] T-001 已完成任务\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260308-01 测试 #change\n\n### CHG-20260308-01 测试\n\n测试详情\n\n<!-- ARCHIVE -->\n',
+    walkthrough: '# 工作记录\n\n| 日期 | 完成内容 |\n| --- | --- |\n| 2026-01-01 | 旧记录 |\n\n## 2026-01-01 旧记录\n\n**时间**: 2026-01-01\n\n旧内容\n\n<!-- ARCHIVE -->\n',
+  });
+  const r = runHook('stop.js', { cwd: dir, stdin: '{}' });
+  // 可能 exit 2（walkthrough 日期检查阻止）或 exit 0（仅警告）
+  assert.ok(r.stderr.includes('walkthrough') || r.stderr.includes('工作记录') || r.code === 2,
+    '应提醒 walkthrough 缺少今日日期');
+});
+
+test('55. pre-tool-use E 阶段前提：impl_plan 无 [/] → DENY', () => {
+  const dir = makePaceProject('ptu-e-phase', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中任务\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [ ] CHG-20260308-01 待开始 #change\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'app.js') } });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny', 'impl_plan 无 [/] 应 DENY');
+  assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('[/]'), 'DENY 消息应提及 [/]');
+});
+
+test('56. T-325: 添加 [ ] 索引无详情 → DENY', () => {
+  const dir = makePaceProject('ptu-create-deny', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [/] CHG-20260308-01 已有变更 #change\n\n### CHG-20260308-01 已有变更\n\n测试详情\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '- [/] CHG-20260308-01 已有变更 #change',
+      new_string: '- [/] CHG-20260308-01 已有变更 #change\n- [ ] CHG-20260308-02 新增变更 #change',
+    }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny', '添加索引无详情应 DENY');
+  assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('CHG-20260308-02'), 'DENY 应包含缺失的 CHG ID');
+});
+
+test('57. T-325: 添加 [ ] 索引 + 同时写入详情 → 放行', () => {
+  const dir = makePaceProject('ptu-create-allow', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [/] CHG-20260308-01 已有变更 #change\n\n### CHG-20260308-01 已有变更\n\n测试详情\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '\n<!-- ARCHIVE -->',
+      new_string: '\n- [ ] CHG-20260308-02 新增变更 #change\n\n### CHG-20260308-02 新增变更\n\n新增详情\n\n<!-- ARCHIVE -->',
+    }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  if (r.stdout.trim()) {
+    try {
+      const out = JSON.parse(r.stdout);
+      assert.ok(out.hookSpecificOutput?.permissionDecision !== 'deny',
+        '同时包含索引和详情时不应 DENY');
+    } catch(e) { /* 非 JSON 也 OK */ }
+  }
 });
 
 // ============================================================

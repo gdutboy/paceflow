@@ -25,7 +25,7 @@ flowchart TD
 
 > 豁免条件详见 **User Rule G-8**
 >
-> **v4.8.1 Hook 行为**：
+> **Hook 强制行为**：
 > - `isPaceProject()` 四信号优先级：`artifact` > `superpowers` > `manual` > `code-count`
 > - `hasActiveTasks`：仅 `[ ]`/`[/]`/`[!]` 算活跃任务，`[x]`/`[-]` 不算
 > - `isInsideProject`：项目外文件（如 `~/.claude/hooks/`）豁免 PACE 检查
@@ -65,11 +65,11 @@ P 阶段完成标志：`docs/plans/` 中有新的计划文件。
 
 **Superpowers 流程**（P 阶段使用了 brainstorming）：
 
-invoke `pace-bridge` skill — 自动完成以下步骤：
+invoke `paceflow:pace-bridge` skill — 自动完成以下步骤：
 1. 读取 `docs/plans/` 最新计划文件，提取任务列表
 2. 生成 CHG-ID（`CHG-YYYYMMDD-NN`）+ T-NNN 编号
 3. 写入 `implementation_plan.md` 变更索引（`[/]` 状态）
-4. 写入 `task.md` 活跃任务 + `<!-- APPROVED -->`（auto-APPROVED，详见 [pace-bridge](../pace-bridge/SKILL.md) skill）
+4. 写入 `task.md` 活跃任务 + `<!-- APPROVED -->`（auto-APPROVED，详见 `paceflow:pace-bridge` skill）
 5. 输出转换摘要供事后审阅
 
 A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan 有 `[/]` 条目。
@@ -77,12 +77,12 @@ A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan
 **降级流程**（P 阶段未使用 brainstorming）：
 1. 手动创建/更新 `task.md`
 2. 累积更新 `implementation_plan.md`（变更索引添加 `[ ]` 条目）
-3. 读取 [change-management](../change-management/SKILL.md) skill 执行变更 ID 管理
+3. 读取 `paceflow:change-management` skill 执行变更 ID 管理
 4. 进入 C 阶段等待用户审批
 
 **findings 反向关联**：如果本次变更源自 findings.md 调研结论，在对应 finding 条目补 `[change:: CHG-ID]` 并将状态更新为 `[x]`。
 
-> **Artifact 存储位置**：所有 Artifact 文件存储在 Obsidian Vault（`VAULT_PATH/projects/<projectName>/`），PreToolUse hook 自动将 CWD 路径重定向到 vault 路径。详细的 artifact 结构和 Write vs Edit 规则参见 [artifact-management](../artifact-management/SKILL.md)。
+> **Artifact 存储位置**：所有 Artifact 文件存储在 Obsidian Vault（`VAULT_PATH/projects/<projectName>/`），PreToolUse hook 自动将 CWD 路径重定向到 vault 路径。详细的 artifact 结构和 Write vs Edit 规则参见 `paceflow:artifact-management` skill。
 
 ### C (Check - 确认)
 
@@ -99,7 +99,7 @@ A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan
 
 **严禁批准前修改代码。**
 
-> [!note] v4.8.1 Hook 强制
+> [!note] Hook 强制行为
 > PreToolUse 会检查活跃区是否有 `<!-- APPROVED -->` 标记或 `[/]`/`[!]` 任务。
 > 若所有任务为 `[ ]` 且无 APPROVED 标记，写代码文件会被 **deny**。
 > v4.4.3 起还会检查 `implementation_plan.md` 是否有 `[/]` 进行中的变更索引，无则 **deny**。
@@ -134,7 +134,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 2. 累积更新 `walkthrough.md`
 3. 技术栈变更时同步更新 `spec.md`
 
-**并行执行**：标记 `[P]` 的任务可分配给 subagent 或 Agent Teams teammate 并行执行，参见 [artifact-management](artifact-management.md#并行任务标记-p) 中的标记规范。
+**并行执行**：标记 `[P]` 的任务可分配给 subagent 或 Agent Teams teammate 并行执行，参见 [artifact-management](../artifact-management/SKILL.md) 中的标记规范。
 
 **执行中检查**：
 - 每完成 5 个子任务后，重读 `task.md` 确认方向正确
@@ -155,7 +155,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 
 **验证通过后**：在 `task.md` 活跃区添加 `<!-- VERIFIED -->` 标记。
 
-> [!note] v4.8.1 Hook 强制
+> [!note] Hook 强制行为
 > Stop hook 会检查活跃区是否有 `[x]` 完成项但无 `<!-- VERIFIED -->` 标记。
 > 若未验证，退出会被 **block**："请执行 V 阶段验证后添加标记"。
 

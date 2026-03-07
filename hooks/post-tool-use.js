@@ -6,10 +6,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, ts } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
@@ -40,6 +39,8 @@ process.stdin.on('end', () => {
     const flagFile = path.join(PACE_RUNTIME, flagName);
     if (fs.existsSync(flagFile)) return false;
     warnings.push(message);
+    // W-12: 确保 .pace/ 目录存在（极端边缘：PostToolUse 先于 SessionStart 触发时）
+    try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
     try { fs.writeFileSync(flagFile, '1', 'utf8'); } catch(e) {}
     return true;
   }
@@ -132,23 +133,16 @@ process.stdin.on('end', () => {
         }
     }
 
-    // H13: impl_plan 详情缺失检测 — 索引有 [x] 但全文无对应详情段落 → 每会话首次
-    if (planActive && !fs.existsSync(path.join(PACE_RUNTIME, 'impl-detail-reminded'))) {
-        const doneIndexH13 = planActive.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
-        if (doneIndexH13.length > 0) {
-          const planFull = readFull(cwd, 'implementation_plan.md');
-          if (planFull) {
-            const doneIdsH13 = doneIndexH13.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
-            const missingDetails = doneIdsH13.filter(id => {
-              const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
-            });
-            if (missingDetails.length > 0) {
-              const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
-              warnOnce('impl-detail-reminded', `implementation_plan.md 有已完成变更缺少详情段落：${display}，请补充 "### CHG-..." 记录具体变更内容`);
-            }
-          }
+    // H13v2: impl_plan 详情完整性检查（每次编辑 impl_plan 后触发，非一次性）
+    if (fileName === 'implementation_plan.md') {
+      const planFullH13 = readFull(cwd, 'implementation_plan.md');
+      if (planFullH13) {
+        const missingDetails = findMissingImplDetails(planFullH13);
+        if (missingDetails.length > 0) {
+          const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
+          warnings.push(`impl_plan 有已完成变更缺少详情段落：${display}。请补充 "### CHG-..." 记录后再标记完成或归档`);
         }
+      }
     }
 
     // H7: findings.md ⚠️ 提醒 → 每会话首次（复用上方 findingsActive）

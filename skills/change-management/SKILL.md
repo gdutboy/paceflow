@@ -48,7 +48,7 @@ NN         = 当天序号（两位数，从 01 开始）
 
 ## 状态流转
 
-详细状态定义与流转图请参阅 **[artifact-management](artifact-management.md#变更状态-change-status)**。
+详细状态定义与流转图请参阅 **[artifact-management](../artifact-management/SKILL.md)**。
 
 ---
 

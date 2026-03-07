@@ -1,5 +1,5 @@
 // verify.js — PACEflow 健康检查脚本
-// 执行 7 组检查：语法验证、源码-生产一致性、settings.json 完整性、版本号一致性、模板完整性、Skill 文件一致性、Plugin 结构
+// 执行 8 组检查：语法验证、源码-生产一致性、settings.json 完整性、版本号一致性、模板完整性、Skill 文件一致性、Plugin 结构、hooks.json/settings 配置一致性
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -326,6 +326,19 @@ function checkPlugin() {
           issues.push(`❌ plugin.json: 缺少 name 字段`);
           hasError = true;
         }
+        // H-1/H-2: 检查 plugin.json version 与 pace-utils.js PACE_VERSION 一致性
+        if (pluginJson.version) {
+          const utilsPath = path.join(HOOKS_DIR, 'pace-utils.js');
+          const utilsContent = fs.readFileSync(utilsPath, 'utf8');
+          const vMatch = utilsContent.match(/PACE_VERSION\s*=\s*'([^']+)'/);
+          if (vMatch) {
+            const paceVer = vMatch[1].replace(/^v/, '');
+            if (paceVer !== pluginJson.version) {
+              issues.push(`⚠️ plugin.json version "${pluginJson.version}" 与 pace-utils.js PACE_VERSION "${vMatch[1]}" 不一致`);
+              hasWarning = true;
+            }
+          }
+        }
       } catch (e) {
         issues.push(`❌ plugin.json: JSON 解析失败 - ${e.message}`);
         hasError = true;
@@ -395,11 +408,81 @@ function checkPlugin() {
   }
 }
 
+/**
+ * 第 8 组：hooks.json vs settings-hooks-excerpt.json 配置一致性
+ * W-8: 两份配置的事件类型、matcher、脚本名必须一致
+ */
+function checkConfigSync() {
+  try {
+    const hooksJsonPath = path.join(__dirname, 'hooks', 'hooks.json');
+    const settingsPath = path.join(__dirname, 'config', 'settings-hooks-excerpt.json');
+    if (!fs.existsSync(hooksJsonPath) || !fs.existsSync(settingsPath)) {
+      results.push(`⚠️ 配置一致性: hooks.json 或 settings-hooks-excerpt.json 不存在，跳过`);
+      hasWarning = true;
+      return;
+    }
+    const hooksJson = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+    const settingsJson = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const issues = [];
+
+    // 提取结构化信息：{ eventType: [{ matcher, scriptName }] }
+    function extractEntries(config) {
+      const map = {};
+      for (const [event, entries] of Object.entries(config.hooks || {})) {
+        map[event] = entries.map(e => ({
+          matcher: e.matcher || '',
+          scripts: (e.hooks || []).map(h => {
+            const m = (h.command || '').match(/([a-z-]+\.js)(?:'|")?$/);
+            return m ? m[1] : h.command;
+          })
+        }));
+      }
+      return map;
+    }
+
+    const hMap = extractEntries(hooksJson);
+    const sMap = extractEntries(settingsJson);
+    const allEvents = new Set([...Object.keys(hMap), ...Object.keys(sMap)]);
+
+    for (const event of allEvents) {
+      if (!hMap[event]) { issues.push(`⚠️ hooks.json 缺少事件: ${event}`); continue; }
+      if (!sMap[event]) { issues.push(`⚠️ settings 缺少事件: ${event}`); continue; }
+      const hEntries = hMap[event];
+      const sEntries = sMap[event];
+      if (hEntries.length !== sEntries.length) {
+        issues.push(`⚠️ ${event}: 条目数不同（hooks.json ${hEntries.length} vs settings ${sEntries.length}）`);
+        continue;
+      }
+      for (let i = 0; i < hEntries.length; i++) {
+        if (hEntries[i].matcher !== sEntries[i].matcher) {
+          issues.push(`⚠️ ${event}[${i}] matcher 不同: "${hEntries[i].matcher}" vs "${sEntries[i].matcher}"`);
+        }
+        const hScripts = hEntries[i].scripts.join(',');
+        const sScripts = sEntries[i].scripts.join(',');
+        if (hScripts !== sScripts) {
+          issues.push(`⚠️ ${event}[${i}] 脚本不同: ${hScripts} vs ${sScripts}`);
+        }
+      }
+    }
+
+    if (issues.length === 0) {
+      results.push(`✅ 配置一致性: hooks.json 与 settings-hooks-excerpt.json ${allEvents.size} 个事件一致`);
+    } else {
+      results.push(`⚠️ 配置一致性: ${issues.length} 个差异`);
+      results.push(...issues);
+      hasWarning = true;
+    }
+  } catch (e) {
+    results.push(`❌ 配置一致性: ${e.message}`);
+    hasError = true;
+  }
+}
+
 // 执行所有检查
 console.log('PACEflow 健康检查');
 console.log('==================');
 
-const checks = [checkSyntax, checkSourceVsProd, checkSettings, checkVersion, checkTemplates, checkSkills, checkPlugin];
+const checks = [checkSyntax, checkSourceVsProd, checkSettings, checkVersion, checkTemplates, checkSkills, checkPlugin, checkConfigSync];
 for (const check of checks) {
   const before = results.length;
   check();

@@ -52,7 +52,7 @@ process.stdin.on('end', () => {
 
     // W-2: 检测删除 PACE hook 条目（收紧：需匹配 hooks/pace/ 路径）
     const configStr = configObj ? JSON.stringify(configObj) : input;
-    if (/hooks\/pace\//i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
+    if (/hooks\/pace\/\w+\.js/i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
       const ctx = `检测到可能删除 PACE hook 配置，请确认这是有意操作。删除后 PACE 保护将部分失效。`;
       const output = {
         hookSpecificOutput: {

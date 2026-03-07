@@ -47,6 +47,36 @@ try {
     blockCount
   };
 
+  // v5.0.1: 捕获 native plan 文件路径（AI 未主动记录时的兜底）
+  // I-5: HOME/USERPROFILE 都不存在时跳过检测
+  const HOME = process.env.HOME || process.env.USERPROFILE;
+  if (HOME) {
+    const nativePlansDir = path.join(HOME, '.claude', 'plans');
+    try {
+      if (fs.existsSync(nativePlansDir)) {
+        const now = Date.now();
+        const recentPlans = fs.readdirSync(nativePlansDir)
+          .filter(f => f.endsWith('.md'))
+          .map(f => {
+            try {
+              const fp = path.join(nativePlansDir, f);
+              const mtime = fs.statSync(fp).mtimeMs;
+              return (now - mtime) < 3600000 ? { path: fp.replace(/\\/g, '/'), mtime } : null;
+            } catch(e) { return null; }
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.mtime - a.mtime);
+        if (recentPlans.length > 0) {
+          snapshot.nativePlans = recentPlans.map(e => e.path);
+          // T-326: 自动写入最近的 native plan 路径到 .pace/current-native-plan
+          try {
+            fs.writeFileSync(path.join(PACE_RUNTIME, 'current-native-plan'), recentPlans[0].path, 'utf8');
+          } catch(e) {}
+        }
+      }
+    } catch(e) {}
+  }
+
   // 写入快照文件
   fs.mkdirSync(PACE_RUNTIME, { recursive: true });
   fs.writeFileSync(path.join(PACE_RUNTIME, 'pre-compact-state.json'), JSON.stringify(snapshot, null, 2), 'utf8');

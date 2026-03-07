@@ -139,7 +139,7 @@ V（验证测试）──FAIL──→ 返回 E 修复
 | 编号 | 功能 | 说明 |
 |------|------|------|
 | S1 | 重置防循环计数器 | `.pace/stop-block-count` 清零 |
-| S2 | 清除单会话标记 | 删除 `degraded`、`todowrite-used`、`archive-reminded`、`findings-reminded`、`impl-archive-reminded`、`impl-detail-reminded` |
+| S2 | 清除单会话标记 | 删除 `degraded`、`todowrite-used`、`archive-reminded`、`findings-reminded`、`impl-archive-reminded` |
 | S3 | Compact 快照恢复 | 读取 `pre-compact-state.json`，注入进行中任务摘要 |
 | S4 | 懒创建模板 | 非 'artifact' 信号 + 无 task.md → 自动创建 5 个 Artifact 文件 |
 | S5 | 活跃区注入 | 逐个读取 5 个 Artifact 文件的 `<!-- ARCHIVE -->` 上方内容 |
@@ -602,7 +602,6 @@ summary: "[一句话项目描述]"
 | `findings-reminded` | PostToolUse H7 | PostToolUse | Findings 提醒已触发 | 每会话清除 |
 | `impl-archive-reminded` | PostToolUse H10 | PostToolUse | Impl_plan 详情归档提醒已触发 | 每会话清除 |
 | `findings-age-YYYY-MM-DD` | SessionStart S8 | SessionStart | 每日首次过期扫描标记 | 每日一个 |
-| `impl-detail-reminded` | PostToolUse H13 | PostToolUse | impl_plan 详情缺失提醒已触发 | 每会话清除 |
 | `pre-compact-state.json` | PreCompact | SessionStart S3 | Compact 快照 | 下次 Compact 覆盖 |
 | `synced-plans` | pace-bridge skill | pre-tool-use / session-start | 已桥接的 plan 文件名列表 | 持久（追加写入） |
 
@@ -664,6 +663,7 @@ summary: "[一句话项目描述]"
 | `checkArchiveFormat(cwd, filename)` | 检查 ARCHIVE 标记格式 |
 | `getProjectName(cwd)` | 提取项目名（小写+连字符） |
 | `getArtifactDir(cwd)` | vault 优先级 artifact 路径解析（唯一解析器） |
+| `getNativePlanPath(cwd)` | 读取 `.pace/current-native-plan` 文件路径 |
 | `ensureProjectInfra(cwd)` | 确保 .pace/.gitignore + vault 项目目录 |
 | `createTemplates(cwd)` | 懒创建 Artifact 模板 |
 | `countByStatus(text, opts)` | 统一任务状态统计（pending/done/total） |
@@ -716,7 +716,7 @@ summary: "[一句话项目描述]"
 
 ### 11.4 test-hooks-e2e.js（E2E 测试）
 
-覆盖所有 hook 的 stdin/stdout/exit code 协议行为（48 个测试用例），包括：
+覆盖所有 hook 的 stdin/stdout/exit code 协议行为（57 个测试用例），包括：
 - SessionStart 注入
 - PreToolUse deny/pass
 - PostToolUse 提醒

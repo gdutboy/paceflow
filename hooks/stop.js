@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir } = paceUtils;
+const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -84,6 +84,18 @@ if (taskActive) {
   const planActive = readActive(cwd, 'implementation_plan.md');
   if (planActive && pendingCount === 0 && doneCount > 0 && /^- \[\/\]/m.test(planActive)) {
     warnings.push(`implementation_plan.md 仍有 [/] 进行中，但任务已全部完成`);
+  }
+
+  // v5.0.1: impl_plan 详情终态检查 — 所有 [x] 必须有 ### CHG-ID 详情
+  if (planActive) {
+    const planFullStop = readFull(cwd, 'implementation_plan.md');
+    if (planFullStop) {
+      const missingDetails = findMissingImplDetails(planFullStop);
+      if (missingDetails.length > 0) {
+        const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
+        warnings.push(`implementation_plan.md 有 ${missingDetails.length} 个已完成变更缺少详情段落：${display}，请补充 "### CHG-..." 记录`);
+      }
+    }
   }
 
   // 4. 检查 walkthrough.md（索引表日期 + 详情段落日期 + 分层报告）

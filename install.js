@@ -81,11 +81,13 @@ function installFile(src, dest, displayName) {
 
   // 备份旧文件（force 模式跳过备份）
   if (destExists && !force) {
-    const bakName = `${dest}.bak.${dateStamp()}`;
+    // W-9: 缓存时间戳，避免跨秒差异导致日志与实际备份文件名不一致
+    const stamp = dateStamp();
+    const bakName = `${dest}.bak.${stamp}`;
     if (!dryRun) {
       fs.copyFileSync(dest, bakName);
     }
-    log(`  🔄 ${displayName} (已更新，旧版本备份为 .bak.${dateStamp()})`);
+    log(`  🔄 ${displayName} (已更新，旧版本备份为 .bak.${stamp})`);
     updated++;
   } else if (destExists && force) {
     log(`  🔄 ${displayName} (已更新，--force 跳过备份)`);

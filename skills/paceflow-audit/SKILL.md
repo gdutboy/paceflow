@@ -100,6 +100,8 @@ E. 代码质量与可优化性
 - stop.js 的 countByStatus done 包含 [x]+[-]，xCount 只统计 [x]——有意设计
 - Agent Teams teammate 时 stop.js 降级为 additionalContext（不 exit 2）
 - resolveProjectCwd 使用 CLAUDE_PROJECT_DIR 环境变量（不随 cd 漂移）
+- v5.0.0 为 Plugin 模式（hooks.json 自动注册），`require('./pace-utils')` 基于 __dirname 解析，无需改动
+- findMissingImplDetails 扫描全文（含归档区），H13v2 仅在编辑 impl_plan 时触发——有意设计
 
 输出格式：
 - [C] Critical — 功能错误或数据丢失
@@ -165,6 +167,8 @@ E. 代码质量与可优化性
 - stop.js 的 countByStatus done 包含 [x]+[-]，xCount 只统计 [x]——有意设计
 - Agent Teams teammate 时 stop.js 降级为 additionalContext（不 exit 2）
 - session-start.js 需处理普通启动和 compact 恢复两种场景
+- v5.0.0 为 Plugin 模式，pre-compact.js 快照 nativePlans（`~/.claude/plans/` 最近 60 分钟 .md）
+- session-start.js compact 恢复时注入 nativePlans 路径提示 + `.pace/current-native-plan` 提示
 
 输出格式：
 - [C] Critical — 功能错误或数据丢失
@@ -182,20 +186,24 @@ E. 代码质量与可优化性
 **审查文件**：
 - `paceflow/hooks/todowrite-sync.js` — PreToolUse:TodoWrite hook
 - `paceflow/hooks/config-guard.js` — ConfigChange hook
-- `paceflow/config/settings-hooks-excerpt.json` — settings 配置示例
+- `paceflow/.claude-plugin/plugin.json` — Plugin 元数据
+- `paceflow/hooks/hooks.json` — Hook 自动注册配置
+- `paceflow/config/settings-hooks-excerpt.json` — settings 配置示例（手动安装参考）
 - `paceflow/install.js` — 安装脚本
 - `paceflow/verify.js` — 健康检查脚本
 
 **Prompt**：
 ```
-你是 PACEflow 的代码审查员。请对辅助 Hook 脚本和工具链进行全面审查。
+你是 PACEflow 的代码审查员。请对辅助 Hook 脚本、Plugin 结构和工具链进行全面审查。
 
 审查文件（从项目根目录读取）：
 1. paceflow/hooks/todowrite-sync.js — PreToolUse:TodoWrite hook（task.md 一致性校验）
 2. paceflow/hooks/config-guard.js — ConfigChange hook（配置保护）
-3. paceflow/config/settings-hooks-excerpt.json — settings.json 配置示例
-4. paceflow/install.js — 安装脚本
-5. paceflow/verify.js — 健康检查脚本
+3. paceflow/.claude-plugin/plugin.json — Plugin 元数据（name/version/author）
+4. paceflow/hooks/hooks.json — Hook 自动注册配置（替代手动 settings.json 编辑）
+5. paceflow/config/settings-hooks-excerpt.json — settings.json 配置示例（仅手动安装参考）
+6. paceflow/install.js — 安装脚本（支持 --plugin/--force/--migrate 模式）
+7. paceflow/verify.js — 健康检查脚本（7 组检查，部分仅手动安装有意义）
 
 审查维度：
 
@@ -205,22 +213,37 @@ A. Hook 脚本（todowrite-sync + config-guard）
 - 功能正确性：todowrite-sync 的 task.md 同步逻辑、config-guard 的保护逻辑
 - teammate 处理：isTeammate() 静默/降级是否正确
 
-B. Settings 配置（settings-hooks-excerpt.json）
-- 与实际 hook 脚本的对应关系（文件名、事件类型、matcher）
-- hook 事件是否完整覆盖
-- matcher 模式是否准确覆盖所有需要的工具名
+B. Plugin 结构完整性（v5.0.0 核心）
+- plugin.json：必填字段（name）、版本号与 pace-utils.js PACE_VERSION 是否一致
+- hooks.json：所有 hook 事件是否完整覆盖（SessionStart/PreToolUse/PostToolUse/PreCompact/ConfigChange/Stop）
+- hooks.json：matcher 模式是否准确（Write|Edit、TodoWrite|TaskCreate|TaskUpdate 等）
+- hooks.json：command 路径格式是否正确（`node '${CLAUDE_PLUGIN_ROOT}/hooks/xxx.js'`）
+- skills 目录：是否全部为 `skills/<name>/SKILL.md` 结构
 
-C. Install 脚本
-- 安装逻辑完整性（hooks + skills + settings）
-- --dry-run 和 --force 模式
+C. Settings 配置（settings-hooks-excerpt.json）— 仅手动安装参考
+- 与 hooks.json 的事件/matcher 是否一致（两份配置不应分歧）
+- 与实际 hook 脚本的对应关系
+
+D. Install 脚本
+- --plugin 模式：Plugin 目录结构安装
+- --force 模式：手动安装（hooks + skills + settings）
+- --migrate 模式：清理旧 settings.json hooks + 旧 skills 目录
+- SKILL_MAP 是否覆盖所有 6 个 skill 文件
 - 错误处理
-- SKILL_MAP 是否覆盖所有 skill 文件
 
-D. Verify 脚本
-- 检查组是否充分
+E. Verify 脚本
+- 7 组检查是否充分（注意：组 2-4、6 仅手动安装有意义，plugin 模式下预期失败）
+- 组 7（Plugin 结构）是否正确检查 plugin.json + hooks.json
 - EXPECTED_HOOKS 列表是否与实际数量一致
 - SKILL_MAP 是否与 install.js 一致
 - 假阳性/假阴性风险
+
+背景信息（防止误报）：
+- v5.0.0 支持两种安装模式：Plugin（hooks.json 自动注册）和手动（settings.json + install.js --force）
+- hooks.json 和 settings-hooks-excerpt.json 是同一套 hook 的两种注册方式，内容应一致
+- verify.js 组 2-4、6 检查 `~/.claude/hooks/pace/` 等手动安装路径，plugin 模式下不存在是预期行为
+- install.js 保留 --force 手动安装作为 plugin 的降级方案
+- plugin.json version 应与 pace-utils.js PACE_VERSION 保持一致
 
 输出格式：
 - [C] Critical — 功能错误或数据丢失
@@ -362,6 +385,12 @@ E. 已知限制评估
 - PostToolUse:TodoWrite 全平台不触发（#20144）
 - Agent Teams teammate 并发状态文件竞态
 - todowrite-sync 无法区分 PACE vs 团队任务
+
+F. Plugin 模式影响
+- verify.js 组 2-4、6 仅手动安装有意义（检查 `~/.claude/hooks/pace/` 等），plugin 模式下预期失败不是 bug
+- CLAUDE.md 验证命令 `diff paceflow/hooks/ ~/.claude/hooks/pace/` 仅适用于手动安装
+- plugin 缓存路径 `~/.claude/plugins/cache/` 由 Claude Code 管理，hook 脚本通过 `${CLAUDE_PLUGIN_ROOT}` 引用
+- hooks.json 与 settings-hooks-excerpt.json 应保持事件/matcher 一致（两种安装模式并存）
 
 输出格式：
 - [C] Critical — 测试覆盖缺失的风险 / 文档严重不准确

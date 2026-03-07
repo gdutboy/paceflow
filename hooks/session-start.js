@@ -57,8 +57,43 @@ if (eventType === 'compact') {
       if (snap.runtime?.degraded) {
         lines.push('⚠️ Stop hook 已降级');
       }
+      // v5.0.1: compact 后 native plan 恢复提示
+      if (snap.nativePlans && snap.nativePlans.length > 0) {
+        lines.push('');
+        lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
+        snap.nativePlans.forEach(p => lines.push(`  ${p}`));
+        lines.push('请 Read 相关文件并桥接到 PACE artifacts（task.md + implementation_plan.md）。');
+      }
+      // AI 主动记录的 native plan 路径（优先于扫描结果）
+      const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
+      try {
+        if (fs.existsSync(nativePlanFile)) {
+          const planPath = fs.readFileSync(nativePlanFile, 'utf8').trim();
+          if (planPath) {
+            lines.push('');
+            lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
+            lines.push('请 Read 该文件并桥接到 PACE artifacts。');
+          }
+        }
+      } catch(e) {}
       process.stdout.write(lines.join('\n') + '\n\n');
-      fs.unlinkSync(snapFile); // 一次性消费
+      // W-11: 独立 try-catch 防止删除失败影响后续逻辑
+      try { fs.unlinkSync(snapFile); } catch(e) {}
+    }
+  } catch(e) {}
+}
+
+// T-326: startup 路径也检测 .pace/current-native-plan（修复跨会话盲区）
+if (eventType !== 'compact') {
+  const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
+  try {
+    if (fs.existsSync(nativePlanFile)) {
+      const planPath = fs.readFileSync(nativePlanFile, 'utf8').trim();
+      if (planPath) {
+        process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
+        process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
+        process.stdout.write(`请 Read 该文件并桥接到 PACE artifacts（task.md + implementation_plan.md），完成后删除 .pace/current-native-plan。\n\n`);
+      }
     }
   } catch(e) {}
 }
