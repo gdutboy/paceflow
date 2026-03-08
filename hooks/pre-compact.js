@@ -47,6 +47,24 @@ try {
     blockCount
   };
 
+  // v5.0.2: 快照扩展 findings + walkthrough 状态
+  try {
+    const findingsActive = readActive(cwd, 'findings.md');
+    if (findingsActive) {
+      const openCount = (findingsActive.match(/^- \[ \] /gm) || []).length;
+      const warningCount = (findingsActive.match(/⚠️/g) || []).length;
+      snapshot.findings = { openCount, warningCount };
+    }
+  } catch(e) {}
+  try {
+    const walkActive = readActive(cwd, 'walkthrough.md');
+    if (walkActive) {
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+      const hasTodayEntry = walkActive.includes(today);
+      snapshot.walkthrough = { hasTodayEntry };
+    }
+  } catch(e) {}
+
   // v5.0.1: 捕获 native plan 文件路径（AI 未主动记录时的兜底）
   // I-5: HOME/USERPROFILE 都不存在时跳过检测
   const HOME = process.env.HOME || process.env.USERPROFILE;
