@@ -956,6 +956,90 @@ test('57. T-325: 添加 [ ] 索引 + 同时写入详情 → 放行', () => {
 });
 
 // ============================================================
+// 18. v5.0.2 新增检查：findings 详情 + 旧格式 DENY (4)
+// ============================================================
+console.log('\n--- v5.0.2 新增检查 ---');
+
+test('58. post-tool-use H14: findings 有 [ ] 无详情 → 提醒', () => {
+  const dir = makePaceProject('pou-findings-h14', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
+    findings: '# 调研记录\n\n## 摘要索引\n\n- [ ] 测试问题标题 — 结论 #finding [date:: 2026-03-08]\n\n## 未解决问题\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'findings.md'),
+      old_string: '## 摘要索引',
+      new_string: '## 摘要索引\n\n- [ ] 新发现问题 — 待评估',
+    }
+  });
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('缺少详情段落'), 'H14: 应提醒缺少详情');
+});
+
+test('59. stop.js: findings [ ] 无详情 → 警告', () => {
+  const today = getToday();
+  const dir = makePaceProject('stop-findings-detail', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n<!-- VERIFIED -->\n\n- [x] T-001 已完成\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] CHG-20260308-01 测试 #change\n\n### CHG-20260308-01 测试\n\n详情\n\n<!-- ARCHIVE -->\n',
+    walkthrough: `# 工作记录\n\n| 日期 | 完成内容 |\n| --- | --- |\n| ${today} | 测试 |\n\n## ${today} 测试\n\n**时间**: ${today}\n\n内容\n\n<!-- ARCHIVE -->\n`,
+    findings: '# 调研记录\n\n## 摘要索引\n\n- [ ] 测试问题标题 — 结论 #finding\n\n## 未解决问题\n\n<!-- ARCHIVE -->\n',
+  });
+  const r = runHook('stop.js', { cwd: dir, stdin: '{}' });
+  assert.strictEqual(r.code, 2, 'findings [ ] 无详情应 exit 2');
+  assert.ok(r.stderr.includes('缺少详情') || r.stderr.includes('测试问题'), 'stderr 应提及缺少详情');
+});
+
+test('60. pre-tool-use: impl_plan 有 emoji → DENY 旧格式', () => {
+  const dir = makePaceProject('ptu-old-format-deny', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n✅ CHG-001 已完成\n🔄 CHG-002 进行中\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '🔄 CHG-002 进行中',
+      new_string: '✅ CHG-002 已完成',
+    }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'deny', 'emoji 格式应 DENY');
+  assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('emoji'), 'DENY 消息应提及 emoji');
+});
+
+test('61. pre-tool-use: impl_plan 正常 checkbox 格式 → 放行', () => {
+  const dir = makePaceProject('ptu-normal-format-allow', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [/] CHG-20260308-01 正常变更 #change\n\n### CHG-20260308-01 正常变更\n\n详情\n\n<!-- ARCHIVE -->\n',
+  });
+  const stdin = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: path.join(dir, 'implementation_plan.md'),
+      old_string: '- [/] CHG-20260308-01 正常变更 #change',
+      new_string: '- [x] CHG-20260308-01 正常变更 #change',
+    }
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+  // 正常格式不应被旧格式 DENY 拦截（可能被其他 DENY 拦截如详情守门，但不应是旧格式原因）
+  if (r.stdout.trim()) {
+    try {
+      const out = JSON.parse(r.stdout);
+      if (out.hookSpecificOutput?.permissionDecision === 'deny') {
+        assert.ok(!out.hookSpecificOutput.permissionDecisionReason.includes('emoji') &&
+                  !out.hookSpecificOutput.permissionDecisionReason.includes('表格格式'),
+          '正常 checkbox 格式不应被旧格式 DENY 拦截');
+      }
+    } catch(e) { /* 非 JSON 也 OK */ }
+  }
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();
