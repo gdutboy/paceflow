@@ -393,6 +393,18 @@ test('hasUnsyncedPlanFiles: 无 synced-plans 文件 → 全部视为未同步', 
   assert.deepStrictEqual(paceUtils.listUnsyncedPlanFiles(dir), ['2026-03-01-feature-a.md']);
 });
 
+test('listUnsyncedPlanFiles: 主文件已同步时 -design.md 伴随文件也视为已同步', () => {
+  const dir = makeTmpDir('usp-design');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-08-feature.md'), '');
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-08-feature-design.md'), '');
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-08-other.md'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'synced-plans'), '2026-03-08-feature.md\n');
+  const unsynced = paceUtils.listUnsyncedPlanFiles(dir);
+  assert.deepStrictEqual(unsynced, ['2026-03-08-other.md']);
+});
+
 // ============================================================
 // 10. findMissingImplDetails() — 5 个测试
 // ============================================================

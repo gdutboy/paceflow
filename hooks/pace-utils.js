@@ -22,6 +22,8 @@ const FORMAT_SNIPPETS = {
   verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方，V 阶段验证通过后添加',
   // checkbox 状态说明
   statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 阻塞 | [-] 跳过',
+  // 变更状态说明（impl_plan 专用，与 statusHelp 是独立术语）
+  changeStatusHelp: '[ ] 规划中 | [/] 进行中 | [x] 完成 | [-] 废弃 | [!] 暂停',
   // 格式要求（E 阶段 DENY 核心信息）
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
   // 归档操作
@@ -148,7 +150,12 @@ function listUnsyncedPlanFiles(cwd) {
   const syncedPath = path.join(cwd, '.pace', 'synced-plans');
   let synced = [];
   try { synced = fs.readFileSync(syncedPath, 'utf8').split('\n').filter(Boolean); } catch(e) {}
-  return plans.filter(f => !synced.includes(f));
+  // Superpowers 固定产出主文件 + -design.md 伴随文件，主文件已同步时伴随文件也视为已同步
+  const syncedSet = new Set(synced);
+  for (const f of synced) {
+    syncedSet.add(f.replace(/\.md$/, '-design.md'));
+  }
+  return plans.filter(f => !syncedSet.has(f));
 }
 
 /**

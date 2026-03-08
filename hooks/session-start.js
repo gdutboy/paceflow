@@ -82,7 +82,8 @@ if (eventType === 'compact') {
         process.stdout.write(`\n=== 格式快速参考 ===\n`);
         process.stdout.write(`任务格式：${FORMAT_SNIPPETS.taskEntry}\n`);
         process.stdout.write(`索引格式：${FORMAT_SNIPPETS.implIndex}\n`);
-        process.stdout.write(`状态说明：${FORMAT_SNIPPETS.statusHelp}\n\n`);
+        process.stdout.write(`任务状态：${FORMAT_SNIPPETS.statusHelp}\n`);
+        process.stdout.write(`变更状态：${FORMAT_SNIPPETS.changeStatusHelp}\n\n`);
       }
       // v5.0.2: compact 恢复 snapshot.findings/walkthrough
       if (snap.findings) {

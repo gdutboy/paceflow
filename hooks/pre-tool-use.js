@@ -252,7 +252,7 @@ process.stdin.on('end', () => {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
             ? `检测到 docs/plans/ 中有未同步的计划文件，请将计划中的任务同步到 task.md 后再写代码。详见 paceflow:pace-bridge skill。`
-            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n状态：${FORMAT_SNIPPETS.statusHelp}`;
+            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
         }
       } else {
         reason = `检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请先创建 Artifact 文件（spec.md / task.md / implementation_plan.md / walkthrough.md），参考 G-8 的 PACE 执行流程。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;

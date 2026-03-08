@@ -67,7 +67,7 @@ P 阶段完成标志：`docs/plans/` 中有新的计划文件。
 
 invoke `paceflow:pace-bridge` skill — 自动完成以下步骤：
 1. 读取 `docs/plans/` 最新计划文件，提取任务列表
-2. 生成 CHG-ID（`CHG-YYYYMMDD-NN`）+ T-NNN 编号
+2. 生成 CHG-ID（`CHG-YYYYMMDD-NN`，紧急修复用 `HOTFIX-YYYYMMDD-NN`）+ T-NNN 编号
 3. 写入 `implementation_plan.md` 变更索引（`[/]` 状态）
 4. 写入 `task.md` 活跃任务 + `<!-- APPROVED -->`（auto-APPROVED，详见 `paceflow:pace-bridge` skill）
 5. 输出转换摘要供事后审阅
@@ -153,7 +153,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 - 若项目无测试框架，可通过 Terminal/Browser 手动验证
 - 验证结果必须记录到 walkthrough.md
 
-**验证通过后**：在 `task.md` 活跃区添加 `<!-- VERIFIED -->` 标记。
+**验证通过后**：在 `task.md` 活跃区添加 `<!-- VERIFIED -->` 标记（放在 `<!-- APPROVED -->` 下方）。
 
 > [!note] Hook 强制行为
 > Stop hook 会检查活跃区是否有 `[x]` 完成项但无 `<!-- VERIFIED -->` 标记。

@@ -41,9 +41,9 @@ Edit 活跃区添加：
 
 ## 活跃任务
 
-<!-- APPROVED -->
-
 ### CHG-YYYYMMDD-NN: 标题
+
+<!-- APPROVED -->
 
 - [/] T-NNN: 第一个任务
 - [ ] T-NNN: 第二个任务
@@ -54,9 +54,12 @@ Edit 活跃区添加：
 确认 task.md 有 `[/]` 任务 + `<!-- APPROVED -->` + implementation_plan.md 有 `[/]` 变更。
 
 ### Step 6：标记已同步
-将已桥接的 plan 文件名写入 `.pace/synced-plans`（每行一个文件名），防止后续 session 重复提示桥接。
+将桥接的主计划文件**及其伴随文件**（同名前缀，如 `-design.md`）写入 `.pace/synced-plans`（每行一个文件名）。hook 检测匹配所有 `YYYY-MM-DD-*.md` 文件，伴随文件不记录会导致误 DENY。
+**禁止**一次性记录 `docs/plans/` 全部文件——多窗口场景下会吞掉其他窗口未桥接的计划。
 ```bash
-# 示例：echo "2026-03-04-superpowers-paceflow-fusion.md" >> .pace/synced-plans
+# 示例：桥接 2026-03-08-context-memory.md 时，记录主文件及伴随文件
+echo "2026-03-08-context-memory.md" >> .pace/synced-plans
+echo "2026-03-08-context-memory-design.md" >> .pace/synced-plans
 ```
 
 ## 重要提示
