@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -87,7 +87,7 @@ process.stdin.on('end', () => {
   if (toolName === 'Write' && isInsideProject && paceSignal) {
     const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
-      const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。`;
+      const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。${FORMAT_SNIPPETS.skillRef}`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -155,7 +155,7 @@ process.stdin.on('end', () => {
           return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
         });
         if (missing.length > 0) {
-          const reason = `不能将 ${missing.join(', ')} 标记为已完成 [x]：缺少详情段落（### ${missing[0]} ...）。请先在 implementation_plan.md 添加详情记录具体变更内容，再标记索引为 [x]。`;
+          const reason = `不能将 ${missing.join(', ')} 标记为已完成 [x]：缺少详情段落。请先在 implementation_plan.md 添加详情记录具体变更内容，再标记索引为 [x]。\n格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
           const output = denyOrHint(reason);
           process.stdout.write(JSON.stringify(output));
           log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_DETAIL${teammateTag} | missing: ${missing.join(', ')}\n`);
@@ -181,10 +181,29 @@ process.stdin.on('end', () => {
         return true;
       });
       if (missing325.length > 0) {
-        const reason = `添加新变更索引 ${missing325.join(', ')} 时必须同时写入详情段落（### ${missing325[0]} ...）。请在同一次 Edit 中包含索引和详情，或先添加详情再添加索引。`;
+        const reason = `添加新变更索引 ${missing325.join(', ')} 时必须同时写入详情段落。请在同一次 Edit 中包含索引和详情，或先添加详情再添加索引。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_CREATE${teammateTag} | missing: ${missing325.join(', ')}\n`);
+        return;
+      }
+    }
+  }
+
+  // v5.0.2: impl_plan 旧格式检测 DENY — 阻止在 emoji/表格格式基础上编辑
+  if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
+    const implFull = readFull(cwd, 'implementation_plan.md');
+    if (implFull) {
+      const archiveMatch = implFull.match(/^<!-- ARCHIVE -->$/m);
+      const implActive = archiveMatch ? implFull.slice(0, archiveMatch.index) : implFull;
+      const hasEmoji = /[✅❌📋🔄⏳]/.test(implActive);
+      const hasTable = /^\|.+\|$/m.test(implActive) && !/^- \[.\]/m.test(implActive);
+      if (hasEmoji || hasTable) {
+        const format = hasEmoji ? 'emoji 状态标记' : '表格格式';
+        const reason = `implementation_plan.md 活跃区检测到旧的${format}，hook 无法识别。请先将内容迁移到新格式再编辑。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_OLD_FORMAT${teammateTag} | file: ${filePath} | format: ${format}\n`);
         return;
       }
     }
@@ -194,7 +213,7 @@ process.stdin.on('end', () => {
   if (isCodeFile && isInsideProject && !hasActiveTasks && paceSignal) {
     const nativePlan = getNativePlanPath(cwd);
     if (nativePlan) {
-      const reason = `检测到未桥接的原生计划文件：${nativePlan}。请先 Read 该文件，将计划内容桥接到 task.md + implementation_plan.md（PACE A 阶段），然后删除 .pace/current-native-plan。`;
+      const reason = `检测到未桥接的原生计划文件：${nativePlan}。请先 Read 该文件，将计划内容桥接到 task.md + implementation_plan.md（PACE A 阶段），然后删除 .pace/current-native-plan。详见 paceflow:pace-bridge skill。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_NATIVE_PLAN${teammateTag} | plan: ${nativePlan}\n`);
@@ -221,22 +240,22 @@ process.stdin.on('end', () => {
       // W-dry-2: 使用 formatBridgeHint 消除重复的 listPlanFiles + 格式化代码
       const bridgeHint = formatBridgeHint(cwd, artDir);
       if (paceSignal === 'superpowers' && bridgeHint) {
-        reason = `${createdMsg}检测到 Superpowers 计划文件：${bridgeHint.fileList}。请执行桥接：${bridgeHint.bridgeSteps}`;
+        reason = `${createdMsg}检测到 Superpowers 计划文件：${bridgeHint.fileList}。请执行桥接：${bridgeHint.bridgeSteps}\n${FORMAT_SNIPPETS.skillRef}`;
       } else if (paceSignal === 'superpowers') {
-        reason = `${createdMsg}检测到 Superpowers 信号但无计划文件。请先执行 P-A-C 流程。`;
+        reason = `${createdMsg}检测到 Superpowers 信号但无计划文件。请先执行 P-A-C 流程。\ntask.md 任务格式：${FORMAT_SNIPPETS.taskEntry}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n${FORMAT_SNIPPETS.skillRef}`;
       } else if (taskFileExists || createdFiles.includes('task.md')) {
         // W-flow-1: 区分"全部完成待归档"和"无任务"
         const hasDoneItems = /- \[[x\-]\]/.test(taskActiveContent);
         if (hasDoneItems) {
-          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先归档已完成任务，再定义新任务后写代码。`;
+          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先归档已完成任务，再定义新任务后写代码。\n归档方法：${FORMAT_SNIPPETS.archiveOp}`;
         } else {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
-            ? `检测到 docs/plans/ 中有未同步的计划文件，请将计划中的任务同步到 task.md 后再写代码。`
-            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。`;
+            ? `检测到 docs/plans/ 中有未同步的计划文件，请将计划中的任务同步到 task.md 后再写代码。详见 paceflow:pace-bridge skill。`
+            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n状态：${FORMAT_SNIPPETS.statusHelp}`;
         }
       } else {
-        reason = `检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请先创建 Artifact 文件（spec.md / task.md / implementation_plan.md / walkthrough.md），参考 G-8 的 PACE 执行流程。`;
+        reason = `检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请先创建 Artifact 文件（spec.md / task.md / implementation_plan.md / walkthrough.md），参考 G-8 的 PACE 执行流程。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;
       }
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
@@ -251,7 +270,7 @@ process.stdin.on('end', () => {
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先在 task.md 中定义任务，获取用户批准后再写代码。`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先在 task.md 中定义任务，获取用户批准后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskEntry}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
@@ -282,7 +301,7 @@ process.stdin.on('end', () => {
 
   // v4.3.2: C 阶段检查 — 有活跃任务但未获批准时 deny
   if (isCodeFile && isInsideProject && hasActiveTasks && !hasApproval) {
-    const reason = `task.md 有待做任务但未获用户批准。请先执行 C 阶段（Check）：询问用户是否批准计划，获批后在 task.md 活跃区添加 <!-- APPROVED --> 标记或将任务标为 [/] 进行中。`;
+    const reason = `task.md 有待做任务但未获用户批准。请先执行 C 阶段（Check）：询问用户是否批准计划，获批后在 task.md 活跃区添加 <!-- APPROVED --> 标记或将任务标为 [/] 进行中。\n${FORMAT_SNIPPETS.approved}\n状态：${FORMAT_SNIPPETS.statusHelp}\n⚠️ 请直接询问用户是否批准当前计划，而非反复尝试写代码。`;
     const output = denyOrHint(reason);
     process.stdout.write(JSON.stringify(output));
     log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_C_PHASE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
@@ -294,8 +313,8 @@ process.stdin.on('end', () => {
     const planActive = readActive(cwd, 'implementation_plan.md');
     if (planActive === null || !/^- \[\/\]/m.test(planActive)) {
       const reason = planActive === null
-        ? `implementation_plan.md 不存在。请先在 A 阶段创建变更索引（CHG-YYYYMMDD-NN），标记为 [/] 进行中后再写代码。`
-        : `implementation_plan.md 无进行中的变更索引（[/]）。请先将当前变更的索引状态从 [ ] 改为 [/] 后再写代码。`;
+        ? `implementation_plan.md 不存在。请先在 A 阶段创建变更索引（CHG-YYYYMMDD-NN），标记为 [/] 进行中后再写代码。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n${FORMAT_SNIPPETS.formatRule}`
+        : `implementation_plan.md 无进行中的变更索引（[/]）。请先将当前变更的索引状态从 [ ] 改为 [/] 后再写代码。\n${FORMAT_SNIPPETS.formatRule}\n索引格式：${FORMAT_SNIPPETS.implIndex}`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_E_PHASE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
