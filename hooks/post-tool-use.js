@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, ts } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, ts, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -70,7 +70,7 @@ process.stdin.on('end', () => {
     // 1. W2: 统一使用 countByStatus（仅顶层任务）
     const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
     // H3: 归档提醒 → 每会话首次（Stop exit 2 兜底）
-    if (doneCount > 0) warnOnce('archive-reminded', `task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方`);
+    if (doneCount > 0) warnOnce('archive-reminded', `task.md 活跃区有 ${doneCount} 个已完成项，请归档到 ARCHIVE 下方。${FORMAT_SNIPPETS.archiveOp}`);
     // H4(impl_plan 一致性) + H5(walkthrough 日期) 已删除：Stop W3/W4 完全覆盖
 
     // v4.3.6 方案 C：编辑 task.md 后提醒同步 TodoWrite（复用 doneCount，避免与归档提醒重叠）
@@ -129,7 +129,7 @@ process.stdin.on('end', () => {
         const detailHeaders = planActive.match(/^### ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
         const staleDetails = detailHeaders.map(h => h.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]).filter(id => doneIds.has(id));
         if (staleDetails.length > 0) {
-          warnOnce('impl-archive-reminded', `implementation_plan.md 活跃区有 ${staleDetails.length} 个已完成变更详情未归档：${staleDetails.join(', ')}，请更新状态并移至 ARCHIVE 下方`);
+          warnOnce('impl-archive-reminded', `implementation_plan.md 活跃区有 ${staleDetails.length} 个已完成变更详情未归档：${staleDetails.join(', ')}。${FORMAT_SNIPPETS.archiveOp}`);
         }
     }
 
@@ -140,7 +140,7 @@ process.stdin.on('end', () => {
         const missingDetails = findMissingImplDetails(planFullH13);
         if (missingDetails.length > 0) {
           const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
-          warnings.push(`impl_plan 有已完成变更缺少详情段落：${display}。请补充 "### CHG-..." 记录后再标记完成或归档`);
+          warnings.push(`impl_plan 有已完成变更缺少详情段落：${display}。请补充详情记录具体变更内容。格式：${FORMAT_SNIPPETS.implDetail}`);
         }
       }
     }
@@ -174,16 +174,30 @@ process.stdin.on('end', () => {
           warnings.push(`findings.md 有 ${keepCount} 条"保持现状"条目，请确认已记录否定理由（为什么不做）`);
         }
       }
+
+      // H14: findings 详情完整性检查（仿 H13，每次编辑 findings 都触发）
+      if (fileName === 'findings.md' && newString && /^- \[ \] /m.test(newString)) {
+        const findingsFull = readFull(cwd, 'findings.md');
+        if (findingsFull) {
+          const missingDetails = findMissingFindingsDetails(findingsFull);
+          if (missingDetails.length > 0) {
+            const display = missingDetails.length <= 2
+              ? missingDetails.join('；')
+              : missingDetails[0] + ` 等 ${missingDetails.length} 个`;
+            warnings.push(`findings.md 有 [ ] 索引缺少详情段落：${display}。请在"## 未解决问题"下补充"### [日期] 标题"记录问题背景和修复方向`);
+          }
+        }
+      }
     }
   } else {
     // task.md 不存在时：v4.3 多信号检测
     const paceSignal = isPaceProject(cwd);
     if (paceSignal === 'superpowers' || paceSignal === 'manual') {
-      warnings.push(`检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在，请先创建 Artifact 文件`);
+      warnings.push(`检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskEntry}`);
     } else {
       const codeCount = countCodeFiles(cwd);
       if (codeCount >= 3) {
-        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件（G-8）`);
+        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskEntry}`);
       }
     }
   }
