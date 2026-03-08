@@ -8,6 +8,28 @@ const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 
+// T-328: 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
+const FORMAT_SNIPPETS = {
+  // task.md 任务条目格式
+  taskEntry: '- [ ] T-NNN 任务标题',
+  taskGroup: '### CHG-YYYYMMDD-NN: 变更标题\n\n<!-- APPROVED -->\n\n- [/] T-001 任务描述\n- [ ] T-002 任务描述',
+  // impl_plan 索引条目格式（hook 检测正则：/^- \\[\\/\\]/m）
+  implIndex: '- [/] CHG-YYYYMMDD-NN 标题 #change [tasks:: T-NNN~T-NNN]',
+  // impl_plan 详情段落格式
+  implDetail: '### CHG-ID 标题\n\n描述变更内容。\n\n**T-NNN 任务标题**：\n- 具体改动说明',
+  // 标记位置
+  approved: '<!-- APPROVED --> 放在 task.md 活跃区的 CHG 分组标题下方、任务列表上方',
+  verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方，V 阶段验证通过后添加',
+  // checkbox 状态说明
+  statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 阻塞 | [-] 跳过',
+  // 格式要求（E 阶段 DENY 核心信息）
+  formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
+  // 归档操作
+  archiveOp: '用 Edit 将已完成项移到 <!-- ARCHIVE --> 标记下方',
+  // Skill 引用
+  skillRef: '格式参考：paceflow:artifact-management skill',
+};
+
 // W-code-4: 会话级 flag 文件集中管理（session-start 重置用）
 const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done'];
 
@@ -269,6 +291,29 @@ function findMissingImplDetails(planFull) {
 }
 
 /**
+ * 检查 findings.md 全文中 [ ] 索引是否有对应 ### 详情段落
+ * 匹配规则：索引标题前 8 字在详情 ### 行中子串匹配
+ * @param {string} findingsFull - findings.md 全文
+ * @returns {string[]} 缺少详情的标题列表
+ */
+function findMissingFindingsDetails(findingsFull) {
+  if (!findingsFull) return [];
+  const unresolved = findingsFull.match(/^- \[ \] ([^—\n]+)/gm) || [];
+  if (unresolved.length === 0) return [];
+  const detailHeaders = (findingsFull.match(/^### .+$/gm) || [])
+    .map(h => h.replace(/^### (\[\d{4}-\d{2}-\d{2}\] )?/, ''));
+  const missing = [];
+  for (const line of unresolved) {
+    const title = line.replace(/^- \[ \] /, '').trim();
+    const key = title.length > 8 ? title.slice(0, 8) : title;
+    if (!detailHeaders.some(dt => dt.includes(key))) {
+      missing.push(title);
+    }
+  }
+  return missing;
+}
+
+/**
  * 读取 AI 记录的 native plan 文件路径
  * @param {string} cwd - 项目根目录
  * @returns {string|null} plan 文件路径或 null
@@ -359,4 +404,4 @@ function formatBridgeHint(cwd, artDir) {
   return { fileList, bridgeSteps };
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, getNativePlanPath };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, findMissingFindingsDetails, getNativePlanPath };

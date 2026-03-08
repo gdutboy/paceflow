@@ -428,6 +428,57 @@ test('findMissingImplDetails — null/空输入返回空', () => {
 });
 
 // ============================================================
+// 11. findMissingFindingsDetails() — 9 个测试
+// ============================================================
+console.log('\n--- findMissingFindingsDetails ---');
+
+test('findMissingFindingsDetails — null 输入返回空数组', () => {
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(null), []);
+});
+
+test('findMissingFindingsDetails — 空字符串返回空数组', () => {
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(''), []);
+});
+
+test('findMissingFindingsDetails — 无 [ ] 索引返回空', () => {
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails('- [x] 已完成 — 结论'), []);
+});
+
+test('findMissingFindingsDetails — 有 [ ] 索引有对应详情返回空', () => {
+  const withDetail = `- [ ] knowledge 注入问题 — 结论\n\n## 未解决问题\n\n### [2026-03-08] knowledge 注入问题\n\n内容...`;
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(withDetail), []);
+});
+
+test('findMissingFindingsDetails — 有 [ ] 索引缺少详情返回标题', () => {
+  const noDetail = `- [ ] knowledge 注入问题 — 结论\n\n## 未解决问题\n`;
+  const missing = paceUtils.findMissingFindingsDetails(noDetail);
+  assert.strictEqual(missing.length, 1);
+  assert.ok(missing[0].startsWith('knowledge'), '标题应以 knowledge 开头');
+});
+
+test('findMissingFindingsDetails — 多个索引部分有详情', () => {
+  const mixed = `- [ ] 问题一号标题 — 结论1\n- [ ] 问题二号标题 — 结论2\n\n### [2026-03-08] 问题一号标题\n\n详情`;
+  const mixedMissing = paceUtils.findMissingFindingsDetails(mixed);
+  assert.strictEqual(mixedMissing.length, 1, '只缺 1 个');
+  assert.ok(mixedMissing[0].startsWith('问题二号'), '缺的是问题二');
+});
+
+test('findMissingFindingsDetails — [x]/[-] 不检查', () => {
+  const doneItems = `- [x] 已完成 — ok\n- [-] 已跳过 — reason\n`;
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(doneItems), []);
+});
+
+test('findMissingFindingsDetails — ### 无日期前缀也能匹配', () => {
+  const noDate = `- [ ] 特殊问题标题 — 结论\n\n### 特殊问题标题\n\n内容`;
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(noDate), []);
+});
+
+test('findMissingFindingsDetails — 标题短于 8 字也能匹配', () => {
+  const shortTitle = `- [ ] 短标题 — 结论\n\n### [2026-03-08] 短标题详细说明\n\n内容`;
+  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(shortTitle), []);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();
