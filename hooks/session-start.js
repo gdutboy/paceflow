@@ -6,10 +6,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, FORMAT_SNIPPETS } = paceUtils;
+const { PACE_VERSION, ts, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
@@ -162,11 +161,12 @@ if (paceSignal && found.length > 0) {
   // 检测 1：impl_plan 旧表格/emoji 格式
   const implFull = readFull(cwd, 'implementation_plan.md');
   if (implFull) {
-    const implActive = implFull.match(/^<!-- ARCHIVE -->$/m) ? implFull.slice(0, implFull.match(/^<!-- ARCHIVE -->$/m).index) : implFull;
+    const implArchiveM = implFull.match(/^<!-- ARCHIVE -->$/m);
+    const implActive = implArchiveM ? implFull.slice(0, implArchiveM.index) : implFull;
     if (/[✅❌📋🔄⏳]/.test(implActive)) {
       formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
-    if (/^\|.+\|$/m.test(implActive) && /^- \[.\]/.test(implActive) === false) {
+    if (/^\|.+\|$/m.test(implActive) && /^- \[.\]/m.test(implActive) === false) {
       formatWarnings.push(`implementation_plan.md 使用了表格格式，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
     // 检测 2：双 ARCHIVE 标记
@@ -210,16 +210,18 @@ if (taskFullCached) {
     }
 
     // Superpowers 桥接检测：有未同步的 plan 文件但 task.md 无活跃任务
-    if (paceSignal && hasUnsyncedPlanFiles(cwd)) {
-      const hasActive = active && /- \[[ \/!]\]/.test(active);
-      if (!hasActive) {
-        const planFiles = listUnsyncedPlanFiles(cwd);
-        const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
-        process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
-        process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
-        process.stdout.write(`请在派 subagent 前执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。\n`);
-        process.stdout.write(`详见 /pace-bridge skill。\n\n`);
-        log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SUPERPOWERS_BRIDGE_HINT | plans: ${fileList}\n`);
+    if (paceSignal) {
+      const unsyncedPlans = listUnsyncedPlanFiles(cwd);
+      if (unsyncedPlans.length > 0) {
+        const hasActive = active && /- \[[ \/!]\]/.test(active);
+        if (!hasActive) {
+          const fileList = unsyncedPlans.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+          process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
+          process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
+          process.stdout.write(`请在派 subagent 前执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。\n`);
+          process.stdout.write(`详见 /pace-bridge skill。\n\n`);
+          log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SUPERPOWERS_BRIDGE_HINT | plans: ${fileList}\n`);
+        }
       }
     }
 

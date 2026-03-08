@@ -141,26 +141,25 @@ process.stdin.on('end', () => {
 
   // v5.0.1: impl_plan 详情守门 — 标 [x] 前必须有 ### CHG-ID 详情段落
   if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
+    const planFull = readFull(cwd, 'implementation_plan.md');
+
     // 检测 new_string 中新出现的 [x] CHG-ID（对比 old_string 排除已有的）
     const newDone = (newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
       .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
     const oldDone = new Set((oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
       .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
     const newlyCompleted = newDone.filter(id => !oldDone.has(id));
-    if (newlyCompleted.length > 0) {
-      const planFull = readFull(cwd, 'implementation_plan.md');
-      if (planFull) {
-        const missing = newlyCompleted.filter(id => {
-          const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
-        });
-        if (missing.length > 0) {
-          const reason = `不能将 ${missing.join(', ')} 标记为已完成 [x]：缺少详情段落。请先在 implementation_plan.md 添加详情记录具体变更内容，再标记索引为 [x]。\n格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
-          const output = denyOrHint(reason);
-          process.stdout.write(JSON.stringify(output));
-          log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_DETAIL${teammateTag} | missing: ${missing.join(', ')}\n`);
-          return;
-        }
+    if (newlyCompleted.length > 0 && planFull) {
+      const missing = newlyCompleted.filter(id => {
+        const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
+      });
+      if (missing.length > 0) {
+        const reason = `不能将 ${missing.join(', ')} 标记为已完成 [x]：缺少详情段落。请先在 implementation_plan.md 添加详情记录具体变更内容，再标记索引为 [x]。\n格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_DETAIL${teammateTag} | missing: ${missing.join(', ')}\n`);
+        return;
       }
     }
 
@@ -171,13 +170,12 @@ process.stdin.on('end', () => {
       .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
     const newlyAddedIds = newPendingIds.filter(id => !oldAnyIds.has(id));
     if (newlyAddedIds.length > 0) {
-      const planFull325 = readFull(cwd, 'implementation_plan.md');
       const missing325 = newlyAddedIds.filter(id => {
         const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         // 同一次 Edit 中同时包含索引和详情 → 放行
         if (new RegExp(`^### ${esc}`, 'm').test(newString)) return false;
         // 已有详情段落 → 放行
-        if (planFull325 && new RegExp(`^### ${esc}`, 'm').test(planFull325)) return false;
+        if (planFull && new RegExp(`^### ${esc}`, 'm').test(planFull)) return false;
         return true;
       });
       if (missing325.length > 0) {
@@ -188,14 +186,11 @@ process.stdin.on('end', () => {
         return;
       }
     }
-  }
 
-  // v5.0.2: impl_plan 旧格式检测 DENY — 阻止在 emoji/表格格式基础上编辑
-  if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
-    const implFull = readFull(cwd, 'implementation_plan.md');
-    if (implFull) {
-      const archiveMatch = implFull.match(/^<!-- ARCHIVE -->$/m);
-      const implActive = archiveMatch ? implFull.slice(0, archiveMatch.index) : implFull;
+    // v5.0.2: impl_plan 旧格式检测 DENY — 阻止在 emoji/表格格式基础上编辑
+    if (planFull) {
+      const archiveMatch = planFull.match(/^<!-- ARCHIVE -->$/m);
+      const implActive = archiveMatch ? planFull.slice(0, archiveMatch.index) : planFull;
       const hasEmoji = /[✅❌📋🔄⏳]/.test(implActive);
       const hasTable = /^\|.+\|$/m.test(implActive) && !/^- \[.\]/m.test(implActive);
       if (hasEmoji || hasTable) {

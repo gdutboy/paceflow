@@ -6,10 +6,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject } = paceUtils;
+const { ts, isPaceProject } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
@@ -50,9 +49,9 @@ process.stdin.on('end', () => {
       return;
     }
 
-    // W-2: 检测删除 PACE hook 条目（收紧：需匹配 hooks/pace/ 路径）
+    // W-2: 检测删除 PACE hook 条目（匹配手动安装 hooks/pace/ 和 Plugin 路径中的脚本名）
     const configStr = configObj ? JSON.stringify(configObj) : input;
-    if (/hooks\/pace\/\w+\.js/i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
+    if (/(hooks\/pace\/\w+\.js|(?:session-start|pre-tool-use|post-tool-use|stop|todowrite-sync|config-guard|pre-compact)\.js)/i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
       const ctx = `检测到可能删除 PACE hook 配置，请确认这是有意操作。删除后 PACE 保护将部分失效。`;
       const output = {
         hookSpecificOutput: {

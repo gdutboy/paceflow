@@ -333,7 +333,8 @@ function checkPlugin() {
           const vMatch = utilsContent.match(/PACE_VERSION\s*=\s*'([^']+)'/);
           if (vMatch) {
             const paceVer = vMatch[1].replace(/^v/, '');
-            if (paceVer !== pluginJson.version) {
+            const pluginVer = pluginJson.version.replace(/^v/, '');
+            if (paceVer !== pluginVer) {
               issues.push(`⚠️ plugin.json version "${pluginJson.version}" 与 pace-utils.js PACE_VERSION "${vMatch[1]}" 不一致`);
               hasWarning = true;
             }
@@ -342,6 +343,27 @@ function checkPlugin() {
       } catch (e) {
         issues.push(`❌ plugin.json: JSON 解析失败 - ${e.message}`);
         hasError = true;
+      }
+    }
+
+    // W-7: 检查 marketplace.json version 与 plugin.json version 一致性
+    const marketplacePath = path.join(__dirname, '.claude-plugin', 'marketplace.json');
+    if (fs.existsSync(marketplacePath) && fs.existsSync(pluginJsonPath)) {
+      try {
+        const marketplace = JSON.parse(fs.readFileSync(marketplacePath, 'utf8'));
+        const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+        const mpPlugin = (marketplace.plugins || []).find(p => p.name === 'paceflow');
+        if (mpPlugin && mpPlugin.version && pluginJson.version) {
+          const mpVer = mpPlugin.version.replace(/^v/, '');
+          const pjVer = pluginJson.version.replace(/^v/, '');
+          if (mpVer !== pjVer) {
+            issues.push(`⚠️ marketplace.json version "${mpPlugin.version}" 与 plugin.json version "${pluginJson.version}" 不一致`);
+            hasWarning = true;
+          }
+        }
+      } catch (e) {
+        issues.push(`⚠️ marketplace.json: 读取失败 - ${e.message}`);
+        hasWarning = true;
       }
     }
 

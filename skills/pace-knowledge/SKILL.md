@@ -138,7 +138,7 @@ sources:
 
 ## Obsidian 操作指引
 
-操作 Obsidian 笔记时，优先调用 plugin skill：
+操作 Obsidian 笔记时，优先调用 plugin skill（需安装 obsidian-skills 插件，未安装时回退到 fs 操作）：
 
 - **CLI 操作**（搜索/创建/追加/属性编辑）→ 调用 `obsidian:obsidian-cli`
 - **Markdown 语法**（wikilinks/callouts/embeds/properties）→ 调用 `obsidian:obsidian-markdown`

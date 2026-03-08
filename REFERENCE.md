@@ -1,6 +1,6 @@
-# PACEflow v5.0.0 功能与状态全景参考手册
+# PACEflow v5.0.2 功能与状态全景参考手册
 
-> **最后更新**：2026-03-07 | **版本**：v5.0.0
+> **最后更新**：2026-03-09 | **版本**：v5.0.2
 
 ---
 
@@ -642,7 +642,7 @@ summary: "[一句话项目描述]"
 
 | 常量 | 值 | 说明 |
 |------|-----|------|
-| `PACE_VERSION` | `'v5.0.0'` | 集中版本号，其他脚本引用 |
+| `PACE_VERSION` | `'v5.0.2'` | 集中版本号，其他脚本引用 |
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
 | `VAULT_PATH` | `process.env.PACE_VAULT_PATH \|\| ''` | Obsidian Vault 路径（需设置 `PACE_VAULT_PATH` 环境变量，未设置时 fallback 到 CWD） |
@@ -662,6 +662,8 @@ summary: "[一句话项目描述]"
 | `getProjectName(cwd)` | 提取项目名（小写+连字符） |
 | `getArtifactDir(cwd)` | vault 优先级 artifact 路径解析（唯一解析器） |
 | `getNativePlanPath(cwd)` | 读取 `.pace/current-native-plan` 文件路径 |
+| `findMissingImplDetails(planFull)` | 扫描 impl_plan 全文，返回已完成索引但缺详情段落的 CHG-ID 列表 |
+| `findMissingFindingsDetails(findingsFull)` | 扫描 findings 全文，返回 `[ ]` 索引但缺详情段落的标题列表 |
 | `ensureProjectInfra(cwd)` | 确保 .pace/.gitignore + vault 项目目录 |
 | `createTemplates(cwd)` | 懒创建 Artifact 模板 |
 | `countByStatus(text, opts)` | 统一任务状态统计（pending/done/total） |
@@ -714,7 +716,7 @@ summary: "[一句话项目描述]"
 
 ### 11.4 test-hooks-e2e.js（E2E 测试）
 
-覆盖所有 hook 的 stdin/stdout/exit code 协议行为（57 个测试用例），包括：
+覆盖所有 hook 的 stdin/stdout/exit code 协议行为（61 个测试用例），包括：
 - SessionStart 注入
 - PreToolUse deny/pass
 - PostToolUse 提醒
@@ -787,3 +789,4 @@ function isTeammate() {
 | v4.8.0 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一） |
 | v4.8.1 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
 | v5.0.0 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构 + 模板统一 + VAULT_PATH 参数化 + install --migrate） |
+| v5.0.2 | 检查覆盖增强（findings 详情检查 + compact knowledge 注入 + 旧格式 DENY + 快照扩展）+ 指引体系增强 + 模板风格统一 + paceflow-audit 动态发现重构 |

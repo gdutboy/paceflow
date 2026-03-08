@@ -1,6 +1,6 @@
 # PACEflow — Claude Code 工作流强制执行系统
 
-> **版本**: v5.0.0
+> **版本**: v5.0.2
 > **运行时**: Node.js
 > **平台**: Windows / macOS / Linux（需 Claude Code CLI）
 > **安装**: `claude plugin install paceflow@paceaitian/paceflow`

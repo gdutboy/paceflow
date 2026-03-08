@@ -6,11 +6,10 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS } = paceUtils;
+const { ts, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
-const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
