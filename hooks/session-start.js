@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, hasUnsyncedPlanFiles, listUnsyncedPlanFiles } = paceUtils;
+const { PACE_VERSION, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const ts = () => new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -77,6 +77,20 @@ if (eventType === 'compact') {
         }
       } catch(e) {}
       process.stdout.write(lines.join('\n') + '\n\n');
+      // v5.0.2: compact 恢复后注入格式快速参考
+      if (paceSignal) {
+        process.stdout.write(`\n=== 格式快速参考 ===\n`);
+        process.stdout.write(`任务格式：${FORMAT_SNIPPETS.taskEntry}\n`);
+        process.stdout.write(`索引格式：${FORMAT_SNIPPETS.implIndex}\n`);
+        process.stdout.write(`状态说明：${FORMAT_SNIPPETS.statusHelp}\n\n`);
+      }
+      // v5.0.2: compact 恢复 snapshot.findings/walkthrough
+      if (snap.findings) {
+        process.stdout.write(`findings 状态：${snap.findings.openCount} 个开放项\n`);
+      }
+      if (snap.walkthrough && !snap.walkthrough.hasTodayEntry) {
+        process.stdout.write(`⚠️ compact 前 walkthrough 无今日记录\n`);
+      }
       // W-11: 独立 try-catch 防止删除失败影响后续逻辑
       try { fs.unlinkSync(snapFile); } catch(e) {}
     }
@@ -139,6 +153,39 @@ for (const file of files) {
 // v4.8: artifact 存储在 vault 时，注入目录路径指引 AI 读写
 if (artDir !== cwd && found.length > 0) {
   process.stdout.write(`=== Artifact 目录 ===\n路径: ${artDir.replace(/\\/g, '/')}/\n请使用此路径读写 artifact 文件。\n\n`);
+}
+
+// T-333: 格式合规检查（注入活跃区后执行，不阻塞，仅引导）
+if (paceSignal && found.length > 0) {
+  const formatWarnings = [];
+  // 检测 1：impl_plan 旧表格/emoji 格式
+  const implFull = readFull(cwd, 'implementation_plan.md');
+  if (implFull) {
+    const implActive = implFull.match(/^<!-- ARCHIVE -->$/m) ? implFull.slice(0, implFull.match(/^<!-- ARCHIVE -->$/m).index) : implFull;
+    if (/[✅❌📋🔄⏳]/.test(implActive)) {
+      formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
+    }
+    if (/^\|.+\|$/m.test(implActive) && /^- \[.\]/.test(implActive) === false) {
+      formatWarnings.push(`implementation_plan.md 使用了表格格式，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
+    }
+    // 检测 2：双 ARCHIVE 标记
+    const archiveCount = (implFull.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+    if (archiveCount > 1) {
+      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 <!-- ARCHIVE --> 标记（应只有 1 个），readActive 会截断到第一个标记处，可能丢失活跃内容`);
+    }
+  }
+  // 检测 3：task.md 双 ARCHIVE 标记
+  if (taskFullCached) {
+    const taskArchiveCount = (taskFullCached.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+    if (taskArchiveCount > 1) {
+      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 <!-- ARCHIVE --> 标记（应只有 1 个），readActive 会截断到第一个标记处`);
+    }
+  }
+  if (formatWarnings.length > 0) {
+    process.stdout.write(`\n=== 格式合规警告 ===\n`);
+    formatWarnings.forEach((w, i) => process.stdout.write(`[${i+1}] ${w}\n`));
+    process.stdout.write(`\n${FORMAT_SNIPPETS.skillRef}\n\n`);
+  }
 }
 
 // v4.3.1: 跨会话提醒 — 检测归档区中跳过的任务（复用缓存）
@@ -235,20 +282,19 @@ try {
   }
 } catch(e) {} // 非 git 项目静默跳过
 
-// 相关 thoughts/knowledge 注入（compact 不注入，保持轻量）
-if (eventType !== 'compact') {
-  try {
-    const projectName = getProjectName(cwd);
-    const notes = scanRelatedNotes(projectName);
-    if (notes.length > 0) {
-      process.stdout.write(`=== 相关讨论 (thoughts/ + knowledge/) ===\n`);
-      notes.slice(0, 5).forEach(n => {
-        process.stdout.write(`[${n.status}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`);
-      });
-      process.stdout.write('\n');
-    }
-  } catch(e) {} // Vault 不可用静默跳过
-}
+// v5.0.2: 相关 thoughts/knowledge 注入（startup 5 条，compact 3 条）
+try {
+  const projectName = getProjectName(cwd);
+  const notes = scanRelatedNotes(projectName);
+  if (notes.length > 0) {
+    const maxNotes = eventType === 'compact' ? 3 : 5;
+    process.stdout.write(`=== 相关讨论 (thoughts/ + knowledge/) ===\n`);
+    notes.slice(0, maxNotes).forEach(n => {
+      process.stdout.write(`[${n.status}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`);
+    });
+    process.stdout.write('\n');
+  }
+} catch(e) {} // Vault 不可用静默跳过
 
 log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);
 
