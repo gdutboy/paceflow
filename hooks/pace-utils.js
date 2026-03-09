@@ -38,7 +38,7 @@ const FORMAT_SNIPPETS = {
 };
 
 // W-code-4: 会话级 flag 文件集中管理（session-start 重置用）
-const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done'];
+const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done', 'walkthrough-archive-reminded', 'findings-archive-reminded'];
 
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
 function isTeammate() {

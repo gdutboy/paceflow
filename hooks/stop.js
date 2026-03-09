@@ -120,6 +120,20 @@ if (taskActive) {
     if (agedCount > 0) {
       warnings.push(`findings.md 有 ${agedCount} 个超过 14 天的开放项，请决议（采纳/否定/保持现状）`);
     }
+
+    // T-383: findings 归档检查 — 活跃区 [x]/[-] 详情段落存在时 warning
+    const openKeys = [];
+    (findingsActive.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
+      openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
+    });
+    const staleHeaders = findingsActive.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/gm) || [];
+    const staleCount = staleHeaders.filter(h => {
+      const title = h.replace(/^### \[\d{4}-\d{2}-\d{2}\] /, '');
+      return !openKeys.some(p => title.includes(p));
+    }).length;
+    if (staleCount > 0) {
+      warnings.push(`findings 活跃区有 ${staleCount} 个已解决详情段落未归档`);
+    }
   }
 
   // 4. 检查 walkthrough.md（索引表日期 + 详情段落日期 + 分层报告）
@@ -147,6 +161,11 @@ if (taskActive) {
     } else if (hasIndexToday && !hasDetailToday) {
       // 索引有今天的记录但详情没有 → 提醒补写详情段落
       warnings.push(`walkthrough.md 索引已更新但缺少详情段落，请补充 "## YYYY-MM-DD 摘要" 记录具体变更内容`);
+    }
+    // T-383: walkthrough 归档检查 — 活跃区详情 > 3 时 warning
+    const walkDetailCount = (walkActive.match(/^## \d{4}-\d{2}-\d{2}/gm) || []).length;
+    if (walkDetailCount > 3) {
+      warnings.push(`walkthrough 活跃区有 ${walkDetailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 <!-- ARCHIVE --> 下方`);
     }
   } else if (!fs.existsSync(path.join(artDir, 'walkthrough.md'))) {
     warnings.push(`walkthrough.md 不存在，缺少工作记录`);

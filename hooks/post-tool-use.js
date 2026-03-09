@@ -188,6 +188,33 @@ process.stdin.on('end', () => {
           }
         }
       }
+
+      // T-382: findings 归档提醒 — 活跃区 [x]/[-] 详情段落存在时 warnOnce
+      if (fileName === 'findings.md') {
+        const openKeys = [];
+        (findingsActive.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
+          openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
+        });
+        const staleHeaders = findingsActive.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/gm) || [];
+        const staleCount = staleHeaders.filter(h => {
+          const title = h.replace(/^### \[\d{4}-\d{2}-\d{2}\] /, '');
+          return !openKeys.some(p => title.includes(p));
+        }).length;
+        if (staleCount > 0) {
+          warnOnce('findings-archive-reminded', `findings 活跃区有 ${staleCount} 个已解决详情段落，请归档到 <!-- ARCHIVE --> 下方。${FORMAT_SNIPPETS.archiveOp}`);
+        }
+      }
+    }
+
+    // T-381: walkthrough 归档提醒 — 活跃区详情 > 3 时 warnOnce
+    if (fileName === 'walkthrough.md') {
+      const walkActive = readActive(cwd, 'walkthrough.md');
+      if (walkActive) {
+        const detailCount = (walkActive.match(/^## \d{4}-\d{2}-\d{2}/gm) || []).length;
+        if (detailCount > 3) {
+          warnOnce('walkthrough-archive-reminded', `walkthrough 活跃区有 ${detailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 <!-- ARCHIVE --> 下方。${FORMAT_SNIPPETS.archiveOp}`);
+        }
+      }
     }
   } else {
     // task.md 不存在时：v4.3 多信号检测

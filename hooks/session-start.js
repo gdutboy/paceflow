@@ -138,18 +138,88 @@ for (const file of files) {
   const fp = path.join(artDir, file);
   if (!fs.existsSync(fp)) continue;
 
-  // v4.3.4: 单次读取消除双重 I/O
   const full = readFull(cwd, file);
   if (!full) continue;
 
-  // 缓存 task.md 全文
   if (file === 'task.md') taskFullCached = full;
 
   process.stdout.write(`=== ${file} ===\n`);
   const archiveMatch = full.match(/^<!-- ARCHIVE -->$/m);
-  const output = archiveMatch
-    ? full.slice(0, archiveMatch.index) + '<!-- ARCHIVE -->\n'
-    : full;
+  let output = archiveMatch ? full.slice(0, archiveMatch.index) : full;
+
+  // T-378: walkthrough 智能截断 — 索引表全量 + 最近 3 条详情段落
+  if (file === 'walkthrough.md') {
+    const pos = [];
+    const re = /^## \d{4}-\d{2}-\d{2}/gm;
+    let m;
+    while ((m = re.exec(output)) !== null) pos.push(m.index);
+    if (pos.length > 3) {
+      output = output.slice(0, pos[3]) + `（已省略 ${pos.length - 3} 条旧详情，需要时 Read walkthrough.md）\n`;
+    }
+  }
+
+  // T-379: findings 智能截断 — [ ] 开放索引+详情全量，[x]/[-] 只注入索引跳过详情
+  if (file === 'findings.md') {
+    const openKeys = [];
+    (output.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
+      openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
+    });
+    const totalDetails = (output.match(/^### \[\d{4}-\d{2}-\d{2}\]/gm) || []).length;
+    if (totalDetails > 0 && totalDetails > openKeys.length) {
+      const lines = output.split('\n');
+      const result = [];
+      let skip = false, cnt = 0;
+      for (const l of lines) {
+        const dm = l.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/);
+        if (dm) {
+          // 正向匹配：匹配 open 索引 → 保留，否则跳过（避免共享前缀误跳开放项）
+          skip = !openKeys.some(p => dm[1].includes(p));
+          if (skip) { cnt++; continue; }
+        } else if (skip) {
+          if (/^#{2,3} /.test(l)) skip = false;
+          else continue;
+        }
+        result.push(l);
+      }
+      if (cnt > 0) {
+        output = result.join('\n');
+        const ci = output.match(/^## Corrections/m);
+        const hint = `（已省略 ${cnt} 条已解决详情，需要时 Read findings.md）\n\n`;
+        output = ci ? output.slice(0, ci.index) + hint + output.slice(ci.index) : output + '\n' + hint;
+      }
+    }
+  }
+
+  // T-380: impl_plan 智能截断 — 只注入 [/]/[ ] 索引+详情，跳过 [x]/[-]
+  if (file === 'implementation_plan.md') {
+    const skipIds = new Set();
+    (output.match(/^- \[(?:x|-)\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || []).forEach(line => {
+      const id = line.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/);
+      if (id) skipIds.add(id[1]);
+    });
+    if (skipIds.size > 0) {
+      const lines = output.split('\n');
+      const result = [];
+      let skip = false;
+      for (const l of lines) {
+        const im = l.match(/^- \[.\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/);
+        if (im && skipIds.has(im[1])) continue;
+        const dm = l.match(/^### ((?:CHG|HOTFIX)-\d{8}-\d{2})/);
+        if (dm) {
+          skip = skipIds.has(dm[1]);
+          if (skip) continue;
+        } else if (skip) {
+          if (/^(?:### |## |<!-- )/.test(l)) skip = false;
+          else continue;
+        }
+        result.push(l);
+      }
+      output = result.join('\n');
+      output = output.replace(/(^## 活跃变更详情)/m, `（已省略 ${skipIds.size} 条已完成变更）\n\n$1`);
+    }
+  }
+
+  if (archiveMatch) output += '<!-- ARCHIVE -->\n';
   process.stdout.write(output);
   process.stdout.write('\n\n');
   found.push(`${file}(${output.length})`);
