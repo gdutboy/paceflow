@@ -147,19 +147,63 @@ for (const file of files) {
   const archiveMatch = full.match(/^<!-- ARCHIVE -->$/m);
   let output = archiveMatch ? full.slice(0, archiveMatch.index) : full;
 
-  // T-378: walkthrough 智能截断 — 索引表全量 + 最近 3 条详情段落
+  // T-385: spec.md 截断 — 保留项目概述+技术栈，省略编码规范/目录结构/依赖列表
+  if (file === 'spec.md') {
+    const techMatch = output.match(/^## 技术栈/m);
+    if (techMatch) {
+      const rest = output.slice(techMatch.index);
+      const nextH2 = rest.match(/\n## (?!技术栈)/);
+      if (nextH2) {
+        output = output.slice(0, techMatch.index + nextH2.index)
+          + '\n\n（已省略编码规范/目录结构/依赖列表，需要时 Read spec.md）\n';
+      }
+    }
+  }
+
+  // T-386: walkthrough 智能截断 — 索引表最近 10 行 + 最近 3 条详情段落
   if (file === 'walkthrough.md') {
+    // 索引表截断：保留表头 + 最近 10 行数据行
+    const dataRe = /^\| \d{4}-\d{2}-\d{2} \|/gm;
+    const dataRows = [];
+    let m;
+    while ((m = dataRe.exec(output)) !== null) {
+      const lineStart = output.lastIndexOf('\n', m.index) + 1;
+      dataRows.push(lineStart);
+    }
+    if (dataRows.length > 10) {
+      const cutStart = dataRows[0];
+      const cutEnd = dataRows[dataRows.length - 10];
+      const omitted = dataRows.length - 10;
+      output = output.slice(0, cutStart)
+        + `| ... | （已省略 ${omitted} 条旧记录，需要时 Read walkthrough.md） | | | |\n`
+        + output.slice(cutEnd);
+    }
+    // 详情截断：最近 3 条详情段落
     const pos = [];
     const re = /^## \d{4}-\d{2}-\d{2}/gm;
-    let m;
     while ((m = re.exec(output)) !== null) pos.push(m.index);
     if (pos.length > 3) {
       output = output.slice(0, pos[3]) + `（已省略 ${pos.length - 3} 条旧详情，需要时 Read walkthrough.md）\n`;
     }
   }
 
-  // T-379: findings 智能截断 — [ ] 开放索引+详情全量，[x]/[-] 只注入索引跳过详情
+  // T-387+T-379: findings 智能截断 — [x]/[-] 索引+详情跳过，[ ] 开放索引+详情全量，Corrections 保留
   if (file === 'findings.md') {
+    // T-387: 跳过 [x]/[-] 索引行
+    const resolvedRe = /^- \[(?:x|-)\] .+$/gm;
+    const resolvedCount = (output.match(resolvedRe) || []).length;
+    if (resolvedCount > 0) {
+      output = output.replace(resolvedRe, '');
+      output = output.replace(/\n{3,}/g, '\n\n');
+      // 在 **状态说明** 行前插入省略提示
+      const statusLine = output.match(/^\*\*状态说明\*\*/m);
+      if (statusLine) {
+        output = output.slice(0, statusLine.index)
+          + `（已省略 ${resolvedCount} 条已解决索引，需要时 Read findings.md）\n\n`
+          + output.slice(statusLine.index);
+      }
+    }
+    // T-379: 跳过已解决详情段落（正向匹配保留 open 项详情）
     const openKeys = [];
     (output.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
       openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
