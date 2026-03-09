@@ -497,7 +497,7 @@ console.log('\n--- getProjectName 特殊字符 ---');
 
 test('getProjectName — 中文目录名被过滤', () => {
   const name = getProjectName('/home/user/我的项目');
-  assert.strictEqual(name, '');
+  assert.strictEqual(name, 'unknown-project');
 });
 
 test('getProjectName — @#符号被过滤', () => {

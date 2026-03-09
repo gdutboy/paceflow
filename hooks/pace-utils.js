@@ -62,7 +62,8 @@ function getProjectName(cwd) {
   if (!cwd || cwd === '.' || cwd === '/' || cwd === '\\') return 'unknown-project';
   // W-code-3: Windows 盘符根路径守卫（path.basename('C:\\') 返回空字符串）
   if (/^[A-Z]:\\\\?$/i.test(cwd)) return 'unknown-project';
-  return path.basename(cwd).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const name = path.basename(cwd).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  return name || 'unknown-project';
 }
 
 // T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
