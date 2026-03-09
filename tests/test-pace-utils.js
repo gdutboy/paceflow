@@ -491,6 +491,101 @@ test('findMissingFindingsDetails — 标题短于 8 字也能匹配', () => {
 });
 
 // ============================================================
+// 12. getProjectName() 特殊字符 — 3 个测试
+// ============================================================
+console.log('\n--- getProjectName 特殊字符 ---');
+
+test('getProjectName — 中文目录名被过滤', () => {
+  const name = getProjectName('/home/user/我的项目');
+  assert.strictEqual(name, '');
+});
+
+test('getProjectName — @#符号被过滤', () => {
+  const name = getProjectName('/home/user/@my-project#1');
+  assert.strictEqual(name, 'my-project1');
+});
+
+test('getProjectName — 混合字符保留合法部分', () => {
+  const name = getProjectName('/home/user/My Project (v2)');
+  assert.strictEqual(name, 'my-project-v2');
+});
+
+// ============================================================
+// 13. formatBridgeHint() — 3 个测试
+// ============================================================
+console.log('\n--- formatBridgeHint ---');
+
+test('formatBridgeHint — 无计划文件返回 null', () => {
+  const dir = makeTmpDir('bridge-none');
+  assert.strictEqual(paceUtils.formatBridgeHint(dir, dir), null);
+});
+
+test('formatBridgeHint — 有未同步计划文件返回提示', () => {
+  const dir = makeTmpDir('bridge-has');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-09-feature.md'), '');
+  const result = paceUtils.formatBridgeHint(dir, dir);
+  assert.ok(result !== null, '应返回非 null');
+  assert.ok(result.fileList.includes('2026-03-09-feature.md'), 'fileList 应含文件名');
+  assert.ok(result.bridgeSteps.includes('task.md'), 'bridgeSteps 应提到 task.md');
+});
+
+test('formatBridgeHint — 已同步文件不返回', () => {
+  const dir = makeTmpDir('bridge-synced');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-09-feature.md'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'synced-plans'), '2026-03-09-feature.md\n');
+  assert.strictEqual(paceUtils.formatBridgeHint(dir, dir), null);
+});
+
+// ============================================================
+// 14. createLogger() — 3 个测试
+// ============================================================
+console.log('\n--- createLogger ---');
+
+test('createLogger — 基本写入', () => {
+  const dir = makeTmpDir('logger-basic');
+  const logFile = path.join(dir, 'test.log');
+  const log = paceUtils.createLogger(logFile);
+  log('hello\n');
+  log('world\n');
+  const content = fs.readFileSync(logFile, 'utf8');
+  assert.ok(content.includes('hello'), '应包含 hello');
+  assert.ok(content.includes('world'), '应包含 world');
+});
+
+test('createLogger — 超过 512KB 触发轮转', () => {
+  const dir = makeTmpDir('logger-rotate');
+  const logFile = path.join(dir, 'test.log');
+  // 写入 520KB 数据
+  const chunk = 'A'.repeat(1024) + '\n';
+  fs.writeFileSync(logFile, chunk.repeat(520));
+  const sizeBefore = fs.statSync(logFile).size;
+  assert.ok(sizeBefore > 512 * 1024, '应超过 512KB');
+  // 触发轮转
+  const log = paceUtils.createLogger(logFile);
+  log('trigger\n');
+  const sizeAfter = fs.statSync(logFile).size;
+  assert.ok(sizeAfter < sizeBefore, `轮转后应变小: ${sizeAfter} < ${sizeBefore}`);
+});
+
+test('createLogger — 轮转后对齐到换行符', () => {
+  const dir = makeTmpDir('logger-align');
+  const logFile = path.join(dir, 'test.log');
+  // 写入带换行的大数据
+  const lines = [];
+  for (let i = 0; i < 600; i++) lines.push(`line-${i.toString().padStart(4, '0')}: ${'X'.repeat(900)}`);
+  fs.writeFileSync(logFile, lines.join('\n') + '\n');
+  const log = paceUtils.createLogger(logFile);
+  log('after-rotate\n');
+  const content = fs.readFileSync(logFile, 'utf8');
+  // 第一个字符应该是 'l'（line- 开头），不应是截断的中间内容
+  assert.ok(content.startsWith('line-'), `轮转后应从完整行开始，实际: ${content.slice(0, 20)}`);
+  assert.ok(content.includes('after-rotate'), '应包含轮转后写入的内容');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();
