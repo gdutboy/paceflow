@@ -83,11 +83,11 @@ if (eventType === 'compact') {
         process.stdout.write(`索引格式：${FORMAT_SNIPPETS.implIndex}\n`);
         process.stdout.write(`任务状态：${FORMAT_SNIPPETS.statusHelp}\n`);
         process.stdout.write(`变更状态：${FORMAT_SNIPPETS.changeStatusHelp}\n`);
-        process.stdout.write(`findings 格式：- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD]，索引+详情(### [日期] 标题)缺一不可\n`);
-        process.stdout.write(`walkthrough 格式：索引表+详情 ## YYYY-MM-DD CHG-ID 摘要，工作结束必须更新\n`);
+        process.stdout.write(`findings 格式：${FORMAT_SNIPPETS.findingsFormat}\n`);
+        process.stdout.write(`walkthrough 格式：${FORMAT_SNIPPETS.walkthroughFormat}\n`);
         process.stdout.write(`标记位置：${FORMAT_SNIPPETS.approved}\n`);
         process.stdout.write(`验证标记：${FORMAT_SNIPPETS.verified}\n`);
-        process.stdout.write(`impl_plan 详情：每个 [x] 索引必须有 ### CHG-ID 详情段落\n\n`);
+        process.stdout.write(`impl_plan 详情：${FORMAT_SNIPPETS.implDetailRule}\n\n`);
       }
       // v5.0.2: compact 恢复 snapshot.findings/walkthrough
       if (snap.findings) {

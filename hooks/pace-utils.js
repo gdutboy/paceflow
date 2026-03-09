@@ -28,6 +28,11 @@ const FORMAT_SNIPPETS = {
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
   // 归档操作
   archiveOp: '用 Edit 将已完成项移到 <!-- ARCHIVE --> 标记下方',
+  // findings/walkthrough 格式（compact 恢复注入用）
+  findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD]，索引+详情(### [日期] 标题)缺一不可',
+  walkthroughFormat: '索引表+详情 ## YYYY-MM-DD CHG-ID 摘要，工作结束必须更新',
+  // impl_plan 详情规则
+  implDetailRule: '每个 [x] 索引必须有 ### CHG-ID 详情段落',
   // Skill 引用
   skillRef: '格式参考：paceflow:artifact-management skill',
 };
