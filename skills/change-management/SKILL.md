@@ -19,7 +19,7 @@ activation-conditions:
 1. **检查 `implementation_plan.md`** — 是否存在？使用 [templates/change-implementation_plan.md](templates/change-implementation_plan.md) 创建
 2. **生成变更 ID** — 格式 `CHG-YYYYMMDD-NN`
 3. **更新索引表** — 插入新条目，状态设为 `[ ]` 规划中
-4. **追加变更详情** — 使用 [templates/change-record.md](templates/change-record.md) 模板
+4. **追加变更详情** — 在 `## 活跃变更详情` 区追加 `### CHG-ID 标题` 段落（格式参见 implementation_plan.md 模板中的 HTML 注释示例）
 5. **随任务进度更新状态** — 批准后 `[/]` 进行中，完成后 `[x]` 完成
 
 ---
@@ -157,7 +157,6 @@ NN         = 当天序号（两位数，从 01 开始）
 ## 模板文件
 
 - [templates/change-implementation_plan.md](templates/change-implementation_plan.md) — 完整 Implementation Plan 模板
-- [templates/change-record.md](templates/change-record.md) — 单条变更记录模板
 
 ---
 
