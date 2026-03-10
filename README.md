@@ -1,31 +1,40 @@
 # PACEflow
 
-> 让 Claude Code 从"建议遵守"变成"必须遵守"的工作流强制系统
+> 一套 Claude Code Hook 系统，通过**确定性拦截**（而非提示词建议）强制码前先规划、获批、再执行，解决 AI 编程"一上来就写代码、改着改着迷路"的问题。
 
-## 为什么需要 PACEflow
+## 核心理念
 
-你写了详细的 CLAUDE.md，但 Claude 还是会：
+AI 编程最大的问题不是代码质量，而是**过程控制**——AI 会跳过规划直接写代码，写到一半迷路，改完不验证就收工。
 
-- 没有计划就开始写代码
-- Compact 后丢失上下文，重复已完成的工作
-- 说"完成了"但实际没有验证
-- 下次开会话，上次的进度和知识全部消失
+PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建议），而是在 Claude Code 的 Hook 层**物理拦截**：
 
-**CLAUDE.md 是建议，遵守率 ~70-85%。Hooks 是规则，执行率 100%。**
+> **CLAUDE.md / Skill 是建议，遵守率 ~70-85%。Hooks 是规则，执行率 100%。**
 
-PACEflow 通过 8 个 hook + 6 个 skill，在 Claude Code 的每个关键节点强制执行 **P-A-C-E-V** 协议：
+- 没有 `task.md`？写代码的工具调用直接 **deny**，AI 被迫先创建任务
+- `implementation_plan.md` 里没标 `[/]` 进行中？还是 **deny**
+- 用 Write 覆盖已有的 artifact 文件？直接 **deny**，必须用 Edit
+- 任务完成了但 walkthrough 没写？Stop hook 给 warning，**exit 2 阻止退出**
 
-```
-Plan（规划）→ Artifact（文档化）→ Check（审批）→ Execute（执行）→ Verify（验证）
-```
+### PACE 四阶段
 
-| 场景 | 没有 PACEflow | 有 PACEflow |
-|------|--------------|-------------|
-| 开始编码 | AI 直接动手写 | 必须先有任务和方案，否则 **deny** |
-| Compact 后 | 上下文清零，从头开始 | 自动注入 5 个 artifact 活跃内容，无缝衔接 |
-| 说"完成了" | 没人检查，口说为凭 | 必须通过验证，否则 **exit 2 阻止退出** |
-| 新会话 | 上次的进度全部消失 | 自动恢复进度 + 知识，接着干 |
-| 多 agent 协作 | Hook 可能阻断 teammate | 自动检测 teammate 身份，优雅降级 |
+| 阶段 | 含义 | Hook 保障 |
+|------|------|-----------|
+| **P**lan | 规划任务 | PreToolUse deny 未规划的代码修改 |
+| **A**rtifact | 创建/更新 5 个 artifact 文件 | 模板自动注入 + 格式守门 |
+| **C**heck | 用户审批 | PreToolUse 检查 `<!-- APPROVED -->` 标记 |
+| **E**xecute + Verify | 执行 + 验证 | PostToolUse 归档提醒 / Stop 完成度检查 |
+
+### 5 个 Artifact 文件 = 项目记忆
+
+| 文件 | 用途 |
+|------|------|
+| `spec.md` | 项目元数据、技术栈 |
+| `task.md` | 任务分解与进度（`[ ]` / `[/]` / `[x]`） |
+| `implementation_plan.md` | 技术方案、变更索引（CHG-ID） |
+| `findings.md` | 调研记录、踩坑笔记 |
+| `walkthrough.md` | 工作总结、验证记录 |
+
+所有文件使用 `<!-- ARCHIVE -->` 分隔：活跃区保持精简，归档区保留历史。
 
 ---
 
@@ -138,18 +147,6 @@ PACEflow 自动检测项目是否需要 PACE 流程，无需手动配置：
 | 手动标记 | `.pace-enabled` 文件存在 | 显式启用 |
 | 代码文件数 | 项目根目录 3+ 代码文件 | 兜底检测 |
 | 豁免 | `.pace/disabled` 文件存在 | 最高优先级跳过 |
-
-### 5 个 Artifact 文件 = 项目记忆
-
-所有文件使用 `<!-- ARCHIVE -->` 分为活跃区（当前工作）和归档区（历史记录）：
-
-| 文件 | 记录什么 |
-|------|----------|
-| `spec.md` | 项目规格、技术栈、依赖 |
-| `task.md` | 任务追踪（`[ ]` → `[/]` → `[x]`） |
-| `implementation_plan.md` | 变更索引和技术方案 |
-| `walkthrough.md` | 每日工作记录 |
-| `findings.md` | 调研结论和经验教训 |
 
 ### 防无限循环
 
