@@ -112,10 +112,6 @@ brainstorming（需求探索 + 方案设计）
 - 会话启动自动注入关联笔记摘要
 - 兼容 Obsidian Tasks / Dataview 跨项目查询
 
-### 5-Agent 并行审查
-
-`/paceflow-audit` 启动 5 个专项 agent 并行审查（代码质量 / 流程完整性 / 一致性 / Skill 模板 / 架构优化），自动验证筛选误报，输出去重分级报告。
-
 ### Agent Teams 兼容性
 
 Teammate 身份自动检测（`CLAUDE_CODE_TEAM_NAME` 环境变量），阻止性 hook 降级为提示性建议，信息性 hook 保持生效，多 agent 协作不中断。
