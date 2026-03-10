@@ -1,30 +1,76 @@
-# PACEflow — Claude Code 工作流强制执行系统
+# PACEflow
 
-> **版本**: v5.0.2
-> **运行时**: Node.js
-> **平台**: Windows / macOS / Linux（需 Claude Code CLI）
-> **安装**: `/plugin marketplace add paceaitian/paceflow` → `/plugin install paceflow@paceaitian-paceflow`
+> 让 Claude Code 从"建议遵守"变成"必须遵守"的工作流强制系统
 
-## 概述
+## 为什么需要 PACEflow
 
-PACEflow 是一套基于 Claude Code Hooks 的工作流强制执行系统，通过 **Plan-Artifact-Check-Execute-Verify (PACE)** 协议确保 AI 编码助手遵循结构化的开发流程。
+你写了详细的 CLAUDE.md，但 Claude 还是会：
 
-**核心能力**：
-- **PreToolUse** — 写代码前必须有活跃任务，否则 deny
-- **PostToolUse** — 写代码后检查归档、日期、格式等，通过 additionalContext 提醒 AI
-- **SessionStart** — 会话启动时注入项目上下文，重置防循环计数器，TodoWrite 同步指令
-- **Stop** — 会话结束前检查未完成任务，exit 2 阻止退出
-- **PreToolUse:TodoWrite** — 拦截 TodoWrite/TaskCreate/TaskUpdate，校验与 task.md 一致性
+- 没有计划就开始写代码
+- Compact 后丢失上下文，重复已完成的工作
+- 说"完成了"但实际没有验证
+- 下次开会话，上次的进度和知识全部消失
 
-**设计哲学**：Hooks 提供 100% 确定性保障，CLAUDE.md 提供 ~70-85% 建议性约束，两者互补。
+**CLAUDE.md 是建议，遵守率 ~70-85%。Hooks 是规则，执行率 100%。**
+
+PACEflow 通过 8 个 hook + 6 个 skill，在 Claude Code 的每个关键节点强制执行 **P-A-C-E-V** 协议：
+
+```
+Plan（规划）→ Artifact（文档化）→ Check（审批）→ Execute（执行）→ Verify（验证）
+```
+
+| 场景 | 没有 PACEflow | 有 PACEflow |
+|------|--------------|-------------|
+| 开始编码 | AI 直接动手写 | 必须先有任务和方案，否则 **deny** |
+| Compact 后 | 上下文清零，从头开始 | 自动注入 5 个 artifact 活跃内容，无缝衔接 |
+| 说"完成了" | 没人检查，口说为凭 | 必须通过验证，否则 **exit 2 阻止退出** |
+| 新会话 | 上次的进度全部消失 | 自动恢复进度 + 知识，接着干 |
+| 多 agent 协作 | Hook 可能阻断 teammate | 自动检测 teammate 身份，优雅降级 |
 
 ---
 
-## 项目亮点
+## 安装
+
+```bash
+# 在 Claude Code 中执行（2 条命令）
+/plugin marketplace add paceaitian/paceflow
+/plugin install paceflow@paceaitian-paceflow
+```
+
+安装后 8 个 hook + 6 个 skill 自动注册，零配置。重启 Claude Code 生效。
+
+> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault，artifact 将自动存储到 `$PACE_VAULT_PATH/projects/<项目名>/`，实现跨项目知识沉淀。
+
+<details>
+<summary>手动安装 / 迁移</summary>
+
+### 手动安装
+
+```bash
+node paceflow/install.js           # 安装缺失文件
+node paceflow/install.js --force   # 强制覆盖
+node paceflow/install.js --dry-run # 预览模式
+```
+
+或手动复制：`hooks/` → `~/.claude/hooks/pace/`，`skills/<name>/SKILL.md` → `~/.claude/skills/<name>/SKILL.md`，然后合并 `config/settings-hooks-excerpt.json` 到 `~/.claude/settings.json`。
+
+### 迁移（手动 → Plugin）
+
+```bash
+node paceflow/install.js --migrate
+/plugin marketplace add paceaitian/paceflow
+/plugin install paceflow@paceaitian-paceflow
+```
+
+</details>
+
+---
+
+## 特色功能
 
 ### Superpowers 全流程集成
 
-无缝对接 [Superpowers](https://github.com/andyjakubowski/superpowers) 设计→执行全链路：
+无缝对接 [Superpowers](https://github.com/andyjakubowski/superpowers)，从需求探索到代码交付的全链路自动化：
 
 ```
 brainstorming（需求探索 + 方案设计）
@@ -34,363 +80,189 @@ brainstorming（需求探索 + 方案设计）
         → 选择执行策略（串行 / 并行 agent / TDD）
 ```
 
-用户只需参与设计决策，后续 artifact 创建、任务编号、变更 ID 全部自动生成。不使用 Superpowers 时自动回退 PACE 原生规划。
+用户只需参与设计决策，后续 artifact 创建、任务编号、变更 ID 全部自动生成。不使用 Superpowers 时回退 PACE 原生规划。
 
-### Claude Code Plan Mode 桥接
+### Claude Code `/plan` 桥接
 
-原生支持 Claude Code 的 `/plan` 模式。使用 `/plan` 生成的计划文件会被自动检测，pace-bridge skill 将计划内容转换为 PACE 标准 artifacts（task.md + implementation_plan.md），Compact 后计划丢失时自动恢复提醒。
+原生支持 Claude Code 的 `/plan` 模式——计划文件自动检测，pace-bridge skill 一键转换为 PACE 标准 artifacts（task.md + implementation_plan.md）。Compact 后计划丢失？自动恢复提醒。
 
 ### 智能上下文管理
 
-会话启动时自动注入 5 个 artifact 文件的活跃内容，按需智能截断：
+5 个 artifact 文件的活跃内容每次会话自动注入，按相关性智能截断：
 
-- 已完成的变更/调研/工作记录自动省略，只注入进行中和待处理的内容
-- 长文件按相关性截断（如 walkthrough 只保留最近记录，findings 只注入未解决项）
-- token 消耗降低约 57%，减少 Compact 频率
+- 已完成的变更/调研/工作记录自动省略
+- walkthrough 只保留最近记录，findings 只注入未解决项
+- **token 消耗降低 57%**，大幅减少 Compact 频率
 
 ### Obsidian 知识中枢
 
-设置 `PACE_VAULT_PATH` 后，artifact 自动存储到 Obsidian Vault 的 `projects/<项目名>/` 目录：
+设置 `PACE_VAULT_PATH` 后解锁跨项目知识管理：
 
-- 跨项目知识通过 `knowledge/` + `thoughts/` 笔记沉淀
-- 会话启动时自动注入与当前项目关联的知识笔记摘要
-- 兼容 Obsidian Tasks / Dataview 插件进行跨项目任务查询
+- Artifact 自动存储到 `projects/<项目名>/`
+- `knowledge/` + `thoughts/` 沉淀可复用经验
+- 会话启动自动注入关联笔记摘要
+- 兼容 Obsidian Tasks / Dataview 跨项目查询
 
-### 全面审查框架
+### 5-Agent 并行审查
 
 `/paceflow-audit` 启动 5 个专项 agent 并行审查（代码质量 / 流程完整性 / 一致性 / Skill 模板 / 架构优化），自动验证筛选误报，输出去重分级报告。
 
 ### Agent Teams 兼容性
 
-Teammate 身份自动检测，阻止性 hook 降级为提示性建议，信息性 hook 保持生效，确保多 agent 协作场景下工作流不被中断。
+Teammate 身份自动检测（`CLAUDE_CODE_TEAM_NAME` 环境变量），阻止性 hook 降级为提示性建议，信息性 hook 保持生效，多 agent 协作不中断。
 
 ---
 
-## 目录结构
+## 工作原理
 
-```
-paceflow/
-├── .claude-plugin/                              # Plugin 元数据
-│   └── plugin.json                              #   name, version, author 等
-├── README.md                                    # 本文件
-├── hooks/                                       # Hook 脚本（8 个）
-│   ├── hooks.json                               #   Hook 自动注册配置（Plugin 用）
-│   ├── pace-utils.js                            #   公共工具函数（多信号检测、文件读取、版本号）
-│   ├── pre-tool-use.js                          #   PreToolUse：三级触发 + C 阶段批准 + Write 保护
-│   ├── post-tool-use.js                         #   PostToolUse：归档提醒 + findings 检查 + TodoWrite 同步
-│   ├── session-start.js                         #   SessionStart：上下文注入 + 模板创建 + 跳过任务提醒
-│   ├── stop.js                                  #   Stop：完成检查 + 防无限循环降级
-│   ├── todowrite-sync.js                        #   PreToolUse:TodoWrite：拦截校验 task.md 一致性
-│   ├── config-guard.js                          #   ConfigChange：disableAllHooks 警告 + PACE hook 删除提醒
-│   ├── pre-compact.js                           #   PreCompact：Compact 前 artifact 状态快照
-│   └── templates/                               #   Artifact 模板文件（5 个，唯一源）
-│       ├── spec.md                              #     项目规格模板
-│       ├── task.md                              #     任务追踪模板
-│       ├── implementation_plan.md               #     实施计划模板
-│       ├── walkthrough.md                       #     工作记录模板
-│       └── findings.md                          #     调研记录模板
-├── skills/                                      # Skill 文件（6 个，Plugin 标准目录结构）
-│   ├── pace-workflow/SKILL.md                   #   PACE 协议核心流程
-│   ├── pace-bridge/SKILL.md                     #   Superpowers → PACEflow 桥接
-│   ├── artifact-management/SKILL.md             #   Artifact 文件管理规则
-│   ├── change-management/                       #   变更 ID 管理模块
-│   │   ├── SKILL.md
-│   │   └── templates/                           #     变更模板（2 个）
-│   │       ├── change-record.md
-│   │       └── change-implementation_plan.md
-│   ├── pace-knowledge/SKILL.md                  #   Obsidian 知识库笔记管理
-│   └── paceflow-audit/SKILL.md                  #   全面审查（5-agent 并行审查框架）
-├── config/                                      # 配置参考（手动安装用）
-│   └── settings-hooks-excerpt.json              #   settings.json hooks 段配置示例
-└── tests/                                       # 测试脚本
-```
+### 8 个 Hook 覆盖完整生命周期
 
----
+| Hook | 触发时机 | 做什么 |
+|------|----------|--------|
+| **SessionStart** | 会话开始 / Compact 后 | 注入 5 个 artifact 活跃内容 + 重置状态 |
+| **PreToolUse:Write/Edit** | AI 写代码前 | 无活跃任务 → deny；无审批 → deny |
+| **PreToolUse:TodoWrite** | AI 操作任务列表 | 校验与 task.md 一致性 |
+| **PostToolUse** | AI 写代码后 | 归档提醒 + 格式检查 + findings 扫描 |
+| **Stop** | AI 想结束会话 | 未完成任务 → exit 2 阻止退出 |
+| **PreCompact** | Compact 前 | 快照当前状态，防丢失 |
+| **ConfigChange** | 修改配置 | 保护 PACE hook 不被误删 |
 
-## 快速开始
+### 多信号自动激活
 
-### 方式 A：Plugin 安装（推荐）
+PACEflow 自动检测项目是否需要 PACE 流程，无需手动配置：
 
-```bash
-# 1. 添加 marketplace（首次安装需要）
-/plugin marketplace add paceaitian/paceflow
-
-# 2. 安装插件
-/plugin install paceflow@paceaitian-paceflow
-```
-
-安装后 hooks 和 skills 自动注册，无需手动编辑 `settings.json`。更新 marketplace：`/plugin marketplace update paceaitian-paceflow`。
-
-**环境变量**（可选）：设置 `PACE_VAULT_PATH` 指向 Obsidian Vault 路径，artifact 将存储在 `$PACE_VAULT_PATH/projects/<项目名>/`。未设置时 artifact 存储在项目目录。
-
-### 方式 B：手动安装
-
-<details>
-<summary>展开手动安装步骤</summary>
-
-#### 1. 使用 install.js（推荐）
-
-```bash
-node paceflow/install.js           # 安装缺失文件
-node paceflow/install.js --force   # 强制覆盖已存在文件
-node paceflow/install.js --dry-run # 预览模式
-```
-
-#### 2. 或手动复制
-
-将 `hooks/` 复制到 `~/.claude/hooks/pace/`，将 `skills/<name>/SKILL.md` 复制到 `~/.claude/skills/<name>/SKILL.md`，然后将 `config/settings-hooks-excerpt.json` 中的 hooks 配置合并到 `~/.claude/settings.json`。
-
-**注意**：`<HOOKS_DIR>` 需替换为实际路径：
-- Windows: `C:/Users/<用户名>/.claude/hooks/pace`
-- macOS/Linux: `/home/<用户名>/.claude/hooks/pace`
-
-</details>
-
-### 迁移（手动安装 → Plugin）
-
-```bash
-# 1. 清理旧版手动安装
-node paceflow/install.js --migrate
-
-# 2. 添加 marketplace 并安装 Plugin
-/plugin marketplace add paceaitian/paceflow
-/plugin install paceflow@paceaitian-paceflow
-```
-
-### 重启 Claude Code
-
-**配置修改后必须重启 Claude Code 才能生效。**
-
----
-
-## 核心机制
-
-### 多信号激活检测
-
-`isPaceProject()` 通过四种信号判断项目是否需要 PACE 流程：
-
-| 优先级 | 信号 | 条件 | 强度 |
-|--------|------|------|------|
-| 0 | `disabled` | `.pace/disabled` 文件存在 | 豁免（最高优先级）|
-| 1 | `artifact` | 项目已有任何 PACE artifact 文件 | 最强 |
-| 2 | `superpowers` | `docs/plans/YYYY-MM-DD-*.md` 存在 | 强 |
-| 3 | `manual` | `.pace-enabled` 标记文件存在 | 强 |
-| 4 | `code-count` | 项目根目录 3+ 代码文件 | 弱/兜底 |
-
-**支持的代码文件类型**（`CODE_EXTS`）：
-`.ts` `.js` `.py` `.go` `.rs` `.java` `.tsx` `.jsx` `.vue` `.svelte`
-
-### 三级触发（PreToolUse）
-
-| 级别 | 条件 | 动作 |
+| 信号 | 条件 | 说明 |
 |------|------|------|
-| **Deny** | 强信号 + 无活跃任务 | `permissionDecision: "deny"` + 懒创建模板 |
-| **Deny** | Write 新文件将达 3+ 阈值 | `permissionDecision: "deny"`（off-by-one 前瞻）|
-| **Soft Warn** | 1-2 代码文件 | `additionalContext` 提醒 |
+| 已有 artifact | 项目中存在 task.md 等文件 | 最强信号 |
+| Superpowers 计划 | `docs/plans/` 下有计划文件 | 自动桥接 |
+| 手动标记 | `.pace-enabled` 文件存在 | 显式启用 |
+| 代码文件数 | 项目根目录 3+ 代码文件 | 兜底检测 |
+| 豁免 | `.pace/disabled` 文件存在 | 最高优先级跳过 |
 
-### C 阶段批准检查
+### 5 个 Artifact 文件 = 项目记忆
 
-- `<!-- APPROVED -->` 标记 或 `[/]`/`[!]` 任务 → 已获批准
-- 全部 `[ ]` 且无 APPROVED → deny（"请先执行 C 阶段"）
+所有文件使用 `<!-- ARCHIVE -->` 分为活跃区（当前工作）和归档区（历史记录）：
 
-### V 阶段验证检查
-
-- `[x]` 完成项 + 无 `<!-- VERIFIED -->` → Stop block（"请执行 V 阶段验证"）
-- 已验证 + 未归档 → Stop block（"请归档到 ARCHIVE 下方"）
+| 文件 | 记录什么 |
+|------|----------|
+| `spec.md` | 项目规格、技术栈、依赖 |
+| `task.md` | 任务追踪（`[ ]` → `[/]` → `[x]`） |
+| `implementation_plan.md` | 变更索引和技术方案 |
+| `walkthrough.md` | 每日工作记录 |
+| `findings.md` | 调研结论和经验教训 |
 
 ### 防无限循环
 
-- `.pace/stop-block-count` 文件计数
-- 连续 3 次 exit 2 后降级为 exit 0
-- `.pace/degraded` 标记文件通知 PostToolUse 提醒 AI
-- SessionStart 重置计数器和降级标记
-
-### Write 保护
-
-PreToolUse 拦截对已存在的 `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` 的 Write 操作（应使用 Edit 工具）。
-
-### Obsidian 知识中枢（v4.4.1）
-
-SessionStart 自动注入与当前项目关联的 `thoughts/` 和 `knowledge/` 笔记摘要。PreToolUse 在 Write 到知识库目录时注入模板提醒。
-
-| 组件 | 机制 | 作用 |
-|------|------|------|
-| `pace-utils.js` `scanRelatedNotes()` | 扫描 Vault 中 frontmatter `projects` 匹配的笔记 | 返回 L0 摘要列表（最多 5 条） |
-| `session-start.js` | 非 compact 事件时调用 scanRelatedNotes | 注入相关讨论和知识到上下文 |
-| `pre-tool-use.js` | Write 到 `thoughts/`/`knowledge/` 时 | additionalContext 提醒遵循模板 |
-| `pace-knowledge` skill | 定义 frontmatter 结构和 L0/L1/L2 分层 | AI 创建笔记时参考 |
-
-**前置条件**：需设置环境变量 `PACE_VAULT_PATH` 指向 Obsidian Vault 路径。未设置时 artifact 自动 fallback 到项目目录。
-
-### TodoWrite 同步（4 层方案）
-
-task.md 是任务权威来源，TodoWrite 是辅助显示。4 层缓解 compaction 后 TodoWrite 残留问题：
-
-| 层 | 机制 | 触发时机 | 类型 |
-|----|------|----------|------|
-| A | SessionStart 三态注入 | 会话开始/恢复/compact | 建议性 |
-| B | CLAUDE.md G-3 优先级规则 | 始终生效 | 建议性 |
-| C | PostToolUse 编辑 task.md 后提醒 | 编辑 task.md | 建议性 |
-| D | PreToolUse:TodoWrite 拦截校验 | AI 调用 TodoWrite/TaskCreate/TaskUpdate | 确定性（触发时）|
-
-### findings.md 状态标记
-
-| 标记 | 含义 | 统计 |
-|------|------|------|
-| `⚠️` | 未解决问题 | 计入未解决统计，PostToolUse 提醒 |
-| `🔒` | 已知限制（替换 ⚠️） | 不计入统计，外部 bug 等无法修复 |
-| `✅` | 已解决 | 不计入统计 |
+Stop hook 连续阻止 3 次后自动降级为放行，防止 AI 陷入死循环。SessionStart 重置计数器。
 
 ---
+
+## 项目结构
+
+```
+paceflow/
+├── .claude-plugin/plugin.json        # Plugin 元数据
+├── hooks/                            # 8 个 Hook 脚本
+│   ├── hooks.json                    #   自动注册配置
+│   ├── pace-utils.js                 #   公共工具库
+│   ├── pre-tool-use.js               #   写代码前：任务检查 + 审批检查
+│   ├── post-tool-use.js              #   写代码后：归档提醒 + 格式检查
+│   ├── session-start.js              #   会话启动：上下文注入
+│   ├── stop.js                       #   会话结束：完成度检查
+│   ├── todowrite-sync.js             #   任务列表：一致性校验
+│   ├── config-guard.js               #   配置保护
+│   ├── pre-compact.js                #   Compact 前快照
+│   └── templates/                    #   5 个 Artifact 模板
+├── skills/                           # 6 个 Skill
+│   ├── pace-workflow/                #   PACE 核心流程
+│   ├── pace-bridge/                  #   Superpowers 桥接
+│   ├── artifact-management/          #   Artifact 管理规则
+│   ├── change-management/            #   变更 ID 管理
+│   ├── pace-knowledge/               #   Obsidian 知识库管理
+│   └── paceflow-audit/               #   5-Agent 并行审查
+└── tests/                            # 测试（73 单元 + 61 E2E + 20 安装）
+```
+
+---
+
+<details>
+<summary><strong>技术细节（Hook I/O 协议、状态文件、兼容性）</strong></summary>
 
 ## Hook I/O 协议
 
 | Hook | 输入 | 成功输出 | 阻止方式 |
 |------|------|----------|----------|
-| SessionStart | stdin JSON（eventType）| stdout 纯文本（注入 AI 上下文）| N/A |
+| SessionStart | stdin JSON（eventType）| stdout 纯文本 | N/A |
 | PreToolUse | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext / permissionDecision）| `permissionDecision: "deny"` |
-| PreToolUse:TodoWrite | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext / permissionDecision）| `permissionDecision: "deny"`（Superpowers 桥接）|
 | PostToolUse | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext）| N/A（仅提醒）|
-| Stop | stdin JSON（stop_hook_active）| stderr + exit 2 | `exit 2`（stderr 反馈给 AI）|
-| PreCompact | stdin JSON（compact 上下文）| stdout JSON（additionalContext，快照注入）| N/A |
-| ConfigChange | stdin JSON（tool_input / settings）| stdout JSON（additionalContext）| N/A（仅警告）|
+| Stop | stdin JSON（stop_hook_active）| stderr + exit 2 | `exit 2` |
+| PreCompact | stdin JSON | stdout JSON（additionalContext）| N/A |
+| ConfigChange | stdin JSON | stdout JSON（additionalContext）| N/A |
 
 **关键规则**：
 - `exit 0 + stderr` = 完全忽略（AI 看不到）
 - `exit 0 + JSON stdout additionalContext` = AI 能看到
 - `exit 2 + stderr` = 阻止操作 + stderr 反馈给 AI
 
----
-
-## Artifact 文件（双区结构）
-
-所有 Artifact 文件使用 `<!-- ARCHIVE -->` 标记分为活跃区和归档区：
+## 运行时状态文件（`.pace/`）
 
 | 文件 | 用途 |
 |------|------|
-| `spec.md` | 项目规格、技术栈、依赖 |
-| `task.md` | 任务追踪（`[ ]` `[/]` `[x]` `[!]` `[-]`）|
-| `implementation_plan.md` | 变更索引、技术方案 |
-| `walkthrough.md` | 工作日志、每日总结 |
-| `findings.md` | 调研记录、错误日志 |
+| `stop-block-count` | Stop 连续阻止计数（≥3 降级）|
+| `degraded` | 降级标记 |
+| `todowrite-used` | 本会话是否用过 TodoWrite |
+| `disabled` | 豁免标记（用户手动创建）|
+| `synced-plans` | 已桥接的 plan 文件列表 |
 
-**状态标记**：
+## 三级触发（PreToolUse）
 
-| 标记 | 含义 |
-|------|------|
-| `[ ]` | 未开始 |
-| `[/]` | 进行中 |
-| `[x]` | 已完成 |
-| `[!]` | 阻塞 |
-| `[-]` | 跳过 |
-
-**关键标记**：
-
-| 标记 | 位置 | 用途 |
+| 级别 | 条件 | 动作 |
 |------|------|------|
-| `<!-- ARCHIVE -->` | 各 artifact 文件 | 活跃区/归档区分隔 |
-| `<!-- APPROVED -->` | task.md 活跃区 | C 阶段获批标记 |
-| `<!-- VERIFIED -->` | task.md 活跃区 | V 阶段验证标记 |
+| Deny | 强信号 + 无活跃任务 | deny + 懒创建模板 |
+| Deny | Write 将达 3+ 代码文件阈值 | deny（前瞻检测）|
+| Soft Warn | 1-2 代码文件 | additionalContext 提醒 |
 
----
+## C/V 阶段检查
 
-## 运行时文件
-
-Hooks 在项目根目录的 `.pace/` 子目录下维护运行时状态：
-
-| 文件 | 用途 | 管理者 |
-|------|------|--------|
-| `.pace/stop-block-count` | Stop 连续阻止计数 | Stop 写入，SessionStart 重置 |
-| `.pace/degraded` | 降级标记（连续 3 次 block 后）| Stop 写入，PostToolUse 读取，SessionStart 清除 |
-| `.pace/todowrite-used` | 本会话是否使用过 TodoWrite | todowrite-sync 写入，Stop 检测，SessionStart 清除 |
-| `.pace/disabled` | 豁免标记（禁用 PACE）| 用户手动创建 |
-| `.pace/synced-plans` | 已桥接 plan 文件名列表 | pace-bridge skill 写入 |
-
-建议将 `.pace/` 加入 `.gitignore`。
-
----
+- **C 阶段**：`<!-- APPROVED -->` 或 `[/]`/`[!]` 任务 → 已获批。全部 `[ ]` 且无标记 → deny
+- **V 阶段**：`[x]` 完成项无 `<!-- VERIFIED -->` → Stop block。已验证未归档 → Stop block
 
 ## Subagent / Agent Teams 兼容性
 
-> 以下结论基于 2026-02-16 实测（Claude Code v2.x），可能随版本更新变化。
+**Subagent**（Task 工具）：在主进程内执行，共享 hooks，所有 hook 均生效。
 
-### Subagent（Task 工具）
+**Agent Teams**：独立进程，各自加载 hooks。`isTeammate()` 自动检测 teammate 身份：
+- 阻止性 hook → 降级为 HINT
+- 信息性 hook → 保持生效
 
-Subagent 在主进程内执行，**共享相同的 hooks 配置**。实测所有 hook 均对 subagent 生效：
-
-| Hook | 行为 | 验证结果 |
-|------|------|----------|
-| PreToolUse (Write/Edit) | deny 阻止 subagent 写代码文件 | ✅ 生效 |
-| PreToolUse (TodoWrite) | additionalContext 提醒注入 | ✅ 生效 |
-| PostToolUse | 归档提醒正常触发 | ✅ 生效 |
-
-> **注意**：GitHub #21460 声称 hooks 不对 subagent 生效，与实测矛盾（可能已修复或仅影响 plugin 级 hooks）。
-
-### Agent Teams（实验性功能）
-
-Agent Teams 的 teammate 是**独立的 Claude Code 进程**，各自加载 `settings.json` 中的 hooks。实测全部 5 个 hook 事件均对 teammate 生效：
-
-| Hook | 行为 | 验证结果 |
-|------|------|----------|
-| SessionStart | 为 teammate 注入项目上下文 | ✅ 生效 |
-| PreToolUse (Write/Edit) | deny 阻止 teammate 写代码文件 | ✅ 生效 |
-| PreToolUse (TodoWrite) | additionalContext 提醒注入 | ✅ 生效 |
-| PostToolUse | 归档提醒正常触发 | ✅ 生效 |
-| Stop | TodoWrite 残留清理提醒 | ✅ 生效 |
-
-### 已知限制
-
-| 编号 | 问题 | 影响 | 状态 |
-|------|------|------|------|
-| 🔒 1 | todowrite-sync 无法区分团队任务与 PACE 任务 | teammate 的 TaskCreate/TaskUpdate 触发不相关 HINT（仅提醒，不阻止） | 等待官方 `agent_id` 字段支持 |
-| 🔒 2 | 多 teammate 并发修改 `.pace/` 状态文件 | `stop-block-count` / `degraded` 理论竞态风险 | Agent Teams 实验性功能，单 teammate 未触发 |
-
-**根本原因**：PreToolUse stdin JSON 不包含 `agent_id` / `agent_type` 字段，hook 无法区分请求来源（主进程 / subagent / teammate）。相关 feature request：#16126、#14859、#16424。
-
----
+**已知限制**：
+- todowrite-sync 无法区分团队任务与 PACE 任务（等待官方 `agent_id` 字段）
+- 多 teammate 并发修改 `.pace/` 理论竞态风险（未实际触发）
 
 ## 日志
 
-所有 hook 共享日志文件 `~/.claude/hooks/pace/pace-hooks.log`。
+共享日志 `~/.claude/hooks/pace/pace-hooks.log`，仅记录非常规事件（DENY / BLOCK / ERROR / DOWNGRADE）。
 
-**仅记录非常规事件**（v4.4.0 精简）：
-- `DENY` / `DENY_WRITE_ARTIFACT` / `DENY_C_PHASE` — 拒绝操作
-- `BLOCK` / `DOWNGRADE` — Stop 阻止/降级
-- `ERROR` — 异常
-- `CREATE_TEMPLATES` — 懒创建模板
-- `SOFT_WARN` — 弱信号提醒
-- `HINT` — TodoWrite 同步提示
-- `SKIPPED_REMINDER` — 跨会话跳过任务提醒
+</details>
 
-常规事件（PASS/SKIP/INJECT）不记录日志。
-
----
-
-## 版本历史
+<details>
+<summary><strong>版本历史</strong></summary>
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
-| v5.0.0 | 2026-03-07 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构 + 模板统一 + VAULT_PATH 参数化 + install --plugin/--migrate） |
-| v4.8.1 | 2026-03-05 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
-| v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一）|
-| v4.7.1 | 2026-02-28 | 基础设施解耦（ensureProjectInfra 独立）+ Write 新建 artifact 模板注入 |
-| v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + DENY 降级 + 静默放行 + 废弃 2 无效 hook）|
-| v4.6.0 | 2026-02-25 | ConfigChange hook + PreCompact hook（6→8 个 hook 脚本）|
-| v4.5.0 | 2026-02-25 | Compact 快照 + Stop stdin 交叉验证 + Findings 否定理由增强 |
-| v4.4.3 | 2026-02-25 | E 阶段前提检查（impl_plan 需 `[/]`）|
-| v4.4.1 | 2026-02-25 | Obsidian 知识中枢集成（scanRelatedNotes 注入 + pace-knowledge skill + PreToolUse 模板提醒 + Artifact 索引格式迁移）|
-| v4.4.0 | 2026-02-14 | 系统审视改进（🔒 已知限制状态 + PACE_VERSION 集中化 + 日志精简 + findings 计数修复）|
-| v4.3.9 | 2026-02-14 | 3-Agent 审查修复（try-catch + 版本同步 + 未使用 import 清理）|
-| v4.3.8 | 2026-02-14 | ticket6 审查修复（countByStatus 统一 + [-] 扫描范围 + 死代码清理）|
-| v4.3.7 | 2026-02-14 | TodoWrite 三工具名修复（TodoWrite\|TaskCreate\|TaskUpdate）|
-| v4.3.6 | 2026-02-14 | PACE-TodoWrite 同步方案 A+B+C+D（4 层缓解 compaction 残留）|
-| v4.3.5 | 2026-02-14 | 空项目激活方案（懒创建模板 + off-by-one 前瞻 + .pace/disabled 豁免）|
-| v4.3.4 | 2026-02-14 | ticket4 审查修复（try-catch / 正则 / 阈值 / findings 降级 / .pace/ 目录）|
-| v4.3.3 | 2026-02-13 | 全面审查修复（23 个问题，13/15 修复）|
-| v4.3.2 | 2026-02-15 | C 阶段 APPROVED 检查 + V 阶段 VERIFIED 检查 + Write 保护 |
-| v4.3.1 | 2026-02-15 | 审查修复 + DRY 重构（B1/B2 bug + D1~D3 提取公共函数）|
+| v5.0.0 | 2026-03-07 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构） |
+| v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault |
+| v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + 降级策略） |
+| v4.6.0 | 2026-02-25 | ConfigChange + PreCompact hook（6→8 个脚本）|
+| v4.5.0 | 2026-02-25 | Compact 快照 + Stop stdin 交叉验证 |
+| v4.4.1 | 2026-02-25 | Obsidian 知识中枢集成 |
 | v4.3.0 | 2026-02-14 | PACE + Superpowers 集成（多信号激活 + 三级触发）|
-| v4.0.0 | 2026-02-13 | 三层架构补全（G-10/G-11 + hooks 覆盖扩展）|
-| v3.0.0 | 2026-02-12 | Node.js 迁移 + 日志功能 |
-| v2.0.0 | 2026-02-12 | Hooks V 阶段覆盖扩展 |
-| v1.0.0 | 2026-02-11 | 初始 4 个 hook 脚本创建 |
+| v4.0.0 | 2026-02-13 | 三层架构补全 |
+| v3.0.0 | 2026-02-12 | Node.js 迁移 |
+| v1.0.0 | 2026-02-11 | 初始创建 |
+
+</details>
+
+---
+
+**版本**: v5.0.2 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
