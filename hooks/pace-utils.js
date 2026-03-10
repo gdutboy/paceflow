@@ -417,4 +417,48 @@ function formatBridgeHint(cwd, artDir) {
   return { fileList, bridgeSteps };
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, findMissingFindingsDetails, getNativePlanPath };
+// S-1: 统一 stdin 解析 — 替换 6 个 hook 的重复 JSON.parse 模板
+/**
+ * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
+ * @param {string} rawInput - stdin 原始文本
+ * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, lastMessage: string, raw: object }}
+ */
+function parseHookStdin(rawInput) {
+  let parsed = {};
+  let ok = false;
+  try { parsed = JSON.parse(rawInput); ok = true; } catch(e) {}
+  return {
+    ok,
+    toolName: parsed.tool_name || '',
+    filePath: (parsed.tool_input?.file_path || '').replace(/\\/g, '/'),
+    oldString: parsed.tool_input?.old_string || '',
+    newString: parsed.tool_input?.new_string || '',
+    content: parsed.tool_input?.content || '',
+    toolInput: parsed.tool_input || {},
+    type: parsed.type || '',
+    lastMessage: parsed.last_assistant_message || '',
+    raw: parsed
+  };
+}
+
+/**
+ * 异步 stdin 解析 wrapper — 替代 4 个 hook 的 3 行流模板
+ * @param {function} callback - (stdin, rawInput) => void
+ */
+function withStdinParsed(callback) {
+  let input = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => { input += chunk; });
+  process.stdin.on('end', () => { callback(parseHookStdin(input), input); });
+}
+
+/**
+ * 同步 stdin 解析 — 替代 session-start/stop 的 readFileSync(0) 模板
+ * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, lastMessage: string, raw: object }}
+ */
+function parseStdinSync() {
+  try { return parseHookStdin(fs.readFileSync(0, 'utf8')); }
+  catch(e) { return parseHookStdin(''); }
+}
+
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, findMissingFindingsDetails, getNativePlanPath, parseHookStdin, withStdinParsed, parseStdinSync };

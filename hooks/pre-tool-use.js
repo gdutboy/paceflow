@@ -13,20 +13,10 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 
-// v4: 异步读取 stdin 获取工具信息
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
+// S-1: 统一 stdin 解析
+paceUtils.withStdinParsed((stdin) => {
   try {
-  let toolName = '', filePath = '', oldString = '', newString = '';
-  try {
-    const parsed = JSON.parse(input);
-    toolName = parsed.tool_name || '';
-    filePath = parsed.tool_input?.file_path || '';
-    oldString = parsed.tool_input?.old_string || '';
-    newString = parsed.tool_input?.new_string || '';
-  } catch(e) {}
+  const { toolName, filePath, oldString, newString } = stdin;
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
   function denyOrHint(reason) {
@@ -55,7 +45,8 @@ process.stdin.on('end', () => {
   const fileName = filePath ? path.basename(filePath) : '';
 
   // v4.3.1: 项目外文件豁免（CWD 和 vault artifact 目录均视为"项目内"）
-  const normalizedFile = filePath.replace(/\\/g, '/').toLowerCase();
+  // S-1: filePath 已由 parseHookStdin normalize，只需 toLowerCase
+  const normalizedFile = filePath.toLowerCase();
   const normalizedCwd = cwd.replace(/\\/g, '/').toLowerCase();
   const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
   let isInsideProject = normalizedFile.startsWith(cwdWithSlash);

@@ -34,13 +34,8 @@ function setBlockCount(n) {
 }
 
 try {
-// v4.5: 读取 stdin 获取 last_assistant_message
-let lastMessage = '';
-try {
-  const stdinData = fs.readFileSync(0, 'utf8');
-  const parsed = JSON.parse(stdinData);
-  lastMessage = parsed.last_assistant_message || '';
-} catch(e) {} // 解析失败不影响后续
+// S-1: 统一 stdin 解析
+const lastMessage = paceUtils.parseStdinSync().lastMessage;
 
 // I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
 const artDir = getArtifactDir(cwd);

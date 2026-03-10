@@ -15,23 +15,13 @@ const cwd = paceUtils.resolveProjectCwd();
 
 const PACE_RUNTIME = path.join(cwd, '.pace');
 
-// v4.3.3: 异步读取 stdin 获取工具信息，按工具类型过滤检查范围
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
+// S-1: 统一 stdin 解析
+paceUtils.withStdinParsed((stdin) => {
   try {
   // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
   if (!isPaceProject(cwd)) return;
 
-  let toolName = '', filePath = '', oldString = '', newString = '';
-  try {
-    const parsed = JSON.parse(input);
-    toolName = parsed.tool_name || '';
-    filePath = parsed.tool_input?.file_path || '';
-    oldString = parsed.tool_input?.old_string || '';
-    newString = parsed.tool_input?.new_string || '';
-  } catch(e) {}
+  const { toolName, filePath, oldString, newString } = stdin;
 
   const warnings = [];
   // W-dry-4: 每会话首次提醒辅助函数（flag 检查+写入去重）
@@ -235,7 +225,8 @@ process.stdin.on('end', () => {
   if (isArtifactEdit && filePath && VAULT_PATH && !fs.existsSync(cliRefreshFile)) {
     try {
       // Windows 大小写不敏感，比较时统一小写（与 pre-tool-use.js 一致）
-      const normFile = filePath.replace(/\\/g, '/').toLowerCase();
+      // S-1: filePath 已由 parseHookStdin normalize，只需 toLowerCase
+      const normFile = filePath.toLowerCase();
       const normVault = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
       if (normFile.startsWith(normVault + '/')) {
         const relPath = path.relative(VAULT_PATH, filePath).replace(/\\/g, '/');

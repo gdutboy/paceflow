@@ -23,13 +23,8 @@ for (const flag of SESSION_SCOPED_FLAGS) {
   try { const fp = path.join(PACE_RUNTIME, flag); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
 }
 
-// 读取 stdin 获取事件类型（compact 时跳过 thoughts 注入）
-let eventType = 'startup';
-try {
-  const stdinData = fs.readFileSync(0, 'utf8');
-  const parsed = JSON.parse(stdinData);
-  eventType = parsed.type || 'startup';
-} catch(e) {}
+// S-1: 统一 stdin 解析
+const eventType = paceUtils.parseStdinSync().type || 'startup';
 
 // H-3: 顶层 try-catch 安全网（内部 try-catch 保留不变）
 try {

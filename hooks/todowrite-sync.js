@@ -15,10 +15,8 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
+// S-1: 统一 stdin 解析
+paceUtils.withStdinParsed((stdin) => {
   try {
     const paceSignal = isPaceProject(cwd);
 
@@ -32,14 +30,8 @@ process.stdin.on('end', () => {
       return;
     }
 
-    let toolName = '', toolInput = {};
-    try {
-      const parsed = JSON.parse(input);
-      toolName = parsed.tool_name || '';
-      toolInput = parsed.tool_input || {};
-    } catch(e) {
-      return;
-    }
+    const { toolName, toolInput } = stdin;
+    if (!stdin.ok) return;
 
     // TodoWrite 清空操作（空数组）直接放行，不产生 hint
     if (toolName === 'TodoWrite' && (toolInput.todos || []).length === 0) {

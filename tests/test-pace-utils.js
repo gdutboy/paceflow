@@ -586,6 +586,75 @@ test('createLogger — 轮转后对齐到换行符', () => {
 });
 
 // ============================================================
+// 15. parseHookStdin() — 6 个测试
+// ============================================================
+console.log('\n--- parseHookStdin ---');
+
+test('parseHookStdin — 完整字段正常解析', () => {
+  const input = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: 'C:\\Users\\test\\file.js',
+      old_string: 'old',
+      new_string: 'new',
+      content: 'full content'
+    },
+    type: 'startup',
+    last_assistant_message: 'done'
+  });
+  const r = paceUtils.parseHookStdin(input);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.toolName, 'Edit');
+  assert.strictEqual(r.filePath, 'C:/Users/test/file.js', 'filePath 应被 normalize');
+  assert.strictEqual(r.oldString, 'old');
+  assert.strictEqual(r.newString, 'new');
+  assert.strictEqual(r.content, 'full content');
+  assert.strictEqual(r.type, 'startup');
+  assert.strictEqual(r.lastMessage, 'done');
+});
+
+test('parseHookStdin — 空字符串 → ok:false + 全空字段', () => {
+  const r = paceUtils.parseHookStdin('');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.toolName, '');
+  assert.strictEqual(r.filePath, '');
+  assert.strictEqual(r.oldString, '');
+  assert.strictEqual(r.newString, '');
+  assert.strictEqual(r.content, '');
+  assert.strictEqual(r.type, '');
+  assert.strictEqual(r.lastMessage, '');
+});
+
+test('parseHookStdin — 非 JSON → ok:false + 全空字段', () => {
+  const r = paceUtils.parseHookStdin('not json {{{');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.toolName, '');
+});
+
+test('parseHookStdin — 部分字段缺失 → 默认值', () => {
+  const r = paceUtils.parseHookStdin(JSON.stringify({ tool_name: 'Write' }));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.toolName, 'Write');
+  assert.strictEqual(r.filePath, '');
+  assert.strictEqual(r.oldString, '');
+  assert.deepStrictEqual(r.toolInput, {});
+});
+
+test('parseHookStdin — content 独立于 newString', () => {
+  const r = paceUtils.parseHookStdin(JSON.stringify({
+    tool_input: { content: 'write-content', new_string: 'edit-new' }
+  }));
+  assert.strictEqual(r.content, 'write-content');
+  assert.strictEqual(r.newString, 'edit-new');
+});
+
+test('parseHookStdin — ok:true 时 raw 保留原始对象', () => {
+  const r = paceUtils.parseHookStdin(JSON.stringify({ tool_input: { custom: 123 } }));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.raw.tool_input.custom, 123);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();
