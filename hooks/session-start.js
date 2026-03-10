@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS } = paceUtils;
+const { PACE_VERSION, ts, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -139,7 +139,7 @@ for (const file of files) {
   if (file === 'task.md') taskFullCached = full;
 
   process.stdout.write(`=== ${file} ===\n`);
-  const archiveMatch = full.match(/^<!-- ARCHIVE -->$/m);
+  const archiveMatch = full.match(ARCHIVE_PATTERN);
   let output = archiveMatch ? full.slice(0, archiveMatch.index) : full;
 
   // T-385: spec.md 截断 — 保留项目概述+技术栈，省略编码规范/目录结构/依赖列表
@@ -199,10 +199,7 @@ for (const file of files) {
       }
     }
     // T-379: 跳过已解决详情段落（正向匹配保留 open 项详情）
-    const openKeys = [];
-    (output.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
-      openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
-    });
+    const openKeys = extractOpenKeys(output);
     const totalDetails = (output.match(/^### \[\d{4}-\d{2}-\d{2}\]/gm) || []).length;
     if (totalDetails > 0 && totalDetails > openKeys.length) {
       const lines = output.split('\n');
@@ -258,7 +255,7 @@ for (const file of files) {
     }
   }
 
-  if (archiveMatch) output += '<!-- ARCHIVE -->\n';
+  if (archiveMatch) output += ARCHIVE_MARKER + '\n';
   process.stdout.write(output);
   process.stdout.write('\n\n');
   found.push(`${file}(${output.length})`);
@@ -275,7 +272,7 @@ if (paceSignal && found.length > 0) {
   // 检测 1：impl_plan 旧表格/emoji 格式
   const implFull = readFull(cwd, 'implementation_plan.md');
   if (implFull) {
-    const implArchiveM = implFull.match(/^<!-- ARCHIVE -->$/m);
+    const implArchiveM = implFull.match(ARCHIVE_PATTERN);
     const implActive = implArchiveM ? implFull.slice(0, implArchiveM.index) : implFull;
     if (/[✅❌📋🔄⏳]/.test(implActive)) {
       formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
@@ -284,16 +281,16 @@ if (paceSignal && found.length > 0) {
       formatWarnings.push(`implementation_plan.md 使用了表格格式，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
     // 检测 2：双 ARCHIVE 标记
-    const archiveCount = (implFull.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+    const archiveCount = (implFull.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (archiveCount > 1) {
-      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 <!-- ARCHIVE --> 标记（应只有 1 个），readActive 会截断到第一个标记处，可能丢失活跃内容`);
+      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处，可能丢失活跃内容`);
     }
   }
   // 检测 3：task.md 双 ARCHIVE 标记
   if (taskFullCached) {
-    const taskArchiveCount = (taskFullCached.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+    const taskArchiveCount = (taskFullCached.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (taskArchiveCount > 1) {
-      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 <!-- ARCHIVE --> 标记（应只有 1 个），readActive 会截断到第一个标记处`);
+      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处`);
     }
   }
   if (formatWarnings.length > 0) {
@@ -311,7 +308,7 @@ if (!taskFullCached && fs.existsSync(taskFp)) {
 if (taskFullCached) {
   try {
     // 提前计算 ARCHIVE 分割点（W3 跳过扫描 + 方案 A 共用）
-    const archMatch = taskFullCached.match(/^<!-- ARCHIVE -->$/m);
+    const archMatch = taskFullCached.match(ARCHIVE_PATTERN);
     const active = archMatch ? taskFullCached.slice(0, archMatch.index) : taskFullCached;
 
     // W3: 只扫描活跃区的跳过任务（避免已归档的历史 [-] 项永久计入提醒）

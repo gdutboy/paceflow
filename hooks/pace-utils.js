@@ -8,6 +8,10 @@ const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 
+// 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
+const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
+const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->$/m;
+
 // T-328: 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
 const FORMAT_SNIPPETS = {
   // task.md 任务条目格式
@@ -190,14 +194,14 @@ function isPaceProject(cwd) {
   return false;
 }
 
-/** 读取文件活跃区（<!-- ARCHIVE --> 上方内容），artifact 文件自动解析 vault 目录 */
+/** 读取文件活跃区（ARCHIVE_MARKER 上方内容），artifact 文件自动解析 vault 目录 */
 function readActive(cwd, filename) {
   const dir = ARTIFACT_FILES.includes(filename) ? getArtifactDir(cwd) : cwd;
   const fp = path.join(dir, filename);
   // W-code-1: 直接 try readFileSync，消除 TOCTOU 竞态 + 减少 stat syscall
   try {
     const content = fs.readFileSync(fp, 'utf8');
-    const m = content.match(/^<!-- ARCHIVE -->$/m);
+    const m = content.match(ARCHIVE_PATTERN);
     return m ? content.slice(0, m.index) : content;
   } catch(e) { return null; }
 }
@@ -213,7 +217,7 @@ function readFull(cwd, filename) {
 function checkArchiveFormat(cwd, filename) {
   const content = readFull(cwd, filename);
   if (!content) return null;
-  const hasCorrect = /^<!-- ARCHIVE -->$/m.test(content);
+  const hasCorrect = ARCHIVE_PATTERN.test(content);
   // I-6: 匹配所有级别的错误标题格式（# ARCHIVE ~ ###### ARCHIVE）
   const hasWrong = /^#{1,6}\s+ARCHIVE/m.test(content);
   if (hasWrong && !hasCorrect) return `${filename} 使用了错误的 ARCHIVE 标记格式（应为 <!-- ARCHIVE -->）`;
@@ -417,6 +421,19 @@ function formatBridgeHint(cwd, artDir) {
   return { fileList, bridgeSteps };
 }
 
+/**
+ * 从 findings 活跃区提取开放项（[ ]）的前 8 字 key，用于详情段落匹配
+ * @param {string} text - findings.md 活跃区文本
+ * @returns {string[]} key 数组，每个为索引标题前 8 字（去空格）
+ */
+function extractOpenKeys(text) {
+  const keys = [];
+  (text.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
+    keys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
+  });
+  return keys;
+}
+
 // S-1: 统一 stdin 解析 — 替换 6 个 hook 的重复 JSON.parse 模板
 /**
  * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
@@ -461,4 +478,4 @@ function parseStdinSync() {
   catch(e) { return parseHookStdin(''); }
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, findMissingFindingsDetails, getNativePlanPath, parseHookStdin, withStdinParsed, parseStdinSync };
+module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARCHIVE_MARKER, ARCHIVE_PATTERN, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, findMissingFindingsDetails, getNativePlanPath, extractOpenKeys, parseHookStdin, withStdinParsed, parseStdinSync };

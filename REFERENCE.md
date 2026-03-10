@@ -590,18 +590,34 @@ summary: "[一句话项目描述]"
 
 所有运行时状态存储在项目的 `.pace/` 目录下：
 
-| 文件 | 写入者 | 消费者 | 用途 | 生命周期 |
-|------|--------|--------|------|---------|
-| `disabled` | 用户手动 | isPaceProject() | 豁免 PACE | 持久（用户手动删除） |
-| `stop-block-count` | Stop(+1) / SessionStart(→0) | Stop | 防无限循环计数器 | 每会话重置 |
-| `degraded` | Stop(≥3次) | PostToolUse H1 | 降级标记+未通过检查 | 每会话清除 |
-| `todowrite-used` | todowrite-sync | Stop W8 | 本会话用过 TodoWrite | 每会话清除 |
-| `archive-reminded` | PostToolUse H2 | PostToolUse | 归档提醒已触发 | 每会话清除 |
-| `findings-reminded` | PostToolUse H7 | PostToolUse | Findings 提醒已触发 | 每会话清除 |
-| `impl-archive-reminded` | PostToolUse H10 | PostToolUse | Impl_plan 详情归档提醒已触发 | 每会话清除 |
-| `findings-age-YYYY-MM-DD` | SessionStart S8 | SessionStart | 每日首次过期扫描标记 | 每日一个 |
-| `pre-compact-state.json` | PreCompact | SessionStart S3 | Compact 快照 | 下次 Compact 覆盖 |
-| `synced-plans` | pace-bridge skill | pre-tool-use / session-start | 已桥接的 plan 文件名列表 | 持久（追加写入） |
+### 9.1 会话级 Flag（SessionStart 重置）
+
+以下 flag 在每次 SessionStart 时自动清除（由 `SESSION_SCOPED_FLAGS` 常量管理）：
+
+| Flag 文件 | 路径 | 写入方 | 读取方 | 用途 |
+|-----------|------|--------|--------|------|
+| `degraded` | `.pace/degraded` | Stop（连续阻止 ≥3 次） | PostToolUse | 降级标记 + 未通过检查项内容 |
+| `todowrite-used` | `.pace/todowrite-used` | todowrite-sync | Stop | 本会话使用过 TodoWrite |
+| `archive-reminded` | `.pace/archive-reminded` | PostToolUse（warnOnce） | PostToolUse | task.md 归档提醒已触发 |
+| `findings-reminded` | `.pace/findings-reminded` | PostToolUse（warnOnce） | PostToolUse | findings ⚠️ 提醒已触发 |
+| `impl-archive-reminded` | `.pace/impl-archive-reminded` | PostToolUse（warnOnce） | PostToolUse | impl_plan 详情归档提醒已触发 |
+| `cli-refresh-done` | `.pace/cli-refresh-done` | PostToolUse H12 | PostToolUse | Obsidian CLI 索引刷新已触发 |
+| `walkthrough-archive-reminded` | `.pace/walkthrough-archive-reminded` | PostToolUse（warnOnce） | PostToolUse | walkthrough 归档提醒已触发 |
+| `findings-archive-reminded` | `.pace/findings-archive-reminded` | PostToolUse（warnOnce） | PostToolUse | findings 已解决详情归档提醒已触发 |
+
+### 9.2 持久性状态文件
+
+以下文件跨会话保留，由特定操作创建/更新/清除：
+
+| 文件 | 路径 | 写入方 | 读取方 | 清除方 | 用途 |
+|------|------|--------|--------|--------|------|
+| `disabled` | `.pace/disabled` | 用户手动创建 | isPaceProject() | 用户手动删除 | 豁免 PACE（最高优先级） |
+| `stop-block-count` | `.pace/stop-block-count` | Stop（+1）| Stop | SessionStart（→0） | 防无限循环计数器 |
+| `synced-plans` | `.pace/synced-plans` | pace-bridge skill（追加） | pre-tool-use / session-start | — | 已桥接的 plan 文件名列表 |
+| `current-native-plan` | `.pace/current-native-plan` | pre-compact / AI 手动 | session-start / pre-tool-use | AI 桥接完成后删除 | 原生计划文件路径（compact 恢复用） |
+| `findings-age-YYYY-MM-DD` | `.pace/findings-age-*` | SessionStart | SessionStart | SessionStart（清理非今日 flag） | 每日首次 findings 过期扫描标记 |
+| `pre-compact-state.json` | `.pace/pre-compact-state.json` | PreCompact | SessionStart（compact 事件） | SessionStart（读取后删除） | Compact 前状态快照 |
+| `.gitignore` | `.pace/.gitignore` | ensureProjectInfra() | git | — | 确保 `.pace/` 内容不入库 |
 
 ---
 

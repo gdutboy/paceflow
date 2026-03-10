@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts, FORMAT_SNIPPETS } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -100,7 +100,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (fs.existsSync(tmpl)) {
         try {
           const tmplContent = fs.readFileSync(tmpl, 'utf8');
-          const ctx = `新建 ${fileName}：请严格按照以下官方模板格式，保留双区结构（<!-- ARCHIVE --> 分隔符）和注释说明：\n\n${tmplContent}`;
+          const ctx = `新建 ${fileName}：请严格按照以下官方模板格式，保留双区结构（${ARCHIVE_MARKER} 分隔符）和注释说明：\n\n${tmplContent}`;
           const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: ctx } };
           process.stdout.write(JSON.stringify(output));
           return;
@@ -180,7 +180,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     // v5.0.2: impl_plan 旧格式检测 DENY — 阻止在 emoji/表格格式基础上编辑
     if (planFull) {
-      const archiveMatch = planFull.match(/^<!-- ARCHIVE -->$/m);
+      const archiveMatch = planFull.match(ARCHIVE_PATTERN);
       const implActive = archiveMatch ? planFull.slice(0, archiveMatch.index) : planFull;
       const hasEmoji = /[✅❌📋🔄⏳]/.test(implActive);
       const hasTable = /^\|.+\|$/m.test(implActive) && !/^- \[.\]/m.test(implActive);

@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS } = paceUtils;
+const { ts, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -117,10 +117,7 @@ if (taskActive) {
     }
 
     // T-383: findings 归档检查 — 活跃区 [x]/[-] 详情段落存在时 warning
-    const openKeys = [];
-    (findingsActive.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
-      openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
-    });
+    const openKeys = extractOpenKeys(findingsActive);
     const staleHeaders = findingsActive.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/gm) || [];
     const staleCount = staleHeaders.filter(h => {
       const title = h.replace(/^### \[\d{4}-\d{2}-\d{2}\] /, '');
@@ -160,7 +157,7 @@ if (taskActive) {
     // T-383: walkthrough 归档检查 — 活跃区详情 > 3 时 warning
     const walkDetailCount = (walkActive.match(/^## \d{4}-\d{2}-\d{2}/gm) || []).length;
     if (walkDetailCount > 3) {
-      warnings.push(`walkthrough 活跃区有 ${walkDetailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 <!-- ARCHIVE --> 下方`);
+      warnings.push(`walkthrough 活跃区有 ${walkDetailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 ${ARCHIVE_MARKER} 下方`);
     }
   } else if (!fs.existsSync(path.join(artDir, 'walkthrough.md'))) {
     warnings.push(`walkthrough.md 不存在，缺少工作记录`);

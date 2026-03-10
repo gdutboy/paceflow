@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, ts, FORMAT_SNIPPETS } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -181,17 +181,14 @@ paceUtils.withStdinParsed((stdin) => {
 
       // T-382: findings 归档提醒 — 活跃区 [x]/[-] 详情段落存在时 warnOnce
       if (fileName === 'findings.md') {
-        const openKeys = [];
-        (findingsActive.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
-          openKeys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
-        });
+        const openKeys = extractOpenKeys(findingsActive);
         const staleHeaders = findingsActive.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/gm) || [];
         const staleCount = staleHeaders.filter(h => {
           const title = h.replace(/^### \[\d{4}-\d{2}-\d{2}\] /, '');
           return !openKeys.some(p => title.includes(p));
         }).length;
         if (staleCount > 0) {
-          warnOnce('findings-archive-reminded', `findings 活跃区有 ${staleCount} 个已解决详情段落，请归档到 <!-- ARCHIVE --> 下方。${FORMAT_SNIPPETS.archiveOp}`);
+          warnOnce('findings-archive-reminded', `findings 活跃区有 ${staleCount} 个已解决详情段落，请归档到 ${ARCHIVE_MARKER} 下方。${FORMAT_SNIPPETS.archiveOp}`);
         }
       }
     }
@@ -202,7 +199,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (walkActive) {
         const detailCount = (walkActive.match(/^## \d{4}-\d{2}-\d{2}/gm) || []).length;
         if (detailCount > 3) {
-          warnOnce('walkthrough-archive-reminded', `walkthrough 活跃区有 ${detailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 <!-- ARCHIVE --> 下方。${FORMAT_SNIPPETS.archiveOp}`);
+          warnOnce('walkthrough-archive-reminded', `walkthrough 活跃区有 ${detailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 ${ARCHIVE_MARKER} 下方。${FORMAT_SNIPPETS.archiveOp}`);
         }
       }
     }

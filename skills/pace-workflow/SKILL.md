@@ -140,6 +140,23 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 - 每完成 5 个子任务后，重读 `task.md` 确认方向正确
 - 对话超过 20 轮时，主动重读核心 Artifact 刷新上下文
 
+**执行中纠偏**（方案根本性错误时）：
+
+> 小范围调整（修改单个任务实现方式、补充遗漏步骤）不需要走纠偏流程，直接在当前任务内调整即可。
+> 纠偏流程仅在实现方案根本性错误、影响其他任务依赖关系时启用。
+
+标准流程：
+1. **暂停**：当前任务标 `[!]` 阻塞，停止写代码
+2. **诊断**：重读 `task.md` + `implementation_plan.md`，定位偏差范围（哪些任务受影响）
+3. **修正**：回到 A 阶段 — Edit `implementation_plan.md` 更新方案 + Edit `task.md` 调整任务列表
+4. **重新批准**：告知用户方案变更，获取确认后重新添加 `<!-- APPROVED -->`
+5. **恢复**：`[!]` → `[/]` 继续执行
+
+触发条件示例：
+- 选定的技术方案不可行（如 API 不支持预期功能）
+- 架构决策错误导致后续多个任务需要重写
+- 发现关键依赖冲突影响整体方案
+
 ### V (Verify - 验证)
 
 **推荐**：invoke `superpowers:verification-before-completion` — 确保所有完成声称都有新鲜验证证据（IDENTIFY → RUN → READ → VERIFY → CLAIM）。

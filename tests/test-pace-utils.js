@@ -655,6 +655,56 @@ test('parseHookStdin — ok:true 时 raw 保留原始对象', () => {
 });
 
 // ============================================================
+// 16. extractOpenKeys() — 4 个测试
+// ============================================================
+console.log('\n--- extractOpenKeys ---');
+
+test('extractOpenKeys — 空文本返回空数组', () => {
+  assert.deepStrictEqual(paceUtils.extractOpenKeys(''), []);
+});
+
+test('extractOpenKeys — 无 [ ] 项返回空数组', () => {
+  const text = '- [x] 已完成项 — 结论\n- [-] 已跳过项 — 原因\n- [/] 进行中 — 说明';
+  assert.deepStrictEqual(paceUtils.extractOpenKeys(text), []);
+});
+
+test('extractOpenKeys — 多项提取', () => {
+  const text = '- [ ] knowledge 注入问题 — 结论\n- [x] 已完成 — ok\n- [ ] 指引体系补遗 — 结论2';
+  const keys = paceUtils.extractOpenKeys(text);
+  assert.strictEqual(keys.length, 2);
+  assert.strictEqual(keys[0], 'knowledg');
+  assert.strictEqual(keys[1], '指引体系补遗');
+});
+
+test('extractOpenKeys — 前 8 字截断（含中文）', () => {
+  const text = '- [ ] PACEflow 非常长的标题应该被截断 — 结论';
+  const keys = paceUtils.extractOpenKeys(text);
+  assert.strictEqual(keys.length, 1);
+  assert.strictEqual(keys[0], 'PACEflow');
+});
+
+// ============================================================
+// 17. ARCHIVE_MARKER / ARCHIVE_PATTERN — 3 个测试
+// ============================================================
+console.log('\n--- ARCHIVE_MARKER / ARCHIVE_PATTERN ---');
+
+test('ARCHIVE_MARKER 字符串值正确', () => {
+  assert.strictEqual(paceUtils.ARCHIVE_MARKER, '<!-- ARCHIVE -->');
+});
+
+test('ARCHIVE_PATTERN 匹配独占行的 <!-- ARCHIVE -->', () => {
+  const text = 'content\n<!-- ARCHIVE -->\nold stuff';
+  const match = text.match(paceUtils.ARCHIVE_PATTERN);
+  assert.ok(match, '应匹配');
+  assert.strictEqual(match[0], '<!-- ARCHIVE -->');
+});
+
+test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
+  const text = 'some text <!-- ARCHIVE --> more text';
+  assert.ok(!paceUtils.ARCHIVE_PATTERN.test(text), '行内嵌入不应匹配');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 cleanup();
