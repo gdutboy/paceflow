@@ -24,7 +24,6 @@ const CONFIG_SRC = path.join(__dirname, 'config', 'settings-hooks-excerpt.json')
 const SKILL_DIRS = [
   'pace-workflow',
   'artifact-management',
-  'change-management',
   'pace-knowledge',
   'pace-bridge',
   'paceflow-audit',
@@ -145,7 +144,7 @@ function installHooks() {
 
 /**
  * 步骤 2：安装 skills 到 ~/.claude/skills/
- * v5.0.0: 源码结构 skills/<name>/SKILL.md，含可选 templates/ 子目录
+ * v5.0.0: 源码结构 skills/<name>/SKILL.md，含可选 templates/ 和 references/ 子目录
  */
 function installSkills() {
   log('\n[2/3] 安装 Skills...');
@@ -163,19 +162,20 @@ function installSkills() {
     }
     installFile(srcSkill, path.join(targetDir, 'SKILL.md'), `${dirName}/SKILL.md`);
 
-    // 安装 templates/ 子目录（如 change-management/templates/）
-    const srcTemplatesDir = path.join(srcDir, 'templates');
-    if (fs.existsSync(srcTemplatesDir)) {
-      const targetTemplatesDir = path.join(targetDir, 'templates');
+    // 安装 templates/ 和 references/ 子目录
+    for (const subDir of ['templates', 'references']) {
+      const srcSubDir = path.join(srcDir, subDir);
+      if (!fs.existsSync(srcSubDir)) continue;
+      const targetSubDir = path.join(targetDir, subDir);
       if (!dryRun) {
-        fs.mkdirSync(targetTemplatesDir, { recursive: true });
+        fs.mkdirSync(targetSubDir, { recursive: true });
       }
-      const templateFiles = fs.readdirSync(srcTemplatesDir).filter(f => f.endsWith('.md'));
-      for (const file of templateFiles) {
+      const mdFiles = fs.readdirSync(srcSubDir).filter(f => f.endsWith('.md'));
+      for (const file of mdFiles) {
         installFile(
-          path.join(srcTemplatesDir, file),
-          path.join(targetTemplatesDir, file),
-          `${dirName}/templates/${file}`
+          path.join(srcSubDir, file),
+          path.join(targetSubDir, file),
+          `${dirName}/${subDir}/${file}`
         );
       }
     }
@@ -285,18 +285,14 @@ function cleanupOldTemplates() {
       }
     } catch(e) {}
   }
-  // change-management: 无 change- 前缀或下划线变体的旧模板
-  const chgDir = path.join(SKILLS_TARGET, 'change-management', 'templates');
-  const OLD_CHG = ['change_record.md', 'implementation_plan.md'];
-  for (const f of OLD_CHG) {
-    const fp = path.join(chgDir, f);
-    try {
-      if (fs.existsSync(fp)) {
-        if (!dryRun) fs.unlinkSync(fp);
-        log(`  🗑️  change-management/templates/${f} (旧文件清理)`);
-      }
-    } catch(e) {}
-  }
+  // v5.0.2: change-management 合并入 artifact-management，清理整个旧目录
+  const chgMgmtDir = path.join(SKILLS_TARGET, 'change-management');
+  try {
+    if (fs.existsSync(chgMgmtDir)) {
+      if (!dryRun) fs.rmSync(chgMgmtDir, { recursive: true, force: true });
+      log(`  🗑️  change-management/ (已合并入 artifact-management，整目录清理)`);
+    }
+  } catch(e) {}
   // 旧版 SKILL 文件名（现统一为 SKILL.md）
   const OLD_SKILL_NAMES = {
     'artifact-management': 'artifact-management.md',
@@ -311,11 +307,8 @@ function cleanupOldTemplates() {
       }
     } catch(e) {}
   }
-  // 旧版遗留目录
-  const OLD_DIRS = [
-    path.join(SKILLS_TARGET, 'change-management', 'examples'),
-    path.join(SKILLS_TARGET, 'change-management', 'scripts'),
-  ];
+  // 旧版遗留目录（change-management 子目录已由上方整目录清理覆盖）
+  const OLD_DIRS = [];
   for (const dir of OLD_DIRS) {
     try {
       if (fs.existsSync(dir)) {

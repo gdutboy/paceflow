@@ -1,7 +1,10 @@
 ---
 name: pace-bridge
-description: 将 Superpowers 计划文件（docs/plans/）桥接到 PACEflow artifacts（task.md + implementation_plan.md）。
-  当 PreToolUse DENY 提示"检测到 Superpowers 计划文件"或 SessionStart 提示"Superpowers 桥接提醒"时使用。
+description: >
+  将计划文件桥接到 PACEflow artifacts（task.md + implementation_plan.md）。
+  支持 Superpowers 计划（docs/plans/）和 Claude Code plan mode 计划（~/.claude/plans/）。
+  当 PreToolUse DENY 提示"检测到计划文件"或 SessionStart 提示"桥接提醒"时使用。
+  当用户主动请求"同步计划"、"桥接计划"、"把计划转到 task"时也应激活。
 ---
 
 # Superpowers → PACEflow 桥接
@@ -25,7 +28,7 @@ description: 将 Superpowers 计划文件（docs/plans/）桥接到 PACEflow art
 Read `docs/plans/` 中最新的 plan 文件，提取任务列表和实施策略。
 
 ### Step 2：生成变更 ID
-- 读取 `implementation_plan.md` 当天已有 CHG 数量，生成 `CHG-YYYYMMDD-NN`
+- 读取 `implementation_plan.md` 当天已有 CHG 数量，生成 `CHG-YYYYMMDD-NN`（格式详见 `paceflow:artifact-management` 编号规范）
 - 读取 `task.md`（含 ARCHIVE 区）最大 T 编号，从 `T-(max+1)` 开始
 
 ### Step 3：写入 implementation_plan.md
@@ -33,6 +36,15 @@ Edit 变更索引区添加：
 ```
 - [/] CHG-YYYYMMDD-NN 标题 #change [tasks:: T-NNN~T-NNN]
 ```
+
+Edit 活跃变更详情区添加 `### CHG-ID 标题` 段落，**从源计划提取并展开为 4 段结构**：
+
+1. **背景**（Why）：从 plan 文件提取需求动机，用中文重述（技术术语保留英文）
+2. **范围**（What）：影响文件列表 + 预估改动量（从 plan 任务列表推断）
+3. **技术决策**（How）：从 plan 提取技术选型和设计决策（如"选择 SQLite 而非 PostgreSQL，因为..."）
+4. **任务分解**：每个 T-NNN 的实现要点（2-3 行，包含具体文件和修改内容）
+
+> **禁止仅列任务标题**。Artifact 必须能独立理解，不需要回溯源 plan 文件。
 
 ### Step 4：写入 task.md
 Edit 活跃区添加：

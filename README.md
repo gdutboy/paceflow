@@ -15,14 +15,15 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 - 用 Write 覆盖已有的 artifact 文件？直接 **deny**，必须用 Edit
 - 任务完成了但 walkthrough 没写？Stop hook 给 warning，**exit 2 阻止退出**
 
-### PACE 四阶段
+### PACE 五阶段
 
 | 阶段 | 含义 | Hook 保障 |
 |------|------|-----------|
 | **P**lan | 规划任务 | PreToolUse deny 未规划的代码修改 |
 | **A**rtifact | 创建/更新 5 个 artifact 文件 | 模板自动注入 + 格式守门 |
 | **C**heck | 用户审批 | PreToolUse 检查 `<!-- APPROVED -->` 标记 |
-| **E**xecute + Verify | 执行 + 验证 | PostToolUse 归档提醒 / Stop 完成度检查 |
+| **E**xecute | 执行 | PostToolUse 归档提醒 |
+| **V**erify | 验证 | Stop 完成度检查 + `<!-- VERIFIED -->` 标记 |
 
 ### 5 个 Artifact 文件 = 项目记忆
 
@@ -46,7 +47,7 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 /plugin install paceflow@paceaitian-paceflow
 ```
 
-安装后 8 个 hook + 6 个 skill 自动注册，零配置。重启 Claude Code 生效。
+安装后 8 个 hook + 5 个 skill 自动注册，零配置。重启 Claude Code 生效。
 
 > **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault，artifact 将自动存储到 `$PACE_VAULT_PATH/projects/<项目名>/`，实现跨项目知识沉淀。
 
@@ -166,11 +167,10 @@ paceflow/
 │   ├── config-guard.js               #   配置保护
 │   ├── pre-compact.js                #   Compact 前快照
 │   └── templates/                    #   5 个 Artifact 模板
-├── skills/                           # 6 个 Skill
+├── skills/                           # 5 个 Skill
 │   ├── pace-workflow/                #   PACE 核心流程
 │   ├── pace-bridge/                  #   Superpowers 桥接
-│   ├── artifact-management/          #   Artifact 管理规则
-│   ├── change-management/            #   变更 ID 管理
+│   ├── artifact-management/          #   Artifact + 变更管理规则
 │   ├── pace-knowledge/               #   Obsidian 知识库管理
 │   └── paceflow-audit/               #   5-Agent 并行审查
 └── tests/                            # 测试（73 单元 + 61 E2E + 20 安装）

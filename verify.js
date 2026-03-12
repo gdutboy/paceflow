@@ -24,10 +24,10 @@ const EXPECTED_HOOKS = [
 ];
 
 // v5.0.0: Skill 目录名列表（源码 skills/<name>/SKILL.md）
+// v5.0.2: change-management 合并入 artifact-management
 const SKILL_DIRS = [
   'pace-workflow',
   'artifact-management',
-  'change-management',
   'pace-knowledge',
   'pace-bridge',
   'paceflow-audit',
@@ -232,6 +232,7 @@ function checkVersion() {
  */
 function checkTemplates() {
   try {
+    // T-430: 仅检查 5 个 Artifact 模板；knowledge-note.md 是知识库笔记模板（非 artifact），由 install.js 单独处理
     const expectedTemplates = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
     let found = 0;
     const issues = [];
@@ -261,10 +262,12 @@ function checkTemplates() {
 /**
  * 第 6 组：Skill 文件一致性
  * v5.0.0: 源码 skills/<name>/SKILL.md 与生产 ~/.claude/skills/<name>/SKILL.md 比较
+ * v5.0.2: 增加 references/ 和 templates/ 子目录文件比较
  */
 function checkSkills() {
   try {
     let matched = 0;
+    let total = 0;
     const issues = [];
 
     for (const dirName of SKILL_DIRS) {
@@ -276,6 +279,7 @@ function checkSkills() {
         hasError = true;
         continue;
       }
+      total++;
       if (!fs.existsSync(prodPath)) {
         issues.push(`❌ 生产缺失: ${dirName}/SKILL.md`);
         hasError = true;
@@ -291,12 +295,36 @@ function checkSkills() {
         issues.push(`⚠️ Skill 不一致: ${dirName}/SKILL.md`);
         hasWarning = true;
       }
+
+      // 检查 references/ 和 templates/ 子目录
+      for (const subDir of ['references', 'templates']) {
+        const srcSubDir = path.join(SKILLS_SRC, dirName, subDir);
+        if (!fs.existsSync(srcSubDir)) continue;
+        const prodSubDir = path.join(SKILLS_TARGET, dirName, subDir);
+        const srcFiles = fs.readdirSync(srcSubDir).filter(f => f.endsWith('.md'));
+        for (const file of srcFiles) {
+          total++;
+          const srcFile = path.join(srcSubDir, file);
+          const prodFile = path.join(prodSubDir, file);
+          if (!fs.existsSync(prodFile)) {
+            issues.push(`❌ 生产缺失: ${dirName}/${subDir}/${file}`);
+            hasError = true;
+            continue;
+          }
+          if (Buffer.compare(fs.readFileSync(srcFile), fs.readFileSync(prodFile)) === 0) {
+            matched++;
+          } else {
+            issues.push(`⚠️ Skill 不一致: ${dirName}/${subDir}/${file}`);
+            hasWarning = true;
+          }
+        }
+      }
     }
 
     if (issues.length === 0) {
-      results.push(`✅ Skill 一致性: ${matched}/${SKILL_DIRS.length} 一致`);
+      results.push(`✅ Skill 一致性: ${matched}/${total} 一致`);
     } else {
-      results.push(`⚠️ Skill 一致性: ${matched}/${SKILL_DIRS.length} 一致`);
+      results.push(`⚠️ Skill 一致性: ${matched}/${total} 一致`);
       results.push(...issues);
     }
   } catch (e) {

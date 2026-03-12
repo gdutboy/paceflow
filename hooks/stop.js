@@ -190,8 +190,8 @@ if (fs.existsSync(twFlag) && taskActive) {
   }
 }
 
-// v4.5: 交叉验证 — AI 声称完成但 artifact 不一致
-if (lastMessage && warnings.length === 0) {
+// T-424: 交叉验证移出 warnings.length===0 守卫，确保已有 warning 时仍检测虚假完成声明
+if (lastMessage) {
   if (/(?:任务完成|已完成所有|全部完成|归档完毕)/.test(lastMessage)) {
     // I-3: 复用上方已读取的 taskActive，避免重复 readActive
     if (taskActive) {
@@ -219,6 +219,8 @@ if (warnings.length > 0) {
       // v4.3.3: 降级时写入标记文件，让 PostToolUse 提醒 AI
       try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
       try { fs.writeFileSync(path.join(PACE_RUNTIME, 'degraded'), `降级时间: ${ts()}\n未通过检查:\n${checksDetail}\n`, 'utf8'); } catch(e) {}
+      // T-424: 降级后重置计数器，避免下次会话冻结在 MAX_BLOCKS
+      setBlockCount(0);
       log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: DOWNGRADE (${blockCount}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  note: 已写入 .pace/degraded\n`);
       // exit 0：不阻止，仅记录
     } else {

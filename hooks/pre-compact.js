@@ -59,7 +59,8 @@ try {
     const walkActive = readActive(cwd, 'walkthrough.md');
     if (walkActive) {
       const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-      const hasTodayEntry = walkActive.includes(today);
+      // T-425: 正则匹配对齐 stop.js 精确度，避免 includes() 子串误匹配
+      const hasTodayEntry = new RegExp('\\|\\s*' + today + '\\s*\\|').test(walkActive);
       snapshot.walkthrough = { hasTodayEntry };
     }
   } catch(e) {}

@@ -109,7 +109,7 @@ paceUtils.withStdinParsed((stdin) => {
     }
   }
 
-  // v4.4.1: Obsidian 知识库笔记模板提醒（Write 到 thoughts/knowledge 时注入 additionalContext）
+  // v4.4.1→v5.0.3: Obsidian 知识库笔记格式注入（Write 到 thoughts/knowledge 时注入格式要求）
   if (toolName === 'Write' && VAULT_PATH && filePath.endsWith('.md')) {
     const nf = normalizedFile;
     const vp = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
@@ -118,7 +118,11 @@ paceUtils.withStdinParsed((stdin) => {
     if (nf.startsWith(vpSlash + 'thoughts/')) dirName = 'thoughts';
     else if (nf.startsWith(vpSlash + 'knowledge/')) dirName = 'knowledge';
     if (dirName && path.basename(filePath) !== 'README.md') {
-      const ctx = `写入 ${dirName}/ 笔记，请遵循 pace-knowledge skill 模板：frontmatter 必含 summary/status/projects 字段，正文用 ## 摘要（L1）+ ## 详情（L2）结构。`;
+      const ctx = dirName === 'knowledge'
+        ? `写入 knowledge/ 笔记，必须包含以下格式：\n` +
+          `YAML frontmatter 必填字段：status（discussing/concluded/archived）、projects（来源项目列表）、tags、summary（≤80字）、created、updated、sources\n` +
+          `正文结构：## 摘要（L1，300-500 tokens 关键结论列表）+ ## 详情（L2，完整内容含代码示例、对比表格、### 子章节）`
+        : `写入 thoughts/ 笔记，请包含 YAML frontmatter（status/projects/tags/summary/created/updated）和 ## 摘要 + ## 详情 结构。`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -182,7 +186,8 @@ paceUtils.withStdinParsed((stdin) => {
     if (planFull) {
       const archiveMatch = planFull.match(ARCHIVE_PATTERN);
       const implActive = archiveMatch ? planFull.slice(0, archiveMatch.index) : planFull;
-      const hasEmoji = /[✅❌📋🔄⏳]/.test(implActive);
+      // T-423: emoji 检测限定索引行（必须有 checkbox 前缀），强制 AI 使用正确格式
+      const hasEmoji = /^- \[.\].*[✅❌📋🔄⏳]/m.test(implActive);
       const hasTable = /^\|.+\|$/m.test(implActive) && !/^- \[.\]/m.test(implActive);
       if (hasEmoji || hasTable) {
         const format = hasEmoji ? 'emoji 状态标记' : '表格格式';

@@ -274,7 +274,8 @@ if (paceSignal && found.length > 0) {
   if (implFull) {
     const implArchiveM = implFull.match(ARCHIVE_PATTERN);
     const implActive = implArchiveM ? implFull.slice(0, implArchiveM.index) : implFull;
-    if (/[✅❌📋🔄⏳]/.test(implActive)) {
+    // T-423: emoji 检测限定索引行（必须有 checkbox 前缀），强制 AI 使用正确格式
+    if (/^- \[.\].*[✅❌📋🔄⏳]/m.test(implActive)) {
       formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
     if (/^\|.+\|$/m.test(implActive) && /^- \[.\]/m.test(implActive) === false) {

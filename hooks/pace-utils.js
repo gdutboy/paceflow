@@ -18,9 +18,9 @@ const FORMAT_SNIPPETS = {
   taskEntry: '- [ ] T-NNN 任务标题',
   taskGroup: '### CHG-YYYYMMDD-NN: 变更标题\n\n<!-- APPROVED -->\n\n- [/] T-001 任务描述\n- [ ] T-002 任务描述',
   // impl_plan 索引条目格式（hook 检测正则：/^- \\[\\/\\]/m）
-  implIndex: '- [/] CHG-YYYYMMDD-NN 标题 #change [tasks:: T-NNN~T-NNN]',
-  // impl_plan 详情段落格式
-  implDetail: '### CHG-ID 标题\n\n描述变更内容。\n\n**T-NNN 任务标题**：\n- 具体改动说明',
+  implIndex: '- [/] CHG-YYYYMMDD-NN 标题 — 简要描述 #change [tasks:: T-NNN~T-NNN]',
+  // T-426: impl_plan 详情 4 段结构（背景/范围/技术决策/任务分解）
+  implDetail: '### CHG-ID 标题\n\n**背景（Why）**：为什么做。\n**范围（What）**：~N 行，M 文件。\n**技术决策（How）**：方案选择及理由。\n\n**T-NNN 任务标题**：\n- 具体改动（文件:行号）',
   // 标记位置
   approved: '<!-- APPROVED --> 放在 task.md 活跃区的 CHG 分组标题下方、任务列表上方',
   verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方，V 阶段验证通过后添加',
@@ -33,7 +33,7 @@ const FORMAT_SNIPPETS = {
   // 归档操作
   archiveOp: '用 Edit 将已完成项移到 <!-- ARCHIVE --> 标记下方',
   // findings/walkthrough 格式（compact 恢复注入用）
-  findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD]，索引+详情(### [日期] 标题)缺一不可',
+  findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD] [change:: CHG-ID] [knowledge:: slug]，索引+详情(### [日期] 标题)缺一不可',
   walkthroughFormat: '索引表+详情 ## YYYY-MM-DD CHG-ID 摘要，工作结束必须更新',
   // impl_plan 详情规则
   implDetailRule: '每个 [x] 索引必须有 ### CHG-ID 详情段落',
@@ -87,23 +87,26 @@ let _artifactDirCache = { cwd: null, dir: null };
 function getArtifactDir(cwd) {
   if (_artifactDirCache.cwd === cwd) return _artifactDirCache.dir;
   let result = cwd;
-  const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-  try {
-    // vault 有 artifact → vault（迁移后）
-    if (fs.existsSync(vaultDir) &&
-        ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) {
-      result = vaultDir;
-      _artifactDirCache = { cwd, dir: result };
-      return result;
-    }
-  } catch(e) {}
+  // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 分支，直接走 CWD 路径
+  if (VAULT_PATH) {
+    const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+    try {
+      // vault 有 artifact → vault（迁移后）
+      if (fs.existsSync(vaultDir) &&
+          ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) {
+        result = vaultDir;
+        _artifactDirCache = { cwd, dir: result };
+        return result;
+      }
+    } catch(e) {}
+  }
   // CWD 有 artifact → CWD（未迁移项目，向后兼容）
   if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) {
     _artifactDirCache = { cwd, dir: cwd };
     return cwd;
   }
-  // 新项目 → vault（默认目标）
-  result = vaultDir;
+  // 新项目 → vault（有 VAULT_PATH 时）或 CWD（无 VAULT_PATH）
+  result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', getProjectName(cwd)) : cwd;
   _artifactDirCache = { cwd, dir: result };
   return result;
 }
@@ -179,11 +182,14 @@ function isPaceProject(cwd) {
     if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
     // 信号 1（最强）：已有任何 PACE artifact 文件（CWD 或 vault）
     if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return 'artifact';
-    const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-    try {
-      if (fs.existsSync(vaultDir) &&
-          ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) return 'artifact';
-    } catch(e) {}
+    // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
+    if (VAULT_PATH) {
+      const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+      try {
+        if (fs.existsSync(vaultDir) &&
+            ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) return 'artifact';
+      } catch(e) {}
+    }
     // 信号 2（强）：Superpowers plan 文件
     if (hasPlanFiles(cwd)) return 'superpowers';
     // 信号 3（强）：手动激活标记
@@ -240,11 +246,13 @@ function ensureProjectInfra(cwd) {
       fs.writeFileSync(gitignorePath, '*\n', 'utf8');
     }
   } catch(e) {}
-  // vault 项目目录
-  try {
-    const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-    fs.mkdirSync(vaultDir, { recursive: true });
-  } catch(e) {}
+  // vault 项目目录（T-422: 无 VAULT_PATH 时跳过）
+  if (VAULT_PATH) {
+    try {
+      const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
+      fs.mkdirSync(vaultDir, { recursive: true });
+    } catch(e) {}
+  }
 }
 
 /**

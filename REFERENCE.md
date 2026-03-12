@@ -48,15 +48,17 @@ paceflow/
 │   ├── config-guard.js                          #   ConfigChange：配置保护
 │   ├── pre-compact.js                           #   PreCompact：Compact 快照
 │   └── templates/                               #   Artifact 模板文件（5 个，唯一源）
-├── skills/                                      # Skill 文件（6 个，Plugin 标准目录结构）
+├── skills/                                      # Skill 文件（5 个，Plugin 标准目录结构）
 │   ├── pace-workflow/SKILL.md                   #   PACE P-A-C-E-V 流程
 │   ├── pace-bridge/SKILL.md                     #   Superpowers → PACEflow 桥接
-│   ├── artifact-management/SKILL.md             #   Artifact 文件管理规则
-│   ├── change-management/                       #   变更 ID 生成与管理
+│   ├── artifact-management/                     #   Artifact + 变更管理规则
 │   │   ├── SKILL.md
-│   │   └── templates/                           #     变更模板（2 个）
+│   │   ├── references/                          #     格式参考 + 变更生命周期
+│   │   └── templates/                           #     变更模板
 │   ├── pace-knowledge/SKILL.md                  #   Obsidian 知识库笔记管理
-│   └── paceflow-audit/SKILL.md                  #   全面审查（5-agent 并行审查框架）
+│   └── paceflow-audit/                          #   全面审查（5-agent 并行审查框架）
+│       ├── SKILL.md
+│       └── references/                          #     Agent Prompt + 审计流程
 ├── config/
 │   └── settings-hooks-excerpt.json              #   settings.json hooks 配置示例（手动安装用）
 └── tests/                                       #   测试脚本
@@ -285,7 +287,7 @@ blockCount < 3 ?
 
 **关键规则**：
 - P 阶段搜索优先级：Context7 > 互联网搜索 > GitHub Issues
-- A 阶段调用 change-management Skill 生成 CHG-ID，关联 findings.md
+- A 阶段调用 artifact-management Skill 生成 CHG-ID，关联 findings.md
 - C 阶段必须**停止执行**等待用户确认
 - E 阶段支持 `[P]` 标记并行任务分配给 subagent/teammate
 - E 阶段每完成 5 个子任务重读 task.md；超过 20 轮刷新核心 Artifact
@@ -302,15 +304,16 @@ blockCount < 3 ?
 - spec.md 同步触发词：安装依赖、添加配置、创建核心模块、版本升级
 - 归档操作必须原子化（单次 Edit 完成，禁止拆分为删除+插入）
 
-### 4.3 change-management（变更 ID 管理）
+### 4.3 artifact-management 变更管理（原 change-management）
 
-**触发条件**：由 pace-workflow A 阶段调用（非独立使用）
+**触发条件**：由 pace-workflow A 阶段调用，或参阅 artifact-management references/change-lifecycle.md
 
 **内容**：
 - CHG-ID 生成规则（`CHG-YYYYMMDD-NN`）
 - 变更索引格式（`- [状态] CHG-ID 标题 #change [tasks:: T-NNN~T-NNN]`）
 - 各 PACE 阶段的变更管理动作
 - findings 反向关联（A 阶段第 4 步回写 `[change:: CHG-ID]`）
+- 详见 `artifact-management/references/change-lifecycle.md`
 
 ### 4.4 pace-knowledge（Obsidian 知识库笔记管理）
 
@@ -690,6 +693,10 @@ summary: "[一句话项目描述]"
 | `hasUnsyncedPlanFiles(cwd)` | 检测未桥接的 Superpowers plan 文件 |
 | `listUnsyncedPlanFiles(cwd)` | 列出未桥接的 plan 文件 |
 | `formatBridgeHint(cwd, artDir)` | 生成 Superpowers 桥接提示（文件列表+步骤） |
+| `extractOpenKeys(text)` | 从 findings 活跃区提取开放项（`[ ]`）的前 8 字 key |
+| `parseHookStdin(rawInput)` | 解析 hook stdin 原始输入，返回统一结构（内部 try-catch） |
+| `withStdinParsed(callback)` | 异步 stdin 解析 wrapper（替代 4 个 hook 的流模板） |
+| `parseStdinSync()` | 同步 stdin 解析（替代 session-start/stop 的 readFileSync(0)） |
 
 ---
 
