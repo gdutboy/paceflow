@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, detectLegacyImplFormat, extractNewlyCompletedChgs } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -140,12 +140,8 @@ paceUtils.withStdinParsed((stdin) => {
   if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
     const planFull = readFull(cwd, 'implementation_plan.md');
 
-    // 检测 new_string 中新出现的 [x] CHG-ID（对比 old_string 排除已有的）
-    const newDone = (newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
-      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
-    const oldDone = new Set((oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
-      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
-    const newlyCompleted = newDone.filter(id => !oldDone.has(id));
+    // W-6: 使用共享提取函数（消除与 post-tool-use.js 的重复）
+    const newlyCompleted = extractNewlyCompletedChgs(oldString, newString);
     if (newlyCompleted.length > 0 && planFull) {
       const missing = newlyCompleted.filter(id => {
         const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -188,9 +184,8 @@ paceUtils.withStdinParsed((stdin) => {
     if (planFull) {
       const archiveMatch = planFull.match(ARCHIVE_PATTERN);
       const implActive = archiveMatch ? planFull.slice(0, archiveMatch.index) : planFull;
-      // T-423: emoji 检测限定索引行（必须有 checkbox 前缀），强制 AI 使用正确格式
-      const hasEmoji = /^- \[.\].*[✅❌📋🔄⏳]/m.test(implActive);
-      const hasTable = /^\|.+\|$/m.test(implActive) && !/^- \[.\]/m.test(implActive);
+      // W-5: 使用共享检测函数（消除与 session-start.js 的重复）
+      const { hasEmoji, hasTable } = detectLegacyImplFormat(implActive);
       if (hasEmoji || hasTable) {
         const format = hasEmoji ? 'emoji 状态标记' : '表格格式';
         const reason = `implementation_plan.md 活跃区检测到旧的${format}，hook 无法识别。请先将内容迁移到新格式再编辑。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;

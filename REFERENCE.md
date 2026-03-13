@@ -1,6 +1,6 @@
-# PACEflow v5.1.0 功能与状态全景参考手册
+# PACEflow v5.1.1 功能与状态全景参考手册
 
-> **最后更新**：2026-03-09 | **版本**：v5.1.0
+> **最后更新**：2026-03-14 | **版本**：v5.1.1
 
 ---
 
@@ -47,7 +47,7 @@ paceflow/
 │   ├── todowrite-sync.js                        #   PreToolUse:TodoWrite：task.md 一致性
 │   ├── config-guard.js                          #   ConfigChange：配置保护
 │   ├── pre-compact.js                           #   PreCompact：Compact 快照
-│   └── templates/                               #   Artifact 模板文件（5 个，唯一源）
+│   └── templates/                               #   Artifact 模板文件（6 个：5 Artifact + 1 knowledge-note，唯一源）
 ├── skills/                                      # Skill 文件（5 个，Plugin 标准目录结构）
 │   ├── pace-workflow/SKILL.md                   #   PACE P-A-C-E-V 流程
 │   ├── pace-bridge/SKILL.md                     #   Superpowers → PACEflow 桥接
@@ -188,6 +188,7 @@ V（验证测试）──FAIL──→ 返回 E 修复
 | H9 | CHG 完成时 findings 关联检查 | 实时 | CHG 标 `[x]` 但关联 finding 仍为 `[ ]` → 提醒更新 |
 | H10 | impl_plan 详情归档提醒 | 每会话首次 | 索引已完成但详情区还在活跃区 → 提醒归档 |
 | H11 | Correction 双写提醒 | 每次 | Edit findings.md 写入 `### Correction:` → 提醒同步到 knowledge/ |
+| H12 | Obsidian CLI 索引刷新 | 每会话首次 | vault 内 artifact 编辑后异步 `obsidian read` 刷新索引（fire-and-forget） |
 | H13 | impl_plan 详情缺失检测 | 每会话首次 | 索引 `[x]`/`[-]` 但 ARCHIVE 无对应 `### CHG-` 详情 → 提醒补充 |
 | C | TodoWrite 同步提醒 | 编辑 task.md 时 | 提醒同步 TodoWrite 状态 |
 
@@ -667,11 +668,12 @@ summary: "[一句话项目描述]"
 
 | 常量 | 值 | 说明 |
 |------|-----|------|
-| `PACE_VERSION` | `'v5.1.0'` | 集中版本号，其他脚本引用 |
+| `PACE_VERSION` | `'v5.1.1'` | 集中版本号，其他脚本引用 |
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
 | `VAULT_PATH` | `process.env.PACE_VAULT_PATH \|\| ''` | Obsidian Vault 路径（需设置 `PACE_VAULT_PATH` 环境变量，未设置时 fallback 到 CWD） |
 | `SESSION_SCOPED_FLAGS` | `['degraded', 'todowrite-used', 'archive-reminded', ...]` | SessionStart 每次清除的单会话标记列表 |
+| `FORMAT_SNIPPETS` | `{taskEntry, taskGroup, implIndex, implDetail, approved, verified, statusHelp, changeStatusHelp, formatRule, archiveOp, findingsFormat, walkthroughFormat, implDetailRule, skillRef}` | 格式示例常量（17 字段），供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O |
 
 **函数**：
 
@@ -700,6 +702,8 @@ summary: "[一句话项目描述]"
 | `listUnsyncedPlanFiles(cwd)` | 列出未桥接的 plan 文件 |
 | `formatBridgeHint(cwd, artDir)` | 生成 Superpowers 桥接提示（文件列表+步骤） |
 | `extractOpenKeys(text)` | 从 findings 活跃区提取开放项（`[ ]`）的完整标题 |
+| `detectLegacyImplFormat(text)` | 检测 impl_plan 活跃区旧格式（emoji/表格），返回 `{hasEmoji, hasTable}` |
+| `extractNewlyCompletedChgs(oldString, newString)` | 从 Edit old/new string 提取本次新标为 `[x]` 的 CHG/HOTFIX ID 数组 |
 | `parseHookStdin(rawInput)` | 解析 hook stdin 原始输入，返回统一结构（内部 try-catch） |
 | `withStdinParsed(callback)` | 异步 stdin 解析 wrapper（替代 4 个 hook 的流模板） |
 | `parseStdinSync()` | 同步 stdin 解析（替代 session-start/stop 的 readFileSync(0)） |
@@ -742,11 +746,11 @@ summary: "[一句话项目描述]"
 
 ### 11.3 test-pace-utils.js（单元测试）
 
-覆盖 `isPaceProject()` 的 7 个场景：空目录、artifact 存在、disabled 豁免、manual 标记、superpowers plan、code-count、优先级验证
+覆盖 17 个函数共 73 个测试用例，包括 `isPaceProject()`（7 场景：空目录/artifact/disabled/manual/superpowers/code-count/优先级）、`countByStatus()`、`readActive()`、`parseHookStdin()`、`getProjectName()`、`extractOpenKeys()`、`findMissingImplDetails()` 等
 
 ### 11.4 test-hooks-e2e.js（E2E 测试）
 
-覆盖所有 hook 的 stdin/stdout/exit code 协议行为（61 个测试用例），包括：
+覆盖所有 hook 的 stdin/stdout/exit code 协议行为（67 个测试用例），包括：
 - SessionStart 注入
 - PreToolUse deny/pass
 - PostToolUse 提醒
@@ -820,5 +824,6 @@ function isTeammate() {
 | v4.8.1 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
 | v5.0.0 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构 + 模板统一 + VAULT_PATH 参数化 + install --migrate） |
 | v5.0.1 | impl_plan 详情守门（[x] DENY 缺详情）+ native plan 桥接（pre-compact 捕获 + session-start 恢复）+ 流程保障增强 |
+| v5.1.1 | ticket24 审计修复 — 共享函数提取（DRY）+ 死代码清理 + Skill/模板/文档同步 + E2E 67 |
 | v5.1.0 | Skills 架构重设计（6→5 合并）+ 归档机制改造（移动标记）+ 统一 stdin 解析 + 注入量精简 -57% + 4 轮审计修复（ticket17/18/21+22/23）+ Corrections 双写 Eval + 版本自动化 |
 | v5.0.2 | 检查覆盖增强（findings 详情检查 + compact knowledge 注入 + 旧格式 DENY + 快照扩展）+ 指引体系增强 + 模板风格统一 + paceflow-audit 动态发现重构 |

@@ -8,7 +8,11 @@
 <!-- 详情示例：
 ## 2026-01-15 CHG-20260115-01 用户认证模块实现
 > **追加时间**: 2026-01-15T18:30:00+08:00
-- 执行 CHG-20260115-01: ...
+- 执行 CHG-20260115-01: 用户认证模块
+  - **T-001**: JWT 中间件实现（auth.js 新增 verifyToken 函数）
+  - **T-002**: 登录/注册 API（routes/auth.js 新增 POST /login + /register）
+- 验证结果：单元测试 12/12 通过，手动测试 login→token→protected-route 流程正常
+- 附带修复：修正 package.json 缺少 jsonwebtoken 依赖声明
 -->
 
 **排列顺序**: 倒序（最新在前）

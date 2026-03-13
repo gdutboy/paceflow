@@ -1,5 +1,70 @@
 # Changelog
 
+## v5.1.1 (2026-03-14)
+
+> **1 个变更**（CHG-20260313-05），**~10 文件**，T-456 ~ T-461（6 个任务）
+
+### 概览
+
+ticket24 全面审查（5-agent 并行）发现的 15W+11I 全部修复。核心改动为共享函数提取（DRY）、死代码清理、Skill/模板文本修正、文档同步和 E2E 测试扩展。
+
+---
+
+### 🔧 代码质量
+
+#### 共享函数提取 DRY 重构 (T-456)
+- `pace-utils.js` 新增 `detectLegacyImplFormat(text)` + `extractNewlyCompletedChgs(oldString, newString)`
+- 4 个调用方内联正则替换为共享函数调用：`pre-tool-use.js`（2 处）、`post-tool-use.js`（1 处）、`session-start.js`（1 处）
+
+#### 死代码清理 3 处 (T-457)
+- `pre-tool-use.js`：移除未使用的 `findMissingImplDetails` import
+- `config-guard.js`：移除未使用的 `const fs = require('fs')`
+- `stop.js`：移除 teammate 路径的 `additionalContext` JSON 输出（Stop hook 不支持 additionalContext）
+
+---
+
+### 📝 文档与模板
+
+#### Skill/模板文本修复 3 处 (T-458)
+- `pace-bridge/SKILL.md`：任务格式 `T-NNN:` 删除冒号，统一为 `T-NNN 描述`
+- `hooks/templates/walkthrough.md`：注释示例补充验证结果 + 附带修复要素
+- `pace-workflow/SKILL.md`：P 阶段降级条件补充「Superpowers 插件未安装」
+
+#### REFERENCE.md 文档同步 6 项 (T-459)
+- 模板数量 5→6、PostToolUse H12 补充、FORMAT_SNIPPETS 描述、单元测试 73/17 函数、E2E 67、新增 2 函数到函数表
+
+---
+
+### 🧪 测试
+
+#### E2E 新增 3 测试 + test 24 修正 (T-460)
+- test 62: walkthrough 智能截断（>10 行索引 → 省略旧记录）
+- test 63: Correction 双写提醒（写入 `### Correction:` → knowledge 提示）
+- test 64: findings 14 天过期（超期 finding → 过期提醒）
+- test 24: 断言修正，与 T-457 死代码移除一致（stdout 为空而非 additionalContext）
+
+| 类别 | v5.1.0 | v5.1.1 | 变化 |
+|------|--------|--------|------|
+| E2E 测试 | 64 | 67 | +3 |
+
+---
+
+### 📊 审计历史
+
+| Ticket | 日期 | 原始发现 | 修复 | 误报率 |
+|--------|------|----------|------|--------|
+| ticket24 | 03-13 | 0C+0H+15W+11I | 26 项全修 | — |
+
+---
+
+### 完整变更列表
+
+| CHG-ID | 类型 | 标题 | Tasks |
+|--------|------|------|-------|
+| CHG-20260313-05 | refactor | ticket24 审计修复 — 共享函数提取 + 死代码清理 + Skill/模板/文档同步 + E2E | T-456~T-461 |
+
+---
+
 ## v5.1.0 (2026-03-13)
 
 > **22 个变更**（15 CHG + 4 HOTFIX + 3 docs），**37 个文件**，**+2,436 / -1,494 行**，T-378 ~ T-455（78 个任务）

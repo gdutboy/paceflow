@@ -1,5 +1,4 @@
 // ConfigChange hook：防止禁用所有 hooks + PACE hook 删除提醒
-const fs = require('fs');
 const path = require('path');
 let paceUtils;
 try { paceUtils = require('./pace-utils'); } catch(e) {

@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, extractNewlyCompletedChgs } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -89,22 +89,17 @@ paceUtils.withStdinParsed((stdin) => {
     // T-282: 提前读取 findings 活跃区，供 H9 和 H7 共用
     const findingsActive = readActive(cwd, 'findings.md');
     if (fileName === 'implementation_plan.md' && newString) {
-      const chgDone = newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm);
-      const chgOld = oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm);
-      // 只检测本次新标为 [x] 的 CHG/HOTFIX
-      if (chgDone) {
-        const oldSet = new Set((chgOld || []).map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
-        const newlyDone = chgDone.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]).filter(id => !oldSet.has(id));
-        if (newlyDone.length > 0 && findingsActive) {
-          const stale = [];
-          for (const chgId of newlyDone) {
-            const re = new RegExp(`^- \\[ \\] .+\\[change:: ${chgId}\\]`, 'gm');
-            const hits = findingsActive.match(re) || [];
-            hits.forEach(h => stale.push({ chgId, line: h.slice(6, 60) }));
-          }
-          if (stale.length > 0) {
-            warnings.push(`CHG 已完成但关联 finding 仍为 [ ]：${stale.map(s => s.chgId + ' → ' + s.line).join('；')}，请更新为 [x]`);
-          }
+      // W-6: 使用共享提取函数（消除与 pre-tool-use.js 的重复）
+      const newlyDone = extractNewlyCompletedChgs(oldString, newString);
+      if (newlyDone.length > 0 && findingsActive) {
+        const stale = [];
+        for (const chgId of newlyDone) {
+          const re = new RegExp(`^- \\[ \\] .+\\[change:: ${chgId}\\]`, 'gm');
+          const hits = findingsActive.match(re) || [];
+          hits.forEach(h => stale.push({ chgId, line: h.slice(6, 60) }));
+        }
+        if (stale.length > 0) {
+          warnings.push(`CHG 已完成但关联 finding 仍为 [ ]：${stale.map(s => s.chgId + ' → ' + s.line).join('；')}，请更新为 [x]`);
         }
       }
     }

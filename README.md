@@ -243,6 +243,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v5.1.1 | 2026-03-14 | ticket24 审计修复 — 共享函数提取 + 死代码清理 + E2E 67 |
 | v5.1.0 | 2026-03-13 | Skills 架构重设计 + 归档机制改造 + stdin 统一解析 + 注入量精简 -57% + 4 轮审计修复 |
 | v5.0.2 | 2026-03-08 | 检查覆盖增强 + 指引体系增强 + 模板风格统一 + paceflow-audit 重构 |
 | v5.0.1 | 2026-03-07 | impl_plan 详情守门 + native plan 桥接 + 流程保障增强 |
@@ -261,4 +262,4 @@ paceflow/
 
 ---
 
-**版本**: v5.1.0 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v5.1.1 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

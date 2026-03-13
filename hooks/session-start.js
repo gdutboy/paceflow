@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -281,11 +281,12 @@ if (paceSignal && found.length > 0) {
   if (implFull) {
     const implArchiveM = implFull.match(ARCHIVE_PATTERN);
     const implActive = implArchiveM ? implFull.slice(0, implArchiveM.index) : implFull;
-    // T-423: emoji 检测限定索引行（必须有 checkbox 前缀），强制 AI 使用正确格式
-    if (/^- \[.\].*[✅❌📋🔄⏳]/m.test(implActive)) {
+    // W-5: 使用共享检测函数（消除与 pre-tool-use.js 的重复）
+    const { hasEmoji, hasTable } = detectLegacyImplFormat(implActive);
+    if (hasEmoji) {
       formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
-    if (/^\|.+\|$/m.test(implActive) && /^- \[.\]/m.test(implActive) === false) {
+    if (hasTable) {
       formatWarnings.push(`implementation_plan.md 使用了表格格式，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
     // 检测 2：双 ARCHIVE 标记

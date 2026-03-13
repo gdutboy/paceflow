@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v5.1.0';
+const PACE_VERSION = 'v5.1.1';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -480,6 +480,22 @@ function extractOpenKeys(text) {
   return keys;
 }
 
+/** W-5: 检测 impl_plan 活跃区的旧格式（emoji 状态标记或纯表格格式） */
+function detectLegacyImplFormat(text) {
+  const hasEmoji = /^- \[.\].*[✅❌📋🔄⏳]/m.test(text);
+  const hasTable = /^\|.+\|$/m.test(text) && !/^- \[.\]/m.test(text);
+  return { hasEmoji, hasTable };
+}
+
+/** W-6: 从 Edit old/new string 中提取本次新标为 [x] 的 CHG/HOTFIX ID */
+function extractNewlyCompletedChgs(oldString, newString) {
+  const newDone = (newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
+    .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
+  const oldDone = new Set((oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
+    .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
+  return newDone.filter(id => !oldDone.has(id));
+}
+
 // S-1: 统一 stdin 解析 — 替换 6 个 hook 的重复 JSON.parse 模板
 /**
  * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
@@ -539,7 +555,7 @@ module.exports = {
   // 计划文件
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
   // 统计与检查
-  countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys,
+  countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys, detectLegacyImplFormat, extractNewlyCompletedChgs,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, createLogger, formatBridgeHint,
   // stdin 解析

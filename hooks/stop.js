@@ -206,10 +206,8 @@ if (lastMessage) {
 if (warnings.length > 0) {
   // v4.7: teammate 降级 — 不阻止，仅输出 additionalContext 提醒
   if (isTeammate()) {
-    const ctx = `PACE 提醒（teammate 模式，不阻止）：\n${warnings.map((w, i) => `[${i+1}] ${w}`).join('\n')}`;
-    const output = { hookSpecificOutput: { hookEventName: "Stop", additionalContext: ctx } };
-    process.stdout.write(JSON.stringify(output));
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TEAMMATE_SOFT | team: ${process.env.CLAUDE_CODE_TEAM_NAME}\n  checks: ${warnings.join('; ')}\n`);
+    // I-6: Stop hook 不支持 additionalContext，teammate 直接 exit 0 放行
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TEAMMATE_PASS | team: ${process.env.CLAUDE_CODE_TEAM_NAME}\n  checks: ${warnings.join('; ')}\n`);
     // exit 0 放行
   } else {
     // W-7: 修正缩进（与 if 分支对齐）
