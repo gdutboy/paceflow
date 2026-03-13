@@ -171,12 +171,14 @@ for (const file of ARTIFACT_FILES) {
       dataRows.push(lineStart);
     }
     if (dataRows.length > 10) {
-      const cutStart = dataRows[0];
-      const cutEnd = dataRows[dataRows.length - 10];
       const omitted = dataRows.length - 10;
+      // 保留前 10 行（最新），省略后面的旧记录
+      const cutStart = dataRows[10];
+      const lastRowStart = dataRows[dataRows.length - 1];
+      const lastRowEnd = output.indexOf('\n', lastRowStart);
       output = output.slice(0, cutStart)
         + `| ... | （已省略 ${omitted} 条旧记录，需要时 Read walkthrough.md） | | | |\n`
-        + output.slice(cutEnd);
+        + output.slice(lastRowEnd >= 0 ? lastRowEnd + 1 : output.length);
     }
     // 详情截断：最近 3 条详情段落
     const pos = [];
