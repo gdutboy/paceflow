@@ -312,6 +312,8 @@ function copyDirRecursive(src, dest) {
   const entries = fs.readdirSync(src, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === 'node_modules' || entry.name === '.git') continue;
+    // ticket23 W-03: 排除运行时日志文件
+    if (entry.name === 'pace-hooks.log') continue;
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {

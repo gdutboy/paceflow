@@ -47,7 +47,7 @@ description: >
 
 ---
 
-## Phase 1：六维度并行审查
+## Phase 1：五维度并行审查
 
 启动 5 个 subagent **并行**执行（Agent 工具，subagent_type: `general-purpose`）。
 
@@ -58,7 +58,6 @@ description: >
 | 3. 一致性 | 辅助 Hook + Plugin + 工具链 | hooks.json 一致性/install/verify |
 | 4. Skill 模板 | 所有 Skill + 模板 | 交叉引用/格式/正则兼容 |
 | 5. 架构优化 | 测试 + 文档 + 整体架构 | 覆盖度/文档准确性/流程缺口 |
-| 6. 工作记录与知识追踪 | Artifact 内容完整性 | walkthrough 最新日期/Corrections 捕获完整性/findings 开放项超时/知识双写覆盖 |
 
 > 每个 agent 的完整 prompt 和共享审查纪律见 [references/agent-prompts.md](references/agent-prompts.md)。
 
@@ -105,8 +104,7 @@ flowchart TD
     B --> C3["Agent 3: 辅助 Hook + 工具链"]
     B --> C4["Agent 4: Skill 模板同步"]
     B --> C5["Agent 5: 架构与优化"]
-    B --> C6["Agent 6: 工作记录与知识追踪"]
-    C1 & C2 & C3 & C4 & C5 & C6 --> D["汇总所有发现"]
+    C1 & C2 & C3 & C4 & C5 --> D["汇总所有发现"]
     D --> E["Phase 2: C/H 级路径追踪验证"]
     E --> F["三分类: ✅确认 / ⚠️部分正确 / ❌误报"]
     F --> G["Phase 3: 去重+分级+报告"]

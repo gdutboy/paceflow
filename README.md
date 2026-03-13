@@ -173,7 +173,7 @@ paceflow/
 │   ├── artifact-management/          #   Artifact + 变更管理规则
 │   ├── pace-knowledge/               #   Obsidian 知识库管理
 │   └── paceflow-audit/               #   5-Agent 并行审查
-└── tests/                            # 测试（73 单元 + 61 E2E + 20 安装）
+└── tests/                            # 测试（73 单元 + 64 E2E + 21 安装）
 ```
 
 ---
@@ -243,6 +243,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v5.1.0 | 2026-03-13 | Skills 架构重设计 + 归档机制改造 + stdin 统一解析 + 注入量精简 -57% + 4 轮审计修复 |
 | v5.0.2 | 2026-03-08 | 检查覆盖增强 + 指引体系增强 + 模板风格统一 + paceflow-audit 重构 |
 | v5.0.1 | 2026-03-07 | impl_plan 详情守门 + native plan 桥接 + 流程保障增强 |
 | v5.0.0 | 2026-03-07 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构） |
@@ -260,4 +261,4 @@ paceflow/
 
 ---
 
-**版本**: v5.0.2 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v5.1.0 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

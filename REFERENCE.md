@@ -1,6 +1,6 @@
-# PACEflow v5.0.2 功能与状态全景参考手册
+# PACEflow v5.1.0 功能与状态全景参考手册
 
-> **最后更新**：2026-03-09 | **版本**：v5.0.2
+> **最后更新**：2026-03-09 | **版本**：v5.1.0
 
 ---
 
@@ -139,7 +139,7 @@ V（验证测试）──FAIL──→ 返回 E 修复
 | 编号 | 功能 | 说明 |
 |------|------|------|
 | S1 | 重置防循环计数器 | `.pace/stop-block-count` 清零 |
-| S2 | 清除单会话标记 | 删除 `degraded`、`todowrite-used`、`archive-reminded`、`findings-reminded`、`impl-archive-reminded` |
+| S2 | 清除单会话标记 | 删除 SESSION_SCOPED_FLAGS（`degraded`/`todowrite-used`/`archive-reminded`/`findings-reminded`/`impl-archive-reminded`/`cli-refresh-done`/`walkthrough-archive-reminded`/`findings-archive-reminded`） |
 | S3 | Compact 快照恢复 | 读取 `pre-compact-state.json`，注入进行中任务摘要 |
 | S4 | 懒创建模板 | 非 'artifact' 信号 + 无 task.md → 自动创建 5 个 Artifact 文件 |
 | S5 | 活跃区注入 | 逐个读取 5 个 Artifact 文件的 `<!-- ARCHIVE -->` 上方内容 |
@@ -667,7 +667,7 @@ summary: "[一句话项目描述]"
 
 | 常量 | 值 | 说明 |
 |------|-----|------|
-| `PACE_VERSION` | `'v5.0.2'` | 集中版本号，其他脚本引用 |
+| `PACE_VERSION` | `'v5.1.0'` | 集中版本号，其他脚本引用 |
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
 | `VAULT_PATH` | `process.env.PACE_VAULT_PATH \|\| ''` | Obsidian Vault 路径（需设置 `PACE_VAULT_PATH` 环境变量，未设置时 fallback 到 CWD） |
@@ -699,7 +699,7 @@ summary: "[一句话项目描述]"
 | `hasUnsyncedPlanFiles(cwd)` | 检测未桥接的 Superpowers plan 文件 |
 | `listUnsyncedPlanFiles(cwd)` | 列出未桥接的 plan 文件 |
 | `formatBridgeHint(cwd, artDir)` | 生成 Superpowers 桥接提示（文件列表+步骤） |
-| `extractOpenKeys(text)` | 从 findings 活跃区提取开放项（`[ ]`）的前 8 字 key |
+| `extractOpenKeys(text)` | 从 findings 活跃区提取开放项（`[ ]`）的完整标题 |
 | `parseHookStdin(rawInput)` | 解析 hook stdin 原始输入，返回统一结构（内部 try-catch） |
 | `withStdinParsed(callback)` | 异步 stdin 解析 wrapper（替代 4 个 hook 的流模板） |
 | `parseStdinSync()` | 同步 stdin 解析（替代 session-start/stop 的 readFileSync(0)） |
@@ -820,4 +820,5 @@ function isTeammate() {
 | v4.8.1 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
 | v5.0.0 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构 + 模板统一 + VAULT_PATH 参数化 + install --migrate） |
 | v5.0.1 | impl_plan 详情守门（[x] DENY 缺详情）+ native plan 桥接（pre-compact 捕获 + session-start 恢复）+ 流程保障增强 |
+| v5.1.0 | Skills 架构重设计（6→5 合并）+ 归档机制改造（移动标记）+ 统一 stdin 解析 + 注入量精简 -57% + 4 轮审计修复（ticket17/18/21+22/23）+ Corrections 双写 Eval + 版本自动化 |
 | v5.0.2 | 检查覆盖增强（findings 详情检查 + compact knowledge 注入 + 旧格式 DENY + 快照扩展）+ 指引体系增强 + 模板风格统一 + paceflow-audit 动态发现重构 |

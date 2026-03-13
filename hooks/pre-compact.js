@@ -52,8 +52,7 @@ try {
     const findingsActive = readActive(cwd, 'findings.md');
     if (findingsActive) {
       const openCount = (findingsActive.match(/^- \[ \] /gm) || []).length;
-      const warningCount = (findingsActive.match(/⚠️/g) || []).length;
-      snapshot.findings = { openCount, warningCount };
+      snapshot.findings = { openCount };
     }
   } catch(e) {}
   try {
