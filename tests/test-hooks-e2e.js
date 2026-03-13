@@ -9,9 +9,11 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 
 const HOOKS_DIR = path.join(__dirname, '..', 'hooks');
-let passed = 0;
-let failed = 0;
-let tmpDirs = [];
+
+// I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
+const { createTestRunner } = require('./test-utils');
+const t = createTestRunner('pace-e2e');
+const { test, makeTmpDir } = t;
 
 // 全局 VAULT_PATH 隔离：runHook 子进程继承此环境变量，避免在真实 Obsidian vault 创建垃圾 junction
 const _origVaultPath = process.env.PACE_VAULT_PATH;
@@ -21,21 +23,12 @@ process.env.PACE_VAULT_PATH = _vaultTmpDir;
 
 // --- 工具函数 ---
 
-function makeTmpDir(label) {
-  const dir = path.join(os.tmpdir(), `pace-e2e-${Date.now()}-${label}-${Math.random().toString(36).slice(2, 6)}`);
-  fs.mkdirSync(dir, { recursive: true });
-  tmpDirs.push(dir);
-  return dir;
-}
-
-function cleanup() {
-  // 恢复全局 VAULT_PATH
+/** E2E 清理：恢复 vault 环境变量 + 调用公共 cleanup */
+function cleanupAll() {
   if (_origVaultPath === undefined) delete process.env.PACE_VAULT_PATH;
   else process.env.PACE_VAULT_PATH = _origVaultPath;
   try { fs.rmSync(_vaultTmpDir, { recursive: true, force: true }); } catch (e) {}
-  for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
-  }
+  t.cleanup();
 }
 
 /** 运行 hook 脚本，返回 { code, stdout, stderr } */
@@ -51,18 +44,6 @@ function runHook(hookName, { cwd, stdin = '', env = {} }) {
     return { code: 0, stdout, stderr: '' };
   } catch (e) {
     return { code: e.status || 1, stdout: e.stdout || '', stderr: e.stderr || '' };
-  }
-}
-
-function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log(`  PASS: ${name}`);
-  } catch (e) {
-    failed++;
-    console.error(`  FAIL: ${name}`);
-    console.error(`    ${e.message}`);
   }
 }
 
@@ -303,6 +284,44 @@ test('19. 快照创建', () => {
   assert.ok(snap.timestamp, '应有 timestamp');
   assert.ok(snap.artifacts['task.md'], '应有 task.md 状态');
   assert.ok(snap.artifacts['task.md'].inProgress.length > 0, '应有进行中任务');
+});
+
+// I-24: pre-compact 扩展字段测试
+test('19b. 快照包含 findings 状态', () => {
+  const dir = makePaceProject('pc-findings', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 任务\n\n<!-- ARCHIVE -->\n',
+    findings: '# 调研记录\n\n## 摘要索引\n\n- [ ] 待评估发现 #finding [date:: 2026-03-01]\n- [x] 已采纳 #finding [date:: 2026-03-01]\n\n<!-- ARCHIVE -->\n',
+  });
+  const r = runHook('pre-compact.js', { cwd: dir });
+  assert.strictEqual(r.code, 0);
+  const snap = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'pre-compact-state.json'), 'utf8'));
+  assert.ok(snap.findings, '快照应包含 findings 字段');
+  assert.strictEqual(snap.findings.openCount, 1, '应有 1 个 [ ] 开放项');
+});
+
+test('19c. 快照包含 walkthrough 今日检测', () => {
+  const today = new Date().toLocaleDateString('sv-SE');
+  const dir = makePaceProject('pc-walk', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 任务\n\n<!-- ARCHIVE -->\n',
+    walkthrough: `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 |\n|------|----------|\n| ${today} | 今日工作 |\n\n<!-- ARCHIVE -->\n`,
+  });
+  const r = runHook('pre-compact.js', { cwd: dir });
+  assert.strictEqual(r.code, 0);
+  const snap = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'pre-compact-state.json'), 'utf8'));
+  assert.ok(snap.walkthrough, '快照应包含 walkthrough 字段');
+  assert.strictEqual(snap.walkthrough.hasTodayEntry, true, '应检测到今日记录');
+});
+
+test('19d. 快照包含 runtime 状态', () => {
+  const dir = makePaceProject('pc-runtime', {
+    taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n- [/] T-001 任务\n\n<!-- ARCHIVE -->\n',
+    paceRuntime: { degraded: '测试降级' },
+  });
+  const r = runHook('pre-compact.js', { cwd: dir });
+  assert.strictEqual(r.code, 0);
+  const snap = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'pre-compact-state.json'), 'utf8'));
+  assert.ok(snap.runtime, '快照应包含 runtime 字段');
+  assert.strictEqual(snap.runtime.degraded, true, '应检测到 degraded 标记');
 });
 
 // ============================================================
@@ -995,14 +1014,14 @@ test('59. stop.js: findings [ ] 无详情 → 警告', () => {
 test('60. pre-tool-use: impl_plan 有 emoji → DENY 旧格式', () => {
   const dir = makePaceProject('ptu-old-format-deny', {
     taskContent: '# 项目任务追踪\n\n## 活跃任务\n\n<!-- APPROVED -->\n\n- [/] T-001 进行中\n\n<!-- ARCHIVE -->\n',
-    implPlan: '# 实施计划\n\n## 变更索引\n\n✅ CHG-001 已完成\n🔄 CHG-002 进行中\n\n<!-- ARCHIVE -->\n',
+    implPlan: '# 实施计划\n\n## 变更索引\n\n- [x] ✅ CHG-001 已完成\n- [/] 🔄 CHG-002 进行中\n\n<!-- ARCHIVE -->\n',
   });
   const stdin = JSON.stringify({
     tool_name: 'Edit',
     tool_input: {
       file_path: path.join(dir, 'implementation_plan.md'),
-      old_string: '🔄 CHG-002 进行中',
-      new_string: '✅ CHG-002 已完成',
+      old_string: '- [/] 🔄 CHG-002 进行中',
+      new_string: '- [x] ✅ CHG-002 已完成',
     }
   });
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
@@ -1042,8 +1061,8 @@ test('61. pre-tool-use: impl_plan 正常 checkbox 格式 → 放行', () => {
 // ============================================================
 // 汇总 + 清理
 // ============================================================
-cleanup();
+cleanupAll();
 
-const total = passed + failed;
-console.log(`\n${failed === 0 ? '\u2705' : '\u274c'} ${passed}/${total} tests passed`);
-if (failed > 0) process.exit(1);
+const total = t.passed + t.failed;
+console.log(`\n${t.failed === 0 ? '\u2705' : '\u274c'} ${t.passed}/${total} tests passed`);
+if (t.failed > 0) process.exit(1);

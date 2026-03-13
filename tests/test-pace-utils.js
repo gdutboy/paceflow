@@ -5,42 +5,14 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const paceUtils = require('../hooks/pace-utils');
 const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName } = paceUtils;
 
-let passed = 0;
-let failed = 0;
-let tmpDirs = [];
-
-/** 创建隔离临时目录 */
-function makeTmpDir(label) {
-  const dir = path.join(os.tmpdir(), `pace-test-${Date.now()}-${label}-${Math.random().toString(36).slice(2, 6)}`);
-  fs.mkdirSync(dir, { recursive: true });
-  tmpDirs.push(dir);
-  return dir;
-}
-
-/** 清理所有临时目录 */
-function cleanup() {
-  for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* 忽略 */ }
-  }
-}
-
-/** 运行单个测试 */
-function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log(`  PASS: ${name}`);
-  } catch (e) {
-    failed++;
-    console.error(`  FAIL: ${name}`);
-    console.error(`    ${e.message}`);
-  }
-}
+// I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
+const { createTestRunner } = require('./test-utils');
+const t = createTestRunner('pace-test');
+const { test, makeTmpDir } = t;
 
 // ============================================================
 // 1. isPaceProject() — 7 个测试
@@ -196,7 +168,7 @@ test('vault 有 artifact → 返回 vault', () => {
   const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   fs.mkdirSync(vaultDir, { recursive: true });
   fs.writeFileSync(path.join(vaultDir, 'task.md'), '# test\n');
-  tmpDirs.push(vaultDir); // 清理
+  t.tmpDirs.push(vaultDir); // 清理
   assert.strictEqual(getArtifactDir(dir), vaultDir);
 });
 
@@ -207,7 +179,7 @@ test('vault 和 CWD 都有 → vault 优先', () => {
   const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   fs.mkdirSync(vaultDir, { recursive: true });
   fs.writeFileSync(path.join(vaultDir, 'task.md'), '# vault\n');
-  tmpDirs.push(vaultDir);
+  t.tmpDirs.push(vaultDir);
   assert.strictEqual(getArtifactDir(dir), vaultDir);
 });
 
@@ -707,8 +679,8 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 // ============================================================
 // 汇总 + 清理
 // ============================================================
-cleanup();
+t.cleanup();
 
-const total = passed + failed;
-console.log(`\n${failed === 0 ? '\u2705' : '\u274c'} ${passed}/${total} tests passed`);
-if (failed > 0) process.exit(1);
+const total = t.passed + t.failed;
+console.log(`\n${t.failed === 0 ? '\u2705' : '\u274c'} ${t.passed}/${total} tests passed`);
+if (t.failed > 0) process.exit(1);

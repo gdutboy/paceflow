@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, formatBridgeHint } = paceUtils;
+const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, formatBridgeHint, TODO_DRIFT_THRESHOLD } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -82,7 +82,7 @@ paceUtils.withStdinParsed((stdin) => {
       // TodoWrite 批量写入：数量差异检测
       if (toolName === 'TodoWrite') {
         const todos = toolInput.todos || [];
-        if (todos.length > 0 && activeTasks > 0 && Math.abs(todos.length - activeTasks) > 3) {
+        if (todos.length > 0 && activeTasks > 0 && Math.abs(todos.length - activeTasks) > TODO_DRIFT_THRESHOLD) {
           hints.push(`TodoWrite（${todos.length} 项）与 task.md 顶层活跃任务（${activeTasks} 项）数量差异较大，请确认是否对齐。`);
         }
       }

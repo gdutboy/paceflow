@@ -8,6 +8,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 }
 const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, findMissingImplDetails, getNativePlanPath, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN } = paceUtils;
 
+// I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
+const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
+
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
@@ -76,7 +79,6 @@ paceUtils.withStdinParsed((stdin) => {
 
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && paceSignal) {
-    const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
       const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。${FORMAT_SNIPPETS.skillRef}`;
       const output = {
@@ -218,7 +220,8 @@ paceUtils.withStdinParsed((stdin) => {
     const codeCount = countCodeFiles(cwd);
 
     // 第一级：强信号 DENY（superpowers/manual/artifact/code-count）
-    if (paceSignal === 'superpowers' || paceSignal === 'manual' || paceSignal === 'artifact' || paceSignal === 'code-count') {
+    // I-06: isPaceProject() 返回 false 或字符串，truthy 检查等价于四重比较
+    if (paceSignal) {
       // T-076: DENY 前懒创建缺失的模板文件
       let createdFiles = [];
       if (!taskFileExists) {

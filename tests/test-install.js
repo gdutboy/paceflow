@@ -5,42 +5,14 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { execFileSync } = require('child_process');
 
 const INSTALL_JS = path.join(__dirname, '..', 'install.js');
 
-let passed = 0;
-let failed = 0;
-let tmpDirs = [];
-
-/** 创建隔离临时目录 */
-function makeTmpDir(label) {
-  const dir = path.join(os.tmpdir(), `pace-install-test-${Date.now()}-${label}-${Math.random().toString(36).slice(2, 6)}`);
-  fs.mkdirSync(dir, { recursive: true });
-  tmpDirs.push(dir);
-  return dir;
-}
-
-/** 清理所有临时目录 */
-function cleanup() {
-  for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* 忽略 */ }
-  }
-}
-
-/** 运行单个测试 */
-function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log(`  PASS: ${name}`);
-  } catch (e) {
-    failed++;
-    console.error(`  FAIL: ${name}`);
-    console.error(`    ${e.message}`);
-  }
-}
+// I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
+const { createTestRunner } = require('./test-utils');
+const t = createTestRunner('pace-install-test');
+const { test, makeTmpDir } = t;
 
 /**
  * 执行 install.js 子进程
@@ -116,10 +88,10 @@ test('全新安装创建 templates 子目录', () => {
   }
 });
 
-test('全新安装创建 6 个 skill 目录', () => {
+test('全新安装创建 5 个 skill 目录', () => {
   const home = makeTmpDir('fresh-skills');
   runInstall(home);
-  const skillDirs = ['pace-workflow', 'artifact-management', 'change-management', 'pace-knowledge', 'pace-bridge', 'paceflow-audit'];
+  const skillDirs = ['pace-workflow', 'artifact-management', 'pace-knowledge', 'pace-bridge', 'paceflow-audit'];
   for (const dir of skillDirs) {
     const skillFile = path.join(home, '.claude', 'skills', dir, 'SKILL.md');
     assert.ok(fs.existsSync(skillFile), `skills/${dir}/SKILL.md 应存在`);
@@ -139,14 +111,20 @@ test('全新安装创建 settings.json 并包含 PACE hooks', () => {
   }
 });
 
-test('change-management templates 子目录安装', () => {
-  const home = makeTmpDir('fresh-chg-tpl');
+test('artifact-management references/ 和 templates/ 子目录安装', () => {
+  const home = makeTmpDir('fresh-art-sub');
   runInstall(home);
-  const chgTplDir = path.join(home, '.claude', 'skills', 'change-management', 'templates');
-  assert.ok(fs.existsSync(chgTplDir), 'change-management/templates/ 应存在');
+  const refDir = path.join(home, '.claude', 'skills', 'artifact-management', 'references');
+  assert.ok(fs.existsSync(refDir), 'artifact-management/references/ 应存在');
   assert.ok(
-    fs.readdirSync(chgTplDir).some(f => f.endsWith('.md')),
-    'change-management/templates/ 应有 .md 文件'
+    fs.readdirSync(refDir).some(f => f.endsWith('.md')),
+    'artifact-management/references/ 应有 .md 文件'
+  );
+  const tplDir = path.join(home, '.claude', 'skills', 'artifact-management', 'templates');
+  assert.ok(fs.existsSync(tplDir), 'artifact-management/templates/ 应存在');
+  assert.ok(
+    fs.readdirSync(tplDir).some(f => f.endsWith('.md')),
+    'artifact-management/templates/ 应有 .md 文件'
   );
 });
 
@@ -351,6 +329,26 @@ test('--migrate 删除 PACE skill 目录', () => {
   assert.ok(!fs.existsSync(path.join(home, '.claude', 'skills', 'pace-workflow')), '--migrate 后 skill 应不存在');
 });
 
+// I-26: --migrate → --plugin 组合路径测试
+test('--migrate 后 --plugin 安装到 plugin 缓存', () => {
+  const home = makeTmpDir('migrate-then-plugin');
+  // 先标准安装
+  runInstall(home);
+  assert.ok(fs.existsSync(path.join(home, '.claude', 'hooks', 'pace')), '标准安装后 hooks/pace/ 应存在');
+  // 迁移清理
+  runInstall(home, ['--migrate']);
+  assert.ok(!fs.existsSync(path.join(home, '.claude', 'hooks', 'pace')), '--migrate 后 hooks/pace/ 应不存在');
+  // plugin 安装
+  runInstall(home, ['--plugin']);
+  const pluginBase = path.join(home, '.claude', 'plugins', 'marketplaces', 'paceaitian-paceflow', 'paceflow');
+  assert.ok(fs.existsSync(pluginBase), '--plugin 后 plugin 缓存应存在');
+  // 验证 plugin 目录包含 hooks
+  const versions = fs.readdirSync(pluginBase);
+  assert.ok(versions.length > 0, 'plugin 缓存应有版本目录');
+  const versionDir = path.join(pluginBase, versions[0]);
+  assert.ok(fs.existsSync(path.join(versionDir, 'hooks', 'pace-utils.js')), 'plugin 应包含 hooks/pace-utils.js');
+});
+
 // ============================================================
 // 8. 幂等性 + 边界情况
 // ============================================================
@@ -378,8 +376,8 @@ test('settings.json 无效 JSON 时 exit 1', () => {
 // ============================================================
 // 清理 + 结果输出
 // ============================================================
-cleanup();
+t.cleanup();
 
 console.log(`\n${'='.repeat(40)}`);
-console.log(`结果: ${passed} 通过, ${failed} 失败（共 ${passed + failed} 个测试）`);
-if (failed > 0) process.exit(1);
+console.log(`结果: ${t.passed} 通过, ${t.failed} 失败（共 ${t.passed + t.failed} 个测试）`);
+if (t.failed > 0) process.exit(1);

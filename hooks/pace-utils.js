@@ -12,6 +12,21 @@ const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
 const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->$/m;
 
+// 交叉验证：AI 声称完成时匹配的中文短语
+const COMPLETION_PHRASES = /(?:任务完成|已完成所有|全部完成|归档完毕)/;
+
+// TodoWrite 与 task.md 数量差异阈值（超过此值触发提醒）
+const TODO_DRIFT_THRESHOLD = 3;
+
+// v5.0.0: skill 目录名列表（install.js + verify.js 共用）
+const SKILL_DIRS = [
+  'pace-workflow',
+  'artifact-management',
+  'pace-knowledge',
+  'pace-bridge',
+  'paceflow-audit',
+];
+
 // T-328: 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
 const FORMAT_SNIPPETS = {
   // task.md 任务条目格式
@@ -41,8 +56,17 @@ const FORMAT_SNIPPETS = {
   skillRef: '格式参考：paceflow:artifact-management skill',
 };
 
-// W-code-4: 会话级 flag 文件集中管理（session-start 重置用）
-const SESSION_SCOPED_FLAGS = ['degraded', 'todowrite-used', 'archive-reminded', 'findings-reminded', 'impl-archive-reminded', 'cli-refresh-done', 'walkthrough-archive-reminded', 'findings-archive-reminded'];
+// 会话级 flag 文件集中管理（session-start 重置用）
+const SESSION_SCOPED_FLAGS = [
+  'degraded',                    // stop.js 降级标记（3 次 block 后静默放行）
+  'todowrite-used',              // todowrite-sync.js 标记（本会话已使用 TodoWrite）
+  'archive-reminded',            // post-tool-use.js H3（task.md 归档提醒，每会话一次）
+  'findings-reminded',           // post-tool-use.js H7（findings ⚠️ 提醒，每会话一次）
+  'impl-archive-reminded',       // post-tool-use.js H10（impl_plan 归档提醒，每会话一次）
+  'cli-refresh-done',            // post-tool-use.js H12（Obsidian CLI 索引刷新标记）
+  'walkthrough-archive-reminded', // post-tool-use.js（walkthrough 详情>3 归档提醒）
+  'findings-archive-reminded',   // post-tool-use.js（findings 已解决详情归档提醒）
+];
 
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
 function isTeammate() {
@@ -65,13 +89,18 @@ function ts() {
   return new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
 
+/** 返回今日 ISO 日期（YYYY-MM-DD），sv-SE locale 技巧避免手动拼接 */
+function todayISO() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+}
+
 /** 从 cwd 提取项目名（小写+连字符格式） */
 function getProjectName(cwd) {
   // I-1: 空值/极端路径防御
   if (!cwd || cwd === '.' || cwd === '/' || cwd === '\\') return 'unknown-project';
   // W-code-3: Windows 盘符根路径守卫（path.basename('C:\\') 返回空字符串）
   if (/^[A-Z]:\\\\?$/i.test(cwd)) return 'unknown-project';
-  const name = path.basename(cwd).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const name = path.basename(cwd).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return name || 'unknown-project';
 }
 
@@ -388,6 +417,7 @@ function scanRelatedNotes(projectName) {
   return results;
 }
 
+// 512KB：平衡磁盘占用与日志保留量（单文件含多次会话日志，过小丢上下文）
 const MAX_LOG_SIZE = 512 * 1024;
 /**
  * 创建带日志轮转的 logger 函数（512KB 上限，超过截断保留后半）
@@ -402,7 +432,7 @@ function createLogger(logPath) {
         if (stat.size > MAX_LOG_SIZE) {
           // W-code-2: 使用 Buffer 直接操作字节，避免字节/字符混淆
           const buf = fs.readFileSync(logPath);
-          // W-1: 截断后对齐到换行符，防止 UTF-8 多字节字符被截断
+          // 截断保留后半部分，从第一个换行符之后开始（防止 UTF-8 多字节字符被截断）
           const half = buf.slice(buf.length >> 1);
           const nlIdx = half.indexOf(10); // 0x0A = \n
           fs.writeFileSync(logPath, nlIdx >= 0 ? half.slice(nlIdx + 1) : half);
@@ -486,4 +516,24 @@ function parseStdinSync() {
   catch(e) { return parseHookStdin(''); }
 }
 
-module.exports = { PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARCHIVE_MARKER, ARCHIVE_PATTERN, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, resolveProjectCwd, ts, countCodeFiles, hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, isPaceProject, isTeammate, getProjectName, getArtifactDir, readActive, readFull, checkArchiveFormat, ensureProjectInfra, createTemplates, countByStatus, scanRelatedNotes, createLogger, formatBridgeHint, findMissingImplDetails, findMissingFindingsDetails, getNativePlanPath, extractOpenKeys, parseHookStdin, withStdinParsed, parseStdinSync };
+// I-04: 多行格式按功能分组，便于 diff 审阅
+module.exports = {
+  // 常量
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH,
+  ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
+  TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS,
+  // 基础工具
+  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName,
+  // 项目检测与路径
+  isPaceProject, isTeammate, getArtifactDir, ensureProjectInfra,
+  // 文件读写
+  readActive, readFull, checkArchiveFormat, createTemplates,
+  // 计划文件
+  hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
+  // 统计与检查
+  countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys,
+  // 外部集成
+  scanRelatedNotes, getNativePlanPath, createLogger, formatBridgeHint,
+  // stdin 解析
+  parseHookStdin, withStdinParsed, parseStdinSync,
+};

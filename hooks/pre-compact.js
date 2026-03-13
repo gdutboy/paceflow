@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, countByStatus } = paceUtils;
+const { ts, todayISO, isPaceProject, readActive, countByStatus } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -24,6 +24,7 @@ try {
   const taskActive = readActive(cwd, 'task.md');
   if (taskActive) {
     const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
+    // P3-4: 只需要进行中任务的文本列表（供 compact 恢复显示），保留 match
     const inProgress = (taskActive.match(/^- \[\/\] .+$/gm) || []);
     snapshot.artifacts['task.md'] = { pending, done, inProgress };
   }
@@ -58,7 +59,7 @@ try {
   try {
     const walkActive = readActive(cwd, 'walkthrough.md');
     if (walkActive) {
-      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+      const today = todayISO();
       // T-425: 正则匹配对齐 stop.js 精确度，避免 includes() 子串误匹配
       const hasTodayEntry = new RegExp('\\|\\s*' + today + '\\s*\\|').test(walkActive);
       snapshot.walkthrough = { hasTodayEntry };
@@ -67,6 +68,8 @@ try {
 
   // v5.0.1: 捕获 native plan 文件路径（AI 未主动记录时的兜底）
   // I-5: HOME/USERPROFILE 都不存在时跳过检测
+  // I-15: native plan 最大年龄 1 小时（超过视为过期，不纳入快照）
+  const NATIVE_PLAN_MAX_AGE_MS = 60 * 60 * 1000;
   const HOME = process.env.HOME || process.env.USERPROFILE;
   if (HOME) {
     const nativePlansDir = path.join(HOME, '.claude', 'plans');
@@ -79,7 +82,7 @@ try {
             try {
               const fp = path.join(nativePlansDir, f);
               const mtime = fs.statSync(fp).mtimeMs;
-              return (now - mtime) < 3600000 ? { path: fp.replace(/\\/g, '/'), mtime } : null;
+              return (now - mtime) < NATIVE_PLAN_MAX_AGE_MS ? { path: fp.replace(/\\/g, '/'), mtime } : null;
             } catch(e) { return null; }
           })
           .filter(Boolean)

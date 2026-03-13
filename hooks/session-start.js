@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -31,7 +31,6 @@ try {
 
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
-const files = ARTIFACT_FILES;
 const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
 
 // v4.5: compact 事件读取 PreCompact 快照
@@ -73,16 +72,22 @@ if (eventType === 'compact') {
       process.stdout.write(lines.join('\n') + '\n\n');
       // v5.0.2: compact 恢复后注入格式快速参考
       if (paceSignal) {
-        process.stdout.write(`\n=== 格式快速参考 ===\n`);
-        process.stdout.write(`任务格式：${FORMAT_SNIPPETS.taskEntry}\n`);
-        process.stdout.write(`索引格式：${FORMAT_SNIPPETS.implIndex}\n`);
-        process.stdout.write(`任务状态：${FORMAT_SNIPPETS.statusHelp}\n`);
-        process.stdout.write(`变更状态：${FORMAT_SNIPPETS.changeStatusHelp}\n`);
-        process.stdout.write(`findings 格式：${FORMAT_SNIPPETS.findingsFormat}\n`);
-        process.stdout.write(`walkthrough 格式：${FORMAT_SNIPPETS.walkthroughFormat}\n`);
-        process.stdout.write(`标记位置：${FORMAT_SNIPPETS.approved}\n`);
-        process.stdout.write(`验证标记：${FORMAT_SNIPPETS.verified}\n`);
-        process.stdout.write(`impl_plan 详情：${FORMAT_SNIPPETS.implDetailRule}\n\n`);
+        // I-10: 合并 9 次 stdout.write 为单次 I/O
+        const formatLines = [
+          '',
+          '=== 格式快速参考 ===',
+          `任务格式：${FORMAT_SNIPPETS.taskEntry}`,
+          `索引格式：${FORMAT_SNIPPETS.implIndex}`,
+          `任务状态：${FORMAT_SNIPPETS.statusHelp}`,
+          `变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`,
+          `findings 格式：${FORMAT_SNIPPETS.findingsFormat}`,
+          `walkthrough 格式：${FORMAT_SNIPPETS.walkthroughFormat}`,
+          `标记位置：${FORMAT_SNIPPETS.approved}`,
+          `验证标记：${FORMAT_SNIPPETS.verified}`,
+          `impl_plan 详情：${FORMAT_SNIPPETS.implDetailRule}`,
+          '',
+        ];
+        process.stdout.write(formatLines.join('\n') + '\n');
       }
       // v5.0.2: compact 恢复 snapshot.findings/walkthrough
       if (snap.findings) {
@@ -129,7 +134,7 @@ if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 
 const found = [];
 let taskFullCached = null;
 
-for (const file of files) {
+for (const file of ARTIFACT_FILES) {
   const fp = path.join(artDir, file);
   if (!fs.existsSync(fp)) continue;
 
@@ -357,7 +362,8 @@ try {
   const findingsActive = paceUtils.readActive(cwd, 'findings.md');
   if (findingsActive) {
     const today = new Date();
-    const yyyy = today.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    // I-14: 日期字符串集中到 todayISO()
+    const yyyy = todayISO();
     const ageFlag = path.join(PACE_RUNTIME, `findings-age-${yyyy}`);
     if (!fs.existsSync(ageFlag)) {
       const aged = [];

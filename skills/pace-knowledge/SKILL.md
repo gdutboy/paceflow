@@ -166,7 +166,7 @@ sources:
 3. **写入 knowledge/**：追加到已有笔记或新建，标注来源项目
 4. **回写 correction 条目**：补 `[knowledge:: 笔记名]`
 
-> PostToolUse H11 hook 检测 correction 写入后会 HINT 提醒双写 knowledge/。
+> PostToolUse hook 检测 correction 写入后会 HINT 提醒双写 knowledge/。
 
 ---
 

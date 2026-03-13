@@ -23,15 +23,8 @@ const EXPECTED_HOOKS = [
   'config-guard.js',
 ];
 
-// v5.0.0: Skill 目录名列表（源码 skills/<name>/SKILL.md）
-// v5.0.2: change-management 合并入 artifact-management
-const SKILL_DIRS = [
-  'pace-workflow',
-  'artifact-management',
-  'pace-knowledge',
-  'pace-bridge',
-  'paceflow-audit',
-];
+// I-19: skill 目录名列表统一从 pace-utils 导入（消除双份维护）
+const { SKILL_DIRS } = require('./hooks/pace-utils');
 
 let hasError = false;
 let hasWarning = false;

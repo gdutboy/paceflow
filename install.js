@@ -20,14 +20,8 @@ const HOOKS_SRC = path.join(__dirname, 'hooks');
 const SKILLS_SRC = path.join(__dirname, 'skills');
 const CONFIG_SRC = path.join(__dirname, 'config', 'settings-hooks-excerpt.json');
 
-// v5.0.0: skill 目录名列表（源码结构 skills/<name>/SKILL.md）
-const SKILL_DIRS = [
-  'pace-workflow',
-  'artifact-management',
-  'pace-knowledge',
-  'pace-bridge',
-  'paceflow-audit',
-];
+// I-19: skill 目录名列表统一从 pace-utils 导入（消除双份维护）
+const { SKILL_DIRS } = require('./hooks/pace-utils');
 
 // 统计计数
 let installed = 0;
@@ -57,7 +51,8 @@ function filesEqual(fileA, fileB) {
   try {
     const a = fs.readFileSync(fileA);
     const b = fs.readFileSync(fileB);
-    return Buffer.from(a).equals(Buffer.from(b));
+    // I-17: readFileSync 无 encoding 已返回 Buffer，无需 Buffer.from 包装
+    return a.equals(b);
   } catch {
     return false;
   }
@@ -304,16 +299,6 @@ function cleanupOldTemplates() {
       if (fs.existsSync(fp)) {
         if (!dryRun) fs.unlinkSync(fp);
         log(`  🗑️  ${dir}/${oldName} (旧 SKILL 文件名清理)`);
-      }
-    } catch(e) {}
-  }
-  // 旧版遗留目录（change-management 子目录已由上方整目录清理覆盖）
-  const OLD_DIRS = [];
-  for (const dir of OLD_DIRS) {
-    try {
-      if (fs.existsSync(dir)) {
-        if (!dryRun) fs.rmSync(dir, { recursive: true, force: true });
-        log(`  🗑️  ${path.relative(SKILLS_TARGET, dir)}/ (旧目录清理)`);
       }
     } catch(e) {}
   }

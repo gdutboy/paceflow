@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, COMPLETION_PHRASES } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -21,13 +21,11 @@ const warnings = [];
 if (!isPaceProject(cwd)) process.exit(0);
 
 // 防无限循环：读取连续阻止计数
+// I-12: 消除 existsSync TOCTOU 竞态，直接 try-catch readFileSync
 function getBlockCount() {
   try {
-    if (fs.existsSync(COUNTER_FILE)) {
-      return parseInt(fs.readFileSync(COUNTER_FILE, 'utf8').trim(), 10) || 0;
-    }
-  } catch(e) {}
-  return 0;
+    return parseInt(fs.readFileSync(COUNTER_FILE, 'utf8').trim(), 10) || 0;
+  } catch(e) { return 0; }
 }
 function setBlockCount(n) {
   try { fs.writeFileSync(COUNTER_FILE, String(n), 'utf8'); } catch(e) {}
@@ -132,7 +130,7 @@ if (taskActive) {
   const walkActive = readActive(cwd, 'walkthrough.md');
   // W-6: walkActive 可能为空字符串（文件存在但活跃区为空），需额外判断
   if (walkActive !== null && walkActive.trim() && (doneCount > 0 || pendingCount > 0)) {
-    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }); // I-5: sv-SE locale 返回 ISO 格式日期（YYYY-MM-DD）
+    const today = todayISO();
     // 详情段落日期（**时间**: YYYY-MM-DD 或 **追加时间**: YYYY-MM-DD）
     const detailDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4})-(\d{1,2})-(\d{1,2})/g)]
       .map(m => ({ full: `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` }));
@@ -144,7 +142,8 @@ if (taskActive) {
     if (!hasDetailToday && !hasIndexToday) {
       // 索引和详情都没有今天的记录
       const allDates = [...detailDates.map(m => m.full), ...indexDates.map(m => m.full)];
-      const latest = allDates.sort().pop() || null;
+      // P3-2: 不修改原数组，使用 spread + at(-1) 安全取最后一个
+      const latest = [...allDates].sort().at(-1) || null;
       if (latest) {
         warnings.push(`walkthrough.md 最近更新是 ${latest}，今天的工作尚未记录`);
       } else {
@@ -192,7 +191,8 @@ if (fs.existsSync(twFlag) && taskActive) {
 
 // T-424: 交叉验证移出 warnings.length===0 守卫，确保已有 warning 时仍检测虚假完成声明
 if (lastMessage) {
-  if (/(?:任务完成|已完成所有|全部完成|归档完毕)/.test(lastMessage)) {
+  // I-13: 交叉验证中文短语使用 pace-utils 常量
+  if (COMPLETION_PHRASES.test(lastMessage)) {
     // I-3: 复用上方已读取的 taskActive，避免重复 readActive
     if (taskActive) {
       const { pending } = countByStatus(taskActive, { topLevelOnly: true });

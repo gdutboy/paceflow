@@ -96,15 +96,15 @@ paceUtils.withStdinParsed((stdin) => {
         const oldSet = new Set((chgOld || []).map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
         const newlyDone = chgDone.map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]).filter(id => !oldSet.has(id));
         if (newlyDone.length > 0 && findingsActive) {
-            const stale = [];
-            for (const chgId of newlyDone) {
-              const re = new RegExp(`^- \\[ \\] .+\\[change:: ${chgId}\\]`, 'gm');
-              const hits = findingsActive.match(re) || [];
-              hits.forEach(h => stale.push({ chgId, line: h.slice(6, 60) }));
-            }
-            if (stale.length > 0) {
-              warnings.push(`CHG 已完成但关联 finding 仍为 [ ]：${stale.map(s => s.chgId + ' → ' + s.line).join('；')}，请更新为 [x]`);
-            }
+          const stale = [];
+          for (const chgId of newlyDone) {
+            const re = new RegExp(`^- \\[ \\] .+\\[change:: ${chgId}\\]`, 'gm');
+            const hits = findingsActive.match(re) || [];
+            hits.forEach(h => stale.push({ chgId, line: h.slice(6, 60) }));
+          }
+          if (stale.length > 0) {
+            warnings.push(`CHG 已完成但关联 finding 仍为 [ ]：${stale.map(s => s.chgId + ' → ' + s.line).join('；')}，请更新为 [x]`);
+          }
         }
       }
     }
@@ -227,6 +227,7 @@ paceUtils.withStdinParsed((stdin) => {
       const normVault = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
       if (normFile.startsWith(normVault + '/')) {
         const relPath = path.relative(VAULT_PATH, filePath).replace(/\\/g, '/');
+        // 延迟加载：仅 vault 内文件编辑时才 require（避免非 Obsidian 环境报错）
         const { spawn } = require('child_process');
         // fire-and-forget：CLI 读取文件促进 Obsidian 感知外部变更
         const child = spawn('obsidian', ['read', '--file', relPath], {

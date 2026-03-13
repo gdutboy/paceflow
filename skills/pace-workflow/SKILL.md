@@ -51,7 +51,7 @@ P 阶段完成标志：`docs/plans/` 中有新的计划文件。
 
 **Superpowers 流程**（P 阶段使用了 brainstorming）：
 
-invoke `paceflow:pace-bridge` — 自动读取 `docs/plans/` 最新计划 → 生成 CHG-ID + T-NNN → 写入 impl_plan + task.md + `<!-- APPROVED -->`（auto-APPROVED）。
+invoke `paceflow:pace-bridge` — 自动读取 `docs/plans/` 最新计划 → 生成 CHG-ID + T-NNN → 写入 implementation_plan.md（简称 impl_plan）+ task.md + `<!-- APPROVED -->`（auto-APPROVED）。
 
 A 阶段完成标志：task.md 有活跃任务 + `<!-- APPROVED -->` + impl_plan 有 `[/]` 条目。
 

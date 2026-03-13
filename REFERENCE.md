@@ -721,7 +721,7 @@ summary: "[一句话项目描述]"
 
 ### 11.2 verify.js（健康检查）
 
-**7 组检查**：
+**8 组检查**：
 
 | 组 | 检查内容 |
 |----|---------|
@@ -732,6 +732,7 @@ summary: "[一句话项目描述]"
 | 模板 | hooks/templates/ 5 个文件存在性检查 |
 | Skill | Skill 源码与生产 SKILL.md 字节一致性 |
 | Plugin | Plugin 结构完整性（plugin.json + hooks.json + skills 目录结构） |
+| Config 一致性 | hooks.json vs settings-hooks-excerpt.json 事件一致性 |
 
 ### 11.3 test-pace-utils.js（单元测试）
 
