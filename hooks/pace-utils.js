@@ -46,8 +46,8 @@ const FORMAT_SNIPPETS = {
   changeStatusHelp: '[ ] 规划中 | [/] 进行中 | [x] 完成 | [-] 废弃 | [!] 暂停',
   // 格式要求（E 阶段 DENY 核心信息）
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
-  // 归档操作
-  archiveOp: '用 Edit 将已完成项移到 <!-- ARCHIVE --> 标记下方',
+  // 归档操作（T-441: 移动标记而非内容）
+  archiveOp: '归档 = 移动标记而非内容：Step 1 在待归档内容上方插入新 <!-- ARCHIVE -->，Step 2 删除旧 <!-- ARCHIVE -->',
   // findings/walkthrough 格式（compact 恢复注入用）
   findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD] [change:: CHG-ID] [knowledge:: slug]，索引+详情(### [日期] 标题)缺一不可',
   walkthroughFormat: '索引表+详情 ## YYYY-MM-DD CHG-ID 摘要，工作结束必须更新',

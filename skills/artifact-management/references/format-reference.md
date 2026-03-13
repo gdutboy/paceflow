@@ -21,7 +21,7 @@
 - **`<!-- APPROVED -->`**：C 阶段获批后添加，放在 CHG 标题下方、任务列表上方
 - **`<!-- VERIFIED -->`**：V 阶段验证通过后添加，放在 APPROVED 下方
 - **任务条目**：`- [状态] T-NNN 任务标题`
-- **归档**：`[x]`/`[-]` 项用单次 Edit 移到 `<!-- ARCHIVE -->` 下方
+- **归档**：将 `<!-- ARCHIVE -->` 标记上移到待归档 CHG 块上方（两步 Edit：插入新标记 → 删除旧标记）
 
 ---
 
@@ -135,7 +135,7 @@
 | `\| [/] \| CHG-... \|` | `- [/] CHG-...` | 表格 → checkbox |
 | `✅ CHG-...` | `- [x] CHG-...` | emoji → checkbox |
 | 索引无详情段落 | `### CHG-ID` 段落 | hook 守门 DENY |
-| 双 `<!-- ARCHIVE -->` | 仅保留 1 个 | readActive 截断异常 |
+| 双 `<!-- ARCHIVE -->` | 最终保留 1 个 | 归档中间态可接受，完成后须删除旧标记 |
 | `## ARCHIVE` | `<!-- ARCHIVE -->` | 必须是 HTML 注释 |
 | 详情写"见 docs/plans/" | 详情自包含 | hook DENY |
 | findings 只写索引无详情 | 同时写索引+详情 | 后续 session 无法还原上下文 |
