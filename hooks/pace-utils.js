@@ -35,7 +35,8 @@ const FORMAT_SNIPPETS = {
   // impl_plan 索引条目格式（hook 检测正则：/^- \\[\\/\\]/m）
   implIndex: '- [/] CHG-YYYYMMDD-NN 标题 — 简要描述 #change [tasks:: T-NNN~T-NNN]',
   // T-426: impl_plan 详情 4 段结构（背景/范围/技术决策/任务分解）
-  implDetail: '### CHG-ID 标题\n\n**背景（Why）**：为什么做。\n**范围（What）**：~N 行，M 文件。\n**技术决策（How）**：方案选择及理由。\n\n**T-NNN 任务标题**：\n- 具体改动（文件:行号）',
+  // T-438: 任务分解三要素（文件定位+改动意图+验收条件）
+  implDetail: '### CHG-ID 标题\n\n**背景（Why）**：为什么做。\n**范围（What）**：~N 行，M 文件。\n**技术决策（How）**：方案选择及理由。\n\n**T-NNN 任务标题**：\n  - `file:line` — 当前行为 → 目标行为\n  - 验收：完成条件',
   // 标记位置
   approved: '<!-- APPROVED --> 放在 task.md 活跃区的 CHG 分组标题下方、任务列表上方',
   verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方，V 阶段验证通过后添加',
