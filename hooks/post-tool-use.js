@@ -221,10 +221,9 @@ paceUtils.withStdinParsed((stdin) => {
   const cliRefreshFile = path.join(PACE_RUNTIME, 'cli-refresh-done');
   if (isArtifactEdit && filePath && VAULT_PATH && !fs.existsSync(cliRefreshFile)) {
     try {
-      // Windows 大小写不敏感，比较时统一小写（与 pre-tool-use.js 一致）
-      // S-1: filePath 已由 parseHookStdin normalize，只需 toLowerCase
-      const normFile = filePath.toLowerCase();
-      const normVault = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
+      // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
+      const normFile = paceUtils.normalizePath(filePath);
+      const normVault = paceUtils.normalizePath(VAULT_PATH);
       if (normFile.startsWith(normVault + '/')) {
         const relPath = path.relative(VAULT_PATH, filePath).replace(/\\/g, '/');
         // 延迟加载：仅 vault 内文件编辑时才 require（避免非 Obsidian 环境报错）

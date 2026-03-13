@@ -243,6 +243,8 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v5.0.2 | 2026-03-08 | 检查覆盖增强 + 指引体系增强 + 模板风格统一 + paceflow-audit 重构 |
+| v5.0.1 | 2026-03-07 | impl_plan 详情守门 + native plan 桥接 + 流程保障增强 |
 | v5.0.0 | 2026-03-07 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构） |
 | v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault |
 | v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + 降级策略） |

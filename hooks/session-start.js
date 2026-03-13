@@ -48,7 +48,7 @@ if (eventType === 'compact') {
         lines.push(`待办任务: ${snap.artifacts['task.md'].pending} 个`);
       }
       if (snap.runtime?.degraded) {
-        lines.push('⚠️ Stop hook 已降级');
+        lines.push('⚠️ Stop hook 之前已降级（本次已重置计数）');
       }
       // v5.0.1: compact 后 native plan 恢复提示
       if (snap.nativePlans && snap.nativePlans.length > 0) {

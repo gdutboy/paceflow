@@ -95,6 +95,14 @@ function todayISO() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
 }
 
+// H-1: 跨平台路径规范化（Windows 大小写不敏感，Linux 大小写敏感）
+const isWin = process.platform === 'win32';
+/** 路径规范化：统一分隔符为 /，Windows 额外 toLowerCase */
+function normalizePath(p) {
+  const n = p.replace(/\\/g, '/');
+  return isWin ? n.toLowerCase() : n;
+}
+
 /** 从 cwd 提取项目名（小写+连字符格式） */
 function getProjectName(cwd) {
   // I-1: 空值/极端路径防御
@@ -347,7 +355,7 @@ function findMissingImplDetails(planFull) {
 
 /**
  * 检查 findings.md 全文中 [ ] 索引是否有对应 ### 详情段落
- * 匹配规则：索引标题前 8 字在详情 ### 行中子串匹配
+ * 匹配规则：索引标题全文在详情 ### 行中子串匹配
  * @param {string} findingsFull - findings.md 全文
  * @returns {string[]} 缺少详情的标题列表
  */
@@ -360,8 +368,7 @@ function findMissingFindingsDetails(findingsFull) {
   const missing = [];
   for (const line of unresolved) {
     const title = line.replace(/^- \[ \] /, '').trim();
-    const key = title.length > 8 ? title.slice(0, 8) : title;
-    if (!detailHeaders.some(dt => dt.includes(key))) {
+    if (!detailHeaders.some(dt => dt.includes(title))) {
       missing.push(title);
     }
   }
@@ -461,14 +468,14 @@ function formatBridgeHint(cwd, artDir) {
 }
 
 /**
- * 从 findings 活跃区提取开放项（[ ]）的前 8 字 key，用于详情段落匹配
+ * 从 findings 活跃区提取开放项（[ ]）的完整标题，用于详情段落匹配
  * @param {string} text - findings.md 活跃区文本
- * @returns {string[]} key 数组，每个为索引标题前 8 字（去空格）
+ * @returns {string[]} key 数组，每个为索引标题全文（去空格）
  */
 function extractOpenKeys(text) {
   const keys = [];
   (text.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
-    keys.push(line.replace(/^- \[ \] /, '').trim().slice(0, 8));
+    keys.push(line.replace(/^- \[ \] /, '').trim());
   });
   return keys;
 }
@@ -524,7 +531,7 @@ module.exports = {
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS,
   // 基础工具
-  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName,
+  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, normalizePath,
   // 项目检测与路径
   isPaceProject, isTeammate, getArtifactDir, ensureProjectInfra,
   // 文件读写

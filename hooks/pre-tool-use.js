@@ -48,13 +48,13 @@ paceUtils.withStdinParsed((stdin) => {
   const fileName = filePath ? path.basename(filePath) : '';
 
   // v4.3.1: 项目外文件豁免（CWD 和 vault artifact 目录均视为"项目内"）
-  // S-1: filePath 已由 parseHookStdin normalize，只需 toLowerCase
-  const normalizedFile = filePath.toLowerCase();
-  const normalizedCwd = cwd.replace(/\\/g, '/').toLowerCase();
+  // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
+  const normalizedFile = paceUtils.normalizePath(filePath);
+  const normalizedCwd = paceUtils.normalizePath(cwd);
   const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
   let isInsideProject = normalizedFile.startsWith(cwdWithSlash);
   if (!isInsideProject && artDir !== cwd) {
-    const normalizedArtDir = artDir.replace(/\\/g, '/').toLowerCase();
+    const normalizedArtDir = paceUtils.normalizePath(artDir);
     const artDirWithSlash = normalizedArtDir.endsWith('/') ? normalizedArtDir : normalizedArtDir + '/';
     isInsideProject = normalizedFile.startsWith(artDirWithSlash);
   }
@@ -114,7 +114,7 @@ paceUtils.withStdinParsed((stdin) => {
   // v4.4.1→v5.0.3: Obsidian 知识库笔记格式注入（Write 到 thoughts/knowledge 时注入格式要求）
   if (toolName === 'Write' && VAULT_PATH && filePath.endsWith('.md')) {
     const nf = normalizedFile;
-    const vp = VAULT_PATH.replace(/\\/g, '/').toLowerCase();
+    const vp = paceUtils.normalizePath(VAULT_PATH);
     const vpSlash = vp.endsWith('/') ? vp : vp + '/';
     let dirName = '';
     if (nf.startsWith(vpSlash + 'thoughts/')) dirName = 'thoughts';

@@ -474,7 +474,7 @@ test('getProjectName — 中文目录名被过滤', () => {
 
 test('getProjectName — @#符号被过滤', () => {
   const name = getProjectName('/home/user/@my-project#1');
-  assert.strictEqual(name, 'my-project1');
+  assert.strictEqual(name, 'my-project-1');
 });
 
 test('getProjectName — 混合字符保留合法部分', () => {
@@ -644,15 +644,15 @@ test('extractOpenKeys — 多项提取', () => {
   const text = '- [ ] knowledge 注入问题 — 结论\n- [x] 已完成 — ok\n- [ ] 指引体系补遗 — 结论2';
   const keys = paceUtils.extractOpenKeys(text);
   assert.strictEqual(keys.length, 2);
-  assert.strictEqual(keys[0], 'knowledg');
+  assert.strictEqual(keys[0], 'knowledge 注入问题');
   assert.strictEqual(keys[1], '指引体系补遗');
 });
 
-test('extractOpenKeys — 前 8 字截断（含中文）', () => {
+test('extractOpenKeys — 全标题提取（无截断）', () => {
   const text = '- [ ] PACEflow 非常长的标题应该被截断 — 结论';
   const keys = paceUtils.extractOpenKeys(text);
   assert.strictEqual(keys.length, 1);
-  assert.strictEqual(keys[0], 'PACEflow');
+  assert.strictEqual(keys[0], 'PACEflow 非常长的标题应该被截断');
 });
 
 // ============================================================

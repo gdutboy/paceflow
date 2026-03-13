@@ -439,7 +439,7 @@ blockCount < 3 ?
 
 **规则**：
 - Hook 仅检查活跃区内容（`readActive()` 函数）
-- 归档操作必须**单次 Edit 原子完成**（从活跃区删除 + 插入归档区），禁止拆分
+- 归档操作采用**标记上移**：内容不动，将 `<!-- ARCHIVE -->` 上移到待归档内容上方（两步 Edit：插入新标记 → 删除旧标记）
 - 标记格式必须是 `<!-- ARCHIVE -->`，禁止 `## ARCHIVE` 或 `# ARCHIVE`
 
 ### 6.3 各文件结构详情
@@ -819,4 +819,5 @@ function isTeammate() {
 | v4.8.0 | Artifact 存储迁移到 Obsidian Vault（getArtifactDir 唯一解析器 + CWD 重定向 deny + 日志轮转统一） |
 | v4.8.1 | resolveProjectCwd 改用 CLAUDE_PROJECT_DIR + Superpowers 桥接三层拦截链 + pace-bridge skill + 全面审查修复 |
 | v5.0.0 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构 + 模板统一 + VAULT_PATH 参数化 + install --migrate） |
+| v5.0.1 | impl_plan 详情守门（[x] DENY 缺详情）+ native plan 桥接（pre-compact 捕获 + session-start 恢复）+ 流程保障增强 |
 | v5.0.2 | 检查覆盖增强（findings 详情检查 + compact knowledge 注入 + 旧格式 DENY + 快照扩展）+ 指引体系增强 + 模板风格统一 + paceflow-audit 动态发现重构 |
