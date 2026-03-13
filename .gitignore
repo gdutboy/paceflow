@@ -12,3 +12,13 @@ skills-eval/
 
 # 测试文件（本地开发用）
 tests/
+
+# 本地开发工具（不随 Plugin 分发）
+bump-version.js
+install.js
+migrate-artifacts.js
+verify.js
+config/
+
+# 开发期间的计划文件
+docs/plans/
