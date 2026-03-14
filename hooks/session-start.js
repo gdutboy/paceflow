@@ -55,7 +55,7 @@ if (eventType === 'compact') {
         lines.push('');
         lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
         snap.nativePlans.forEach(p => lines.push(`  ${p}`));
-        lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。');
+        lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引，完成后删除 .pace/current-native-plan。');
       }
       // AI 主动记录的 native plan 路径（优先于扫描结果）
       const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
@@ -65,7 +65,7 @@ if (eventType === 'compact') {
           if (planPath) {
             lines.push('');
             lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-            lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。');
+            lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引，完成后删除 .pace/current-native-plan。');
           }
         }
       } catch(e) {}

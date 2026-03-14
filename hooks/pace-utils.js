@@ -52,14 +52,10 @@ const FORMAT_SNIPPETS = {
   archiveOp: '归档 = 移动标记而非内容：Step 1 在待归档内容上方插入新 <!-- ARCHIVE -->，Step 2 删除旧 <!-- ARCHIVE -->',
   // findings/walkthrough 格式（compact 恢复注入用）
   findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD] [change:: CHG-ID] [knowledge:: slug]，索引+详情(### [日期] 标题)缺一不可',
-  // T-471: 重写为实际索引行格式（原文是描述不是格式）
-  walkthroughFormat: '| YYYY-MM-DD | 完成内容摘要 | CHG-ID |',
+  // T-480: 从 3 个词扩展为 4 必须要素（现象+根因+影响范围+建议方案），自动覆盖 B-10/W-14
+  findingsDetail: '在 ## 未解决问题 下添加：\n### [YYYY-MM-DD] 标题\n\n> **发现时间**: YYYY-MM-DDTHH:mm:ss+08:00 | **影响**: P0-P3\n\n**现象**：哪个文件哪一行出了什么问题\n**根因**：问题代码是什么，为什么错\n**影响范围**：影响多大，是否阻塞\n**建议方案**：怎么修，改哪些文件',
   // T-471: 新增详情段落格式（7 处引用，P0 修复 walkthrough 遗漏）
   walkthroughDetail: '## YYYY-MM-DD CHG-ID 摘要\n**T-NNN 任务标题**\n- 改动：`file`:`line`，改动意图\n- 验证：Terminal/Browser 运行结果（通过/失败+原因）',
-  // T-471: 新增 findings 详情格式（P2，统一 B-10/W-14 引用）
-  findingsDetail: '在 ## 未解决问题 下添加：\n### [YYYY-MM-DD] 标题\n问题背景、影响范围、修复方向',
-  // impl_plan 详情规则
-  implDetailRule: '每个 [x] 索引必须有 ### CHG-ID 详情段落',
   // Skill 引用
   skillRef: '格式参考：paceflow:artifact-management skill',
 };
