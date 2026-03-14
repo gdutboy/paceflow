@@ -201,12 +201,18 @@ V（验证测试）──FAIL──→ 返回 E 修复
 | 编号 | 功能 | 说明 |
 |------|------|------|
 | W1 | ARCHIVE 格式检查 | 检查 task.md 和 impl_plan 的标记格式 |
-| W2 | 未完成任务检查 | 活跃区 pendingCount > 0 → 阻止 |
+| W2 | 未完成任务检查（场景感知） | C 阶段（无 APPROVED）→ 引导 AskUserQuestion 询问审批；全 `[!]` 阻塞 → 引导 AskUserQuestion 询问处理；E 阶段 → 引导继续执行 |
 | W3 | 验证/归档优先级 | `[x]` 无 VERIFIED → 阻止验证；已验证有 done → 提醒归档；仅 `[-]` → 提醒归档 |
 | W4 | impl_plan 一致性 | 任务全完成但 impl_plan 仍有 `[/]` → 提醒更新 |
-| W5 | walkthrough 日期检查 | 有任务但 walkthrough 最近日期 ≠ 今日 → 提醒更新 |
-| W6 | Artifact 不完整 | 有其他 Artifact 但缺 task.md → 提醒 |
-| W8 | TodoWrite 残留检测 | 本会话用过 TodoWrite 且无活跃任务 → 清理 flag |
+| W4a | impl_plan 详情终态 | `[x]` 索引缺 `### CHG-ID` 详情 → 提醒补充 |
+| W5 | findings 详情终态 | `[ ]` 索引缺 `### [日期]` 详情 → 提醒补充 |
+| W5a | findings 过期检测 | `[ ]` 项超 14 天 → 引导 AskUserQuestion 询问处理方式 |
+| W5b | findings 归档检查 | 活跃区有已解决详情段落 → 提醒归档 |
+| W6 | walkthrough 日期检查 | 有任务但 walkthrough 最近日期 ≠ 今日 → 提醒更新（含索引无详情分层） |
+| W6a | walkthrough 归档 | 活跃区详情 > 3 → 提醒归档 |
+| W7 | Artifact 不完整 | 有其他 Artifact 但缺 task.md → 提醒 |
+| W7a | 无 Artifact 有代码 | 3+ 代码文件无 Artifact → 引导 AskUserQuestion 询问启用 PACE |
+| W8 | TodoWrite 残留检测 | 本会话用过 TodoWrite 且无活跃任务 → 清理 flag（仅日志） |
 | W9 | 交叉验证 | AI 消息含"完成"但 task.md 还有 pending → 阻止 |
 
 #### 防无限循环机制
@@ -218,7 +224,11 @@ Stop 触发
   ↓
 blockCount < 3 ?
   ├─ YES → exit 2 阻止 + stderr 反馈 + blockCount++
-  └─ NO  → 降级 exit 0 + 写入 .pace/degraded + additionalContext
+  │        stderr 前缀（场景感知）：
+  │          含 AskUserQuestion 且无"请继续执行" → "以下问题需要用户决策"
+  │          含"请继续执行" → "请继续执行任务并处理以下问题"
+  │          其他 → "请仅修复以下检查项，不要执行新任务"
+  └─ NO  → 降级 exit 0 + 写入 .pace/degraded
            （SessionStart 下次会话重置计数器）
 ```
 

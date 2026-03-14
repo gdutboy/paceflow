@@ -86,6 +86,12 @@ if (eventType === 'compact') {
           `验证标记：${FORMAT_SNIPPETS.verified}`,
           `impl_plan 详情：${FORMAT_SNIPPETS.implDetailRule}`,
           '',
+          '=== G-9 完成检查（每个 CHG/HOTFIX 最后一个任务标 [x] 后立即执行）===',
+          '1. task.md — 已完成项标 [x]/[-] + 添加 <!-- VERIFIED --> + 归档到 ARCHIVE 下方',
+          '2. implementation_plan.md — 索引标 [x] + 详情段落归档到 ARCHIVE 下方',
+          '3. walkthrough.md — 追加索引行 + 详情段落（## YYYY-MM-DD 开头，含具体变更内容）',
+          '4. spec.md — 同步技术栈变更（如有）',
+          '',
         ];
         process.stdout.write(formatLines.join('\n') + '\n');
       }

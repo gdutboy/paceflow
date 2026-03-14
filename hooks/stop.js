@@ -52,9 +52,23 @@ if (taskActive) {
   // I-4: doneCount = [x] + [-]（countByStatus 设计），xCount 下方单独统计纯 [x]
   const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
   if (pendingCount > 0) {
-    // S-3: 包含进度信息（已完成/总数）
     const total = pendingCount + doneCount;
-    warnings.push(`task.md 还有 ${pendingCount} 个未完成任务（进度 ${doneCount}/${total}）。状态：${FORMAT_SNIPPETS.statusHelp}`);
+    // HOTFIX-20260314-02: 场景感知消息——区分 C 阶段等审批 / 全阻塞 / E 阶段执行中
+    const hasApproved = /^<!-- APPROVED -->$/m.test(taskActive);
+    const hasInProgress = /^- \[\/\]/m.test(taskActive);
+    const hasOpenTasks = /^- \[[ \/]\]/m.test(taskActive); // [ ] 或 [/]
+    const hasBlocked = /^- \[!\]/m.test(taskActive);
+
+    if (!hasApproved && !hasInProgress) {
+      // C 阶段：等用户审批
+      warnings.push(`task.md 有 ${pendingCount} 个未完成任务且未获审批（缺少 APPROVED 标记）。请用 AskUserQuestion 询问用户是否批准执行计划。${FORMAT_SNIPPETS.approved}`);
+    } else if (!hasOpenTasks && hasBlocked) {
+      // 全部阻塞：需用户决策
+      warnings.push(`task.md 所有 ${pendingCount} 个剩余任务均为 [!] 阻塞状态。请用 AskUserQuestion 询问用户如何处理阻塞项`);
+    } else {
+      // E 阶段：正常执行中，继续完成任务
+      warnings.push(`task.md 还有 ${pendingCount} 个未完成任务（进度 ${doneCount}/${total}），请继续执行。状态：${FORMAT_SNIPPETS.statusHelp}`);
+    }
   }
 
   // 2. 检查活跃区已完成项（W7 V/归档优先级，xCount 单独统计 [x] 不含 [-]）
@@ -111,7 +125,7 @@ if (taskActive) {
       return (now - new Date(m[1]).getTime()) / 86400000 >= 14;
     }).length;
     if (agedCount > 0) {
-      warnings.push(`findings.md 有 ${agedCount} 个超过 14 天的开放项，请决议（采纳/否定/保持现状）`);
+      warnings.push(`findings.md 有 ${agedCount} 个超过 14 天的开放项需要用户决策，请用 AskUserQuestion 询问处理方式（采纳/否定/保持现状）`);
     }
 
     // T-383: findings 归档检查 — 活跃区 [x]/[-] 详情段落存在时 warning
@@ -174,7 +188,7 @@ if (taskActive) {
   } else {
     const codeCount = countCodeFiles(cwd);
     if (codeCount >= 3) {
-      warnings.push(`检测到 ${codeCount} 个代码文件但无 Artifact 文件，可能需要 PACE 流程。task.md 格式：${FORMAT_SNIPPETS.taskEntry}`);
+      warnings.push(`检测到 ${codeCount} 个代码文件但无 Artifact 文件，请用 AskUserQuestion 询问用户是否需要启用 PACE 流程`);
     }
   }
 }
@@ -226,9 +240,20 @@ if (warnings.length > 0) {
       setBlockCount(blockCount + 1);
       // T-330: stderr 编号列表 + 降级递进式消息
       const stderrLines = warnings.map((w, i) => `[${i+1}] ${w}`);
-      if (blockCount >= 1) stderrLines.push(`[提示] 这是第 ${blockCount + 1} 次阻止，请逐项修复上述问题后再结束会话。${FORMAT_SNIPPETS.skillRef}`);
-      if (blockCount >= 2) stderrLines.push(`[警告] 下次将降级为软提醒不再阻止，但问题仍需修复。`);
-      const stderrMsg = `PACE 检查未通过，请先修复：\n${stderrLines.join('\n')}`;
+      if (blockCount >= 1) stderrLines.push(`[提示] 这是第 ${blockCount + 1} 次阻止，请逐项处理上述问题后再结束会话。${FORMAT_SNIPPETS.skillRef}`);
+      if (blockCount >= 2) stderrLines.push(`[警告] 下次将降级为软提醒不再阻止，但问题仍需处理。`);
+      // HOTFIX-20260314-02: 场景感知前缀——区分"用户决策"/"继续执行"/"收尾修复"
+      const hasUserActionWarning = warnings.some(w => w.includes('AskUserQuestion'));
+      const hasExecutionWarning = warnings.some(w => w.includes('请继续执行'));
+      let prefix;
+      if (hasUserActionWarning && !hasExecutionWarning) {
+        prefix = 'PACE 检查未通过，以下问题需要用户决策：';
+      } else if (hasExecutionWarning) {
+        prefix = 'PACE 检查未通过，请继续执行任务并处理以下问题：';
+      } else {
+        prefix = 'PACE 完成度检查未通过。请仅修复以下检查项，不要执行新任务：';
+      }
+      const stderrMsg = `${prefix}\n${stderrLines.join('\n')}`;
       process.stderr.write(stderrMsg + '\n');
       log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK (${blockCount + 1}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  stderr→AI: ${stderrMsg}\n`);
       process.exit(2);
