@@ -117,7 +117,7 @@ if (eventType !== 'compact') {
       if (planPath) {
         process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
         process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
-        process.stdout.write(`请 Read 该文件并桥接到 PACE artifacts（task.md + implementation_plan.md），完成后删除 .pace/current-native-plan。\n\n`);
+        process.stdout.write(`请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引，完成后删除 .pace/current-native-plan。\n\n`);
       }
     }
   } catch(e) {}
@@ -298,14 +298,14 @@ if (paceSignal && found.length > 0) {
     // 检测 2：双 ARCHIVE 标记
     const archiveCount = (implFull.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (archiveCount > 1) {
-      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处，可能丢失活跃内容`);
+      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处。请删除多余的标记，只保留活跃区与归档区之间的那个`);
     }
   }
   // 检测 3：task.md 双 ARCHIVE 标记
   if (taskFullCached) {
     const taskArchiveCount = (taskFullCached.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (taskArchiveCount > 1) {
-      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处`);
+      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处。请删除多余的标记，只保留活跃区与归档区之间的那个`);
     }
   }
   if (formatWarnings.length > 0) {
@@ -329,7 +329,7 @@ if (taskFullCached) {
     // W3: 只扫描活跃区的跳过任务（避免已归档的历史 [-] 项永久计入提醒）
     const skipped = active.match(/- \[-\] .+/g) || [];
     if (skipped.length > 0) {
-      process.stdout.write(`\n=== 跨会话提醒 ===\ntask.md 有 ${skipped.length} 个跳过的任务（[-]），请检查是否已完成需更新为 [x]：\n`);
+      process.stdout.write(`\n=== 跨会话提醒 ===\ntask.md 有 ${skipped.length} 个跳过的任务（[-]），请用 AskUserQuestion 询问用户这些跳过的任务是否需要重新开启或更新为 [x]：\n`);
       skipped.slice(-3).forEach(t => process.stdout.write(`  ${t}\n`));
       process.stdout.write('\n');
       log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SKIPPED_REMINDER | count: ${skipped.length}\n`);
@@ -355,7 +355,7 @@ if (taskFullCached) {
     const hasPending = /- \[[ \/!]\]/.test(active);
     const hasCompleted = /- \[[x\-]\]/.test(active);
     if (hasPending) {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ task.md 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准。\n请用 TodoWrite 创建与 task.md 活跃任务对应的 todo 项。\n\n`);
+      process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ task.md 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准。\n请为每个 task.md 顶层活跃任务创建或更新对应的 TodoWrite 项。\n\n`);
     } else if (hasCompleted) {
       process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 活跃区有已完成/跳过任务待归档，无进行中任务。归档后再清空 TodoWrite。\n\n`);
     } else {

@@ -44,7 +44,7 @@ paceUtils.withStdinParsed((stdin) => {
   if (fs.existsSync(degradedFile)) {
     try {
       const degradedContent = fs.readFileSync(degradedFile, 'utf8').trim();
-      warnings.push(`Stop hook 已降级（连续阻止 3 次），请检查未通过的 PACE 检查项：${degradedContent.split('\n')[0]}`);
+      warnings.push(`Stop hook 已降级（连续阻止 3 次后不再阻止退出，但问题未修复）。未通过的检查项：\n${degradedContent}\n请逐项解决上述问题。`);
     } catch(e) {
       warnings.push(`Stop hook 已降级，请检查 .pace/degraded 文件`);
     }
@@ -67,10 +67,10 @@ paceUtils.withStdinParsed((stdin) => {
     if (fileName === 'task.md') {
       if (doneCount > 0) {
         // 有已完成项时，归档提醒已在上方触发，只附加 TodoWrite 同步提示
-        warnings.push(`归档后请同步更新 TodoWrite（标记完成或清空）`);
+        warnings.push(`归档已完成项（移动 ${ARCHIVE_MARKER} 标记）后同步 TodoWrite：无剩余活跃任务 → 调用 TodoWrite 传入空 todos 清空；有剩余 → 为每个活跃任务创建 TodoWrite 项`);
       } else {
         if (pendingCount > 0) {
-          warnings.push(`task.md 有 ${pendingCount} 个活跃任务，请用 TodoWrite 同步对应的 todo 项`);
+          warnings.push(`task.md 有 ${pendingCount} 个活跃任务，请为每个顶层活跃任务创建或更新对应的 TodoWrite 项`);
         }
       }
     }
@@ -133,7 +133,7 @@ paceUtils.withStdinParsed((stdin) => {
     // H7: findings.md ⚠️ 提醒 → 每会话首次（复用上方 findingsActive）
     if (findingsActive) {
       const unresolved = (findingsActive.match(/⚠️/g) || []).length;
-      if (unresolved > 0) warnOnce('findings-reminded', `findings.md 有 ${unresolved} 个未解决问题（⚠️），请检查是否需要处理`);
+      if (unresolved > 0) warnOnce('findings-reminded', `findings.md 有 ${unresolved} 个未解决问题（⚠️），请逐条查看并决定处理方式，或用 AskUserQuestion 询问用户`);
 
       // H8: 否定决策理由提醒（增强版 v4.5）
       if (fileName === 'findings.md') {
@@ -156,7 +156,7 @@ paceUtils.withStdinParsed((stdin) => {
         // 原有"保持现状"检测保留
         const keepCount = (findingsActive.match(/保持现状/g) || []).length;
         if (keepCount > 0) {
-          warnings.push(`findings.md 有 ${keepCount} 条"保持现状"条目，请确认已记录否定理由（为什么不做）`);
+          warnings.push(`findings.md 有 ${keepCount} 条"保持现状"条目，如果条目理由缺失或不足 10 字，请补充否定理由（为什么不做）`);
         }
       }
 

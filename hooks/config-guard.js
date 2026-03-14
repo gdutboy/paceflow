@@ -45,7 +45,7 @@ paceUtils.withStdinParsed((stdin, rawInput) => {
     // T-425: 已知取舍——两正则独立匹配 configStr 全文，跨字段碰撞概率极低（需同时匹配 hook 路径+delete 关键词）
     const configStr = configObj ? JSON.stringify(configObj) : rawInput;
     if (/(hooks\/pace\/\w+\.js|(?:session-start|pre-tool-use|post-tool-use|stop|todowrite-sync|config-guard|pre-compact)\.js)/i.test(configStr) && /delete|remove|disable/i.test(configStr)) {
-      const ctx = `检测到可能删除 PACE hook 配置，请确认这是有意操作。删除后 PACE 保护将部分失效。`;
+      const ctx = `检测到可能删除 PACE hook 配置，请用 AskUserQuestion 询问用户是否有意删除。删除后 PACE 保护将部分失效。`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "ConfigChange",

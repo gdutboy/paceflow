@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, formatBridgeHint, TODO_DRIFT_THRESHOLD } = paceUtils;
+const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -66,12 +66,12 @@ paceUtils.withStdinParsed((stdin) => {
           log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required\n`);
           return;
         }
-        hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。task.md 是任务权威来源，请确认是否需要先在 task.md 中添加任务。`);
+        hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。请先在 task.md 中添加任务再使用 TodoWrite，task.md 是任务权威来源。`);
       }
 
       // 写入操作 + task.md 有活跃任务 → 同步提醒
       if (isWriteOp && activeTasks > 0) {
-        hints.push(`task.md 是任务权威来源（${activeTasks} 个活跃），请确保 TodoWrite 项与 task.md 对齐。`);
+        hints.push(`task.md 是任务权威来源（${activeTasks} 个活跃），请为每个顶层活跃任务创建或更新对应的 TodoWrite 项。`);
       }
 
       // 写入操作 + 活跃区只有已完成项 → 提醒先归档
@@ -83,7 +83,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (toolName === 'TodoWrite') {
         const todos = toolInput.todos || [];
         if (todos.length > 0 && activeTasks > 0 && Math.abs(todos.length - activeTasks) > TODO_DRIFT_THRESHOLD) {
-          hints.push(`TodoWrite（${todos.length} 项）与 task.md 顶层活跃任务（${activeTasks} 项）数量差异较大，请确认是否对齐。`);
+          hints.push(`TodoWrite（${todos.length} 项）与 task.md 顶层活跃任务（${activeTasks} 项）数量差异较大，请为每个顶层活跃任务创建或更新对应的 TodoWrite 项。`);
         }
       }
     } else {

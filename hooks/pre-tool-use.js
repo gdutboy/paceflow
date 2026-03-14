@@ -122,7 +122,7 @@ paceUtils.withStdinParsed((stdin) => {
     if (dirName && path.basename(filePath) !== 'README.md') {
       const ctx = dirName === 'knowledge'
         ? `写入 knowledge/ 笔记，必须包含以下格式：\n` +
-          `YAML frontmatter 必填字段：status（discussing/concluded/archived）、projects（来源项目列表）、tags、summary（≤80字）、created、updated、sources\n` +
+          `YAML frontmatter 示例：\n---\nstatus: discussing\nprojects: [项目名]\ntags: [标签1, 标签2]\nsummary: "≤80字关键结论"\ncreated: YYYY-MM-DDTHH:mm:ss+08:00\nupdated: YYYY-MM-DDTHH:mm:ss+08:00\nsources: [来源]\n---\n` +
           `正文结构：## 摘要（L1，300-500 tokens 关键结论列表）+ ## 详情（L2，完整内容含代码示例、对比表格、### 子章节）`
         : `写入 thoughts/ 笔记，请包含 YAML frontmatter（status/projects/tags/summary/created/updated）和 ## 摘要 + ## 详情 结构。`;
       const output = {
@@ -201,7 +201,7 @@ paceUtils.withStdinParsed((stdin) => {
   if (isCodeFile && isInsideProject && !hasActiveTasks && paceSignal) {
     const nativePlan = getNativePlanPath(cwd);
     if (nativePlan) {
-      const reason = `检测到未桥接的原生计划文件：${nativePlan}。请先 Read 该文件，将计划内容桥接到 task.md + implementation_plan.md（PACE A 阶段），然后删除 .pace/current-native-plan。详见 paceflow:pace-bridge skill。`;
+      const reason = `检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → Edit task.md 添加任务 + <!-- APPROVED --> → Edit implementation_plan.md 添加 CHG 索引 + 详情 → 删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_NATIVE_PLAN${teammateTag} | plan: ${nativePlan}\n`);
@@ -244,7 +244,7 @@ paceUtils.withStdinParsed((stdin) => {
             : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
         }
       } else {
-        reason = `检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请先创建 Artifact 文件（spec.md / task.md / implementation_plan.md / walkthrough.md），参考 G-8 的 PACE 执行流程。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;
+        reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请用 Write 创建 task.md 定义任务（其余 Artifact 文件将在后续操作中自动创建）。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;
       }
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
