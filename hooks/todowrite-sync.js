@@ -76,7 +76,7 @@ paceUtils.withStdinParsed((stdin) => {
 
       // 写入操作 + 活跃区只有已完成项 → 提醒先归档
       if (isWriteOp && activeTasks === 0 && doneTasks > 0) {
-        hints.push(`task.md 活跃区有 ${doneTasks} 个已完成项待归档，无进行中任务。请先归档再操作 TodoWrite。`);
+        hints.push(`task.md 活跃区有 ${doneTasks} 个已完成项待归档，无进行中任务。请先归档再操作 TodoWrite。${FORMAT_SNIPPETS.archiveOp}`);
       }
 
       // TodoWrite 批量写入：数量差异检测
@@ -101,7 +101,7 @@ paceUtils.withStdinParsed((stdin) => {
           log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required (no task.md)\n`);
           return;
         }
-        hints.push(`task.md 不存在。如果这是 PACE 项目，请先创建 task.md 再使用 TodoWrite。`);
+        hints.push(`task.md 不存在。请先创建 task.md 定义任务再使用 TodoWrite，或用 .pace/disabled 标记此项目不使用 PACE。`);
       }
     }
 

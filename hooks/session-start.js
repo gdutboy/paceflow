@@ -55,7 +55,7 @@ if (eventType === 'compact') {
         lines.push('');
         lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
         snap.nativePlans.forEach(p => lines.push(`  ${p}`));
-        lines.push('请 Read 相关文件并桥接到 PACE artifacts（task.md + implementation_plan.md）。');
+        lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。');
       }
       // AI 主动记录的 native plan 路径（优先于扫描结果）
       const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
@@ -65,7 +65,7 @@ if (eventType === 'compact') {
           if (planPath) {
             lines.push('');
             lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-            lines.push('请 Read 该文件并桥接到 PACE artifacts。');
+            lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。');
           }
         }
       } catch(e) {}
@@ -81,15 +81,15 @@ if (eventType === 'compact') {
           `任务状态：${FORMAT_SNIPPETS.statusHelp}`,
           `变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`,
           `findings 格式：${FORMAT_SNIPPETS.findingsFormat}`,
-          `walkthrough 格式：${FORMAT_SNIPPETS.walkthroughFormat}`,
+          `walkthrough 详情：${FORMAT_SNIPPETS.walkthroughDetail}`,
           `标记位置：${FORMAT_SNIPPETS.approved}`,
           `验证标记：${FORMAT_SNIPPETS.verified}`,
-          `impl_plan 详情：${FORMAT_SNIPPETS.implDetailRule}`,
+          `impl_plan 详情格式：${FORMAT_SNIPPETS.implDetail}`,
           '',
           '=== G-9 完成检查（每个 CHG/HOTFIX 最后一个任务标 [x] 后立即执行）===',
-          '1. task.md — 已完成项标 [x]/[-] + 添加 <!-- VERIFIED --> + 归档到 ARCHIVE 下方',
-          '2. implementation_plan.md — 索引标 [x] + 详情段落归档到 ARCHIVE 下方',
-          '3. walkthrough.md — 追加索引行 + 详情段落（## YYYY-MM-DD 开头，含具体变更内容）',
+          `1. task.md — 已完成项标 [x]/[-] + ${FORMAT_SNIPPETS.verified} + 归档到 ARCHIVE 下方`,
+          `2. implementation_plan.md — 索引标 [x] + 详情段落归档（格式：${FORMAT_SNIPPETS.implDetail}）`,
+          `3. walkthrough.md — 追加索引行 + 详情段落。${FORMAT_SNIPPETS.walkthroughDetail}`,
           '4. spec.md — 同步技术栈变更（如有）',
           '',
         ];
@@ -100,7 +100,7 @@ if (eventType === 'compact') {
         process.stdout.write(`findings 状态：${snap.findings.openCount} 个开放项\n`);
       }
       if (snap.walkthrough && !snap.walkthrough.hasTodayEntry) {
-        process.stdout.write(`⚠️ compact 前 walkthrough 无今日记录\n`);
+        process.stdout.write(`⚠️ compact 前 walkthrough 无今日记录，请在完成任务后更新。${FORMAT_SNIPPETS.walkthroughDetail}\n`);
       }
       // W-11: 独立 try-catch 防止删除失败影响后续逻辑
       try { fs.unlinkSync(snapFile); } catch(e) {}

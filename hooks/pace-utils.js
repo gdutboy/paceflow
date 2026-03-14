@@ -36,10 +36,12 @@ const FORMAT_SNIPPETS = {
   implIndex: '- [/] CHG-YYYYMMDD-NN 标题 — 简要描述 #change [tasks:: T-NNN~T-NNN]',
   // T-426: impl_plan 详情 4 段结构（背景/范围/技术决策/任务分解）
   // T-438: 任务分解三要素（文件定位+改动意图+验收条件）
-  implDetail: '### CHG-ID 标题\n\n**背景（Why）**：为什么做。\n**范围（What）**：~N 行，M 文件。\n**技术决策（How）**：方案选择及理由。\n\n**T-NNN 任务标题**：\n  - `file:line` — 当前行为 → 目标行为\n  - 验收：完成条件',
+  // T-471: 追加位置前缀，消除"在哪里添加"的猜测
+  implDetail: '在 ## 活跃变更详情 下方添加：\n### CHG-ID 标题\n\n**背景（Why）**：为什么做。\n**范围（What）**：~N 行，M 文件。\n**技术决策（How）**：方案选择及理由。\n\n**T-NNN 任务标题**：\n  - `file:line` — 当前行为 → 目标行为\n  - 验收：完成条件',
   // 标记位置
   approved: '<!-- APPROVED --> 放在 task.md 活跃区的 CHG 分组标题下方、任务列表上方',
-  verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方，V 阶段验证通过后添加',
+  // T-471: 追加验证定义，防止 AI 自签不运行验证
+  verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方。V 阶段验证 = 通过 Terminal 运行测试或 Browser 确认功能正确且无报错后添加此标记',
   // checkbox 状态说明
   statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 阻塞 | [-] 跳过',
   // 变更状态说明（impl_plan 专用，与 statusHelp 是独立术语）
@@ -50,7 +52,12 @@ const FORMAT_SNIPPETS = {
   archiveOp: '归档 = 移动标记而非内容：Step 1 在待归档内容上方插入新 <!-- ARCHIVE -->，Step 2 删除旧 <!-- ARCHIVE -->',
   // findings/walkthrough 格式（compact 恢复注入用）
   findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD] [change:: CHG-ID] [knowledge:: slug]，索引+详情(### [日期] 标题)缺一不可',
-  walkthroughFormat: '索引表+详情 ## YYYY-MM-DD CHG-ID 摘要，工作结束必须更新',
+  // T-471: 重写为实际索引行格式（原文是描述不是格式）
+  walkthroughFormat: '| YYYY-MM-DD | 完成内容摘要 | CHG-ID |',
+  // T-471: 新增详情段落格式（7 处引用，P0 修复 walkthrough 遗漏）
+  walkthroughDetail: '## YYYY-MM-DD CHG-ID 摘要\n**T-NNN 任务标题**\n- 改动：`file`:`line`，改动意图\n- 验证：Terminal/Browser 运行结果（通过/失败+原因）',
+  // T-471: 新增 findings 详情格式（P2，统一 B-10/W-14 引用）
+  findingsDetail: '在 ## 未解决问题 下添加：\n### [YYYY-MM-DD] 标题\n问题背景、影响范围、修复方向',
   // impl_plan 详情规则
   implDetailRule: '每个 [x] 索引必须有 ### CHG-ID 详情段落',
   // Skill 引用

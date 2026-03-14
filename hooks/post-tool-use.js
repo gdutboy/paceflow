@@ -80,7 +80,7 @@ paceUtils.withStdinParsed((stdin) => {
       const markers = ['<!-- APPROVED -->', '<!-- VERIFIED -->'];
       for (const marker of markers) {
         if (newString.includes(marker) && !oldString.includes(marker)) {
-          warnings.push(`检测到 ${marker} 被添加到 task.md，请确认此操作已获用户审核`);
+          warnings.push(`检测到 ${marker} 被添加到 task.md，此标记需用户明确同意。如未获确认，请用 AskUserQuestion 询问`);
         }
       }
     }
@@ -169,7 +169,7 @@ paceUtils.withStdinParsed((stdin) => {
             const display = missingDetails.length <= 2
               ? missingDetails.join('；')
               : missingDetails[0] + ` 等 ${missingDetails.length} 个`;
-            warnings.push(`findings.md 有 [ ] 索引缺少详情段落：${display}。请在"## 未解决问题"下补充"### [日期] 标题"记录问题背景和修复方向`);
+            warnings.push(`findings.md 有 [ ] 索引缺少详情段落：${display}。${FORMAT_SNIPPETS.findingsDetail}`);
           }
         }
       }
@@ -202,11 +202,11 @@ paceUtils.withStdinParsed((stdin) => {
     // task.md 不存在时：v4.3 多信号检测
     const paceSignal = isPaceProject(cwd);
     if (paceSignal === 'superpowers' || paceSignal === 'manual') {
-      warnings.push(`检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskEntry}`);
+      warnings.push(`检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
     } else {
       const codeCount = countCodeFiles(cwd);
       if (codeCount >= 3) {
-        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskEntry}`);
+        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
       }
     }
   }

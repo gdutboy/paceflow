@@ -172,7 +172,7 @@ paceUtils.withStdinParsed((stdin) => {
         return true;
       });
       if (missing325.length > 0) {
-        const reason = `添加新变更索引 ${missing325.join(', ')} 时必须同时写入详情段落。请在同一次 Edit 中包含索引和详情，或先添加详情再添加索引。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `添加新变更索引 ${missing325.join(', ')} 时缺少详情段落。请先添加详情段落，再添加索引。\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_CREATE${teammateTag} | missing: ${missing325.join(', ')}\n`);
@@ -259,7 +259,7 @@ paceUtils.withStdinParsed((stdin) => {
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先在 task.md 中定义任务，获取用户批准后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskEntry}\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先在 task.md 中定义任务，获取用户批准后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);

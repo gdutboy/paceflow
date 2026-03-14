@@ -112,7 +112,7 @@ if (taskActive) {
       const display = missingDetails.length <= 2
         ? missingDetails.join('；')
         : missingDetails[0] + ` 等 ${missingDetails.length} 个`;
-      warnings.push(`findings.md 有 ${missingDetails.length} 个 [ ] 索引缺少详情段落：${display}，请补充`);
+      warnings.push(`findings.md 有 ${missingDetails.length} 个 [ ] 索引缺少详情段落：${display}，请补充。${FORMAT_SNIPPETS.findingsDetail}`);
     }
   }
 
@@ -136,7 +136,7 @@ if (taskActive) {
       return !openKeys.some(p => title.includes(p));
     }).length;
     if (staleCount > 0) {
-      warnings.push(`findings 活跃区有 ${staleCount} 个已解决详情段落未归档`);
+      warnings.push(`findings 活跃区有 ${staleCount} 个已解决详情段落未归档。${FORMAT_SNIPPETS.archiveOp}`);
     }
   }
 
@@ -145,8 +145,9 @@ if (taskActive) {
   // W-6: walkActive 可能为空字符串（文件存在但活跃区为空），需额外判断
   if (walkActive !== null && walkActive.trim() && (doneCount > 0 || pendingCount > 0)) {
     const today = todayISO();
-    // 详情段落日期（**时间**: YYYY-MM-DD 或 **追加时间**: YYYY-MM-DD）
-    const detailDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4})-(\d{1,2})-(\d{1,2})/g)]
+    // 详情段落日期（**时间**: YYYY-MM-DD 或 **追加时间**: YYYY-MM-DD）+ 详情标题（## YYYY-MM-DD）
+    // T-472: 增加 ## YYYY-MM-DD 标题匹配，兼容 walkthroughDetail 新格式
+    const detailDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4})-(\d{1,2})-(\d{1,2})/g), ...walkActive.matchAll(/^## (\d{4})-(\d{1,2})-(\d{1,2})/gm)]
       .map(m => ({ full: `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` }));
     // 索引表日期（| YYYY-MM-DD |）
     const indexDates = [...walkActive.matchAll(/^\| (\d{4})-(\d{1,2})-(\d{1,2}) \|/gm)]
@@ -159,26 +160,26 @@ if (taskActive) {
       // P3-2: 不修改原数组，使用 spread + at(-1) 安全取最后一个
       const latest = [...allDates].sort().at(-1) || null;
       if (latest) {
-        warnings.push(`walkthrough.md 最近更新是 ${latest}，今天的工作尚未记录`);
+        warnings.push(`walkthrough.md 最近更新是 ${latest}，今天的工作尚未记录。请创建索引行 + 详情段落。${FORMAT_SNIPPETS.walkthroughDetail}`);
       } else {
-        warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录`);
+        warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录。${FORMAT_SNIPPETS.walkthroughDetail}`);
       }
     } else if (hasIndexToday && !hasDetailToday) {
       // 索引有今天的记录但详情没有 → 提醒补写详情段落
-      warnings.push(`walkthrough.md 索引已更新但缺少详情段落，请补充 "## YYYY-MM-DD 摘要" 记录具体变更内容`);
+      warnings.push(`walkthrough.md 索引已更新但缺少详情段落，请补充详情段落。${FORMAT_SNIPPETS.walkthroughDetail}`);
     }
     // T-383: walkthrough 归档检查 — 活跃区详情 > 3 时 warning
     const walkDetailCount = (walkActive.match(/^## \d{4}-\d{2}-\d{2}/gm) || []).length;
     if (walkDetailCount > 3) {
-      warnings.push(`walkthrough 活跃区有 ${walkDetailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 ${ARCHIVE_MARKER} 下方`);
+      warnings.push(`walkthrough 活跃区有 ${walkDetailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 ${ARCHIVE_MARKER} 下方。${FORMAT_SNIPPETS.archiveOp}`);
     }
   } else if (!fs.existsSync(path.join(artDir, 'walkthrough.md'))) {
-    warnings.push(`walkthrough.md 不存在，缺少工作记录`);
+    warnings.push(`walkthrough.md 不存在。请创建并记录今日工作。${FORMAT_SNIPPETS.walkthroughDetail}`);
   }
 
 } else if (existing.length > 0) {
   // task.md 不存在，但有其他 artifact → 不完整
-  warnings.push(`检测到 ${existing.join(', ')} 但缺少 task.md，Artifact 不完整。task.md 格式：${FORMAT_SNIPPETS.taskEntry}`);
+  warnings.push(`检测到 ${existing.join(', ')} 但缺少 task.md，Artifact 不完整。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
 } else {
   // 无任何 artifact：v4.3.5 多信号检测
   const paceSignal = isPaceProject(cwd);
@@ -211,7 +212,7 @@ if (lastMessage) {
     if (taskActive) {
       const { pending } = countByStatus(taskActive, { topLevelOnly: true });
       if (pending > 0) {
-        warnings.push(`AI 声称完成，但 task.md 还有 ${pending} 个活跃任务。请先完成或标记 [-] 跳过，再归档到 ARCHIVE 下方`);
+        warnings.push(`AI 声称完成，但 task.md 还有 ${pending} 个活跃任务。请先完成或标记 [-] 跳过，再归档到 ARCHIVE 下方。标记 [-] 时需在同行或 findings 中记录跳过理由。${FORMAT_SNIPPETS.archiveOp}`);
       }
     }
   }
