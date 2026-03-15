@@ -1,5 +1,132 @@
 # Changelog
 
+## v5.1.3 (2026-03-15)
+
+> **2 个修复**（HOTFIX-20260315-04, HOTFIX-20260315-05），**5 文件**，T-487 ~ T-489（3 个任务）
+
+### 概览
+
+两个 HOTFIX 修复：审计 P0 修复（config-guard 缺 return 等 6 处）和 compact recovery 事件类型检测失败的根因修复。后者是自 v4.5.0 引入 compact 恢复功能以来一直存在的 bug。
+
+---
+
+### 🐛 Bug 修复
+
+#### compact recovery 事件类型检测失败 (HOTFIX-20260315-05)
+- **根因**：`parseHookStdin` 读取 `parsed.type` 但 CC SessionStart stdin 使用 `source` 字段传递事件类型（`startup`/`resume`/`clear`/`compact`）
+- **影响**：compact 恢复路径（G-9 清单注入、格式参考恢复、快照消费）从 v4.5.0 引入以来**从未正确触发**
+- **修复**：`pace-utils.js:535` — `type: parsed.type || ''` → `type: parsed.source || parsed.type || ''`（`source` 优先，兼容旧 `type` 字段）
+- **新增测试**：2 个单元测试（source 映射 + source 优先于 type）
+
+#### 审计 P0 修复 6 处 (HOTFIX-20260315-04)
+- `config-guard.js`：非 PACE 项目 early return 缺失（执行了不必要的逻辑）
+- `REFERENCE.md`：`PACE_VERSION` / `FORMAT_SNIPPETS` / `createLogger` 3 处描述修正
+- `CLAUDE.md`：版本号 2 处同步
+- `README.md`：E2E 测试数量修正
+- `templates/knowledge-note.md`：ISO 时间戳格式修正
+
+---
+
+### 🧹 仓库清理
+
+- 移除误追踪的 `tests/test-pace-utils.js`（`.gitignore` 已排除，不应在 git 中）
+
+---
+
+### 🧪 测试
+
+| 类别 | v5.1.2 | v5.1.3 | 变化 |
+|------|--------|--------|------|
+| 单元测试 | 73 | 75 | +2 |
+| E2E 测试 | 67 | 67 | — |
+
+---
+
+### 完整变更列表
+
+| CHG-ID | 类型 | 标题 | Tasks |
+|--------|------|------|-------|
+| HOTFIX-20260315-04 | fix | 审计 P0 修复 — config-guard return + 文档版本同步 + 模板时间戳 | T-487 |
+| HOTFIX-20260315-05 | fix | compact recovery 事件类型检测失败 — `source` vs `type` 字段 | T-488~T-489 |
+
+---
+
+## v5.1.2 (2026-03-15)
+
+> **5 个变更**（2 CHG + 3 HOTFIX），**14 文件**，**+1,459 / -83 行**，T-463 ~ T-484（22 个任务）
+
+### 概览
+
+Hook 消息质量全面审计与日志体系补全。核心改动：(1) 全 hook stderr/stdout 消息审计修复 34+18 项，消除模糊措辞和格式不一致；(2) Stop hook 场景感知消息（C 阶段/全阻塞/E 阶段分支）；(3) compact 恢复路径注入 G-9 完成检查清单；(4) 7 个 hook 文件补全 ENTRY/SKIP/PASS 结构化日志 34 处 + `logEntry()` 格式化函数。
+
+---
+
+### ⚡ 新功能
+
+#### Hook 日志体系全面补全 (CHG-20260315-03)
+- `pace-utils.js` 新增 `logEntry(hook, action, fields)` 格式化函数，输出 `act=X | proj=Y | dur=Zms` 结构化格式
+- `MAX_LOG_SIZE` 从 512KB 提升到 1MB（全覆盖后每 session ~50KB，1MB 保留 ~20 session）
+- 7 个 hook 文件补全 ENTRY/SKIP/PASS 日志共 34 处：`pre-tool-use.js`（7）、`post-tool-use.js`（4）、`session-start.js`（2）、`stop.js`（5）、`todowrite-sync.js`（6）、`config-guard.js`（5）、`pre-compact.js`（3）
+
+#### compact 恢复 G-9 完成检查清单注入 (HOTFIX-20260314-03)
+- `session-start.js` compact 恢复路径追加格式快速参考 + G-9 清单（4 步完成检查），弥补 compaction 后丢失的格式记忆
+
+#### Stop hook 场景感知消息 (HOTFIX-20260314-02)
+- 未完成任务消息分 3 个场景：C 阶段等待批准 / 全部阻塞 / E 阶段执行中
+- 前缀注入 3 类：空 artifact / 有 findings / 正常收尾
+- findings 过期提醒 + 无 artifact 消息改写
+
+---
+
+### 🐛 Bug 修复
+
+#### Hook 消息审计 34 项修复 (HOTFIX-20260315-01)
+- `FORMAT_SNIPPETS` 6 项：反引号转义、findings 格式补全索引+详情要求、walkthrough 详情含验证结果
+- `stop.js` 10 处：stderr 措辞从"请确认/请检查"改为具体操作指引、L149 正则修正
+- `session-start.js` 8 处：compact 桥接/降级/startup 消息反引号修正
+- 其余 4 个 hook 8 处：TodoWrite 映射明确化、格式指引改善
+
+#### Hook 消息审计 P2/P3 改进 18 处 (CHG-20260315-01)
+- P2：`请确认/请检查` → 具体操作 5 处 + TodoWrite 映射明确化 6 处 + `FORMAT_SNIPPETS` import bug 修复
+- P3：桥接/格式/修复指引 6 处
+
+#### 审查修复 (HOTFIX-20260315-02)
+- `findingsDetail` 从 3 个词扩展为 4 必须要素模板（现象+根因+影响范围+建议方案）
+- S-2/S-3 compact 桥接追加"删除 .pace/current-native-plan"步骤（修复死循环风险）
+- 死 snippet 清理 2 处（`walkthroughFormat`、`implDetailRule` 零引用移除）
+
+---
+
+### 📝 文档
+
+#### Hook 消息参考文档 (新增)
+- `docs/hook-messages-reference.md`：596 行完整消息参考，覆盖所有 hook 的 stderr/stdout/additionalContext 输出
+
+---
+
+### 🧪 测试
+
+| 类别 | v5.1.1 | v5.1.2 | 变化 |
+|------|--------|--------|------|
+| 单元测试 | 73 | 73 | — |
+| E2E 测试 | 67 | 67 | — |
+
+---
+
+### 完整变更列表
+
+| CHG-ID | 类型 | 标题 | Tasks |
+|--------|------|------|-------|
+| HOTFIX-20260314-02 | fix | Stop hook stderr 场景感知消息改进 | T-463~T-466 |
+| HOTFIX-20260314-03 | feat | compact G-9 完成检查清单注入 | T-469~T-470 |
+| HOTFIX-20260315-01 | fix | Hook 消息审计 34 项修复 | T-471~T-475 |
+| CHG-20260315-01 | improve | Hook 消息审计 P2/P3 改进 18 处 | T-476~T-479 |
+| HOTFIX-20260315-02 | fix | 审查修复 — findingsDetail 增强 + 死 snippet 清理 | T-480~T-481 |
+| CHG-20260315-03 | feat | Hook 日志体系全面补全 — logEntry + 7 hook 34 处日志 | T-482~T-484 |
+| HOTFIX-20260315-03 | chore | v5.1.2 版本升级 + createLogger JSDoc 修正 | T-485 |
+
+---
+
 ## v5.1.1 (2026-03-14)
 
 > **1 个变更**（CHG-20260313-05），**~10 文件**，T-456 ~ T-461（6 个任务）

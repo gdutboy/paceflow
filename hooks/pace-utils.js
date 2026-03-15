@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v5.1.2';
+const PACE_VERSION = 'v5.1.3';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -532,7 +532,8 @@ function parseHookStdin(rawInput) {
     newString: parsed.tool_input?.new_string || '',
     content: parsed.tool_input?.content || '',
     toolInput: parsed.tool_input || {},
-    type: parsed.type || '',
+    // HOTFIX-20260315-05: CC SessionStart stdin 用 `source` 字段（非 `type`）传递事件类型
+    type: parsed.source || parsed.type || '',
     lastMessage: parsed.last_assistant_message || '',
     raw: parsed
   };
