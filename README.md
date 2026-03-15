@@ -173,7 +173,7 @@ paceflow/
 │   ├── artifact-management/          #   Artifact + 变更管理规则
 │   ├── pace-knowledge/               #   Obsidian 知识库管理
 │   └── paceflow-audit/               #   5-Agent 并行审查
-└── tests/                            # 测试（73 单元 + 64 E2E + 21 安装）
+└── tests/                            # 测试（73 单元 + 67 E2E + 21 安装）
 ```
 
 ---

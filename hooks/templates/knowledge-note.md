@@ -3,8 +3,8 @@ status: concluded
 projects: []
 tags: []
 summary: ""
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
+created: YYYY-MM-DDTHH:mm:ss+08:00
+updated: YYYY-MM-DDTHH:mm:ss+08:00
 sources: []
 ---
 

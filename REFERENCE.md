@@ -678,12 +678,12 @@ summary: "[一句话项目描述]"
 
 | 常量 | 值 | 说明 |
 |------|-----|------|
-| `PACE_VERSION` | `'v5.1.1'` | 集中版本号，其他脚本引用 |
+| `PACE_VERSION` | `'v5.1.2'` | 集中版本号，其他脚本引用 |
 | `CODE_EXTS` | `['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte']` | 代码文件扩展名 |
 | `ARTIFACT_FILES` | `['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']` | Artifact 文件列表 |
 | `VAULT_PATH` | `process.env.PACE_VAULT_PATH \|\| ''` | Obsidian Vault 路径（需设置 `PACE_VAULT_PATH` 环境变量，未设置时 fallback 到 CWD） |
 | `SESSION_SCOPED_FLAGS` | `['degraded', 'todowrite-used', 'archive-reminded', ...]` | SessionStart 每次清除的单会话标记列表 |
-| `FORMAT_SNIPPETS` | `{taskEntry, taskGroup, implIndex, implDetail, approved, verified, statusHelp, changeStatusHelp, formatRule, archiveOp, findingsFormat, walkthroughFormat, implDetailRule, skillRef}` | 格式示例常量（17 字段），供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O |
+| `FORMAT_SNIPPETS` | `{taskEntry, taskGroup, implIndex, implDetail, approved, verified, statusHelp, changeStatusHelp, formatRule, archiveOp, findingsFormat, findingsDetail, walkthroughDetail, skillRef}` | 格式示例常量（14 字段），供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O |
 
 **函数**：
 
@@ -705,7 +705,7 @@ summary: "[一句话项目描述]"
 | `createTemplates(cwd)` | 懒创建 Artifact 模板 |
 | `countByStatus(text, opts)` | 统一任务状态统计（pending/done/total） |
 | `scanRelatedNotes(projectName)` | 扫描 Obsidian 相关笔记 |
-| `createLogger(logPath)` | 共享日志轮转函数（512KB 上限） |
+| `createLogger(logPath)` | 共享日志轮转函数（1MB 上限） |
 | `resolveProjectCwd()` | 从 CLAUDE_PROJECT_DIR 获取项目根目录 |
 | `listPlanFiles(cwd)` | 列出 docs/plans/ 中的计划文件 |
 | `hasUnsyncedPlanFiles(cwd)` | 检测未桥接的 Superpowers plan 文件 |

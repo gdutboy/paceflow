@@ -59,6 +59,7 @@ paceUtils.withStdinParsed((stdin, rawInput) => {
       };
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: WARN | reason: PACE hook 可能被删除\n`);
+      return;
     }
     log(paceUtils.logEntry('ConfigGuard', 'PASS', { proj, dur: Date.now() - t0 }));
   } catch(e) {
