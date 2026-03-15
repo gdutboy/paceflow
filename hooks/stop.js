@@ -6,19 +6,23 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, COMPLETION_PHRASES } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, COMPLETION_PHRASES } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
 
 // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
-if (!isPaceProject(cwd)) process.exit(0);
+if (!isPaceProject(cwd)) {
+  log(paceUtils.logEntry('Stop', 'SKIP', { proj, reason: 'non-pace' }));
+  process.exit(0);
+}
 
 // 防无限循环：读取连续阻止计数
 // I-12: 消除 existsSync TOCTOU 竞态，直接 try-catch readFileSync
@@ -32,8 +36,10 @@ function setBlockCount(n) {
 }
 
 try {
+const t0 = Date.now();
 // S-1: 统一 stdin 解析
 const lastMessage = paceUtils.parseStdinSync().lastMessage;
+log(paceUtils.logEntry('Stop', 'ENTRY', { proj }));
 
 // I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
 const artDir = getArtifactDir(cwd);
@@ -265,7 +271,7 @@ if (warnings.length > 0) {
   setBlockCount(0);
   const degradedFile = path.join(PACE_RUNTIME, 'degraded');
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
-  // PASS: 常规事件，不记录日志
+  log(paceUtils.logEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));
 }
 } catch(e) {
   try { log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}

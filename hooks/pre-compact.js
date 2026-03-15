@@ -6,17 +6,21 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, readActive, countByStatus } = paceUtils;
+const { ts, todayISO, isPaceProject, readActive, countByStatus, getProjectName } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 const PACE_RUNTIME = path.join(cwd, '.pace');
 
 try {
   const paceSignal = isPaceProject(cwd);
-  if (!paceSignal) process.exit(0);
+  if (!paceSignal) {
+    log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: 'non-pace' }));
+    process.exit(0);
+  }
 
   const snapshot = { timestamp: new Date().toISOString(), artifacts: {} };
 

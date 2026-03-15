@@ -5,18 +5,23 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject } = paceUtils;
+const { ts, isPaceProject, getProjectName } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin, rawInput) => {
   try {
+    const t0 = Date.now();
     const paceSignal = isPaceProject(cwd);
-    if (!paceSignal) return;
+    if (!paceSignal) {
+      log(paceUtils.logEntry('ConfigGuard', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
+      return;
+    }
 
     // 使用 parseHookStdin 结果；ok=false 时 configObj=null 触发正则降级
     const configObj = stdin.ok ? (stdin.raw.tool_input || stdin.raw) : null;
@@ -55,6 +60,7 @@ paceUtils.withStdinParsed((stdin, rawInput) => {
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: WARN | reason: PACE hook 可能被删除\n`);
     }
+    log(paceUtils.logEntry('ConfigGuard', 'PASS', { proj, dur: Date.now() - t0 }));
   } catch(e) {
     try { log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
   }

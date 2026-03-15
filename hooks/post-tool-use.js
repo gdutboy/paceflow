@@ -6,20 +6,25 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, extractNewlyCompletedChgs } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, readFull, checkArchiveFormat, ARTIFACT_FILES, countByStatus, VAULT_PATH, findMissingImplDetails, findMissingFindingsDetails, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, extractNewlyCompletedChgs } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 
 const PACE_RUNTIME = path.join(cwd, '.pace');
 
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
+  const t0 = Date.now();
   // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
-  if (!isPaceProject(cwd)) return;
+  if (!isPaceProject(cwd)) {
+    log(paceUtils.logEntry('PostToolUse', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
+    return;
+  }
 
   const { toolName, filePath, oldString, newString } = stdin;
 
@@ -251,8 +256,9 @@ paceUtils.withStdinParsed((stdin) => {
     };
     process.stdout.write(JSON.stringify(output));
     log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: WARN | tool: ${toolName} | file: ${filePath || '-'} | checks: ${warnings.length} 项\n  output→AI: ${ctx}\n`);
+  } else {
+    log(paceUtils.logEntry('PostToolUse', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
   }
-  // PASS: 常规事件，不记录日志
   } catch(e) {
     try { log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
   }

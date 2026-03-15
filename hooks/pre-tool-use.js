@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, detectLegacyImplFormat, extractNewlyCompletedChgs } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, detectLegacyImplFormat, extractNewlyCompletedChgs } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -15,11 +15,14 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
+  const t0 = Date.now();
   const { toolName, filePath, oldString, newString } = stdin;
+  log(paceUtils.logEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
   function denyOrHint(reason) {
@@ -105,6 +108,7 @@ paceUtils.withStdinParsed((stdin) => {
           const ctx = `新建 ${fileName}：请严格按照以下官方模板格式，保留双区结构（${ARCHIVE_MARKER} 分隔符）和注释说明：\n\n${tmplContent}`;
           const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: ctx } };
           process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'INJECT_TEMPLATE', { proj, file: fileName, dur: Date.now() - t0 }));
           return;
         } catch(e) {}
       }
@@ -132,6 +136,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
+      log(paceUtils.logEntry('PreToolUse', 'INJECT_FORMAT', { proj, file: filePath, dir: dirName, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -285,6 +290,7 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     // W-code-6: 当前无代码文件，不触发
+    log(paceUtils.logEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-trigger', dur: Date.now() - t0 }));
     return;
   }
 
@@ -321,8 +327,9 @@ paceUtils.withStdinParsed((stdin) => {
       }
     };
     process.stdout.write(JSON.stringify(output));
+    log(paceUtils.logEntry('PreToolUse', 'PASS', { proj, tool: toolName, injected: taskActiveContent.split('\n').length, dur: Date.now() - t0 }));
   } else {
-    // SKIP / INJECT: 常规事件，不记录日志
+    log(paceUtils.logEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-task-content', dur: Date.now() - t0 }));
   }
   } catch(e) {
     try { log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}

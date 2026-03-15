@@ -8,25 +8,29 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS } = paceUtils;
+const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, getProjectName, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
+    const t0 = Date.now();
     const paceSignal = isPaceProject(cwd);
 
     // 非 PACE 项目：直接放行
     if (!paceSignal) {
+      log(paceUtils.logEntry('TaskSync', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
       return;
     }
 
     // v4.7: teammate 静默——避免 Agent Teams 共享任务的假阳性
     if (isTeammate()) {
+      log(paceUtils.logEntry('TaskSync', 'SKIP', { proj, reason: 'teammate', dur: Date.now() - t0 }));
       return;
     }
 
@@ -123,7 +127,7 @@ paceUtils.withStdinParsed((stdin) => {
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: HINT | tool: ${toolName} | hints: ${hints.join('; ')}\n`);
     } else {
-      // PASS: 常规事件，不记录日志
+      log(paceUtils.logEntry('TaskSync', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
     }
   } catch(e) {
     log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`);

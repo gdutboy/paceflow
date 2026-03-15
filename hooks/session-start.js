@@ -12,6 +12,7 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
+const proj = getProjectName(cwd);
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 
@@ -426,7 +427,7 @@ try {
   }
 } catch(e) {} // Vault 不可用静默跳过
 
-log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);
+log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | proj: ${proj} | event: ${eventType} | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);
 
 } catch(e) {
   // H-3: 顶层异常捕获，静默放行

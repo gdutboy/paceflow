@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v5.1.1';
+const PACE_VERSION = 'v5.1.2';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -428,10 +428,10 @@ function scanRelatedNotes(projectName) {
   return results;
 }
 
-// 512KB：平衡磁盘占用与日志保留量（单文件含多次会话日志，过小丢上下文）
-const MAX_LOG_SIZE = 512 * 1024;
+// 1MB：全覆盖日志（ENTRY+SKIP+PASS）后每 session ~50KB，1MB 可保留 ~20 session / 7-10 天
+const MAX_LOG_SIZE = 1024 * 1024;
 /**
- * 创建带日志轮转的 logger 函数（512KB 上限，超过截断保留后半）
+ * 创建带日志轮转的 logger 函数（1MB 上限，超过截断保留后半）
  * @param {string} logPath - 日志文件路径
  * @returns {function(string): void}
  */
@@ -452,6 +452,21 @@ function createLogger(logPath) {
       fs.appendFileSync(logPath, msg);
     } catch(e) {}
   };
+}
+
+/**
+ * 格式化结构化日志条目（act=/proj=/dur= 字段格式，便于 grep/awk 分析）
+ * @param {string} hook - Hook 名称（自动 padEnd(11) 对齐）
+ * @param {string} action - Action 名称（ENTRY/SKIP/PASS/DENY 等）
+ * @param {Object} [fields={}] - 可选字段键值对（跳过 undefined/null/空字符串）
+ * @returns {string} 格式化的日志行（含换行符）
+ */
+function logEntry(hook, action, fields = {}) {
+  const parts = [`[${ts()}] ${hook.padEnd(11)} | act=${action}`];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined && v !== null && v !== '') parts.push(`${k}=${v}`);
+  }
+  return parts.join(' | ') + '\n';
 }
 
 /**
@@ -560,7 +575,7 @@ module.exports = {
   // 统计与检查
   countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys, detectLegacyImplFormat, extractNewlyCompletedChgs,
   // 外部集成
-  scanRelatedNotes, getNativePlanPath, createLogger, formatBridgeHint,
+  scanRelatedNotes, getNativePlanPath, createLogger, logEntry, formatBridgeHint,
   // stdin 解析
   parseHookStdin, withStdinParsed, parseStdinSync,
 };
