@@ -1,5 +1,57 @@
 # Changelog
 
+## v5.1.4 (2026-03-19)
+
+> **1 个变更**（CHG-20260319-01），**10 文件**（+90/-28 行），T-491 ~ T-496（6 个任务）
+
+### 概览
+
+Superpowers v5.0.0 将计划文件输出路径从 `docs/plans/` 迁移到 `docs/superpowers/plans/`，导致 PACEflow 的桥接检测完全失效。本版本通过双路径扫描实现向前向后兼容。同时利用 CC v2.1.78 新增的 StopFailure hook 事件，新增 logging-only 的 API 错误中断日志记录。
+
+---
+
+### ✨ 新功能
+
+#### Superpowers v5.0.0+ 路径兼容 (CHG-20260319-01)
+- **新增 `PLAN_DIRS` 常量**：`['docs/plans', 'docs/superpowers/plans']`，双路径扫描
+- **`listPlanFiles()` 重构**：返回值从 `string[]` 改为 `{name, dir}[]`，扫描双路径合并去重按日期降序
+- **`formatBridgeHint()` 更新**：显示文件实际所在目录路径（如 `docs/superpowers/plans/xxx.md`）
+- **`isPaceProject()` 信号 2 自动覆盖新路径**：通过 `hasPlanFiles()` → `listPlanFiles()` 链
+- **下游全部适配**：`listUnsyncedPlanFiles()`、`pre-tool-use.js`、`session-start.js`、`pace-bridge/SKILL.md`
+
+#### StopFailure hook (CHG-20260319-01)
+- **新增 `stop-failure.js`**：CC v2.1.78 新增事件，API 错误（rate limit、auth failure 等）中断时触发
+- **策略：logging-only**——文档缺失（#35620），零社区验证，仅记录错误类型和原因到 `pace-hooks.log`
+- **hooks.json 注册**：`StopFailure` matcher 空字符串匹配所有事件
+
+---
+
+### 📝 文档
+
+- `CLAUDE.md`：架构树新增 `stop-failure.js`，版本号 v5.1.4
+- `README.md`：hook 数量 8→9，测试数量更新，版本历史新增 v5.1.4，架构树新增
+- `REFERENCE.md`：hooks.json 注册表新增 StopFailure，架构树新增，版本历史新增
+- `pace-bridge/SKILL.md`：4 处路径引用支持双路径
+
+---
+
+### 🧪 测试
+
+| 类别 | v5.1.3 | v5.1.4 | 变化 |
+|------|--------|--------|------|
+| 单元测试 | 75 | 77 | +2（双路径扫描） |
+| E2E 测试 | 67 | 69 | +2（StopFailure） |
+
+---
+
+### 完整变更列表
+
+| CHG-ID | 类型 | 标题 | Tasks |
+|--------|------|------|-------|
+| CHG-20260319-01 | feat | Superpowers v5.0.0+ 路径兼容 + StopFailure hook | T-491~T-496 |
+
+---
+
 ## v5.1.3 (2026-03-15)
 
 > **2 个修复**（HOTFIX-20260315-04, HOTFIX-20260315-05），**5 文件**，T-487 ~ T-489（3 个任务）
