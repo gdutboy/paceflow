@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v5.1.3';
+const PACE_VERSION = 'v5.1.4';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -165,22 +165,32 @@ function countCodeFiles(cwd) {
   } catch(e) { return 0; }
 }
 
+// Superpowers 计划文件扫描目录（v4.x: docs/plans/, v5.0.0+: docs/superpowers/plans/）
+const PLAN_DIRS = ['docs/plans', 'docs/superpowers/plans'];
+
 /**
- * 列出 docs/plans/ 中的 Superpowers 计划文件（按日期降序）
+ * 列出所有 Superpowers 计划文件（按日期降序），扫描 PLAN_DIRS 双路径
  * @param {string} cwd - 项目根目录
- * @returns {string[]} 文件名列表（最新在前）
+ * @returns {{name: string, dir: string}[]} 文件信息列表（name=文件名, dir=所在相对目录路径）
  */
 function listPlanFiles(cwd) {
-  const plansDir = path.join(cwd, 'docs', 'plans');
-  try {
-    return fs.readdirSync(plansDir)
-      .filter(f => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f))
-      .sort()
-      .reverse();
-  } catch(e) { return []; }
+  const results = [];
+  const seen = new Set();
+  for (const rel of PLAN_DIRS) {
+    const dir = path.join(cwd, ...rel.split('/'));
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (/^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) && !seen.has(f)) {
+          seen.add(f);
+          results.push({ name: f, dir: rel });
+        }
+      }
+    } catch(e) {}
+  }
+  return results.sort((a, b) => b.name.localeCompare(a.name));
 }
 
-/** W-dry-3: 检测 docs/plans/ 是否有 plan 文件（复用 listPlanFiles 消除双重 readdirSync） */
+/** W-dry-3: 检测是否有 plan 文件（复用 listPlanFiles 消除双重 readdirSync） */
 function hasPlanFiles(cwd) {
   return listPlanFiles(cwd).length > 0;
 }
@@ -196,7 +206,7 @@ function hasUnsyncedPlanFiles(cwd) {
 
 /**
  * 列出未同步到 task.md 的 plan 文件（按日期降序）
- * @returns {string[]} 未同步的文件名列表
+ * @returns {{name: string, dir: string}[]} 未同步的文件信息列表
  */
 function listUnsyncedPlanFiles(cwd) {
   const plans = listPlanFiles(cwd);
@@ -209,7 +219,7 @@ function listUnsyncedPlanFiles(cwd) {
   for (const f of synced) {
     syncedSet.add(f.replace(/\.md$/, '-design.md'));
   }
-  return plans.filter(f => !syncedSet.has(f));
+  return plans.filter(p => !syncedSet.has(p.name));
 }
 
 /**
@@ -479,7 +489,7 @@ function formatBridgeHint(cwd, artDir) {
   // 仅显示未同步的 plan 文件（已同步的不再提示桥接）
   const planFiles = listUnsyncedPlanFiles(cwd);
   if (planFiles.length === 0) return null;
-  const fileList = planFiles.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+  const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
   const artPath = (artDir || cwd).replace(/\\/g, '/');
   const bridgeSteps = `Read plan → Edit ${artPath}/task.md 添加任务 + APPROVED → Edit ${artPath}/implementation_plan.md 添加 CHG 索引。详见 /pace-bridge skill。`;
   return { fileList, bridgeSteps };
@@ -564,7 +574,7 @@ module.exports = {
   // 常量
   PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
-  TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS,
+  TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, normalizePath,
   // 项目检测与路径

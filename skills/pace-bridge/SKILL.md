@@ -2,7 +2,7 @@
 name: pace-bridge
 description: >
   将计划文件桥接到 PACEflow artifacts（task.md + implementation_plan.md）。
-  支持 Superpowers 计划（docs/plans/）和 Claude Code plan mode 计划（~/.claude/plans/）。
+  支持 Superpowers 计划（docs/plans/ 或 docs/superpowers/plans/）和 Claude Code plan mode 计划（~/.claude/plans/）。
   当 PreToolUse DENY 提示"检测到计划文件"或 SessionStart 提示"桥接提醒"时使用。
   当用户主动请求"同步计划"、"桥接计划"、"把计划转到 task"时也应激活。
 ---
@@ -18,14 +18,14 @@ description: >
 
 ## 前提
 
-- `docs/plans/` 中存在 Superpowers plan 文件
+- `docs/plans/` 或 `docs/superpowers/plans/` 中存在 Superpowers plan 文件
 - `task.md` 无活跃任务
 - 用户已在 Superpowers 流程中审批计划（等价于 PACE C 阶段批准）
 
 ## 桥接步骤
 
 ### Step 1：读取计划
-Read `docs/plans/` 中最新的 plan 文件，提取任务列表和实施策略。
+Read `docs/plans/` 或 `docs/superpowers/plans/` 中最新的 plan 文件，提取任务列表和实施策略。
 
 ### Step 2：生成变更 ID
 - 读取 `implementation_plan.md` 当天已有 CHG 数量，生成 `CHG-YYYYMMDD-NN`（格式详见 `paceflow:artifact-management` 编号规范）
@@ -96,7 +96,7 @@ pace-bridge 自动在 task.md 写入 `<!-- APPROVED -->`，这是设计行为而
 
 ```
 === pace-bridge 转换摘要 ===
-源计划: docs/plans/YYYY-MM-DD-<feature>.md
+源计划: docs/plans/YYYY-MM-DD-<feature>.md 或 docs/superpowers/plans/YYYY-MM-DD-<feature>.md
 变更 ID: CHG-YYYYMMDD-NN
 任务范围: T-NNN ~ T-NNN（共 N 个）
 执行方式推荐: subagent-driven-development / executing-plans / dispatching-parallel-agents

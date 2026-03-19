@@ -1,6 +1,6 @@
-# PACEflow v5.1.3 功能与状态全景参考手册
+# PACEflow v5.1.4 功能与状态全景参考手册
 
-> **最后更新**：2026-03-14 | **版本**：v5.1.3
+> **最后更新**：2026-03-14 | **版本**：v5.1.4
 
 ---
 
@@ -44,6 +44,7 @@ paceflow/
 │   ├── post-tool-use.js                         #   PostToolUse：归档提醒+状态检查
 │   ├── session-start.js                         #   SessionStart：上下文注入
 │   ├── stop.js                                  #   Stop：未完成检查+防循环
+│   ├── stop-failure.js                          #   StopFailure：API 错误中断日志
 │   ├── todowrite-sync.js                        #   PreToolUse:TodoWrite：task.md 一致性
 │   ├── config-guard.js                          #   ConfigChange：配置保护
 │   ├── pre-compact.js                           #   PreCompact：Compact 快照
@@ -654,6 +655,7 @@ summary: "[一句话项目描述]"
 | PreCompact | （无 matcher） | pre-compact.js | Compact 前快照 |
 | ConfigChange | `project_settings\|local_settings` | config-guard.js | 配置变更保护 |
 | Stop | （无 matcher） | stop.js | 退出前检查 |
+| StopFailure | （无 matcher） | stop-failure.js | API 错误中断日志 |
 
 ### 10.2 CLAUDE.md 全局规则（G-1 ~ G-12）
 
@@ -835,5 +837,6 @@ function isTeammate() {
 | v5.0.0 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构 + 模板统一 + VAULT_PATH 参数化 + install --migrate） |
 | v5.0.1 | impl_plan 详情守门（[x] DENY 缺详情）+ native plan 桥接（pre-compact 捕获 + session-start 恢复）+ 流程保障增强 |
 | v5.1.1 | ticket24 审计修复 — 共享函数提取（DRY）+ 死代码清理 + Skill/模板/文档同步 + E2E 67 |
+| v5.1.4 | Superpowers v5.0.0+ 路径兼容（PLAN_DIRS 双路径扫描）+ StopFailure hook（logging-only）+ E2E 69 |
 | v5.1.0 | Skills 架构重设计（6→5 合并）+ 归档机制改造（移动标记）+ 统一 stdin 解析 + 注入量精简 -57% + 4 轮审计修复（ticket17/18/21+22/23）+ Corrections 双写 Eval + 版本自动化 |
 | v5.0.2 | 检查覆盖增强（findings 详情检查 + compact knowledge 注入 + 旧格式 DENY + 快照扩展）+ 指引体系增强 + 模板风格统一 + paceflow-audit 动态发现重构 |

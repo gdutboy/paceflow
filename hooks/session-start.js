@@ -342,7 +342,7 @@ if (taskFullCached) {
       if (unsyncedPlans.length > 0) {
         const hasActive = active && /- \[[ \/!]\]/.test(active);
         if (!hasActive) {
-          const fileList = unsyncedPlans.slice(0, 3).map(f => `docs/plans/${f}`).join(', ');
+          const fileList = unsyncedPlans.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
           process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
           process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
           process.stdout.write(`请在派 subagent 前执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。\n`);

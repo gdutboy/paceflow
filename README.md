@@ -47,7 +47,7 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 /plugin install paceflow@paceaitian-paceflow
 ```
 
-安装后 8 个 hook + 5 个 skill 自动注册，零配置。重启 Claude Code 生效。
+安装后 9 个 hook + 5 个 skill 自动注册，零配置。重启 Claude Code 生效。
 
 > **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault，artifact 将自动存储到 `$PACE_VAULT_PATH/projects/<项目名>/`，实现跨项目知识沉淀。
 
@@ -163,6 +163,7 @@ paceflow/
 │   ├── post-tool-use.js              #   写代码后：归档提醒 + 格式检查
 │   ├── session-start.js              #   会话启动：上下文注入
 │   ├── stop.js                       #   会话结束：完成度检查
+│   ├── stop-failure.js               #   API 错误中断：事件日志
 │   ├── todowrite-sync.js             #   任务列表：一致性校验
 │   ├── config-guard.js               #   配置保护
 │   ├── pre-compact.js                #   Compact 前快照
@@ -173,7 +174,7 @@ paceflow/
 │   ├── artifact-management/          #   Artifact + 变更管理规则
 │   ├── pace-knowledge/               #   Obsidian 知识库管理
 │   └── paceflow-audit/               #   5-Agent 并行审查
-└── tests/                            # 测试（73 单元 + 67 E2E + 21 安装）
+└── tests/                            # 测试（77 单元 + 69 E2E + 21 安装）
 ```
 
 ---
@@ -243,6 +244,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v5.1.4 | 2026-03-19 | Superpowers v5.0.0+ 路径兼容（双路径扫描）+ StopFailure hook（logging-only）+ E2E 69 |
 | v5.1.1 | 2026-03-14 | ticket24 审计修复 — 共享函数提取 + 死代码清理 + E2E 67 |
 | v5.1.0 | 2026-03-13 | Skills 架构重设计 + 归档机制改造 + stdin 统一解析 + 注入量精简 -57% + 4 轮审计修复 |
 | v5.0.2 | 2026-03-08 | 检查覆盖增强 + 指引体系增强 + 模板风格统一 + paceflow-audit 重构 |
@@ -262,4 +264,4 @@ paceflow/
 
 ---
 
-**版本**: v5.1.3 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v5.1.4 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
