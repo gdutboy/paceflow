@@ -168,16 +168,20 @@ function countCodeFiles(cwd) {
 // Superpowers 计划文件扫描目录（v4.x: docs/plans/, v5.0.0+: docs/superpowers/plans/）
 const PLAN_DIRS = ['docs/plans', 'docs/superpowers/plans'];
 
+// 模块级缓存，避免同一 hook 进程内重复 readdirSync（pre-tool-use 热路径最多 3 次调用）
+let _planFilesCache = { cwd: null, result: [] };
+
 /**
  * 列出所有 Superpowers 计划文件（按日期降序），扫描 PLAN_DIRS 双路径
  * @param {string} cwd - 项目根目录
- * @returns {{name: string, dir: string}[]} 文件信息列表（name=文件名, dir=所在相对目录路径）
+ * @returns {{name: string, dir: string}[]} 文件信息列表（name=文件名, dir=所在相对目录路径，同名文件旧路径优先）
  */
 function listPlanFiles(cwd) {
+  if (_planFilesCache.cwd === cwd) return _planFilesCache.result;
   const results = [];
   const seen = new Set();
   for (const rel of PLAN_DIRS) {
-    const dir = path.join(cwd, ...rel.split('/'));
+    const dir = path.join(cwd, rel);
     try {
       for (const f of fs.readdirSync(dir)) {
         if (/^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) && !seen.has(f)) {
@@ -187,7 +191,9 @@ function listPlanFiles(cwd) {
       }
     } catch(e) {}
   }
-  return results.sort((a, b) => b.name.localeCompare(a.name));
+  const sorted = results.sort((a, b) => b.name.localeCompare(a.name));
+  _planFilesCache = { cwd, result: sorted };
+  return sorted;
 }
 
 /** W-dry-3: 检测是否有 plan 文件（复用 listPlanFiles 消除双重 readdirSync） */
