@@ -239,28 +239,8 @@ paceflow/
 
 </details>
 
-<details>
-<summary><strong>版本历史</strong></summary>
-
-| 版本 | 日期 | 主要变更 |
-|------|------|----------|
-| v5.1.4 | 2026-03-19 | Superpowers v5.0.0+ 路径兼容（双路径扫描）+ StopFailure hook（logging-only）+ E2E 69 |
-| v5.1.1 | 2026-03-14 | ticket24 审计修复 — 共享函数提取 + 死代码清理 + E2E 67 |
-| v5.1.0 | 2026-03-13 | Skills 架构重设计 + 归档机制改造 + stdin 统一解析 + 注入量精简 -57% + 4 轮审计修复 |
-| v5.0.2 | 2026-03-08 | 检查覆盖增强 + 指引体系增强 + 模板风格统一 + paceflow-audit 重构 |
-| v5.0.1 | 2026-03-07 | impl_plan 详情守门 + native plan 桥接 + 流程保障增强 |
-| v5.0.0 | 2026-03-07 | Plugin 化迁移（.claude-plugin + hooks.json 自动注册 + skills 目录重构） |
-| v4.8.0 | 2026-03-01 | Artifact 存储迁移到 Obsidian Vault |
-| v4.7.0 | 2026-02-26 | Agent Teams 全量适配（isTeammate() + 降级策略） |
-| v4.6.0 | 2026-02-25 | ConfigChange + PreCompact hook（6→8 个脚本）|
-| v4.5.0 | 2026-02-25 | Compact 快照 + Stop stdin 交叉验证 |
-| v4.4.1 | 2026-02-25 | Obsidian 知识中枢集成 |
-| v4.3.0 | 2026-02-14 | PACE + Superpowers 集成（多信号激活 + 三级触发）|
-| v4.0.0 | 2026-02-13 | 三层架构补全 |
-| v3.0.0 | 2026-02-12 | Node.js 迁移 |
-| v1.0.0 | 2026-02-11 | 初始创建 |
-
-</details>
+## 友链
+在此特别感谢linuxdo，学AI上[Linux.do](https://linux.do)
 
 ---
 
