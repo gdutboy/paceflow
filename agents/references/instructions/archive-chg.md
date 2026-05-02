@@ -22,13 +22,14 @@
 
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
-   - Edit 改 `status: in-progress` → `status: completed`
-   - 添加 `completed-date: <ISO 8601 datetime>`
-2. **task.md 索引行归档**：
+   - Edit 改 `status` → `archived`
+   - 添加 `archived-date: <ISO 8601 datetime>`
+   - 若 `completed-date` 仍为 null（兜底场景）→ 填同一 ISO 8601 datetime
+2. **task.md 索引行归档**（按"ARCHIVE 内容移动"两步 Edit）：
    - Read task.md
    - 找到 `- [/] [[chg-xxx]] ...` 行
-   - 改 `[/]` → `[x]`
-   - 移到 ARCHIVE 下方（双步骤标记移动，见下）
+   - Edit 1：从活跃区删除该行
+   - Edit 2：在 `<!-- ARCHIVE -->` 下方插入 `- [x] [[chg-xxx]] ...`（状态字符改 `[x]`，其余原样保留）
 3. **implementation_plan.md 索引行归档**：同 task.md
 4. **walkthrough.md 添加完成索引行**：
    - Read walkthrough.md
@@ -40,51 +41,56 @@
 2. task.md / implementation_plan.md 索引行 `[/]→[x]`
 3. walkthrough.md 添加完成索引行
 
-## ARCHIVE 双步骤标记移动（详解）
+## ARCHIVE 内容移动（详解）
 
-归档 = **移动标记而非内容**：
+归档 = **移动行内容到 ARCHIVE 下方，标记位置不变**。
 
 ```
 当前文件状态：
   [活跃区内容]
-  - [/] [[chg-xxx]] <- 待归档行
-  ...
-  [其他活跃内容]
-  
-  <!-- ARCHIVE -->         <- 当前 ARCHIVE 标记位置
-  
+  - [/] [[chg-A]] CHG A    <- 待归档行
+  - [ ] [[chg-B]] CHG B    <- 仍活跃（不动）
+
+  <!-- ARCHIVE -->         <- 标记位置（不动）
+
   [归档区内容]
 ```
 
-Step 1：在待归档内容**上方**插入新 `<!-- ARCHIVE -->`（同时把 [/] 改 [x]）：
+**Step 1**：从活跃区**删除**待归档行（Edit 1）：
 
 ```
   [活跃区内容]
-  
-  <!-- ARCHIVE -->         <- 新插入的标记
-  
-  - [x] [[chg-xxx]] <- 已改状态的行
-  ...
-  [原本是活跃但现在归档的内容]
-  
-  <!-- ARCHIVE -->         <- 旧标记（待删除）
-  
-  [更老的归档区内容]
+  - [ ] [[chg-B]] CHG B    <- 保留，未受影响
+
+  <!-- ARCHIVE -->
+
+  [归档区内容]
 ```
 
-Step 2：删除旧 `<!-- ARCHIVE -->`：
+**Step 2**：在 ARCHIVE 下方**插入**已改 `[x]` 的行（Edit 2，紧跟标记，最近归档置顶）：
 
 ```
   [活跃区内容]
-  
-  <!-- ARCHIVE -->         <- 唯一标记
-  
-  - [x] [[chg-xxx]]
-  ...
-  [所有归档内容]
+  - [ ] [[chg-B]] CHG B
+
+  <!-- ARCHIVE -->
+
+  - [x] [[chg-A]] CHG A    <- 新归档（最上）
+  [其他归档区内容]
 ```
 
-净效果：标记物理上从旧位置移到新位置，归档行无需移动文件位置。
+### Edit 工具实现
+
+**Edit 1**（活跃区删除原行）：
+- `old_string`：完整索引行（含末尾换行）
+  例：`- [/] [[chg-A]] <title> #change [tasks:: T-001~T-003]\n`
+- `new_string`：空字符串
+
+**Edit 2**（归档区紧贴标记下方插入）：
+- `old_string`：`<!-- ARCHIVE -->\n`
+- `new_string`：`<!-- ARCHIVE -->\n\n- [x] [[chg-A]] <title> #change [tasks:: T-001~T-003]\n`
+
+注意：状态字符必须从 `[/]`（或 `[ ]`/`[!]`）改为 `[x]`，其余 wikilink / 标题 / 元数据原样保留。
 
 ## 边界
 

@@ -250,7 +250,7 @@ schema-version: "6.0"
 ## 6. ARCHIVE 标记规则
 
 1. 标记必须独占一行：`<!-- ARCHIVE -->`
-2. 归档 = 移动标记而非内容（Step 1 在待归档内容上方插入新 ARCHIVE，Step 2 删除旧 ARCHIVE）
+2. 归档 = 移动行内容到 ARCHIVE 下方，标记位置不变（详见 `instructions/archive-chg.md` "ARCHIVE 内容移动"）
 3. 一个文件只能有一个 ARCHIVE 标记
 4. ARCHIVE 之上是活跃区，之下是归档区
 

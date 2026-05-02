@@ -37,6 +37,11 @@
 - v6 子流程：
   1. Read changes/chg-xxx.md 找到 `- [<old>] T-NNN`
   2. Edit 改 `<old>` 为 `<new-status>`（参考 spec §4 状态映射）
+  3. **frontmatter 联动**（每次 update-status 后必执行）：
+     - Read `## 任务清单` 段，统计任务状态
+     - 全部为 `[x]` 或 `[-]` → Edit frontmatter `status` → `completed`，并添加 `completed-date: <ISO 8601 datetime>`
+     - 仍有 `[/]` 但 frontmatter `status: planned` → Edit frontmatter `status` → `in-progress`
+     - 否则 frontmatter 不变
 - v5 子流程：直接在主 artifact 详情段落对应行 Edit
 
 ## section 含义
