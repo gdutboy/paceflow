@@ -1,0 +1,40 @@
+id: TC-A5
+phase: A
+indication: smoke-test-record-correction
+description: "验证 record-correction 创建详情文件 + corrections.md 索引（project-scope: project-only 路径，无 knowledge-link）"
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-correction
+  fields:
+    trigger-quote: "测试用例触发的纠正引用"
+    wrong-behavior: 错误地把 update-chg 的 status 联动当成可选步骤跳过未实现
+    correct-behavior: 正确做法是 update-status 子流程必须执行 frontmatter 联动检测全完成或部分完成
+    trigger-scenario: Phase A 测试 TC-A5 派 agent 跑 record-correction 验证字段处理
+    root-cause: 测试用例与真实场景脱节导致 agent 把"测试 stub"当成 production data
+    project-scope: project-only
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/corrections/correction-{ISO_DATE}-01-*.md"       # slug 由 agent 派生
+  files_modified:
+    - corrections.md
+  validations:
+    frontmatter_schema: pass
+    correction_id_pattern: "CORRECTION-{ISO_DATE}-01"
+    knowledge_link_null: true                  # project-scope 路径下 knowledge-link 应为 null
+    project_scope_value: project-only
+    title_derived_from_wrong_behavior: true    # 派生 title 含核心语义
+    wikilink_integrity: pass
+  max_tokens: 5000
+  max_duration_ms: 25000
+  filename_match: lenient
+
+teardown:
+  cleanup: true

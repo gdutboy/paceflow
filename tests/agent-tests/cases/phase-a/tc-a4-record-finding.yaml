@@ -1,0 +1,51 @@
+id: TC-A4
+phase: A
+indication: smoke-test-record-finding
+description: 验证 record-finding 创建详情文件 + findings.md 摘要索引行（含 P1 impact + 200 字以内 summary）
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-finding
+  fields:
+    title: TC-A4 Phase A 测试调研
+    summary: Phase A 第四个测试用例，验证 record-finding 在空 v6 项目下能创建详情 + 索引
+    type: research
+    impact: P1
+    body: |
+      # 背景
+
+      Phase A 测试用例 TC-A4，验证 record-finding 指令的 happy path。
+
+      # 发现
+
+      - 详情文件应在 changes/findings/ 子目录（懒创建）
+      - 索引行写入 findings.md 的"摘要索引"段
+      - frontmatter `schema-version: "6.0"` + `status: open` 默认值
+
+      # 调研来源
+
+      Phase A 测试策略文档 §3.2
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/findings/finding-{ISO_DATE}-tc-a4-phase-a.md"   # slug 由 agent 派生
+  files_modified:
+    - findings.md
+  validations:
+    frontmatter_schema: pass
+    finding_id_pattern: "FINDING-{ISO_DATE}-"
+    summary_length_le_200: true
+    impact_in_index_row: P1
+    wikilink_integrity: pass
+  max_tokens: 6000
+  max_duration_ms: 25000
+  filename_match: lenient                      # slug 由 agent 派生，允许包含 "tc-a4" / "phase-a" 关键词
+
+teardown:
+  cleanup: true

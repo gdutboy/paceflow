@@ -1,0 +1,91 @@
+id: TC-A3
+phase: A
+indication: smoke-test-archive-chg
+description: 验证 archive-chg 在 in-progress + 全部任务完成 状态下成功归档（frontmatter status → archived，task / impl_plan 索引行用 ARCHIVE 内容移动算法迁到 ARCHIVE 下方，walkthrough 追加索引）
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: in-progress
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: null
+        archived-date: null
+        ---
+
+        # TC-A3 测试归档 CHG
+
+        ## 任务清单
+
+        - [x] T-901 测试任务一
+        - [x] T-902 测试任务二
+
+        <!-- APPROVED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试 archive-chg
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+        | {ISO_DATE} | 测试任务全部完成 |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [/] [[chg-{date}-01]] TC-A3 测试归档 CHG #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+        - [/] [[chg-{date}-01]] TC-A3 测试归档 CHG #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: archive-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    walkthrough-summary: TC-A3 测试归档完成（T-901-T-902）
+
+expected:
+  status: SUCCESS
+  files_modified:
+    - "changes/chg-{date}-01.md"
+    - task.md
+    - implementation_plan.md
+    - walkthrough.md
+  validations:
+    frontmatter_status: archived
+    archived_date_set: true
+    task_md_index_below_archive: true        # 索引行迁到 ARCHIVE 下方
+    impl_plan_index_below_archive: true
+    walkthrough_row_added: true
+  max_tokens: 18000                           # archive 涉及 4 文件，预算稍宽
+  max_duration_ms: 45000
+
+teardown:
+  cleanup: true

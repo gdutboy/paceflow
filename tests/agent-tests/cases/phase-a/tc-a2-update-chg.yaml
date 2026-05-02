@@ -1,0 +1,88 @@
+id: TC-A2
+phase: A
+indication: smoke-test-update-chg-status
+description: 验证 update-chg 的 update-status 子流程，标记 T-901 → [x]，剩 T-902 仍未完成 → frontmatter status 应从 planned 自动联动到 in-progress
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: planned
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: null
+        archived-date: null
+        ---
+
+        # TC-A2 测试 CHG
+
+        ## 任务清单
+
+        - [ ] T-901 测试任务一
+        - [ ] T-902 测试任务二
+
+        <!-- APPROVED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试 update-chg
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [ ] [[chg-{date}-01]] TC-A2 测试 CHG #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+        - [ ] [[chg-{date}-01]] TC-A2 测试 CHG #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: update-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    section: tasks
+    action: update-status
+    task-id: T-901
+    new-status: x
+
+expected:
+  status: SUCCESS
+  files_modified:
+    - "changes/chg-{date}-01.md"
+  validations:
+    task_marked: { task-id: T-901, expected_status: x }
+    frontmatter_status: in-progress       # planned → in-progress（部分完成自动联动）
+    completed_date_set: false
+  max_tokens: 8000
+  max_duration_ms: 30000
+
+teardown:
+  cleanup: true

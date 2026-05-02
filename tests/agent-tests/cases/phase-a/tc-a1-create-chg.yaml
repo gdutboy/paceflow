@@ -1,0 +1,40 @@
+id: TC-A1
+phase: A
+indication: smoke-test-create-chg
+description: 验证 create-chg 在空 v6 项目下创建一个 CHG，正确生成详情文件 + 主索引行（task / impl_plan）
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: create-chg
+  fields:
+    title: TC-A1 测试 CHG
+    tasks:
+      - "T-901: 测试任务一"
+      - "T-902: 测试任务二"
+    type: change
+    background: 用于 Phase A smoke test，不进入真实流程
+    scope: 仅本测试用例
+    technical-decision: 无（测试用）
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/chg-{date}-01.md"
+  files_modified:
+    - task.md
+    - implementation_plan.md
+  validations:
+    frontmatter_schema: pass
+    wikilink_integrity: pass
+    cross_index_consistency: pass
+    chg_id_pattern: "CHG-{DATE_UPPER}-01"
+  max_tokens: 8000
+  max_duration_ms: 30000
+
+teardown:
+  cleanup: true
