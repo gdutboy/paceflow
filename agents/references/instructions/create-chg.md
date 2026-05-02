@@ -13,12 +13,22 @@
 
 ## 操作步骤
 
-1. 计算 chg-id：基于今日 + 当日序号（扫 `changes/` 同日 `chg-*` 或 `hotfix-*` 文件最大序号 +1）
+1. 计算 chg-id（详见下方"CHG-ID 推算"段）
 2. 生成 slug（参考 system prompt slug 规则）
 3. `mkdir -p changes/`
 4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
 5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
 6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
+
+## CHG-ID 推算（含冲突检测）
+
+并发派多 agent 时可能撞 nn，需冲突检测（Claude Code Write 工具是覆盖语义，无 exclusive mode）：
+
+1. `Bash: ls $ARTIFACT_DIR/changes/chg-YYYYMMDD-*.md $ARTIFACT_DIR/changes/hotfix-YYYYMMDD-*.md 2>/dev/null` 列出当日已有 ID
+2. 提取最大 nn → next_nn = max + 1（无文件则 01）
+3. **冲突检测**：`Bash: [ -e $ARTIFACT_DIR/changes/chg-YYYYMMDD-{next_nn}.md ] && echo CONFLICT || echo OK`
+4. 如 CONFLICT → next_nn += 1，回到步骤 3 重试（最多 3 次）
+5. 仍 CONFLICT → 报告 `file-conflict`，主 session 重新派遣
 
 ## 详情文件结构
 

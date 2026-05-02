@@ -65,10 +65,14 @@ version: "4.0"
 
 ### 大文件 Read 策略
 
-大文件（如 findings.md 多次累积后 27K+ tokens 触发 Read 限制）：
-1. 先 `Bash: grep -n "^<!-- ARCHIVE -->$\|^## " <file>` 定位关键标记
-2. `Read offset=<行号> limit=<合理范围>` 按需读取
-3. 仅读修改所需上下文（前后 5-10 行）
+大型 artifact（任一文件 >27K tokens 触发 Read 限制；实测 task.md / implementation_plan.md / walkthrough.md / findings.md 都可能超）：
+
+1. 先 `Bash: grep -n "^<!-- ARCHIVE -->$\|^## " <file>` 定位 ARCHIVE 标记 + 段标题
+2. **优先只读活跃区**（ARCHIVE 上方）：`Read offset=1 limit=<ARCHIVE 行号>`
+3. 如需读归档区：`Read offset=<目标行号> limit=<合理范围>`
+4. 仅读修改所需上下文（前后 5-10 行）
+
+注：B 方案归档后活跃区 ≤ 10 行，几乎不触发限制；归档区操作仍需此策略。
 
 ## 项目检测
 
