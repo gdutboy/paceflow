@@ -18,7 +18,7 @@
 4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
 
-## 操作步骤（v6）
+## 操作步骤
 
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
@@ -34,12 +34,6 @@
 4. **walkthrough.md 添加完成索引行**：
    - Read walkthrough.md
    - 在"## 最近工作"表格活跃区追加：`| <YYYY-MM-DD> | [[chg-xxx]] <walkthrough-summary> | <CHG-ID> |`
-
-## 操作步骤（v5）
-
-1. 移动详情段落到 ARCHIVE 下方（双步骤 ARCHIVE 标记移动）
-2. task.md / implementation_plan.md 索引行 `[/]→[x]`
-3. walkthrough.md 添加完成索引行
 
 ## ARCHIVE 内容移动（详解）
 

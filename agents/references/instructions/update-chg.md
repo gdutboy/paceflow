@@ -15,26 +15,21 @@
 
 ### 通用前置
 
-1. 检测项目版本（v5 / v6）
-2. 解析 target → 路径：
-   - v6: `changes/chg-yyyymmdd-nn.md` 或 `changes/hotfix-yyyymmdd-nn.md`
-   - v5: 主 artifact 详情段落（task.md / implementation_plan.md / walkthrough.md）
-3. 文件不存在 → 报告 `target-not-found`
+1. 解析 target → 路径：`changes/chg-yyyymmdd-nn.md` 或 `changes/hotfix-yyyymmdd-nn.md`
+2. 文件不存在 → 报告 `target-not-found`
 
 ### action=append
 
-- v6: Read + Edit changes/chg-xxx.md 对应 section 末尾追加 content
-- v5: Read + Edit 主 artifact 详情段落对应位置追加
+Read + Edit changes/chg-xxx.md 对应 section 末尾追加 content
 
 ### action=replace
 
-- v6: Read + Edit 整个 section 替换为 content
-- v5: 同上
+Read + Edit 整个 section 替换为 content
 
 ### action=update-status
 
 - 仅适用于 `section=tasks`
-- v6 子流程：
+- 子流程：
   1. Read changes/chg-xxx.md 找到 `- [<old>] T-NNN`
   2. Edit 改 `<old>` 为 `<new-status>`（参考 spec §4 状态映射）
   3. **frontmatter 联动**（每次 update-status 后必执行）：
@@ -42,16 +37,15 @@
      - 全部为 `[x]` 或 `[-]` → Edit frontmatter `status` → `completed`，并添加 `completed-date: <ISO 8601 datetime>`
      - 仍有 `[/]` 但 frontmatter `status: planned` → Edit frontmatter `status` → `in-progress`
      - 否则 frontmatter 不变
-- v5 子流程：直接在主 artifact 详情段落对应行 Edit
 
 ## section 含义
 
-| section | 对应文件位置（v6） | 对应文件位置（v5） |
-|---------|------------------|-----------------|
-| tasks | changes/chg-xxx.md `## 任务清单` | task.md / implementation_plan.md 详情段 |
-| implementation | changes/chg-xxx.md `## 实施详情` | implementation_plan.md 详情段 |
-| work-record | changes/chg-xxx.md `## 工作记录` | walkthrough.md 详细记录 |
-| research | changes/chg-xxx.md `## 关联调研` | findings.md 详情段 |
+| section | 对应文件位置 |
+|---------|------------|
+| tasks | changes/chg-xxx.md `## 任务清单` |
+| implementation | changes/chg-xxx.md `## 实施详情` |
+| work-record | changes/chg-xxx.md `## 工作记录` |
+| research | changes/chg-xxx.md `## 关联调研` |
 
 ## 边界
 

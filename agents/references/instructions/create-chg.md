@@ -15,13 +15,12 @@
 
 1. 计算 chg-id：基于今日 + 当日序号（扫 `changes/` 同日 `chg-*` 或 `hotfix-*` 文件最大序号 +1）
 2. 生成 slug（参考 system prompt slug 规则）
-3. v6: `mkdir -p changes/`
-4. v6: Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
-5. v6: Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
-6. v6: Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
-7. v5: Edit task.md / implementation_plan.md 添加索引行 + 详情段落（详情含 4 段）
+3. `mkdir -p changes/`
+4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
+5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
+6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
 
-## 详情文件结构（v6）
+## 详情文件结构
 
 ```markdown
 ---
@@ -58,7 +57,7 @@
 - [[<related-finding>]] <关联说明>（如有）
 ```
 
-## 索引行（v6）
+## 索引行
 
 ```
 - [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN]

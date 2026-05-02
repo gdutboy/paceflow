@@ -46,16 +46,12 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 2. 归一化 knowledge-link / project-scope（参考上方规则）
 3. 生成 correction-id（CORRECTION-YYYY-MM-DD-NN，扫 `changes/corrections/` 同日序号 +1）
 4. 生成 slug（基于派生的 title）
-5. 检测项目版本（v5 / v6）
-6. v6 子流程：
-   1. `mkdir -p changes/corrections/`
-   2. Write `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`（详情文件结构见下）
-   3. corrections.md 不存在 → Write 新建（用 spec §5.6.5 模板）
-   4. Read + Edit `corrections.md` 添加索引行（spec §5.5 模板）
-7. v5 子流程：
-   - Read + Edit `findings.md` "## Corrections 记录" 区追加 correction 段落
+5. `mkdir -p changes/corrections/`
+6. Write `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`（详情文件结构见下）
+7. corrections.md 不存在 → Write 新建（用 spec §5.6.5 模板）
+8. Read + Edit `corrections.md` 添加索引行（spec §5.5 模板）
 
-## 详情文件结构（v6）
+## 详情文件结构
 
 ```markdown
 ---
@@ -86,7 +82,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 - 或：仅本项目（project-only）
 ```
 
-## 索引行（v6）
+## 索引行
 
 ```
 - [[correction-yyyy-mm-dd-nn-slug]] <派生的 title> [date:: YYYY-MM-DD] [knowledge:: [[note]] | project-only]

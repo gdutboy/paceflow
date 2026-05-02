@@ -18,15 +18,11 @@
 ## 操作步骤
 
 1. 生成 finding-id（FINDING-YYYY-MM-DD-slug，slug 参考 spec slug 规则）
-2. 检测项目版本（v5 / v6）
-3. v6: `mkdir -p changes/findings/`
-4. v6: Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下）
-5. v6: Read + Edit `findings.md` 摘要索引添加索引行（spec §5.4 模板）
-6. v5: Read + Edit `findings.md`：
-   - 摘要索引追加索引行
-   - `## 未解决问题` 区追加详情段落
+2. `mkdir -p changes/findings/`
+3. Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下）
+4. Read + Edit `findings.md` 摘要索引添加索引行（spec §5.4 模板）
 
-## 详情文件结构（v6）
+## 详情文件结构
 
 ```markdown
 ---
@@ -38,7 +34,7 @@
 [body 内容，按主 session 提供]
 ```
 
-## 索引行（v6）
+## 索引行
 
 ```
 - [<checkbox>] [[finding-yyyy-mm-dd-slug|<title>]] — <summary> #finding [date:: YYYY-MM-DD] [impact:: P<N>] [<extra-meta>]

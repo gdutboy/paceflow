@@ -1,7 +1,7 @@
 # PACEflow Artifact Writer 规范参考
 
 > **关联 agent**：`paceflow-artifact-writer.md`（同级目录上层）
-> **用途**：当 agent 执行任务需要详细 schema / 索引行模板 / 兼容规则时按需 Read 此文件
+> **用途**：当 agent 执行任务需要详细 schema / 索引行模板时按需 Read 此文件
 > **不在 system prompt 中重复**：保持 agent prompt 精简（~150 行）
 
 ---
@@ -256,19 +256,7 @@ schema-version: "6.0"
 
 ---
 
-## 7. v5.x 兼容规则（旧项目，无 changes/ 目录）
-
-不创建 `changes/` 目录。索引和详情在同一文件：
-
-- 索引行格式（无 wikilink）：`- [状态] CHG-XXX 标题 #change [tasks::]`
-- 详情段落：`### CHG-XXX 标题` + 段落（4 段：背景/范围/技术决策/任务分解）
-- 归档移动详情段落到 ARCHIVE 下方（双步骤 ARCHIVE 标记移动）
-
-详细 v5 格式参考主 session 的 `skills/artifact-management/references/format-reference.md`。
-
----
-
-## 8. 5 类指令详细规范
+## 7. 5 类指令详细规范
 
 每类指令的详细输入字段、操作步骤、详情文件结构、索引行模板、边界处理已外移到独立文件。**agent 在执行某类指令时按需 Read 对应文件**（一次 Read 后整会话复用）。
 
@@ -281,7 +269,7 @@ schema-version: "6.0"
 | record-correction | `instructions/record-correction.md` |
 
 **为什么独立**：
-- 单条指令规范 ~50-80 行，agent 仅 Read 当前任务所需的那条（vs 整 §8 的 174 行）
+- 单条指令规范 ~50-80 行，agent 仅 Read 当前任务所需的那条（vs 整段的 174 行）
 - prompt cache 粒度更细：指令规范变更不影响其他指令的 cache
 - 单指令测试更聚焦
 - 5 个文件平均 ~2KB，单次 Read 仅 ~600 tokens
@@ -290,7 +278,7 @@ schema-version: "6.0"
 - 解析主 session 指令后 → 识别指令类型 → Read 对应 instructions/*.md
 - 已 Read 当前指令文件 → 整会话不再重复 Read
 
-## 9. 验证规则
+## 8. 验证规则
 
 每次操作完成后必须验证：
 
