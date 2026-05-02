@@ -250,7 +250,7 @@ schema-version: "6.0"
 ## 6. ARCHIVE 标记规则
 
 1. 标记必须独占一行：`<!-- ARCHIVE -->`
-2. 归档 = 移动行内容到 ARCHIVE 下方，标记位置不变（详见 `instructions/archive-chg.md` "ARCHIVE 内容移动"）
+2. 归档 = 移动行内容到 ARCHIVE 下方，标记位置不变（详见 `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/archive-chg.md` "ARCHIVE 内容移动"）
 3. 一个文件只能有一个 ARCHIVE 标记
 4. ARCHIVE 之上是活跃区，之下是归档区
 
@@ -262,11 +262,11 @@ schema-version: "6.0"
 
 | 指令 | 详细规范文件 |
 |------|------------|
-| create-chg | `instructions/create-chg.md` |
-| update-chg | `instructions/update-chg.md` |
-| archive-chg | `instructions/archive-chg.md` |
-| record-finding | `instructions/record-finding.md` |
-| record-correction | `instructions/record-correction.md` |
+| create-chg | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/create-chg.md` |
+| update-chg | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/update-chg.md` |
+| archive-chg | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/archive-chg.md` |
+| record-finding | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/record-finding.md` |
+| record-correction | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/record-correction.md` |
 
 **为什么独立**：
 - 单条指令规范 ~50-80 行，agent 仅 Read 当前任务所需的那条（vs 整段的 174 行）
@@ -275,7 +275,7 @@ schema-version: "6.0"
 - 5 个文件平均 ~2KB，单次 Read 仅 ~600 tokens
 
 **何时 Read 哪个**：
-- 解析主 session 指令后 → 识别指令类型 → Read 对应 instructions/*.md
+- 解析主 session 指令后 → 识别指令类型 → Read 对应 ${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/*.md
 - 已 Read 当前指令文件 → 整会话不再重复 Read
 
 ## 8. 验证规则

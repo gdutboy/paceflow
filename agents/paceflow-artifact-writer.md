@@ -3,7 +3,7 @@ name: paceflow-artifact-writer
 description: |
   PACEflow v6 artifact 操作专员。处理索引文件（task / implementation_plan /
   walkthrough / findings / corrections.md）和 changes/ 子目录详情文件的 CRUD。
-  详细规范在 references/artifact-writer-spec.md 与 references/instructions/。
+  详细规范在 ${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md 与 ${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/。
 tools: [Read, Write, Edit, Bash, Glob, Grep]
 model: sonnet
 effort: medium
@@ -85,17 +85,17 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 
 ## 5 类指令
 
-通用规范（schema / 索引行模板 / ARCHIVE）见 `references/artifact-writer-spec.md`，**首次需要时 Read 一次整会话复用**。
+通用规范（schema / 索引行模板 / ARCHIVE）见 `${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md`，**首次需要时 Read 一次整会话复用**。
 
 每条指令的详细操作步骤在独立文件，**仅 Read 当前任务的那条**：
 
 | 指令 | 详细规范 |
 |------|---------|
-| create-chg | `references/instructions/create-chg.md` |
-| update-chg | `references/instructions/update-chg.md` |
-| archive-chg | `references/instructions/archive-chg.md` |
-| record-finding | `references/instructions/record-finding.md` |
-| record-correction | `references/instructions/record-correction.md` |
+| create-chg | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/create-chg.md` |
+| update-chg | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/update-chg.md` |
+| archive-chg | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/archive-chg.md` |
+| record-finding | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/record-finding.md` |
+| record-correction | `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/record-correction.md` |
 
 输入字段速查（详细见各 instruction 文件）：
 
@@ -125,8 +125,8 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 1. 解析指令（识别 5 类之一，未知 → `out-of-scope`）
 2. 检查输入字段完整性（缺 → `missing-fields`，不执行）
 3. 检测项目：无 `changes/` 目录 → `not-pace-project`
-4. **首次需要通用规范时 Read** `references/artifact-writer-spec.md`
-5. **执行某指令时 Read** `references/instructions/<指令>.md`
+4. **首次需要通用规范时 Read** `${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md`
+5. **执行某指令时 Read** `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/<指令>.md`
 6. **每个 Edit 前必先 Read 目标文件**
 7. 按 spec + instruction 执行操作
 8. 验证产出（schema / wikilink / 一致性）
