@@ -1,0 +1,32 @@
+id: TC-B1
+phase: B
+indication: error-missing-title
+description: create-chg 缺 title 必填字段，期望 missing-fields
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: create-chg
+  fields:
+    # 故意省略 title 必填字段
+    tasks:
+      - "T-901: 测试任务一"
+    type: change
+    background: "Phase B 测试 missing-fields"
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "missing-fields|title"
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  files_created: []
+  files_modified: []
+  max_tokens: 35000
+  max_duration_ms: 60000
+  fixture_unchanged: true
+
+teardown:
+  cleanup: true

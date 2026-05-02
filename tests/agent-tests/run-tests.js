@@ -108,6 +108,85 @@ function cmdTeardown(yamlPath) {
   console.log(`Cleaned: ${targetDir}`);
 }
 
+const RESULTS_ROOT = path.join(ROOT, 'results');
+
+function cmdVerifyMulti(yamlPath, ...reportPaths) {
+  if (!yamlPath || reportPaths.length === 0) {
+    console.error('Usage: node run-tests.js verify-multi <yaml> <report1> [report2 ...]');
+    process.exit(2);
+  }
+  const yamlAbs = path.isAbsolute(yamlPath) ? yamlPath : path.join(ROOT, yamlPath);
+  const tc = runner.loadYaml(yamlAbs);
+  const targetDir = (tc.setup.variables && tc.setup.variables.project_path)
+    || `/tmp/test-vault/${tc.setup.fixture}`;
+  const setupHelper = require('./helpers/fixture-setup');
+  const variables = setupHelper.buildVariables();
+  for (const [k, v] of Object.entries(tc.setup.variables || {})) {
+    variables[k] = typeof v === 'string' ? setupHelper.renderVariables(v, variables) : v;
+  }
+
+  const verifyHelper = require('./helpers/verify-output');
+  const reports = reportPaths.map((p) => JSON.parse(fs.readFileSync(p, 'utf8')));
+  const results = reports.map((r) => verifyHelper.verify(tc, targetDir, variables, r));
+
+  // 聚合 per validation
+  const aggregated = {};
+  for (const result of results) {
+    for (const v of result.validations) {
+      if (!aggregated[v.name]) aggregated[v.name] = { passed: 0, failed: 0, samples: [] };
+      if (v.ok) aggregated[v.name].passed += 1;
+      else {
+        aggregated[v.name].failed += 1;
+        const sample = v.actual !== undefined ? `actual=${JSON.stringify(v.actual)}` : (v.reason || '');
+        if (aggregated[v.name].samples.length < 3 && sample) aggregated[v.name].samples.push(sample);
+      }
+    }
+  }
+
+  const overallPassed = results.filter((r) => r.passed).length;
+  const N = results.length;
+
+  console.log(`\n=== Variance for ${tc.id} (${N} runs) ===`);
+  console.log(`Overall PASS: ${overallPassed}/${N} (${Math.round(overallPassed / N * 100)}%)`);
+  console.log(`\nPer-validation PASS rate:`);
+  for (const [name, stats] of Object.entries(aggregated)) {
+    const total = stats.passed + stats.failed;
+    const rate = total === 0 ? '-' : `${stats.passed}/${total}`;
+    const samples = stats.samples.length > 0 ? `  ❌ 样本: [${stats.samples.join(' | ')}]` : '';
+    const flag = total === stats.passed ? '✓' : (stats.passed === 0 ? '✗' : '⚠');
+    console.log(`  ${flag} ${rate} ${name}${samples}`);
+  }
+
+  // tokens / tool_uses / duration variance
+  const tokens = reports.map((r) => r.tokens || 0);
+  const toolUses = reports.map((r) => r.tool_uses || 0);
+  const durations = reports.map((r) => r.duration_ms || 0);
+  console.log(`\nResource variance (min / mean / max):`);
+  console.log(`  tokens:    ${Math.min(...tokens)} / ${Math.round(tokens.reduce((a, b) => a + b, 0) / N)} / ${Math.max(...tokens)}`);
+  console.log(`  tool_uses: ${Math.min(...toolUses)} / ${Math.round(toolUses.reduce((a, b) => a + b, 0) / N)} / ${Math.max(...toolUses)}`);
+  console.log(`  duration:  ${Math.min(...durations)}ms / ${Math.round(durations.reduce((a, b) => a + b, 0) / N)}ms / ${Math.max(...durations)}ms`);
+
+  // 写聚合报告
+  const dateStr = variables.ISO_DATE;
+  const resultsDir = path.join(RESULTS_ROOT, dateStr);
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const reportPath = path.join(resultsDir, `${tc.id.toLowerCase()}.variance.json`);
+  fs.writeFileSync(reportPath, JSON.stringify({
+    id: tc.id,
+    runs: N,
+    overall_pass_rate: overallPassed / N,
+    per_validation: aggregated,
+    resource_variance: {
+      tokens: { min: Math.min(...tokens), mean: Math.round(tokens.reduce((a, b) => a + b, 0) / N), max: Math.max(...tokens) },
+      tool_uses: { min: Math.min(...toolUses), mean: Math.round(toolUses.reduce((a, b) => a + b, 0) / N), max: Math.max(...toolUses) },
+      duration_ms: { min: Math.min(...durations), mean: Math.round(durations.reduce((a, b) => a + b, 0) / N), max: Math.max(...durations) },
+    },
+    generated_at: new Date().toISOString(),
+  }, null, 2), 'utf8');
+  console.log(`\n聚合报告: ${path.relative(ROOT, reportPath)}`);
+  process.exit(overallPassed === N ? 0 : 1);
+}
+
 function cmdDummy() {
   // 自测：用 TC-A1 + mock agent 报告跑通 setup → verify → report → teardown
   const yamlPath = path.join(CASES_DIR, 'phase-a', 'tc-a1-create-chg.yaml');
@@ -191,6 +270,7 @@ function main() {
     case 'list': return cmdList(args[0]);
     case 'prepare': return cmdPrepare(args[0]);
     case 'verify': return cmdVerify(args[0], args[1]);
+    case 'verify-multi': return cmdVerifyMulti(args[0], ...args.slice(1));
     case 'teardown': return cmdTeardown(args[0]);
     case 'dummy': return cmdDummy();
     default:
@@ -198,6 +278,7 @@ function main() {
       console.error('  node run-tests.js list [phase]');
       console.error('  node run-tests.js prepare <yaml-path>');
       console.error('  node run-tests.js verify <yaml-path> [report.json]');
+      console.error('  node run-tests.js verify-multi <yaml-path> <report1.json> <report2.json> [...]');
       console.error('  node run-tests.js teardown <yaml-path>');
       console.error('  node run-tests.js dummy');
       process.exit(2);

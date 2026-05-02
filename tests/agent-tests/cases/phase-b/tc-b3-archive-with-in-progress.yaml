@@ -1,0 +1,77 @@
+id: TC-B3
+phase: B
+indication: error-archive-with-in-progress-task
+description: archive-chg 任务列表含 [/] 进行中任务，期望前置检查 format-violation
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: in-progress
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: null
+        archived-date: null
+        ---
+
+        # TC-B3 测试 CHG（含进行中任务）
+
+        ## 任务清单
+
+        - [x] T-901 已完成任务
+        - [/] T-902 进行中任务（应阻止归档）
+
+        <!-- APPROVED -->
+
+        ## 实施详情
+
+        **背景（Why）**：Phase B 测试 archive 前置检查
+    - path: "task.md"
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [/] [[chg-{date}-01]] TC-B3 测试 CHG #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+    - path: "implementation_plan.md"
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+        - [/] [[chg-{date}-01]] TC-B3 测试 CHG #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: archive-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    walkthrough-summary: "TC-B3 测试归档拒绝（含进行中任务）"
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "format-violation|in-progress|tasks not done|进行中"
+  files_created: []
+  # files_modified 应不变（归档前置检查阻止）
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true

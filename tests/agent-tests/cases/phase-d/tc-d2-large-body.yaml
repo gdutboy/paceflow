@@ -1,0 +1,87 @@
+id: TC-D2
+phase: D
+indication: edge-large-finding-body
+description: record-finding body 含 5K+ 字符大段内容，验证 agent 完整写入不省略
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-finding
+  fields:
+    title: "TC-D2 大 body 测试调研"
+    summary: "Phase D TC-D2 测试 record-finding 处理大段 body 内容的能力"
+    type: research
+    impact: P2
+    body: |
+      # 背景
+
+      Phase D TC-D2 测试 agent 处理大段 body 的能力。本测试 body 含约 5K 字符的多段 markdown 内容（标题/列表/代码块/表格/引用），用于验证：
+
+      1. agent 是否完整写入 body（不截断）
+      2. agent 是否保留 markdown 结构（标题层级、列表缩进、代码块围栏）
+      3. agent 是否正确处理特殊字符（中文/标点/wikilink）
+
+      # 测试内容（多段填充）
+
+      ## 段 1：技术调研列表
+
+      - 项目 A：测试 finding 详情文件结构是否完整保留 markdown
+      - 项目 B：测试 frontmatter schema-version 字段顺序
+      - 项目 C：测试 wikilink 完整性 [[chg-20260503-01]]、[[task]]、[[implementation_plan]]
+      - 项目 D：测试 ARCHIVE 标记位置
+      - 项目 E：测试索引行格式
+
+      ## 段 2：代码示例
+
+      ```javascript
+      function checkFrontmatterSchema(filePath) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const fm = parseFrontmatter(content);
+        if (!fm) return { ok: false, reason: 'no frontmatter' };
+        if (!fm['schema-version']) return { ok: false, reason: 'missing schema-version' };
+        return { ok: true, frontmatter: fm };
+      }
+      ```
+
+      ## 段 3：表格数据
+
+      | 维度 | Phase A | Phase B | Phase C | Phase D |
+      |------|---------|---------|---------|---------|
+      | 用例数 | 5 | 5 | 5 步 | 5 |
+      | 测试目标 | happy path | error path | integration | edge case |
+      | Token 预算 | 8K | 35K | 30K | 35K |
+
+      ## 段 4：引用与说明
+
+      > "PACEflow 的格式规范是机械可检测的（hooks/verify 自动捕获），agent 是模型驱动，无法保证 100% 精准。设计思路：双层防御 = agent 尽力执行 + 机械层（hooks/verify）兜底。"
+
+      ## 段 5：长段叙述（填充至 5K+）
+
+      在 PACEflow v6.0.0 设计中，索引-详情拆分架构是核心创新。索引文件保持极简（仅含 wikilink 索引行），详情文件存放在 changes/ 子目录。这种设计的好处包括：第一，主索引文件保持小尺寸，避免 v5 时代 task.md 152KB / impl_plan.md 381KB 的痛点；第二，单 CHG 的详情独立成文件，归档时只需移动索引行不需操作大段内容；第三，wikilink 解析在 Obsidian 中天然支持，无需额外工具。
+
+      Phase A 测试结果显示，agent 在 happy path 下功能 5/5 通过，但 token 消耗超出预算 3-4 倍。这是 sub-agent 启动的"固定成本"——每次派遣需要加载 system prompt + 读取 spec + 读取对应指令的 instruction 文件。Phase B 错误路径测试，agent 全部正确报 FAILED 含详细诊断，agent 失败处理质量超过预期。Phase C 集成测试 5 步串行调用，验证了 multi-turn 场景下的 spec/instruction cache 复用机制和跨索引一致性。
+
+      # 结论
+
+      本 finding 详情文件期望保留所有 5 段内容完整，agent 不应"为了节省 token"省略任何段落。
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/findings/finding-{ISO_DATE}-tc-d2-*.md"
+  files_modified:
+    - findings.md
+  validations:
+    frontmatter_schema: pass
+    wikilink_integrity: pass
+  body_completeness_check: true
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  max_tokens: 60000
+  max_duration_ms: 120000
+
+teardown:
+  cleanup: true

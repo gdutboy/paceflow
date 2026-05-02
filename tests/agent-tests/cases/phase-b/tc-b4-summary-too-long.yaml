@@ -1,0 +1,36 @@
+id: TC-B4
+phase: B
+indication: error-summary-too-long
+description: record-finding summary 长度 250 字符超出 spec ≤200 限制，期望 format-violation
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-finding
+  fields:
+    title: "TC-B4 长 summary 越界测试"
+    summary: "本 summary 故意写到 250 字符以上以触发 spec §2.2 的长度约束 finding-id status type date impact summary 字段长度上限 200 字符。本 summary 故意写到 250 字符以上以触发 spec §2.2 的长度约束 finding-id status type date impact summary 字段长度上限 200 字符。再来一段填补到 250 字符以上的字数。"
+    type: research
+    impact: P1
+    body: |
+      # 背景
+      Phase B 测试 summary 长度边界约束。
+
+      # 期望
+      agent 应在 frontmatter 校验阶段拒绝并报告 format-violation。
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "format-violation|summary|too long|200"
+  files_created: []
+  files_modified: []
+  max_tokens: 35000
+  max_duration_ms: 60000
+  fixture_unchanged: true
+
+teardown:
+  cleanup: true

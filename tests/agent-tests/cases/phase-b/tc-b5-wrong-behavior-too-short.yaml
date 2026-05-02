@@ -1,0 +1,32 @@
+id: TC-B5
+phase: B
+indication: error-wrong-behavior-too-short
+description: record-correction wrong-behavior 长度 10 字符不足 spec 要求的 ≥20，期望 format-violation
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-correction
+  fields:
+    trigger-quote: "测试触发引用"
+    wrong-behavior: "太短"             # 仅 2 字符（远不足 ≥20）
+    correct-behavior: "正确做法的描述足够长能满足约束二十个字"
+    trigger-scenario: "Phase B 测试 wrong-behavior 长度约束"
+    root-cause: "测试驱动暴露 spec 长度约束"
+    project-scope: "project-only"
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "format-violation|wrong-behavior|too short"
+  files_created: []
+  files_modified: []
+  max_tokens: 35000
+  max_duration_ms: 60000
+  fixture_unchanged: true
+
+teardown:
+  cleanup: true

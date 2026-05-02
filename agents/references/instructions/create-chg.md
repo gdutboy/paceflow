@@ -44,8 +44,6 @@
 - [ ] T-NNN <task description>
 - [ ] T-NNN <task description>
 
-<!-- APPROVED -->
-
 ## 实施详情
 
 **背景（Why）**：<background>
@@ -73,4 +71,8 @@
 - [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN]
 ```
 
-刚创建的 CHG 默认状态 `[ ]`（planned），等待 C 阶段批准后才改 `[/]`。
+刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
+
+PACE 流程后续：
+- C 阶段批准 → 主 session 调用 `update-chg action=approve` 添加 `<!-- APPROVED -->`
+- 实施推进 → `update-chg action=update-status` 推动状态机（详见 update-chg 规范）

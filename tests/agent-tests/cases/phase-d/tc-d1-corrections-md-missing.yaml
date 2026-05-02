@@ -1,0 +1,35 @@
+id: TC-D1
+phase: D
+indication: edge-corrections-md-missing
+description: corrections.md 不存在时 record-correction 必须按 spec §5.6.5 模板懒创建索引文件
+
+setup:
+  fixture: empty-v6-no-corrections
+  variables:
+    project_path: /tmp/test-vault/empty-v6-no-corrections
+    date: "{TODAY}"
+
+input:
+  operation: record-correction
+  fields:
+    trigger-quote: "测试触发"
+    wrong-behavior: "agent 在 corrections.md 不存在时应该按 spec §5.6.5 模板创建"
+    correct-behavior: "agent 应识别 corrections.md 缺失并用 spec 模板 Write 新建文件"
+    trigger-scenario: "Phase D TC-D1 边界测试 corrections.md 懒创建"
+    root-cause: "测试覆盖 spec §5.6.5 模板使用场景"
+    project-scope: "project-only"
+
+expected:
+  status: SUCCESS
+  files_created:
+    - corrections.md
+    - "changes/corrections/correction-{ISO_DATE}-01-*.md"
+  validations:
+    frontmatter_schema: pass
+    wikilink_integrity: pass
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true

@@ -1,0 +1,47 @@
+id: TC-D5
+phase: D
+indication: edge-broken-wikilink
+description: record-finding 含 related-changes 指向不存在的 CHG，验证 agent 是按 strategy §6.2"警告不阻止"还是按 spec §8"format-violation 拒绝"
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-finding
+  fields:
+    title: "TC-D5 wikilink 破损测试"
+    summary: "Phase D TC-D5 测试 related-changes 指向不存在 CHG 时 agent 行为（strategy 与 spec 不一致点）"
+    type: research
+    impact: P2
+    body: |
+      # 背景
+
+      Phase D TC-D5 验证 agent 在以下场景的行为：
+      - record-finding 输入 related-changes: ["[[chg-99999999-99]]"]
+      - chg-99999999-99 不存在于 changes/ 目录
+
+      # 期望（按 strategy §6.2 D5）
+
+      "警告（不阻止），报告中提及"——agent 应创建 finding 但报告中标记 wikilink 完整性问题
+
+      # 风险点
+
+      spec §8 验证规则将 wikilink 完整性列为强制验证项，违反 → format-violation。
+      strategy §6.2 D5 期望"不阻止"。两者矛盾，本测试用于发现并修复此不一致。
+    related-changes:
+      - "[[chg-99999999-99]]"
+
+expected:
+  # status 故意留 ambiguous — 看 agent 实际选择哪条路径
+  # 主 session 收到 agent 报告后判断：SUCCESS+warning 还是 FAILED
+  raw_must_contain: "wikilink"
+  files_created_optional: "changes/findings/finding-{ISO_DATE}-tc-d5-*.md"
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true
