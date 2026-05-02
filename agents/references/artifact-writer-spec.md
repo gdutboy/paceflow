@@ -78,6 +78,18 @@ project-scope: null                  # "project-only" 或 null
 schema-version: "6.0"
 ```
 
+**输入字段归一规则**（agent 内部转换）：
+
+用户简化输入与 frontmatter 双字段的转换：
+
+| 用户输入 | frontmatter 输出 |
+|---------|-----------------|
+| `knowledge-link: project-only` | `knowledge-link: null` + `project-scope: "project-only"` |
+| `knowledge-link: "[[some-note]]"` | `knowledge-link: "[[some-note]]"` + `project-scope: null` |
+| `project-scope: project-only` | 同上首例 |
+| 缺二者 | 报告 `missing-fields` |
+| 同时填且不一致 | 优先 `knowledge-link`，`project-scope: null` |
+
 ---
 
 ## 3. Wikilink 规范
@@ -153,6 +165,88 @@ schema-version: "6.0"
 
 ---
 
+## 5.6 整文件模板（首次创建时）
+
+当索引文件不存在时（如项目首次记录 correction 而 corrections.md 缺失），按以下模板 Write 新建。
+
+### 5.6.1 task.md
+
+```markdown
+# 项目任务追踪
+
+## 活跃任务
+
+
+<!-- ARCHIVE -->
+
+```
+
+### 5.6.2 implementation_plan.md
+
+```markdown
+# 实施计划
+
+> **最后更新**: <YYYY-MM-DDTHH:mm:ss+08:00>
+
+## 变更索引
+
+<!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+
+<!-- ARCHIVE -->
+
+```
+
+### 5.6.3 walkthrough.md
+
+```markdown
+# 工作记录
+
+## 最近工作
+
+| 日期 | 完成内容 | 关联变更 |
+| --- | --- | --- |
+
+
+<!-- ARCHIVE -->
+
+```
+
+### 5.6.4 findings.md
+
+```markdown
+# 调研记录
+
+## 摘要索引
+
+<!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->
+
+
+## 未解决问题
+
+
+<!-- ARCHIVE -->
+
+```
+
+### 5.6.5 corrections.md
+
+```markdown
+# Corrections 记录
+
+> AI 行为纠正历史。每条 correction 必双写到 knowledge/ 或标 project-only。
+
+## 索引
+
+<!-- 格式：- [[correction-id]] <title> [date::] [knowledge:: [[note]] | project-only] -->
+
+
+<!-- ARCHIVE -->
+
+```
+
+---
+
 ## 6. ARCHIVE 标记规则
 
 1. 标记必须独占一行：`<!-- ARCHIVE -->`
@@ -176,168 +270,25 @@ schema-version: "6.0"
 
 ## 8. 5 类指令详细规范
 
-### 8.1 create-chg
+每类指令的详细输入字段、操作步骤、详情文件结构、索引行模板、边界处理已外移到独立文件。**agent 在执行某类指令时按需 Read 对应文件**（一次 Read 后整会话复用）。
 
-**输入字段**：
-- `title`（必填）
-- `tasks`（必填，至少 1 个，格式 `["T-NNN: desc", ...]`）
-- `type`（默认 change）
-- `related-finding`（可选）
-- `background` / `scope` / `technical-decision`（可选）
+| 指令 | 详细规范文件 |
+|------|------------|
+| create-chg | `instructions/create-chg.md` |
+| update-chg | `instructions/update-chg.md` |
+| archive-chg | `instructions/archive-chg.md` |
+| record-finding | `instructions/record-finding.md` |
+| record-correction | `instructions/record-correction.md` |
 
-**操作步骤**：
-1. 计算 chg-id：基于今日 + 当日序号（扫 changes/ 同日 chg-* 文件最大序号 +1）
-2. 生成 slug：参考 system prompt slug 规则
-3. v6: `mkdir -p changes/`
-4. v6: Write `changes/chg-yyyymmdd-nn.md`（含 frontmatter + 任务清单 + 实施详情 + 工作记录空表 + 关联调研）
-5. v6: Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
-6. v6: Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
-7. v5: Edit task.md / implementation_plan.md 添加索引行 + 详情段落（详情含 4 段）
+**为什么独立**：
+- 单条指令规范 ~50-80 行，agent 仅 Read 当前任务所需的那条（vs 整 §8 的 174 行）
+- prompt cache 粒度更细：指令规范变更不影响其他指令的 cache
+- 单指令测试更聚焦
+- 5 个文件平均 ~2KB，单次 Read 仅 ~600 tokens
 
-**详情文件结构**（v6）：
-
-```markdown
----
-[frontmatter, 见 §2.1]
----
-
-# <title>
-
-## 任务清单
-
-- [ ] T-NNN <task description>
-- [ ] T-NNN <task description>
-
-<!-- APPROVED -->
-
-## 实施详情
-
-**背景（Why）**：<background>
-**范围（What）**：<scope>
-**技术决策（How）**：<technical-decision>
-
-**T-NNN <task title>**：
-- 具体改动说明
-
-## 工作记录
-
-| 日期 | 完成内容 |
-| --- | --- |
-
-## 关联调研
-
-- [[<related-finding>]] <关联说明>（如有）
-```
-
-### 8.2 update-chg
-
-**输入字段**：
-- `target`（必填，CHG-ID）
-- `section`（必填：tasks | implementation | work-record | research）
-- `action`（必填：append | replace | update-status）
-- `content`（视 action 而定）
-- `task-id` + `new-status`（action=update-status 时必填）
-
-**操作步骤**：
-- v6: Read + Edit `changes/chg-xxx.md` 对应段落
-- v5: Read + Edit 主 artifact 详情段落
-
-**update-status 子流程**：
-1. Read changes/chg-xxx.md 找到 `- [<old>] T-NNN`
-2. Edit 改 `<old>` 为 `<new-status>`（参考 §4 状态映射）
-
-### 8.3 archive-chg
-
-**输入字段**：
-- `target`（必填，CHG-ID）
-- `walkthrough-summary`（必填，一行总结）
-
-**操作步骤**：
-1. v6: Read + Edit 详情 frontmatter `status: completed` + `completed-date: <ISO datetime>`
-2. v6: Read + Edit `task.md` 索引行 `[/]→[x]` 移到 ARCHIVE 下方
-3. v6: Read + Edit `implementation_plan.md` 同上
-4. v6: Read + Edit `walkthrough.md` 添加完成索引行（§5.3 模板）
-5. v5: 移动详情段落到 ARCHIVE 下方（双步骤 ARCHIVE 标记移动）
-
-**ARCHIVE 双步骤详解**（v5 + v6 共用）：
-- Step 1：在待归档内容上方插入新 `<!-- ARCHIVE -->` 行
-- Step 2：删除旧 `<!-- ARCHIVE -->` 行
-- 净效果：标记移动到新位置，内容物理位置不变
-
-### 8.4 record-finding
-
-**输入字段**：
-- `title`（必填）
-- `summary`（必填，≤ 200 字符）
-- `type`（必填，research | observation | comparison | bug-report）
-- `impact`（必填，P0-P3）
-- `body`（必填，Markdown 内容）
-- `related-changes`（可选，wikilink list）
-- `merges`（可选）
-- `status`（默认 open）
-
-**操作步骤**：
-1. 生成 finding-id（FINDING-YYYY-MM-DD-slug）
-2. v6: `mkdir -p changes/findings/`
-3. v6: Write `changes/findings/finding-yyyy-mm-dd-slug.md`（frontmatter + body）
-4. v6: Read + Edit `findings.md` 摘要索引添加索引行（§5.4 模板）
-5. v5: Read + Edit `findings.md` 摘要索引 + `## 未解决问题` 区添加详情段落
-
-**详情文件结构**（v6）：
-
-```markdown
----
-[frontmatter, 见 §2.2]
----
-
-# <title>
-
-[body 内容，按主 session 提供]
-```
-
-### 8.5 record-correction
-
-**输入字段**：
-- `trigger-quote`（必填）
-- `wrong-behavior`（必填，≥ 20 字符）
-- `correct-behavior`（必填，≥ 20 字符）
-- `trigger-scenario`（必填）
-- `root-cause`（必填）
-- `knowledge-link` 或 `project-scope: project-only`（必填二选一）
-
-**操作步骤**：
-1. 生成 correction-id（CORRECTION-YYYY-MM-DD-NN，扫 changes/corrections/ 同日序号 +1）
-2. v6: `mkdir -p changes/corrections/`
-3. v6: Write `changes/corrections/correction-xxx.md`（frontmatter + body）
-4. v6: Read + Edit `corrections.md` 添加索引行（§5.5 模板）
-5. v5: Read + Edit `findings.md` "## Corrections 记录" 区添加 correction 段落
-
-**详情文件结构**（v6）：
-
-```markdown
----
-[frontmatter, 见 §2.3]
----
-
-# Correction: <title>
-
-## 错误行为
-<wrong-behavior>
-
-## 正确做法
-<correct-behavior>
-
-## 触发场景
-<trigger-scenario>
-
-## 根本原因
-<root-cause>
-
-## 关联知识
-- [[<knowledge-link>]]（如适用）
-```
-
----
+**何时 Read 哪个**：
+- 解析主 session 指令后 → 识别指令类型 → Read 对应 instructions/*.md
+- 已 Read 当前指令文件 → 整会话不再重复 Read
 
 ## 9. 验证规则
 

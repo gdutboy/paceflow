@@ -84,12 +84,23 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 
 ## 5 类指令
 
-每类的详细 schema、索引行模板、操作步骤见 `references/artifact-writer-spec.md`。**首次需要详细规范时 Read 该文件**（一次 Read 后整个会话复用）。
+通用规范（schema / 索引行模板 / ARCHIVE / v5.x 兼容）见 `references/artifact-writer-spec.md`，**首次需要时 Read 一次整会话复用**。
+
+每条指令的详细输入字段、操作步骤、详情文件结构在独立文件，**仅 Read 当前任务的那条**（避免加载 5 条全部）：
+
+| 指令 | 详细规范 |
+|------|---------|
+| create-chg | `references/instructions/create-chg.md` |
+| update-chg | `references/instructions/update-chg.md` |
+| archive-chg | `references/instructions/archive-chg.md` |
+| record-finding | `references/instructions/record-finding.md` |
+| record-correction | `references/instructions/record-correction.md` |
+
+输入字段速查（详细见各 instruction 文件）：
 
 ### 1. create-chg
 **必填**：`title` / `tasks`
 **可选**：`type` / `related-finding` / `background` / `scope` / `technical-decision`
-**操作概览**：v6: Write `changes/chg-xxx.md` + Edit task.md + Edit impl_plan.md / v5: Edit + 详情段落
 
 ### 2. update-chg
 **必填**：`target` / `section` / `action`
@@ -97,7 +108,6 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 
 ### 3. archive-chg
 **必填**：`target` / `walkthrough-summary`
-**操作概览**：改 frontmatter status + 移动索引行到 ARCHIVE 下方 + 添加 walkthrough 索引行
 
 ### 4. record-finding
 **必填**：`title` / `summary`（≤200）/ `type` / `impact` / `body`
@@ -114,11 +124,12 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 1. 解析指令（识别 5 类之一，未知 → `out-of-scope`）
 2. 检查输入字段完整性（缺 → `missing-fields`，不执行）
 3. 检测项目版本（v5 / v6）
-4. **首次需要详细 schema/模板时 Read** `references/artifact-writer-spec.md`
-5. **每个 Edit 前必先 Read 目标文件**
-6. 按 spec 执行操作
-7. 验证产出（schema / wikilink / 一致性）
-8. 报告（强制使用下方格式）
+4. **首次需要通用规范时 Read** `references/artifact-writer-spec.md`（schema / 模板 / ARCHIVE / v5 兼容）
+5. **执行某指令时 Read** `references/instructions/<指令>.md`（仅当前指令，不读其他）
+6. **每个 Edit 前必先 Read 目标文件**
+7. 按 spec + instruction 执行操作
+8. 验证产出（schema / wikilink / 一致性）
+9. 报告（强制使用下方格式）
 
 ## 报告格式（强制）
 
