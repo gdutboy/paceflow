@@ -631,26 +631,61 @@ Phase E：发布
 
 ## 附录 A：完整 System Prompt
 
-完整内容已独立到 `paceflow/agents/paceflow-artifact-writer.md`（Claude Code Plugin 标准 agent 定义文件）。
+完整内容已独立到 `paceflow/agents/paceflow-artifact-writer.md`（Claude Code Plugin 标准 agent 定义文件），详细规范在 `paceflow/agents/references/artifact-writer-spec.md`。
 
-本设计文档不重复 prompt 内容。修改 prompt 时请直接编辑 `paceflow/agents/paceflow-artifact-writer.md`，并在本文档第 11 节风险表中记录变更。
+本设计文档不重复 prompt 内容。修改 prompt 时请直接编辑相应文件。
 
 **为什么独立**：
 - 避免双份维护（design.md 和 agent.md 同步成本）
 - 符合 Claude Code Plugin 标准（agent 定义在 `agents/` 目录自动加载）
 - prompt 修订有 git 单点
-- 文档大小从 35KB 降到 ~22KB
 
-**v2.0 修订**（基于 PoC 反馈，2026-05-02）：在 v1.0 system prompt 基础上修复 6 个缺陷：
+---
+
+### 修订历史
+
+**v1.0（2026-05-02 初版）**：完整 system prompt 内嵌所有规范，357 行 / 12KB。PoC v1 发现 6 个缺陷。
+
+**v2.0（2026-05-02 修订）**：基于 PoC v1 反馈修复 6 个缺陷：
 
 | 严重度 | 缺陷 | v2.0 修复 |
 |--------|------|----------|
 | P1 | 缺索引行格式模板 | 新增"v6.0.0 索引行模板"段（5 个 artifact 文件各一） |
-| P1 | 缺 status→checkbox 映射 | 新增"v6.0.0 状态→checkbox 映射"段（11 行映射表） |
+| P1 | 缺 status→checkbox 映射 | 新增 11 行映射表 |
 | P2 | 缺 Edit 前置 Read 声明 | 新增"Edit 前置 Read（强制）"段 |
-| P2 | 缺 PostToolUse 反馈处理 | 新增"Hook 反馈处理决策树"段（5 种情形） |
-| P3 | 缺 slug 生成规则 | 新增"Slug 生成规则"段（5 条 + 3 示例） |
+| P2 | 缺 PostToolUse 反馈处理 | 新增"Hook 反馈决策树"段 |
+| P3 | 缺 slug 生成规则 | 新增"Slug 生成规则"段 |
 | P3 | frontmatter 字段顺序 | Schema 段加注"按下方 Schema 列出顺序" |
+
+PoC v2 验证：6 缺陷全部修复，一次成功，Token ~6K（节省 25%）。
+
+**v3.0（2026-05-02 精简重构）**：基于外部调研（Claude Code 官方 agent 设计规范 + GitHub 实例对比）发现 v2.0 文件 357 行 / 12KB 是官方示例（claude-guide-agent.md 68 行 / 3.31KB）的 3.6 倍，违反 sub-agent 轻量化原则。
+
+重构方案：
+- agent system prompt 仅保留核心逻辑（工作范围 / 不要做的事 / 关键操作规则 / 工作流 / 报告格式）
+- 详细规范（Frontmatter Schema / 索引行模板 / ARCHIVE 规则 / v5.x 兼容 / 5 类指令操作步骤）外移到 `agents/references/artifact-writer-spec.md`
+- agent 在首次需要详细规范时按需 Read references（一次后整会话复用）
+
+精简结果：
+
+| 文件 | v2.0 | v3.0 |
+|------|------|------|
+| `paceflow-artifact-writer.md` | 408 行 / 13.1KB | **179 行 / 5.8KB**（-56%） |
+| `agents/references/artifact-writer-spec.md` | — | 354 行 / 10.3KB（新增） |
+
+PoC v3 验证（用 record-correction 指令测试）：
+- 一次成功 ✅
+- frontmatter 10 字段一次写对（含 wrong-behavior 232 字符 ≥ 20 校验通过）
+- correction-id 序号自动推算正确
+- 边界处理正确（corrections.md 不存在 → Write 新建含 ARCHIVE）
+- references 切换无执行流断裂
+- Token 单次 ~6.5K（含 ref 首读 +3.5K），multi-turn ~3K（ref 复用）
+
+PoC v3 新发现 4 个 v3.1 候选缺陷：
+1. P2：spec §8.5 缺 `title` 派生规则
+2. P2：spec §5.5 缺 corrections.md 整文件模板
+3. P3：用户输入 `knowledge-link: project-only` 与 schema 双字段冲突
+4. P3：spec §8 可进一步分到 `references/instructions/` 单文件
 
 ---
 
