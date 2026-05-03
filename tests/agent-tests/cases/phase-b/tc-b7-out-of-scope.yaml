@@ -1,0 +1,27 @@
+id: TC-B7
+phase: B
+indication: error-out-of-scope
+description: 主 session 派遣未在 5 类指令枚举内的 operation（delete-chg），期望 out-of-scope
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: delete-chg
+  fields:
+    target: "CHG-{TODAY}-01"
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "out-of-scope|delete-chg|未知指令|unknown"
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  files_created: []
+  files_modified: []
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true

@@ -1,0 +1,38 @@
+id: TC-A6
+phase: A
+indication: smoke-test-create-hotfix
+description: create-chg type=hotfix 验证文件名为 hotfix-{date}-NN.md（非 chg- 前缀）+ 索引行格式
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: create-chg
+  fields:
+    title: TC-A6 紧急修复测试
+    tasks:
+      - "T-901: 紧急修复任务"
+    type: hotfix
+    background: 模拟生产环境紧急 bug，验证 hotfix 命名前缀
+    scope: 仅本测试用例
+    technical-decision: 无（测试用）
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/hotfix-{date}-01.md"
+  files_modified:
+    - task.md
+    - implementation_plan.md
+  validations:
+    frontmatter_schema: pass
+    wikilink_integrity: pass
+    chg_id_pattern: "HOTFIX-{DATE_UPPER}-01"
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true

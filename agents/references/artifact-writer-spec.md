@@ -132,6 +132,11 @@ schema-version: "6.0"
 
 例：`- [/] [[chg-20260502-01]] hooks.json if 条件优化 #change [tasks:: T-498~T-500]`
 
+**hashtag 与 type 对齐**：
+- `type: change` → `#change`
+- `type: hotfix` → `#hotfix`，文件名前缀 `hotfix-`，wikilink `[[hotfix-yyyymmdd-nn]]`
+- `type: research` → `#research`
+
 ### 5.2 implementation_plan.md
 
 格式同 task.md（活跃任务区或变更索引区均使用）。

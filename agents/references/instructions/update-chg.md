@@ -94,7 +94,9 @@ C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED --
 
 - target 不存在 → `target-not-found`
 - section 不在枚举内 → `format-violation`
+- action 不在 `append` / `replace` / `update-status` / `approve` 枚举内 → `format-violation`
 - action=update-status 但 section ≠ tasks → `format-violation`
 - task-id 在 tasks 段中找不到 → `target-not-found`
 - action=approve 但 `<!-- APPROVED -->` 已存在 → `already-approved`（幂等，非错误）
 - action=approve 但 `## 任务清单` 段缺失 → `format-violation`
+- target 文件存在但 frontmatter `chg-id` 与文件名不匹配 → `id-mismatch`

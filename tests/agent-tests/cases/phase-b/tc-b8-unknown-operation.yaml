@@ -1,0 +1,62 @@
+id: TC-B8
+phase: B
+indication: error-unknown-operation
+description: update-chg action 不在 append/replace/update-status/approve 枚举内（bulk-rename），期望 unknown-operation 或 format-violation
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: changes/chg-{TODAY}-01.md
+      content: |
+        ---
+        chg-id: CHG-{TODAY}-01
+        status: planned
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: null
+        archived-date: null
+        ---
+
+        # TC-B8 fixture
+
+        ## 任务清单
+
+        - [ ] T-901 占位任务
+
+        ## 实施详情
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+
+        ## 关联调研
+
+input:
+  operation: update-chg
+  fields:
+    target: "CHG-{TODAY}-01"
+    section: tasks
+    action: bulk-rename
+    content: "T-901 → T-911"
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "unknown-operation|format-violation|bulk-rename|action"
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  files_created: []
+  files_modified: []
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true

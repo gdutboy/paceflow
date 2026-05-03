@@ -1,0 +1,30 @@
+id: TC-B9
+phase: B
+indication: error-not-pace-project
+description: ARTIFACT_DIR 不含 changes/ 子目录，agent 应早期检测并报 not-pace-project
+
+setup:
+  fixture: empty-v6-no-changes
+  variables:
+    project_path: /tmp/test-vault/empty-v6-no-changes
+    date: "{TODAY}"
+
+input:
+  operation: create-chg
+  fields:
+    title: TC-B9 not-pace-project 测试
+    tasks:
+      - "T-901: 占位任务"
+    type: change
+
+expected:
+  status: FAILED
+  failure_reason_pattern: "not-pace-project|changes"
+  report_title_strict: "## paceflow-artifact-writer 报告"
+  files_created: []
+  files_modified: []
+  max_tokens: 35000
+  max_duration_ms: 60000
+
+teardown:
+  cleanup: true

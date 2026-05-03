@@ -1,0 +1,81 @@
+id: TC-A7
+phase: A
+indication: smoke-test-record-finding-merges
+description: "record-finding 含 merges 字段（指向预置存在的 finding），验证 merges 写入 frontmatter + 索引行 [merges:: [[...]]] extra-meta 格式"
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: changes/findings/finding-{ISO_DATE}-base.md
+      content: |
+        ---
+        finding-id: FINDING-{ISO_DATE}-base
+        status: open
+        type: research
+        date: {ISO_DATE}
+        impact: P3
+        summary: TC-A7 预置 finding（用于 merges 测试）
+        related-changes: []
+        merges: []
+        merged-by: null
+        rejection-reason: null
+        schema-version: "6.0"
+        ---
+
+        # TC-A7 base finding
+
+        预置 finding 用于 TC-A7 merges 字段测试。
+    - path: findings.md
+      content: |
+        # 调研记录
+
+        ## 摘要索引
+
+        <!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->
+
+        - [ ] [[finding-{ISO_DATE}-base|TC-A7 base finding]] — TC-A7 预置 finding（用于 merges 测试） #finding [date:: {ISO_DATE}] [impact:: P3]
+
+        ## 未解决问题
+
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: record-finding
+  fields:
+    title: TC-A7 合并测试调研
+    summary: Phase A 第七个测试用例，验证 record-finding merges 字段写入 frontmatter + 索引行 extra-meta
+    type: research
+    impact: P2
+    body: |
+      # 背景
+
+      TC-A7 验证 merges 字段在两个有效 finding 间的合并语义。
+
+      # 发现
+
+      - merges 应写入 frontmatter（list of wikilink）
+      - 索引行 extra-meta 应含 [merges:: [[finding-id]]]
+    merges:
+      - "[[finding-{ISO_DATE}-base]]"
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/findings/finding-{ISO_DATE}-tc-a7-*.md"
+  files_modified:
+    - findings.md
+  validations:
+    frontmatter_schema: pass
+    wikilink_integrity: pass
+    finding_id_pattern: "FINDING-{ISO_DATE}-"
+    summary_length_le_200: true
+  max_tokens: 35000
+  max_duration_ms: 60000
+  filename_match: lenient
+
+teardown:
+  cleanup: true
