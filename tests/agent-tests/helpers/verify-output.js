@@ -177,12 +177,17 @@ function verify(testCase, targetDir, variables, agentReport) {
   }
 
   // 4.1 report_title_strict（字面匹配 agent 报告 H2 标题）
-  if (agentReport && exp.report_title_strict && agentReport.raw) {
+  // 默认值：## paceflow-artifact-writer 报告（spec 输出契约）
+  // yaml 显式设为 false 可禁用此检查
+  const titleStrict = exp.report_title_strict === false
+    ? null
+    : (exp.report_title_strict || '## paceflow-artifact-writer 报告');
+  if (agentReport && titleStrict && agentReport.raw) {
     const lines = agentReport.raw.split('\n');
-    const ok = lines.some((line) => line.trim() === exp.report_title_strict);
+    const ok = lines.some((line) => line.trim() === titleStrict);
     let actual = '<no h2 title>';
     if (ok) {
-      actual = exp.report_title_strict;
+      actual = titleStrict;
     } else {
       const titleLine = lines.find((line) => /^##\s+/.test(line.trim()));
       if (titleLine) actual = titleLine.trim();
@@ -191,7 +196,7 @@ function verify(testCase, targetDir, variables, agentReport) {
       name: 'report_title_strict',
       ok,
       actual,
-      expected: exp.report_title_strict,
+      expected: titleStrict,
     });
   }
 
