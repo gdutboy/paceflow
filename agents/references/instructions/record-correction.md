@@ -42,11 +42,12 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## 操作步骤
 
+0. 前置检查：`$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
 1. 派生 title（参考上方规则）
 2. 归一化 knowledge-link / project-scope（参考上方规则）
 3. 生成 correction-id（CORRECTION-YYYY-MM-DD-NN，扫 `changes/corrections/` 同日序号 +1）
 4. 生成 slug（基于派生的 title）
-5. `mkdir -p changes/corrections/`
+5. `mkdir -p changes/corrections/`（仅在 base `changes/` 已存在时）
 6. Write `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`（详情文件结构见下）
 7. corrections.md 不存在 → Write 新建（用 spec §5.6.5 模板）
 8. Read + Edit `corrections.md` 添加索引行（spec §5.5 模板）
@@ -95,3 +96,4 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 - knowledge-link 和 project-scope 都缺 → `missing-fields`
 - 派生 title 失败（wrong-behavior 全为标点/无实词）→ 报告 `format-violation: cannot derive title`
 - v6 项目但 corrections.md 缺失 → 用 spec §5.6.5 模板 Write 新建（不算错误）
+- `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`

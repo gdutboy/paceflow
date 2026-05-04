@@ -10,6 +10,7 @@
 
 ## 前置检查
 
+0. `$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
 1. 解析 target → 详情文件路径
 2. 文件不存在 → `target-not-found`
 3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed`
@@ -99,5 +100,6 @@
 - frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示派 `update-chg action=verify`）
 - frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）
 - 详情文件不存在 → `target-not-found`
+- `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 - ARCHIVE 标记缺失 → 报告并提示主 session 创建模板
 - 索引行在 task.md 或 implementation_plan.md 中找不到 → `format-violation: index row not found`

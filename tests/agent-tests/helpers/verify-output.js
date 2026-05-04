@@ -212,21 +212,22 @@ function verify(testCase, targetDir, variables, agentReport) {
   pushNumericLimit(validations, agentReport, 'duration_ms', exp.max_duration_ms, 'max_duration_ms');
   pushNumericLimit(validations, agentReport, 'tool_uses', exp.max_tool_uses, 'max_tool_uses');
 
-  // 4.1 report_title_strict（字面匹配 agent 报告 H2 标题）
+  // 4.1 report_title_strict（字面匹配 agent 报告第一行标题）
   // 默认值：## paceflow-artifact-writer 报告（spec 输出契约）
   // yaml 显式设为 false 可禁用此检查
   const titleStrict = exp.report_title_strict === false
     ? null
     : (exp.report_title_strict || '## paceflow-artifact-writer 报告');
   if (agentReport && titleStrict && agentReport.raw) {
-    const lines = agentReport.raw.split('\n');
-    const ok = lines.some((line) => line.trim() === titleStrict);
-    let actual = '<no h2 title>';
-    if (ok) {
-      actual = titleStrict;
-    } else {
+    const lines = agentReport.raw.split(/\r?\n/);
+    const firstLine = (lines[0] || '').trim();
+    const ok = firstLine === titleStrict;
+    let actual = firstLine || '<empty first line>';
+    if (!ok) {
       const titleLine = lines.find((line) => /^##\s+/.test(line.trim()));
-      if (titleLine) actual = titleLine.trim();
+      if (titleLine && titleLine.trim() !== actual) {
+        actual = `${actual} (first h2: ${titleLine.trim()})`;
+      }
     }
     validations.push({
       name: 'report_title_strict',

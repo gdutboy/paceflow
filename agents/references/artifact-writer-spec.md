@@ -18,7 +18,9 @@ projects/<project>/
     └── corrections/correction-yyyy-mm-dd-nn-slug.md
 ```
 
-`changes/findings/` 和 `changes/corrections/` 子目录在首次操作时**懒创建**（`mkdir -p`）。
+`changes/` 根目录是 v6 项目 marker，必须预先存在。agent **不得**创建 base `changes/` 来初始化项目；缺失时立即报告 `not-pace-project`，且不得 Write / Edit 任何 artifact。
+
+`changes/findings/` 和 `changes/corrections/` 子目录在首次操作时**懒创建**（`mkdir -p`），但前提是 base `changes/` 已存在。
 
 `$ARTIFACT_DIR` 解析：
 - 优先 vault 路径 `${VAULT_PATH}/projects/<project-name>/`

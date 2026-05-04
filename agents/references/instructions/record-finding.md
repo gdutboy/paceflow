@@ -17,8 +17,9 @@
 
 ## 操作步骤
 
+0. 前置检查：`$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
 1. 生成 finding-id（FINDING-YYYY-MM-DD-slug，slug 参考 spec slug 规则）
-2. `mkdir -p changes/findings/`
+2. `mkdir -p changes/findings/`（仅在 base `changes/` 已存在时）
 3. Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下）
 4. Read + Edit `findings.md` 摘要索引添加索引行（spec §5.4 模板）
 
@@ -59,5 +60,6 @@
 - status=rejected 但缺 rejection-reason 或长度 < 10 → `missing-fields`
 - merges 中 wikilink 指向不存在的 finding → 警告但不阻止（建议主 session 检查）
 - related-changes 中 wikilink 指向不存在的 CHG → 警告但不阻止（建议主 session 检查）
+- `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 
 > **§边界 vs §8 通用验证规则关系**：本节是 lex specialis（特殊条款），优先级高于上层 `../artifact-writer-spec.md` §8 通用 wikilink 强校验。merges / related-changes 字段允许"warn but don't block"，其他字段仍按 §8 通用强校验。

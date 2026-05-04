@@ -18,6 +18,7 @@
 
 ### 通用前置
 
+0. `$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
 1. 解析 target → 路径：`changes/chg-yyyymmdd-nn.md` 或 `changes/hotfix-yyyymmdd-nn.md`
 2. 文件不存在 → 报告 `target-not-found`
 
@@ -150,3 +151,4 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
 - action=verify 但缺 `<!-- APPROVED -->` → `format-violation`
 - action=verify 但 `verified-date` 已有非 null 值 **AND** `<!-- VERIFIED -->` 已存在 → SUCCESS 幂等（reason: `already verified, no change`）
 - action=verify 但 `verified-date` 与 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation`
+- `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`

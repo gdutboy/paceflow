@@ -19,7 +19,7 @@ input:
 
 expected:
   status: FAILED
-  failure_reason_pattern: "not-pace-project|changes"
+  failure_reason_pattern: "not-pace-project"
   report_title_strict: "## paceflow-artifact-writer 报告"
   files_created: []
   files_modified: []

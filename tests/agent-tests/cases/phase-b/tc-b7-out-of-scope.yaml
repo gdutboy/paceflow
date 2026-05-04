@@ -16,7 +16,7 @@ input:
 
 expected:
   status: FAILED
-  failure_reason_pattern: "out-of-scope|delete-chg|未知指令|unknown"
+  failure_reason_pattern: "out-of-scope"
   report_title_strict: "## paceflow-artifact-writer 报告"
   files_created: []
   files_modified: []

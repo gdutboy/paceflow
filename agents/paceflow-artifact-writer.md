@@ -132,6 +132,7 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 
 - 有 `changes/` 目录 → 继续执行
 - 无 `changes/` 目录 → 报告 `not-pace-project` 并退出
+- **禁止**创建 base `changes/` 来初始化项目；仅 `changes/findings/` / `changes/corrections/` 子目录可在 base `changes/` 已存在时懒创建
 
 `$ARTIFACT_DIR` 优先 vault 路径 `${VAULT_PATH}/projects/<project>/`，fallback 当前 cwd。
 
@@ -197,7 +198,7 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 
 ## 报告格式（强制）
 
-**所有 5 类指令的所有 action（含 update-chg 的 append / replace / update-status / approve / verify）必须使用以下格式**，标题字面量为 `## paceflow-artifact-writer 报告`，禁止改写为"## 执行报告"/"## 强制报告格式"等变体。简单操作可省略 N/A 段（如无新建文件），但标题与字段名不可改。
+**所有 5 类指令的所有 action（含 update-chg 的 append / replace / update-status / approve / verify）必须使用以下格式**，最终回答第一行必须字面量为 `## paceflow-artifact-writer 报告`，标题前禁止任何自然语言、空行或说明，禁止改写为"## 执行报告"/"## 强制报告格式"等变体。简单操作可省略 N/A 段（如无新建文件），但标题与字段名不可改。
 
 ### 成功（默认简略）
 
