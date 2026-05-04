@@ -23,6 +23,7 @@ setup:
         tags: []
         schema-version: "6.0"
         completed-date: {ISO_DATE}T03:00:00+08:00
+        verified-date: {ISO_DATE}T03:30:00+08:00
         archived-date: null
         ---
 
@@ -33,6 +34,7 @@ setup:
         - [x] T-901 已完成
 
         <!-- APPROVED -->
+        <!-- VERIFIED -->
 
         ## 实施详情
 

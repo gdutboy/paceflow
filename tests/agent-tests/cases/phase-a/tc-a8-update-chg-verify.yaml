@@ -1,0 +1,91 @@
+id: TC-A8
+phase: A
+indication: smoke-test-update-chg-verify
+description: 验证 update-chg action=verify happy path：写 frontmatter verified-date + 紧邻 <!-- APPROVED --> 下一行插入 <!-- VERIFIED --> + 追加工作记录单元格（V 阶段双表示标志同步）
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: completed
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: {ISO_DATE}T03:00:00+08:00
+        verified-date: null
+        archived-date: null
+        ---
+
+        # TC-A8 测试 V 阶段验证
+
+        ## 任务清单
+
+        - [x] T-901 完成任务一
+        - [x] T-902 完成任务二
+
+        <!-- APPROVED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试 update-chg action=verify happy path
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [x] [[chg-{date}-01]] TC-A8 测试 V 阶段验证 #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+        - [x] [[chg-{date}-01]] TC-A8 测试 V 阶段验证 #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: update-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    action: verify
+    verify-summary: "TC-A8 验证通过"
+
+expected:
+  status: SUCCESS
+  files_modified:
+    - "changes/chg-{date}-01.md"
+  validations:
+    frontmatter_status: completed              # verify 不动 status，仍 completed
+    completed_date_set: true                    # completed-date 保持原值
+  # 正文 grep 断言（verify-output.js 当前不支持，需手工跑；P0.11 补机械断言）：
+  #   rg -n "^verified-date: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  #   rg -n "^<!-- VERIFIED -->" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  #   rg -B1 "^<!-- VERIFIED -->" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md  # 应紧跟 APPROVED
+  #   rg -n "验证通过：TC-A8 验证通过" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  max_tokens: 10000
+  max_duration_ms: 30000
+
+teardown:
+  cleanup: true

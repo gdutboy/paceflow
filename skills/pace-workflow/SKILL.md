@@ -1,11 +1,10 @@
 ---
 name: pace-workflow
+effort: high
 description: >
-  PACE 协议核心工作流程（Plan-Artifact-Check-Execute-Verify）。当任务满足以下条件时
-  自动激活：(1) 涉及 3+ 文件修改，(2) 需要新增依赖或修改配置，(3) 预计 10+ 工具调用，
-  (4) 涉及架构设计或技术选型，(5) 用户明确要求规划/设计/分析，(6) 单文件修改 100+ 行，
-  (7) 核心模块/关键算法重构。HOTFIX/紧急修复场景也适用（使用 HOTFIX-YYYYMMDD-NN ID，
-  可跳过 brainstorming 直接进入 A 阶段）。指导结构化开发流程并在每个阶段提供 hook 强制保障。
+  PACE 协议核心工作流程（Plan-Artifact-Check-Execute-Verify）。自动激活条件：
+  3+ 文件修改、新增依赖、10+ 工具调用、架构设计/技术选型、用户要求规划/设计/分析、
+  单文件 100+ 行、核心模块重构。HOTFIX 场景也适用。提供 hook 强制保障。
 ---
 
 # PACE 协议工作流程

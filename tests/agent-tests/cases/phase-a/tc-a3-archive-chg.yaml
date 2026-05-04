@@ -1,7 +1,7 @@
 id: TC-A3
 phase: A
 indication: smoke-test-archive-chg
-description: 验证 archive-chg 在 in-progress + 全部任务完成 状态下成功归档（frontmatter status → archived，task / impl_plan 索引行用 ARCHIVE 内容移动算法迁到 ARCHIVE 下方，walkthrough 追加索引）
+description: 验证 archive-chg 在 completed + VERIFIED + 全部任务完成状态下成功归档（frontmatter status → archived，task / impl_plan 索引行用 ARCHIVE 内容移动算法迁到 ARCHIVE 下方，walkthrough 追加索引）
 
 setup:
   fixture: empty-v6
@@ -13,7 +13,7 @@ setup:
       content: |
         ---
         chg-id: CHG-{DATE_UPPER}-01
-        status: in-progress
+        status: completed
         date: {ISO_DATE}
         type: change
         parent-tasks: ["[[task]]"]
@@ -22,7 +22,8 @@ setup:
         aliases: []
         tags: []
         schema-version: "6.0"
-        completed-date: null
+        completed-date: {ISO_DATE}T03:00:00+08:00
+        verified-date: {ISO_DATE}T03:30:00+08:00
         archived-date: null
         ---
 
@@ -34,6 +35,7 @@ setup:
         - [x] T-902 测试任务二
 
         <!-- APPROVED -->
+        <!-- VERIFIED -->
 
         ## 实施详情
 
@@ -50,7 +52,7 @@ setup:
 
         ## 活跃任务
 
-        - [/] [[chg-{date}-01]] TC-A3 测试归档 CHG #change [tasks:: T-901~T-902]
+        - [x] [[chg-{date}-01]] TC-A3 测试归档 CHG #change [tasks:: T-901~T-902]
 
         <!-- ARCHIVE -->
     - path: implementation_plan.md
@@ -61,7 +63,7 @@ setup:
 
         <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
 
-        - [/] [[chg-{date}-01]] TC-A3 测试归档 CHG #change [tasks:: T-901~T-902]
+        - [x] [[chg-{date}-01]] TC-A3 测试归档 CHG #change [tasks:: T-901~T-902]
 
         <!-- ARCHIVE -->
 

@@ -1,11 +1,10 @@
 ---
 name: pace-knowledge
+effort: medium
 description: >
-  PACEflow 知识库笔记管理规则。当操作知识库目录时自动激活：(1) 创建/更新 thoughts/ 笔记（酝酿中的想法），
-  (2) 创建/更新 knowledge/ 笔记（跨项目可复用经验），(3) 从项目 findings 提取知识到 knowledge/。
-  当用户被纠正时（"不对"、"别这样"、"错了"）需要写 Corrections 并双写 knowledge/ 笔记时也应激活。
-  当进行技术调研（research、学习、对比分析）需要记录到 findings 并提取 knowledge 时也应激活。
-  定义 frontmatter 结构、L0/L1/L2 信息分层和状态流转规则。
+  PACEflow 知识库笔记管理。自动激活：(1) 创建/更新 thoughts/ 或 knowledge/ 笔记，
+  (2) 从 findings 提取知识到 knowledge/，(3) 用户被纠正时写 Corrections 并双写
+  knowledge/，(4) 技术调研记录到 findings。定义 frontmatter 结构和 L0/L1/L2 信息分层。
 ---
 
 # Obsidian 知识库笔记管理规则

@@ -27,7 +27,7 @@ const V6_TEMPLATES = {
   'walkthrough.md':
     '# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n\n\n<!-- ARCHIVE -->\n\n',
   'findings.md':
-    '# 调研记录\n\n## 摘要索引\n\n<!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->\n\n\n## 未解决问题\n\n\n<!-- ARCHIVE -->\n\n',
+    '# 调研记录\n\n## 摘要索引\n\n<!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->\n\n\n<!-- ARCHIVE -->\n\n',
 };
 
 const CORRECTIONS_TEMPLATE =
@@ -53,6 +53,21 @@ function transformV5Body(content) {
 function archiveV5(projectPath, dryRun) {
   console.log(`项目路径：${projectPath}`);
   console.log(`模式：${dryRun ? 'DRY-RUN（不写入）' : '执行'}`);
+  console.log('');
+
+  // 确保 v6 子目录结构（agent 项目检测依赖 changes/ 目录存在）
+  const subDirs = ['changes', 'changes/findings', 'changes/corrections'];
+  for (const sub of subDirs) {
+    const fullPath = path.join(projectPath, sub);
+    if (fs.existsSync(fullPath)) {
+      console.log(`[SKIP] 子目录 ${sub}：已存在`);
+    } else if (dryRun) {
+      console.log(`[DRY-RUN] 子目录 ${sub}：将创建`);
+    } else {
+      fs.mkdirSync(fullPath, { recursive: true });
+      console.log(`[DONE] 子目录 ${sub}：已创建`);
+    }
+  }
   console.log('');
 
   let processed = 0;

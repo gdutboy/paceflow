@@ -1,7 +1,7 @@
 id: TC-B8
 phase: B
-indication: error-unknown-operation
-description: update-chg action 不在 append/replace/update-status/approve 枚举内（bulk-rename），期望 unknown-operation 或 format-violation
+indication: error-illegal-update-chg-action
+description: update-chg action=bulk-rename 非合法 action 枚举值（合法集合：append/replace/update-status/approve/verify），期望 format-violation
 
 setup:
   fixture: empty-v6
@@ -23,6 +23,7 @@ setup:
         tags: []
         schema-version: "6.0"
         completed-date: null
+        verified-date: null
         archived-date: null
         ---
 
@@ -51,7 +52,7 @@ input:
 
 expected:
   status: FAILED
-  failure_reason_pattern: "unknown-operation|format-violation|bulk-rename|action"
+  failure_reason_pattern: "format-violation"
   report_title_strict: "## paceflow-artifact-writer 报告"
   files_created: []
   files_modified: []

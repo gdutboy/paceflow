@@ -44,6 +44,7 @@ aliases: []
 tags: []
 schema-version: "6.0"
 completed-date: null                 # status=completed 时填 ISO datetime
+verified-date: null                  # V 阶段验证通过时填 ISO datetime（与 <!-- VERIFIED --> 双表示同步，详见 §7）
 archived-date: null                  # status=archived 时填
 ```
 
@@ -106,19 +107,31 @@ schema-version: "6.0"
 
 ## 4. 状态→checkbox 映射
 
+### 4.1 CHG/HOTFIX 状态机
+
+完整状态机（含 V 阶段标记）。frontmatter `status` / `verified-date` / `<!-- VERIFIED -->` / 索引 checkbox 四个维度必须自洽，任一不一致即 `format-violation`。
+
+| frontmatter status | verified-date | `<!-- VERIFIED -->` | 索引 checkbox | 说明 |
+|---|---|---|---|---|
+| `planned` | null | 缺 | `[ ]`（活跃区） | 未启动 |
+| `in-progress` | null | 缺 | `[/]`（活跃区） | 进行中 |
+| `completed` | null | 缺 | `[x]`（活跃区） | 任务完成但 V 未通过（block 状态） |
+| `completed` | 有 | 有 | `[x]`（活跃区） | V 通过，待归档 |
+| `archived` | 有 | 有 | `[x]`（ARCHIVE 下方） | 已归档 |
+| `archived` | 有 | 缺 | `[x]`（ARCHIVE 下方） | `format-violation`（VERIFIED 注释缺失） |
+| `archived` | 缺 | 有 | `[x]`（ARCHIVE 下方） | `format-violation`（verified-date 缺失） |
+| `cancelled` | null | 缺 | `[-]`（ARCHIVE 下方） | 取消，不验证 |
+
+### 4.2 finding 状态机
+
 | frontmatter status | 索引行 checkbox |
 |--------------------|---------------|
-| `planned` (CHG) | `[ ]` |
-| `in-progress` (CHG) | `[/]` |
-| `completed` (CHG, 活跃区) | `[x]` |
-| `archived` (CHG, ARCHIVE 下方) | `[x]` |
-| `cancelled` (CHG) | `[-]` |
-| `open` (finding) | `[ ]` |
-| `investigating` (finding) | `[/]` |
-| `accepted` (finding) | `[x]` |
-| `rejected` (finding) | `[-]` |
-| `merged` (finding) | `[-]` |
-| `blocked` (finding) | `[!]` |
+| `open` | `[ ]` |
+| `investigating` | `[/]` |
+| `accepted` | `[x]` |
+| `rejected` | `[-]` |
+| `merged` | `[-]` |
+| `blocked` | `[!]` |
 
 ---
 
@@ -227,9 +240,6 @@ schema-version: "6.0"
 <!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->
 
 
-## 未解决问题
-
-
 <!-- ARCHIVE -->
 
 ```
@@ -261,7 +271,50 @@ schema-version: "6.0"
 
 ---
 
-## 7. 5 类指令详细规范
+## 7. VERIFIED 标记规则
+
+V 阶段验证通过的标识。**双表示、单权威**：
+
+| 维度 | 内容 | 用途 |
+|------|------|------|
+| 机器权威（单源） | frontmatter `verified-date: <ISO 8601 datetime>` | 状态时间戳；机械验证；hooks / agent 解析 |
+| 人读 / hook 信号 | `<!-- VERIFIED -->` HTML 注释 | 视觉标记；hook 廉价文本检查 |
+| 一致性约束 | 两者同时存在 ↔ 同时不存在 | 不一致即 `format-violation` |
+
+datetime 格式强制：`YYYY-MM-DDTHH:mm:ss+08:00`（含日期 + 时间 + 时区）。生成命令：`date '+%Y-%m-%dT%H:%M:%S+08:00'`。
+
+**位置**：详情文件 `<!-- APPROVED -->` 紧接下一行（不空行间隔）。
+
+```markdown
+- [x] T-901 任务一
+- [x] T-902 任务二
+
+<!-- APPROVED -->
+<!-- VERIFIED -->
+
+## 实施详情
+```
+
+**约束**：
+
+1. `<!-- VERIFIED -->` 必须紧跟 `<!-- APPROVED -->` 下一行（不空行间隔）
+2. 缺 `<!-- APPROVED -->` 而出现 `<!-- VERIFIED -->` → `format-violation`
+3. 不在 `task.md`：永远在 `changes/<id>.md` 内
+4. agent 是唯一写者：用户 / 主 session 不允许手写 `<!-- VERIFIED -->` 或 `verified-date`
+5. 写入路径：派 `paceflow-artifact-writer` 执行 `update-chg action=verify`（详见 `${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/update-chg.md`）
+6. 归档前置：`archive-chg` 必须验证 `verified-date` 与 `<!-- VERIFIED -->` 都存在，缺一即 `format-violation`
+
+**与 ARCHIVE / APPROVED 标记的区别**：
+
+| 标记 | 范围 | 位置 | 推动方式 |
+|------|------|------|---------|
+| `<!-- ARCHIVE -->` | 索引文件结构标记 | 6 个索引文件（task / impl_plan / walkthrough / findings / corrections.md + spec.md） | 文件创建时存在，永不删除 |
+| `<!-- APPROVED -->` | 单 CHG C 阶段批准 | 详情文件 `changes/<id>.md` | 派 `update-chg action=approve` |
+| `<!-- VERIFIED -->` | 单 CHG V 阶段验证 | 详情文件 `changes/<id>.md` | 派 `update-chg action=verify` |
+
+---
+
+## 8. 5 类指令详细规范
 
 每类指令的详细输入字段、操作步骤、详情文件结构、索引行模板、边界处理已外移到独立文件。**agent 在执行某类指令时按需 Read 对应文件**（一次 Read 后整会话复用）。
 
@@ -283,7 +336,7 @@ schema-version: "6.0"
 - 解析主 session 指令后 → 识别指令类型 → Read 对应 ${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/*.md
 - 已 Read 当前指令文件 → 整会话不再重复 Read
 
-## 8. 验证规则
+## 9. 验证规则
 
 每次操作完成后必须验证：
 

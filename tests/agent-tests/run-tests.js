@@ -220,6 +220,7 @@ function cmdDummy() {
     'tags: []',
     'schema-version: "6.0"',
     'completed-date: null',
+    'verified-date: null',
     'archived-date: null',
     '---',
     '',

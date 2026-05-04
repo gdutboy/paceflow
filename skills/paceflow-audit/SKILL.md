@@ -1,5 +1,6 @@
 ---
 name: paceflow-audit
+effort: high
 description: >
   PACEflow 系统全面审查框架。启动 5-agent 并行团队审查代码质量、流程完整性、
   一致性、Skill模板同步和架构优化，产出去重分级的审查报告。当用户说"完整分析"、

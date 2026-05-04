@@ -1,10 +1,11 @@
 ---
 name: pace-bridge
+effort: medium
 description: >
   将计划文件桥接到 PACEflow artifacts（task.md + implementation_plan.md）。
-  支持 Superpowers 计划（docs/plans/ 或 docs/superpowers/plans/）和 Claude Code plan mode 计划（~/.claude/plans/）。
-  当 PreToolUse DENY 提示"检测到计划文件"或 SessionStart 提示"桥接提醒"时使用。
-  当用户主动请求"同步计划"、"桥接计划"、"把计划转到 task"时也应激活。
+  支持 Superpowers 计划（docs/plans/ 或 docs/superpowers/plans/）和 Claude Code
+  plan mode（~/.claude/plans/）。当 DENY 提示"检测到计划文件"或用户请求"同步计划"、
+  "桥接计划"时激活。
 ---
 
 # Superpowers → PACEflow 桥接

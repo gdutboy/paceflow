@@ -1,12 +1,10 @@
 ---
 name: artifact-management
+effort: medium
 description: >
   Artifact 文件（spec/task/implementation_plan/walkthrough/findings）的格式规范、
-  管理规则和变更 ID（CHG-ID）管理。当创建或编辑任何 Artifact 文件时自动激活——
-  包括 spec.md、task.md、implementation_plan.md、walkthrough.md、findings.md。
-  任何涉及任务编号 T-NNN、变更 ID CHG-YYYYMMDD-NN、状态标记 [ ]/[/]/[x]/[-]/[!]、
-  归档操作 ARCHIVE 的操作都应参考此 skill。即使只是修改一个任务状态或添加一条索引，
-  也请先查阅。
+  变更 ID（CHG-YYYYMMDD-NN）管理。创建或编辑 Artifact 文件、涉及 T-NNN 任务编号、
+  状态标记 [ ]/[/]/[x]/[-]/[!] 或 ARCHIVE 归档操作时自动激活。
 ---
 
 # Artifact 文件管理规则
