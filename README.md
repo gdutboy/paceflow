@@ -233,6 +233,10 @@ paceflow/
 
 </details>
 
+## 友链
+
+在此特别感谢 linuxdo，学 AI 上 [Linux.do](https://linux.do)
+
 ---
 
 **版本**: v6.0.0 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
