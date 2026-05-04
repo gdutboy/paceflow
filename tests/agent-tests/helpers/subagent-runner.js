@@ -60,6 +60,11 @@ create-chg 资源路径要求：
 
   return `执行 paceflow-artifact-writer 指令：${op}
 
+最终输出硬约束（机械检查）：
+- 最终回答第一行必须完全等于：## paceflow-artifact-writer 报告
+- 禁止输出 ## 报告 / ## 执行报告 / ## ${op} 报告 / 任何标题变体
+- 标题前不能有任何自然语言、空行或说明；不匹配会导致 report_title_strict FAIL
+
 项目路径（ARTIFACT_DIR）：${ctx.targetDir}
 
 规范路径（绝对路径；不要搜索 ~/.claude）：
@@ -73,7 +78,7 @@ ${fieldsJson}
 
 操作要求：
 - 严格按 ${op} 规范执行
-- 操作完成后按报告格式（spec §强制报告格式）输出
+- 操作完成后按报告格式输出，第一行必须是 \`## paceflow-artifact-writer 报告\`
 - 不做超出 ${op} 范围的额外修改
 - 资源预算是硬约束的一部分；避免为报告展示而额外 Read/Bash
 ${operationHints}`;
