@@ -50,6 +50,28 @@ function listMatchingFiles(targetDir, relPattern) {
     .map((f) => path.join(dir, f));
 }
 
+function toLenientSlugPattern(relPattern) {
+  const dir = path.dirname(relPattern);
+  const base = path.basename(relPattern);
+  const match = base.match(/^(finding-\d{4}-\d{2}-\d{2}-|correction-\d{4}-\d{2}-\d{2}-\d{2}-).+\.md$/);
+  if (!match) return null;
+  return path.join(dir, `${match[1]}*.md`);
+}
+
+function resolveExpectedFiles(targetDir, rel, variables, exp) {
+  const rendered = renderVariables(rel, variables);
+  let matches = listMatchingFiles(targetDir, rendered);
+  let matchedPattern = rendered;
+  if (matches.length === 0 && exp.filename_match === 'lenient') {
+    const lenientPattern = toLenientSlugPattern(rendered);
+    if (lenientPattern) {
+      matches = listMatchingFiles(targetDir, lenientPattern);
+      matchedPattern = lenientPattern;
+    }
+  }
+  return { rendered, matchedPattern, matches };
+}
+
 function parseFrontmatter(content) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
@@ -136,12 +158,16 @@ function verify(testCase, targetDir, variables, agentReport) {
 
   // 1. files_created
   for (const rel of (exp.files_created || [])) {
-    const rendered = renderVariables(rel, variables);
-    const matches = listMatchingFiles(targetDir, rendered);
+    const { rendered, matchedPattern, matches } = resolveExpectedFiles(targetDir, rel, variables, exp);
     if (matches.length === 0) {
       validations.push({ name: `files_created:${rendered}`, ok: false, reason: 'not found' });
     } else {
-      validations.push({ name: `files_created:${rendered}`, ok: true, found: matches });
+      validations.push({
+        name: `files_created:${rendered}`,
+        ok: true,
+        found: matches,
+        matchedPattern: matchedPattern !== rendered ? matchedPattern : undefined,
+      });
     }
   }
 
@@ -159,8 +185,7 @@ function verify(testCase, targetDir, variables, agentReport) {
   // 3. frontmatter / wikilink / cross-index 等（针对 created files）
   if ((exp.validations || {}).frontmatter_schema === 'pass') {
     for (const rel of (exp.files_created || [])) {
-      const rendered = renderVariables(rel, variables);
-      const matches = listMatchingFiles(targetDir, rendered);
+      const { matches } = resolveExpectedFiles(targetDir, rel, variables, exp);
       for (const fp of matches) {
         // 索引文件无 frontmatter（spec §5.6 模板），跳过
         if (isIndexFile(fp)) continue;
@@ -172,8 +197,7 @@ function verify(testCase, targetDir, variables, agentReport) {
 
   if ((exp.validations || {}).wikilink_integrity === 'pass') {
     const allFiles = [...(exp.files_created || []), ...(exp.files_modified || [])]
-      .map((rel) => renderVariables(rel, variables))
-      .flatMap((rel) => listMatchingFiles(targetDir, rel));
+      .flatMap((rel) => resolveExpectedFiles(targetDir, rel, variables, exp).matches);
     for (const fp of allFiles) {
       const content = fs.readFileSync(fp, 'utf8');
       // detail 文件（changes/<...>.md）仅检查 frontmatter 内的 wikilink；body 是 markdown 内容
