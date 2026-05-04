@@ -80,8 +80,8 @@ expected:
     wikilink_integrity: pass
   body_completeness_check: true
   report_title_strict: "## paceflow-artifact-writer 报告"
-  max_tokens: 60000
-  max_duration_ms: 120000
+  max_tokens: 70000
+  max_duration_ms: 300000
 
 teardown:
   cleanup: true

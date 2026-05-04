@@ -248,10 +248,19 @@ function cmdDummy() {
   const mockReport = {
     status: 'SUCCESS',
     tokens: 5000,
+    tool_uses: 7,
     duration_ms: 12000,
     raw: '## paceflow-artifact-writer 报告\n**操作**：create-chg\n（mock 报告，dummy 自测用）',
   };
-  const result = runner.verifyAndReport(ctx, mockReport);
+  const dummyCtx = {
+    ...ctx,
+    testCase: {
+      ...ctx.testCase,
+      id: 'TC-DUMMY',
+      indication: 'dummy-self-test',
+    },
+  };
+  const result = runner.verifyAndReport(dummyCtx, mockReport);
   console.log(`   结果：${result.passed ? '✅ PASS' : '❌ FAIL'}`);
   console.log(`   报告：${path.relative(ROOT, result.reportPath)}`);
   for (const v of result.validations) {

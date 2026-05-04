@@ -14,11 +14,11 @@
 ## 操作步骤
 
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
-2. 生成 slug（参考 system prompt slug 规则）
-3. `mkdir -p changes/`
-4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
-5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
-6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
+2. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
+3. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
+4. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
+5. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
+6. 基于 payload + Edit 成功 + hook 反馈做低成本验证；除非 hook 报告本次目标问题，不要再 Read 刚写好的详情文件或两个索引文件
 
 ## CHG-ID 推算（含冲突检测）
 
@@ -26,9 +26,8 @@
 
 1. `Bash: ls $ARTIFACT_DIR/changes/chg-YYYYMMDD-*.md $ARTIFACT_DIR/changes/hotfix-YYYYMMDD-*.md 2>/dev/null` 列出当日已有 ID
 2. 提取最大 nn → next_nn = max + 1（无文件则 01）
-3. **冲突检测**：`Bash: [ -e $ARTIFACT_DIR/changes/chg-YYYYMMDD-{next_nn}.md ] && echo CONFLICT || echo OK`
-4. 如 CONFLICT → next_nn += 1，回到步骤 3 重试（最多 3 次）
-5. 仍 CONFLICT → 报告 `file-conflict`，主 session 重新派遣
+3. **冲突检测**：如步骤 1 的列表中已包含目标文件名，则 next_nn += 1（最多 3 次）
+4. 仍 CONFLICT → 报告 `file-conflict`，主 session 重新派遣
 
 ## 详情文件结构
 

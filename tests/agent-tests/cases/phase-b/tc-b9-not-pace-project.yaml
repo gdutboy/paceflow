@@ -23,8 +23,8 @@ expected:
   report_title_strict: "## paceflow-artifact-writer 报告"
   files_created: []
   files_modified: []
-  max_tokens: 35000
-  max_duration_ms: 60000
+  max_tokens: 40000
+  max_duration_ms: 180000
 
 teardown:
   cleanup: true

@@ -86,8 +86,9 @@ expected:
     task_md_index_below_archive: true        # 索引行迁到 ARCHIVE 下方
     impl_plan_index_below_archive: true
     walkthrough_row_added: true
-  max_tokens: 18000                           # archive 涉及 4 文件，预算稍宽
-  max_duration_ms: 45000
+  max_tokens: 50000                           # archive 涉及 4 文件，预算稍宽
+  max_duration_ms: 240000
+  max_tool_uses: 18
 
 teardown:
   cleanup: true

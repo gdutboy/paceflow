@@ -43,8 +43,9 @@ expected:
     summary_length_le_200: true
     impact_in_index_row: P1
     wikilink_integrity: pass
-  max_tokens: 6000
-  max_duration_ms: 25000
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
   filename_match: lenient                      # slug 由 agent 派生，允许包含 "tc-a4" / "phase-a" 关键词
 
 teardown:

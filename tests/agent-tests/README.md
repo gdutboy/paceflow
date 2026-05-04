@@ -79,8 +79,9 @@ expected:
   validations:
     frontmatter_schema: pass
     wikilink_integrity: pass
-  max_tokens: 8000
-  max_duration_ms: 30000
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12        # 可选；用于捕获 over-investigation
 
 teardown:
   cleanup: true
@@ -91,8 +92,10 @@ teardown:
 ## 验收标准（Phase A）
 
 - 5/5 PASS
-- 各用例 token < `expected.max_tokens`
+- 各用例资源预算通过：`max_tokens` / `max_duration_ms` / 可选 `max_tool_uses`
 - 验证项全 pass（schema / wikilink / cross_index）
+
+预算说明：`max_tokens` 使用 Claude Code subagent 的 `total_tokens`，包含 agent 启动、system prompt、spec/instruction Read 和工具回环成本；当前实测标准预算为 35-40K，而不是早期 PoC 的 5-8K。
 
 未达标 → 看 `results/<date>/manifest.json` + tc-*.report.md 定位失败根因，决定修 agent / spec / instructions / fixture。
 

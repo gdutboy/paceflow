@@ -73,8 +73,9 @@ expected:
     wikilink_integrity: pass
     finding_id_pattern: "FINDING-{ISO_DATE}-"
     summary_length_le_200: true
-  max_tokens: 35000
-  max_duration_ms: 60000
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 14
   filename_match: lenient
 
 teardown:

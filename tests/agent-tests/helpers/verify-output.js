@@ -108,6 +108,20 @@ function checkBelowArchive(filePath, wikilinkId) {
   };
 }
 
+function pushNumericLimit(validations, agentReport, field, limit, name) {
+  if (!limit) return;
+  if (!agentReport) {
+    validations.push({ name, ok: false, reason: 'agent report missing', limit });
+    return;
+  }
+  const actual = Number(agentReport[field]);
+  if (!Number.isFinite(actual)) {
+    validations.push({ name, ok: false, reason: `${field} missing`, actual: agentReport[field], limit });
+    return;
+  }
+  validations.push({ name, ok: actual <= limit, actual, limit });
+}
+
 /**
  * @param {object} testCase   解析后的用例对象
  * @param {string} targetDir  临时 vault 路径
@@ -169,12 +183,10 @@ function verify(testCase, targetDir, variables, agentReport) {
     }
   }
 
-  // 4. token / duration
-  if (agentReport && exp.max_tokens && agentReport.tokens > exp.max_tokens) {
-    validations.push({ name: 'max_tokens', ok: false, actual: agentReport.tokens, limit: exp.max_tokens });
-  } else if (agentReport && exp.max_tokens) {
-    validations.push({ name: 'max_tokens', ok: true, actual: agentReport.tokens, limit: exp.max_tokens });
-  }
+  // 4. resource budgets
+  pushNumericLimit(validations, agentReport, 'tokens', exp.max_tokens, 'max_tokens');
+  pushNumericLimit(validations, agentReport, 'duration_ms', exp.max_duration_ms, 'max_duration_ms');
+  pushNumericLimit(validations, agentReport, 'tool_uses', exp.max_tool_uses, 'max_tool_uses');
 
   // 4.1 report_title_strict（字面匹配 agent 报告 H2 标题）
   // 默认值：## paceflow-artifact-writer 报告（spec 输出契约）
