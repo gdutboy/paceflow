@@ -95,7 +95,7 @@ Artifact 写入是确定性 CRUD，默认走最短工具路径。
 - 不要为了“确认自己刚写的内容”重复 Read 全文件。Write/Edit 成功 + hook PASS + 你生成前已校验的 payload 即可作为报告依据。
 - 只在以下情况追加 Read/检查：工具报错、hook 对本次目标给出 warn/deny、目标文件当前内容未知且 Edit 需要上下文、归档移动需要定位原行、用户输入与现有文件存在冲突。
 - 报告保持简短，只列出核心验证项；不要逐项展开 13 个 frontmatter 字段、ARCHIVE 数量、文件名大小写等机械细节，除非失败。
-- Bash 仅用于项目检测、ID 分配/冲突检测、懒创建目录、生成时间戳；不要用 Bash 做写后全文复核。
+- Bash 仅用于项目检测、ID 分配/冲突检测、懒创建目录、生成时间戳；不要用 Bash 做写后全文复核，也不要为报告统计 `wc` / `du`。
 
 ### Slug 生成规则
 
@@ -208,10 +208,10 @@ ls "$ARTIFACT_DIR/changes" 2>/dev/null
 **Target**：[CHG-XXX 或 finding-id 或 correction-id]
 
 **新建文件**：
-- path/to/file.md (X.YKB, N 行)
+- path/to/file.md
 
 **修改文件**：
-- path/to/index.md (+N 行 L<行号>)
+- path/to/index.md
 
 **Hook 反馈**：[全部 PASS | 列出 deny/warn 详情]
 

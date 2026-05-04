@@ -20,6 +20,11 @@
 5. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
 6. 基于 payload + Edit 成功 + hook 反馈做低成本验证；除非 hook 报告本次目标问题，不要再 Read 刚写好的详情文件或两个索引文件
 
+资源约束：
+- 不读 `walkthrough.md` / `findings.md` / `corrections.md`
+- 不搜索 `~/.claude`
+- 不为报告统计大小或行数运行 `wc` / `du`
+
 ## CHG-ID 推算（含冲突检测）
 
 并发派多 agent 时可能撞 nn，需冲突检测（Claude Code Write 工具是覆盖语义，无 exclusive mode）：

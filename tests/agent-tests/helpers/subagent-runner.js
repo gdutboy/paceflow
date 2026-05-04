@@ -21,6 +21,7 @@ const teardownHelper = require('./fixture-teardown');
 const verifyHelper = require('./verify-output');
 
 const ROOT = path.join(__dirname, '..');
+const REPO_ROOT = path.join(ROOT, '..', '..');
 const RESULTS_ROOT = path.join(ROOT, 'results');
 
 function loadYaml(yamlPath) {
@@ -45,10 +46,25 @@ function buildAgentPrompt(testCase, ctx) {
   }
 
   const fieldsJson = JSON.stringify(renderedFields, null, 2);
+  const specPath = path.join(REPO_ROOT, 'agents', 'references', 'artifact-writer-spec.md');
+  const instructionPath = path.join(REPO_ROOT, 'agents', 'references', 'instructions', `${op}.md`);
+
+  const operationHints = op === 'create-chg'
+    ? `
+create-chg 资源路径要求：
+- 不要读取 walkthrough.md / findings.md / corrections.md；本操作只修改 task.md 和 implementation_plan.md。
+- 不要搜索 ~/.claude 或读取 agent 自身定义；本 prompt 已给出规范绝对路径。
+- 不要用 wc/du/ls -la 统计报告大小或行数；报告里路径即可，大小/行数可省略。
+- 最短工具路径参考：检测 changes/ → Read spec/instruction → 分配 ID → Write 详情 → Read+Edit task.md → Read+Edit implementation_plan.md → 报告。`
+    : '';
 
   return `执行 paceflow-artifact-writer 指令：${op}
 
 项目路径（ARTIFACT_DIR）：${ctx.targetDir}
+
+规范路径（绝对路径；不要搜索 ~/.claude）：
+- 通用规范：${specPath}
+- 当前指令规范：${instructionPath}
 
 输入字段（JSON）：
 \`\`\`json
@@ -58,7 +74,9 @@ ${fieldsJson}
 操作要求：
 - 严格按 ${op} 规范执行
 - 操作完成后按报告格式（spec §强制报告格式）输出
-- 不做超出 ${op} 范围的额外修改`;
+- 不做超出 ${op} 范围的额外修改
+- 资源预算是硬约束的一部分；避免为报告展示而额外 Read/Bash
+${operationHints}`;
 }
 
 function prepare(yamlRelOrAbsPath) {

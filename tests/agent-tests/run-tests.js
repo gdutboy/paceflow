@@ -53,7 +53,7 @@ function cmdPrepare(yamlPath) {
   console.log('\n' + '═'.repeat(70));
   console.log('下一步：');
   console.log(`  1. 主 session 用 Agent tool 派 paceflow-artifact-writer，prompt 见上`);
-  console.log(`  2. 收到 agent 报告后，存为 JSON：{"status":"SUCCESS","tokens":N,"raw":"..."}`);
+  console.log(`  2. 收到 agent 报告后，存为 JSON：{"status":"SUCCESS","tokens":N,"tool_uses":N,"duration_ms":N,"raw":"..."}`);
   console.log(`  3. node run-tests.js verify ${path.relative(ROOT, yamlPath)} <report.json>`);
   console.log(`  4. 完成后清理：node run-tests.js teardown ${path.relative(ROOT, yamlPath)}`);
 }
