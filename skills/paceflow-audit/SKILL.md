@@ -27,10 +27,11 @@ description: >
 | Skill 引用 | `paceflow/skills/*/references/*.md` |
 | Hook 模板 | `paceflow/hooks/templates/*.md` |
 | Skill 模板 | `paceflow/skills/*/templates/*.md` |
-| 配置 | `paceflow/config/*.json` |
-| Plugin 元数据 | `paceflow/.claude-plugin/plugin.json` + `paceflow/hooks/hooks.json` |
-| 工具链 | `paceflow/install.js` + `paceflow/verify.js` |
-| 测试 | `paceflow/tests/*.js` |
+| Agent | `paceflow/agents/**/*.md` |
+| 配置 | `paceflow/hooks/hooks.json` |
+| Plugin 元数据 | `paceflow/.claude-plugin/plugin.json` + `paceflow/.claude-plugin/marketplace.json` |
+| 本地工具 | `paceflow/install.js` + `paceflow/verify.js`（仅本地验证，不是正式安装路径） |
+| 测试 | `paceflow/tests/**/*.js` + `paceflow/tests/agent-tests/**/*.yaml` |
 | 文档 | `CLAUDE.md` + `paceflow/README.md` + `paceflow/REFERENCE.md` |
 
 ---
@@ -56,9 +57,9 @@ description: >
 |-------|---------|---------|
 | 1. 代码质量 | 核心 Hook（公共模块 + Write/Edit hook） | Bug/正则/路径/异常/I/O 协议 |
 | 2. 流程完整性 | 生命周期 Hook（SessionStart/Stop/PreCompact） | stdin 解析/防循环/快照/降级 |
-| 3. 一致性 | 辅助 Hook + Plugin + 工具链 | hooks.json 一致性/install/verify |
-| 4. Skill 模板 | 所有 Skill + 模板 | 交叉引用/格式/正则兼容 |
-| 5. 架构优化 | 测试 + 文档 + 整体架构 | 覆盖度/文档准确性/流程缺口 |
+| 3. 一致性 | 辅助 Hook + Plugin + Agent 发布资产 | hooks.json/plugin/agents 一致性 |
+| 4. Skill 模板 | 所有 Skill + 模板 | v6 口径/交叉引用/格式/正则兼容 |
+| 5. 架构优化 | 测试 + 文档 + 整体架构 | agent contract 覆盖度/文档准确性/流程缺口 |
 
 > 每个 agent 的完整 prompt 和共享审查纪律见 [references/agent-prompts.md](references/agent-prompts.md)。
 
@@ -86,7 +87,7 @@ W/I 级快速扫描去重合并，不逐一验证。
 ## Phase 3：汇总报告
 
 1. **去重**：同文件+同行号+同性质 → 合并
-2. **分级**：P0 必修（C+高影响H）→ P1 建议（W）→ P2 文档 → P3 延后（I → findings.md）
+2. **分级**：P0 必修（C+高影响H）→ P1 建议（W）→ P2 文档 → P3 延后（I → 派 `record-finding`）
 3. **建议后续变更**：每个 P0/P1 问题推荐对应 CHG-ID 或归入现有 CHG
 4. **审查输入版本记录**：记录本次审查读取的 artifact 文件最后修改时间戳
 5. **生成 ticketNN.md**

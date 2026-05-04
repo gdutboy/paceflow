@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, COMPLETION_PHRASES } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, COMPLETION_PHRASES, getActiveChangeEntries, countDetailTasks, isChangeApproved, isChangeVerified } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -18,8 +18,10 @@ const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
 
+const paceSignal = isPaceProject(cwd);
+
 // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
-if (!isPaceProject(cwd)) {
+if (!paceSignal) {
   log(paceUtils.logEntry('Stop', 'SKIP', { proj, reason: 'non-pace' }));
   process.exit(0);
 }
@@ -47,7 +49,90 @@ const existing = ARTIFACT_FILES.filter(f => fs.existsSync(path.join(artDir, f)))
 
 const taskActive = readActive(cwd, 'task.md');
 
-if (taskActive) {
+if (paceSignal === 'artifact') {
+  for (const file of ARTIFACT_FILES) {
+    const archFmt = checkArchiveFormat(cwd, file);
+    if (archFmt) warnings.push(archFmt);
+  }
+
+  const entries = getActiveChangeEntries(cwd);
+  const actionableEntries = entries.filter(e => {
+    const marks = [e.taskCheckbox, e.implCheckbox].filter(Boolean);
+    return marks.some(m => m === ' ' || m === '/' || m === '!' || m === 'x');
+  });
+
+  const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
+  if (mismatched.length > 0) {
+    warnings.push(`task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${mismatched.map(e => e.id).join(', ')}。请派 paceflow-artifact-writer 修复索引。`);
+  }
+
+  let totalPending = 0;
+  for (const entry of actionableEntries) {
+    if (!entry.detail || entry.detail.missing) {
+      warnings.push(`${entry.id} 的详情文件缺失（应为 changes/${entry.slug}.md），请派 paceflow-artifact-writer 修复。`);
+      continue;
+    }
+    const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
+    const tasks = countDetailTasks(entry.detail.content);
+    totalPending += tasks.pending;
+
+    if (entry.taskCheckbox && entry.implCheckbox && entry.taskCheckbox !== entry.implCheckbox) {
+      warnings.push(`${entry.id} 索引状态不一致：task.md=[${entry.taskCheckbox}]，implementation_plan.md=[${entry.implCheckbox}]。请派 update-chg action=update-status 修复。`);
+    }
+
+    if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
+      warnings.push(`${entry.id} 索引已是 [x]，但详情 frontmatter status=${status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
+    }
+
+    if (tasks.pending > 0) {
+      if (!isChangeApproved(entry.detail)) {
+        warnings.push(`${entry.id} 还有 ${tasks.pending} 个未完成任务但未批准。请用 AskUserQuestion 询问用户是否批准，批准后派 update-chg action=approve。${FORMAT_SNIPPETS.approved}`);
+      } else {
+        warnings.push(`${entry.id} 还有 ${tasks.pending} 个未完成任务（完成 ${tasks.done}/${tasks.total}）。请继续执行，并用 update-chg action=update-status 维护 T-NNN 状态。`);
+      }
+      continue;
+    }
+
+    if (tasks.total > 0 && !['completed', 'archived', 'cancelled'].includes(status)) {
+      warnings.push(`${entry.id} 任务已全部完成，但 frontmatter status=${status || 'missing'}。请派 update-chg action=update-status 推到 completed。`);
+      continue;
+    }
+
+    if (status === 'completed' && !isChangeVerified(entry.detail)) {
+      warnings.push(`${entry.id} 已 completed 但未验证。请派 paceflow-artifact-writer update-chg action=verify 写入 verified-date 与 <!-- VERIFIED -->。`);
+    } else if (status === 'completed' && isChangeVerified(entry.detail)) {
+      warnings.push(`${entry.id} 已 completed 且 verified，仍在活跃索引中。请派 paceflow-artifact-writer archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
+    }
+  }
+
+  const walkActive = readActive(cwd, 'walkthrough.md');
+  if (walkActive !== null && actionableEntries.length > 0) {
+    const today = todayISO();
+    const hasToday = new RegExp(`^\\|\\s*${today}\\s*\\|`, 'm').test(walkActive);
+    if (!hasToday) {
+      warnings.push(`walkthrough.md 缺少 ${today} 的工作记录索引行。${FORMAT_SNIPPETS.walkthroughDetail}`);
+    }
+  }
+
+  try {
+    const findingsDir = path.join(artDir, 'changes', 'findings');
+    const now = Date.now();
+    const aged = fs.existsSync(findingsDir)
+      ? fs.readdirSync(findingsDir).filter(f => f.endsWith('.md')).filter(f => {
+          const detail = fs.readFileSync(path.join(findingsDir, f), 'utf8');
+          const fm = paceUtils.parseFrontmatter(detail);
+          if ((fm.status || 'open') !== 'open' || !fm.date) return false;
+          return (now - new Date(fm.date).getTime()) / 86400000 >= 14;
+        }).length
+      : 0;
+    if (aged > 0) warnings.push(`changes/findings/ 有 ${aged} 个 open finding 超过 14 天未流转，请询问用户采纳、否定或保持开放。`);
+  } catch(e) {}
+
+  if (lastMessage && COMPLETION_PHRASES.test(lastMessage) && totalPending > 0) {
+    warnings.push(`AI 声称完成，但 v6 详情文件中仍有 ${totalPending} 个未完成任务。请继续执行或用 update-chg action=update-status 标记 [-] 跳过。`);
+  }
+
+} else if (taskActive) {
   // 0. 检查 ARCHIVE 格式
   const archFmt1 = checkArchiveFormat(cwd, 'task.md');
   if (archFmt1) warnings.push(archFmt1);
@@ -98,7 +183,7 @@ if (taskActive) {
     warnings.push(`implementation_plan.md 仍有 [/] 进行中，但任务已全部完成。请将索引状态改为 [x] 完成。格式：${FORMAT_SNIPPETS.implIndex}`);
   }
 
-  // v5.0.1: impl_plan 详情终态检查 — 所有 [x] 必须有 ### CHG-ID 详情
+  // legacy fallback：impl_plan 详情终态检查
   if (planActive) {
     const planFullStop = readFull(cwd, 'implementation_plan.md');
     if (planFullStop) {
@@ -202,7 +287,7 @@ if (taskActive) {
 
 // TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 仅 log + 清理 flag（不阻止退出，因 hook 无法查询 TodoWrite 实际状态）
 const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
-if (fs.existsSync(twFlag) && taskActive) {
+if (paceSignal !== 'artifact' && fs.existsSync(twFlag) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
   if (pending === 0 && done === 0) {
     log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TW_CLEANUP | TodoWrite flag 清理（无活跃任务）\n`);
@@ -211,7 +296,7 @@ if (fs.existsSync(twFlag) && taskActive) {
 }
 
 // T-424: 交叉验证移出 warnings.length===0 守卫，确保已有 warning 时仍检测虚假完成声明
-if (lastMessage) {
+if (paceSignal !== 'artifact' && lastMessage) {
   // I-13: 交叉验证中文短语使用 pace-utils 常量
   if (COMPLETION_PHRASES.test(lastMessage)) {
     // I-3: 复用上方已读取的 taskActive，避免重复 readActive

@@ -1,141 +1,151 @@
 # Artifact 格式参考
 
-> 本文件是 artifact-management 的详细格式参考。Hook DENY/HINT 消息和格式问题排查时查阅此处。
+本文件是 `artifact-management` 的 v6 速查。完整 schema 以 `agents/references/artifact-writer-spec.md` 为准。
 
 ---
 
-## task.md 完整格式
+## 索引文件
+
+### task.md
 
 ```markdown
-### CHG-YYYYMMDD-NN: 变更标题
+# 项目任务追踪
+
+## 活跃任务
+
+- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006]
+
+<!-- ARCHIVE -->
+```
+
+### implementation_plan.md
+
+```markdown
+# 实施计划
+
+## 变更索引
+
+- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006]
+
+<!-- ARCHIVE -->
+```
+
+两者只存 wikilink 索引，不写 CHG 三级标题详情段。
+
+### walkthrough.md
+
+```markdown
+# 工作记录
+
+## 最近工作
+
+| 日期 | 完成内容 | 关联变更 |
+| --- | --- | --- |
+| 2026-05-04 | [[chg-20260504-01]] hooks v6 改造验证通过 | CHG-20260504-01 |
+
+<!-- ARCHIVE -->
+```
+
+### findings.md
+
+```markdown
+# 调研记录
+
+## 摘要索引
+
+- [ ] [[finding-2026-05-04-hook-schema|hook schema 校验缺口]] — schema violation 需要 PostToolUse 提醒 #finding [date:: 2026-05-04] [impact:: P1]
+
+<!-- ARCHIVE -->
+```
+
+finding 详情写在 `changes/findings/<id>.md`。
+
+### corrections.md
+
+```markdown
+# Corrections 记录
+
+## 索引
+
+- [[correction-2026-05-04-01-install-path]] 混淆 plugin install 与本地 install.js [date:: 2026-05-04] [knowledge:: project-only]
+
+<!-- ARCHIVE -->
+```
+
+correction 详情写在 `changes/corrections/<id>.md`。
+
+---
+
+## CHG/HOTFIX 详情文件
+
+位置：`changes/chg-yyyymmdd-nn.md` 或 `changes/hotfix-yyyymmdd-nn.md`。
+
+```markdown
+---
+chg-id: CHG-YYYYMMDD-NN
+status: planned
+date: YYYY-MM-DD
+type: change
+parent-tasks: ["[[task]]"]
+parent-impl: ["[[implementation_plan]]"]
+related-finding: null
+aliases: []
+tags: []
+schema-version: "6.0"
+completed-date: null
+verified-date: null
+archived-date: null
+---
+
+# 标题
+
+## 任务清单
+
+- [ ] T-001 任务描述
 
 <!-- APPROVED -->
 <!-- VERIFIED -->
 
-- [/] T-001 任务描述
-- [ ] T-002 任务描述
-- [x] T-003 已完成任务
+## 实施详情
+
+**背景（Why）**：...
+
+**范围（What）**：...
+
+**技术决策（How）**：...
+
+## 工作记录
+
+| 日期 | 完成内容 |
+| --- | --- |
+
+## 关联调研
 ```
 
-- **CHG 分组**：每个变更独立 `###` 标题
-- **`<!-- APPROVED -->`**：C 阶段获批后添加，放在 CHG 标题下方、任务列表上方
-- **`<!-- VERIFIED -->`**：V 阶段验证通过后添加，放在 APPROVED 下方
-- **任务条目**：`- [状态] T-NNN 任务标题`
-- **归档**：将 `<!-- ARCHIVE -->` 标记上移到待归档 CHG 块上方（两步 Edit：插入新标记 → 删除旧标记）
+创建时不含 `APPROVED` / `VERIFIED`。批准和验证只能由 `paceflow-artifact-writer update-chg` 写入。
 
 ---
 
-## implementation_plan.md 完整格式
+## 标记规则
 
-**索引条目**（活跃区顶部）：
-```markdown
-- [/] CHG-20260308-01 功能名称 — 简要描述 #change [tasks:: T-001~T-003]
-```
+| 标记 | 位置 | 写入操作 |
+|------|------|----------|
+| `<!-- ARCHIVE -->` | 索引文件分隔活跃区/归档区 | `archive-chg` 移动索引行 |
+| `<!-- APPROVED -->` | `changes/<id>.md` 任务清单后 | `update-chg action=approve` |
+| `<!-- VERIFIED -->` | 紧邻 APPROVED 下一行 | `update-chg action=verify` |
 
-**索引字段说明**：
-- **checkbox 状态**：编码变更进度，兼容 Obsidian Tasks 跨项目查询
-- **CHG-ID**：变更标识符
-- **标题**：变更简述
-- **#change**：Obsidian 标签，用于 Tasks/Dataview 过滤
-- **[tasks:: T-NNN~T-NNN]**：Dataview inline field，关联 task.md 任务编号
-
-**详情段落**（活跃变更详情区）：
-```markdown
-### CHG-20260308-01 功能名称
-
-**背景（Why）**：为什么做这个变更。
-**范围（What）**：~N 行改动，M 个文件。
-**技术决策（How）**：方案选择及理由（如有取舍）。
-
-**T-001 任务标题**：
-- `src/api.js:42` handleRequest — 缺少 null 检查 → 添加参数校验
-- 验收：/api/test?param=null 返回 400 而非 500
-
-**T-002 任务标题**：
-- `tests/api.test.js` — 新建，覆盖 null 参数场景
-- 验收：测试通过
-```
-
-- 每个索引条目**必须**有对应的 `### CHG-ID` 详情段落
-- Hook 检测 E 阶段前提：`/^- \[\/\]/m`（行首 `- [/] `）
-- **禁止**用"见 docs/plans/xxx"替代详情——详情必须自包含
-
----
-
-## walkthrough.md 格式
-
-**索引表**（活跃区顶部）：
-```markdown
-| 日期 | 完成内容 | 关联变更 |
-|------|---------|---------|
-| 2026-03-10 | CHG-20260310-02 描述（详细内容摘要） | CHG-20260310-02 |
-```
-
-**详情段落**（索引表下方）：
-```markdown
-## 2026-03-10 CHG-20260310-02 描述
-
-> **追加时间**: 2026-03-10T18:26:00+08:00
-
-- 执行 CHG-20260310-02：完成内容详述
-  - **T-001**：具体改动
-  - **T-002**：具体改动
-```
-
----
-
-## findings.md 格式
-
-**索引条目**（索引区 + 详情区双区格式）：
-```markdown
-- [x] JWT 安全最佳实践 — 关键结论摘要 #finding [date:: 2026-01-17] [change:: CHG-20260117-01]
-```
-
-**详情段落**：
-```markdown
-### [2026-01-17] JWT 安全最佳实践
-
-**背景**：发现过程和触发事件。
-**问题**：当前行为 vs 应有行为（含代码位置、影响范围）。
-**方案**：建议的解决方案（多方案对比+推荐）。
-```
-
-> 每条新 finding 必须**同时**写入索引条目和详情段落。
-
----
-
-## spec.md 同步触发词
-
-以下操作触发 `spec.md` 更新：
-- 安装新依赖（pip install / npm install / pnpm install）
-- 添加新配置项（config.py / .env）
-- 创建新核心模块（api/*.py / services/*.py）
-- 框架/库版本升级
-
----
-
-## 模板文件
-
-创建新 Artifact 时，hooks 自动使用以下模板（位于 `hooks/templates/`）：
-- `spec.md` — 项目规格模板
-- `task.md` — 任务清单模板
-- `implementation_plan.md` — 实施计划模板
-- `walkthrough.md` — 工作记录模板
-- `findings.md` — 调研记录模板
-
-变更管理模板（位于 `skills/artifact-management/templates/`）：
-- `change-implementation_plan.md` — 完整 Implementation Plan 模板
+`verified-date` 与 `<!-- VERIFIED -->` 必须同时存在或同时不存在。
 
 ---
 
 ## 常见错误速查
 
-| 错误格式 | 正确格式 | 说明 |
-|---------|---------|------|
-| `\| [/] \| CHG-... \|` | `- [/] CHG-...` | 表格 → checkbox |
-| `✅ CHG-...` | `- [x] CHG-...` | emoji → checkbox |
-| 索引无详情段落 | `### CHG-ID` 段落 | hook 守门 DENY |
-| 双 `<!-- ARCHIVE -->` | 最终保留 1 个 | 归档中间态可接受，完成后须删除旧标记 |
-| `## ARCHIVE` | `<!-- ARCHIVE -->` | 必须是 HTML 注释 |
-| 详情写"见 docs/plans/" | 详情自包含 | hook DENY |
-| findings 只写索引无详情 | 同时写索引+详情 | 后续 session 无法还原上下文 |
+| 错误格式 | 正确做法 |
+|---------|----------|
+| `task.md` 内写 CHG 三级标题详情 | 派 agent 写 `changes/<id>.md` |
+| `implementation_plan.md` 内写旧式活跃详情区 | 只保留 wikilink 索引 |
+| 主 session 直接写 `<!-- APPROVED -->` | 派 `update-chg action=approve` |
+| 主 session 直接写 `<!-- VERIFIED -->` / `verified-date` | 派 `update-chg action=verify` |
+| `findings.md` 写长详情 | 派 `record-finding` 写 `changes/findings/<id>.md` |
+| `findings.md` 内的旧 correction 区 | v6 使用 `corrections.md` + `changes/corrections/` |
+| 归档时上移 `<!-- ARCHIVE -->` 包住详情 | 派 `archive-chg` 移动索引行并更新详情 frontmatter |

@@ -3,7 +3,8 @@ name: pace-knowledge
 effort: medium
 description: >
   PACEflow 知识库笔记管理。自动激活：(1) 创建/更新 thoughts/ 或 knowledge/ 笔记，
-  (2) 从 findings 提取知识到 knowledge/，(3) 用户被纠正时写 Corrections 并双写
+  (2) 从 changes/findings 详情提取知识到 knowledge/，(3) 用户被纠正时通过
+  paceflow-artifact-writer 记录 correction 并双写
   knowledge/，(4) 技术调研记录到 findings。定义 frontmatter 结构和 L0/L1/L2 信息分层。
 ---
 
@@ -124,7 +125,7 @@ sources:
 
 ### 不创建的情况
 
-- 项目特有的实现细节 → 留在项目 findings.md
+- 项目特有的实现细节 → 留在 `changes/findings/<id>.md`
 - 一次性调试信息 → 不持久化
 - 已有同主题笔记 → 更新现有笔记而非新建
 
@@ -132,13 +133,13 @@ sources:
 
 ## Findings → Knowledge 提取 SOP
 
-当 findings.md 中的调研结论被判定为跨项目通用经验时，执行以下步骤：
+当 `changes/findings/<id>.md` 中的调研结论被判定为跨项目通用经验时，执行以下步骤：
 
 1. **判定通用性**：该经验是否在其他项目中也可能遇到？（如 Hook I/O 协议、AI 验证纪律、路径处理）
 2. **检查 knowledge/ 是否已有同主题笔记**：Grep `knowledge/` 目录中的标题和标签
 3. **已有** → Edit 追加新内容到 `## 详情` section，更新 `updated` 日期和 `sources`
 4. **未有** → Write 创建新笔记，使用 knowledge/ 模板，`status: concluded`
-5. **回写 finding 条目**：在 findings.md 索引补 `[knowledge:: slug]`（kebab-case 命名）
+5. **回写 finding**：创建 finding 时优先把 `[knowledge:: slug]` 纳入 `record-finding` 输入；既有 finding 需要补链时不要主 session 手写，记录为 artifact writer 后续更新需求
 
 > 提取的知识必须自包含——不依赖原 finding 的上下文就能理解。摘要是结论，详情是完整推理。
 
@@ -146,26 +147,26 @@ sources:
 
 此 SOP **不仅**由用户手动触发。以下场景应**主动评估**是否需要提取：
 
-- **记录新 finding 时**（由 `paceflow:artifact-management` 触发）：recording finding → 评估通用性 → 通用则执行本 SOP
-- **Corrections 双写时**：写入 correction → 评估通用性 → 通用则提取到 knowledge/
+- **记录新 finding 时**（由 `paceflow-artifact-writer record-finding` 触发）：recording finding → 评估通用性 → 通用则执行本 SOP
+- **Corrections 双写时**：`record-correction` → 评估通用性 → 通用则提取到 knowledge/
 - **审查发现时**（由 `paceflow:paceflow-audit` Phase 3 触发）：P0/P1 发现 → 评估是否为通用模式
 
-> artifact-management 的"findings 记录时的联动检查"会指引 AI 在记录 finding 后主动评估并触发本 SOP。
+> artifact-management 的"finding/correction 联动检查"会指引 AI 在 agent 写入详情后主动评估并触发本 SOP。
 
 ---
 
 ## Corrections 双写流程
 
-被用户纠正时（"不对"、"别这样"、"错了"等），CLAUDE.md G-3 要求双写：
+被用户纠正时（"不对"、"别这样"、"错了"等），CLAUDE.md G-3 要求通过 artifact writer 记录 correction，并评估 knowledge 双写：
 
-1. **写入 findings.md** `## Corrections 记录` 区：错误行为 + 正确做法 + 触发场景 + 根本原因
+1. **记录 correction**：派 `paceflow-artifact-writer record-correction`，写入 `changes/corrections/<id>.md` 和 `corrections.md` 索引，包含错误行为 + 正确做法 + 触发场景 + 根本原因
 2. **评估通用性**：该纠正是否跨项目通用？
    - **通用**（如 AI 验证习惯、决策偏差模式）→ 步骤 3
-   - **仅限本项目**（如特定 API 用法）→ 补 `[knowledge:: project-only]`，结束
+   - **仅限本项目**（如特定 API 用法）→ agent 输入 `project-scope: project-only`，结束
 3. **写入 knowledge/**：追加到已有笔记或新建，标注来源项目
-4. **回写 correction 条目**：补 `[knowledge:: 笔记名]`
+4. **回写 correction 条目**：必要时派 artifact writer 更新 correction 的 `knowledge-link`
 
-> PostToolUse hook 检测 correction 写入后会 HINT 提醒双写 knowledge/。
+> PostToolUse hook 检测 correction 详情/索引写入后会 HINT 提醒同步 knowledge/。
 
 ---
 

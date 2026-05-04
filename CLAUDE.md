@@ -23,22 +23,22 @@
 
 ## G-3. 上下文恢复
 
-SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCHIVE -->` 上方内容）。
+SessionStart hook 已自动注入 v6 索引文件活跃区与活跃 CHG 摘要。
 
-**任务优先级**：`task.md` 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准；task.md 无活跃任务时清空 TodoWrite。
+**任务优先级**：`changes/<id>.md` 的 `## 任务清单` 是任务权威来源。`task.md` 与 `implementation_plan.md` 只保留 CHG/HOTFIX wikilink 索引；TodoWrite 与详情文件冲突时，以详情文件为准。
 
 **AI 仅在以下情况主动读取文件**：
 - hook 注入为空但文件存在 → 降级读取全文
 - 需要归档区历史记录 → 读取 `<!-- ARCHIVE -->` 以下部分
 - 用户追问上次内容 → 读取 `walkthrough.md`
 
-**全局经验库**：`~/.claude/global-findings.md`
+**知识库**：`knowledge/` 与 `thoughts/`
 - 新项目或技术栈变更时，根据关键词自动搜索
-- 发现跨项目可复用经验时，双写到项目 `findings.md` 和全局经验库
+- 发现跨项目可复用经验时，项目 finding/correction 先由 `paceflow-artifact-writer` 写入 `changes/**`，再评估是否沉淀到 `knowledge/`
 
-**Corrections 捕获**：被用户纠正时（"不对"、"别这样"、"我说的是"、"错了"等），必须将纠正内容记录到 `findings.md` 的 `## Corrections 记录` 区（错误行为 + 正确做法 + 触发场景 + 根本原因）。禁止仅口头承认而不持久化。
+**Corrections 捕获**：被用户纠正时（"不对"、"别这样"、"我说的是"、"错了"等），必须派 `paceflow-artifact-writer record-correction` 写入 `changes/corrections/<id>.md` 与 `corrections.md` 索引（错误行为 + 正确做法 + 触发场景 + 根本原因）。禁止仅口头承认而不持久化。
 
-**Corrections 双写**：写入 correction 后，立即评估是否跨项目通用经验。通用经验同步写入 `knowledge/` 对应笔记（追加或新建），并在 correction 条目补 `[knowledge:: 笔记名]`；仅限本项目的补 `[knowledge:: project-only]`。
+**Corrections 双写**：记录 correction 后，立即评估是否跨项目通用经验。通用经验同步写入 `knowledge/` 对应笔记（追加或新建），并在 correction 详情/索引补 knowledge 链接；仅限本项目的标 `project-only`。
 
 ---
 
@@ -85,9 +85,11 @@ SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCH
 **Artifact 文件约束**：
 
 > [!IMPORTANT]
-> 5 个 Artifact 文件（spec/task/implementation_plan/walkthrough/findings）遵循双区结构。
-> - ✅ `Edit` 在活跃区追加、修正错误、单次 Edit 归档到 `<!-- ARCHIVE -->` 下方
-> - ❌ **禁止** `Write` 覆盖已存在的 implementation_plan.md / walkthrough.md / findings.md
+> v6 artifact 由 `paceflow-artifact-writer` agent 统一写入。
+> - ✅ 主 session 通过 agent 创建/更新 `changes/<id>.md`、`changes/findings/<id>.md`、`changes/corrections/<id>.md`
+> - ✅ `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` 只保留索引
+> - ❌ **禁止**主 session 直接写 `<!-- APPROVED -->`、`<!-- VERIFIED -->` 或 `verified-date`
+> - ❌ **禁止**在 task/impl 中写 CHG 三级标题内嵌详情
 > - ❌ **禁止**删除历史记录段落
 
 ---
@@ -111,8 +113,8 @@ SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCH
 
 **关键格式**：
 - 分隔标记：`<!-- ARCHIVE -->`（HTML 注释，独占一行，禁止 `## ARCHIVE`）
-- 批准标记：`<!-- APPROVED -->`（C 阶段获批后添加到 task.md 活跃区，归档时随任务移走）
-- 验证标记：`<!-- VERIFIED -->`（V 阶段验证通过后添加到 task.md 活跃区，归档时随任务移走）
+- 批准标记：`<!-- APPROVED -->`（C 阶段获批后由 agent 写入 `changes/<id>.md`）
+- 验证标记：`<!-- VERIFIED -->`（V 阶段验证通过后由 agent 写入 `changes/<id>.md`，紧邻 APPROVED 下一行，并同步 `verified-date`）
 - 任务编号：`T-NNN`（三位数递增）
 - 变更 ID：`CHG-YYYYMMDD-NN`
 - 状态：`[ ]` 未开始 / `[/]` 进行中 / `[x]` 已完成 / `[!]` 阻塞 / `[-]` 跳过
@@ -123,10 +125,10 @@ SessionStart hook 已自动注入 5 个 Artifact 文件的活跃区（`<!-- ARCH
 
 每个 CHG/HOTFIX 的最后一个任务标 `[x]` 后，**立即**执行以下清单（不要等到会话结束）：
 
-1. `task.md` — 已完成项标 `[x]` 或 `[-]`，添加 `<!-- VERIFIED -->`，归档到 ARCHIVE 下方
-2. `implementation_plan.md` — 索引标 `[x]`，详情段落归档到 ARCHIVE 下方
-3. `walkthrough.md` — 追加索引行 **和** 详情段落（`## YYYY-MM-DD` 开头，含具体变更内容）
-4. `spec.md` — 同步技术栈变更（如有）
+1. 派 `paceflow-artifact-writer update-chg action=update-status` 确认详情文件所有 T-NNN 为 `[x]` 或 `[-]`，frontmatter `status: completed`
+2. 运行验证并读取结果；通过后派 `update-chg action=verify` 写 `verified-date` + `<!-- VERIFIED -->`
+3. 派 `archive-chg`，把 `task.md` / `implementation_plan.md` 索引行移到 ARCHIVE 下方，并将详情 `status: archived`
+4. `walkthrough.md` 追加当天索引行；必要时 `spec.md` 同步技术栈变更
 5. 时间戳格式：`YYYY-MM-DDTHH:mm:ss+08:00`
 
 > Hook 会通过 PostToolUse additionalContext 提醒 + Stop exit 2 阻止，但 Stop 只在 AI 主动停止时触发。用户先发消息时 Stop 不执行，因此 AI 必须主动检查。

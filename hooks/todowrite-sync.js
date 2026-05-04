@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, getProjectName, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS } = paceUtils;
+const { ts, isPaceProject, readActive, countByStatus, isTeammate, getArtifactDir, getProjectName, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -51,6 +51,30 @@ paceUtils.withStdinParsed((stdin) => {
     const bridgeHint = formatBridgeHint(cwd, artDir);
     const hints = [];
 
+    if (paceSignal === 'artifact') {
+      const entries = getActiveChangeEntries(cwd).filter(e => e.task && e.impl && e.detail && !e.detail.missing);
+      const activeTaskCount = entries.reduce((sum, e) => sum + countDetailTasks(e.detail.content).pending, 0);
+      const completedActiveChanges = entries.filter(e => {
+        const status = (e.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
+        return status === 'completed';
+      }).length;
+
+      if (isWriteOp && activeTaskCount === 0 && entries.length === 0) {
+        hints.push(`v6 项目当前无活跃 CHG。请先派 paceflow-artifact-writer create-chg 创建变更，再使用 TodoWrite。`);
+      } else if (isWriteOp && activeTaskCount > 0) {
+        hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前详情文件有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 TodoWrite 项。`);
+      } else if (isWriteOp && activeTaskCount === 0 && completedActiveChanges > 0) {
+        hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 verify/archive。归档后再清空 TodoWrite。${FORMAT_SNIPPETS.archiveOp}`);
+      }
+
+      if (toolName === 'TodoWrite') {
+        const todos = toolInput.todos || [];
+        if (todos.length > 0 && activeTaskCount > 0 && Math.abs(todos.length - activeTaskCount) > TODO_DRIFT_THRESHOLD) {
+          hints.push(`TodoWrite（${todos.length} 项）与 v6 详情未完成任务（${activeTaskCount} 项）数量差异较大。`);
+        }
+      }
+    } else {
+
     if (taskActive) {
       // W2: 统一使用 countByStatus（仅顶层任务）
       const { pending: activeTasks, done: doneTasks, total: totalActive } = countByStatus(taskActive, { topLevelOnly: true });
@@ -70,12 +94,12 @@ paceUtils.withStdinParsed((stdin) => {
           log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required\n`);
           return;
         }
-        hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。请先在 task.md 中添加任务再使用 TodoWrite，task.md 是任务权威来源。`);
+        hints.push(`task.md 无活跃任务，但正在创建 TodoWrite 项。请先创建 v6 CHG 详情，再使用 TodoWrite。`);
       }
 
       // 写入操作 + task.md 有活跃任务 → 同步提醒
       if (isWriteOp && activeTasks > 0) {
-        hints.push(`task.md 是任务权威来源（${activeTasks} 个活跃），请为每个顶层活跃任务创建或更新对应的 TodoWrite 项。`);
+        hints.push(`legacy task.md 有 ${activeTasks} 个活跃任务；v6 应迁移为 changes/<id>.md 任务清单。`);
       }
 
       // 写入操作 + 活跃区只有已完成项 → 提醒先归档
@@ -105,8 +129,9 @@ paceUtils.withStdinParsed((stdin) => {
           log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required (no task.md)\n`);
           return;
         }
-        hints.push(`task.md 不存在。请先创建 task.md 定义任务再使用 TodoWrite，或用 .pace/disabled 标记此项目不使用 PACE。`);
+        hints.push(`未检测到 v6 artifact。请先创建 changes/ 与 v6 索引，或用 .pace/disabled 标记此项目不使用 PACE。`);
       }
+    }
     }
 
     // 标记本会话使用过 TodoWrite（供 Stop hook 检测残留）—— 仅写入操作且通过 DENY 检查后才标记

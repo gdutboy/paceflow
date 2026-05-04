@@ -1,11 +1,11 @@
 // pace-utils.js — PACE hooks 公共工具函数
-// 多信号激活判断 + 懒创建模板 + .pace/disabled 豁免 + 任务状态统计
+// v6 项目识别 + 懒创建模板 + changes/ 详情解析 + .pace/disabled 豁免
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v5.1.4';
+const PACE_VERSION = 'v6.0.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
-const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
@@ -27,21 +27,14 @@ const SKILL_DIRS = [
   'paceflow-audit',
 ];
 
-// T-328: 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
+// v6 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
 const FORMAT_SNIPPETS = {
-  // task.md 任务条目格式
-  taskEntry: '- [ ] T-NNN 任务标题',
-  taskGroup: '### CHG-YYYYMMDD-NN: 变更标题\n\n<!-- APPROVED -->\n\n- [/] T-001 任务描述\n- [ ] T-002 任务描述',
-  // impl_plan 索引条目格式（hook 检测正则：/^- \\[\\/\\]/m）
-  implIndex: '- [/] CHG-YYYYMMDD-NN 标题 — 简要描述 #change [tasks:: T-NNN~T-NNN]',
-  // T-426: impl_plan 详情 4 段结构（背景/范围/技术决策/任务分解）
-  // T-438: 任务分解三要素（文件定位+改动意图+验收条件）
-  // T-471: 追加位置前缀，消除"在哪里添加"的猜测
-  implDetail: '在 ## 活跃变更详情 下方添加：\n### CHG-ID 标题\n\n**背景（Why）**：为什么做。\n**范围（What）**：~N 行，M 文件。\n**技术决策（How）**：方案选择及理由。\n\n**T-NNN 任务标题**：\n  - `file:line` — 当前行为 → 目标行为\n  - 验收：完成条件',
-  // 标记位置
-  approved: '<!-- APPROVED --> 放在 task.md 活跃区的 CHG 分组标题下方、任务列表上方',
-  // T-471: 追加验证定义，防止 AI 自签不运行验证
-  verified: '<!-- VERIFIED --> 放在 <!-- APPROVED --> 下方。V 阶段验证 = 通过 Terminal 运行测试或 Browser 确认功能正确且无报错后添加此标记',
+  taskEntry: '- [ ] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
+  taskGroup: '任务详情不写入 task.md。请派 paceflow-artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
+  implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
+  implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
+  approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；唯一写入路径是 update-chg action=approve',
+  verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；唯一写入路径是 update-chg action=verify，并同步 frontmatter verified-date',
   // checkbox 状态说明
   statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 阻塞 | [-] 跳过',
   // 变更状态说明（impl_plan 专用，与 statusHelp 是独立术语）
@@ -49,13 +42,10 @@ const FORMAT_SNIPPETS = {
   // 格式要求（E 阶段 DENY 核心信息）
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
   // 归档操作（T-441: 移动标记而非内容）
-  archiveOp: '归档 = 移动标记而非内容：Step 1 在待归档内容上方插入新 <!-- ARCHIVE -->，Step 2 删除旧 <!-- ARCHIVE -->',
-  // findings/walkthrough 格式（compact 恢复注入用）
-  findingsFormat: '- [状态] 标题 — 结论 #finding [date:: YYYY-MM-DD] [change:: CHG-ID] [knowledge:: slug]，索引+详情(### [日期] 标题)缺一不可',
-  // T-480: 从 3 个词扩展为 4 必须要素（现象+根因+影响范围+建议方案），自动覆盖 B-10/W-14
-  findingsDetail: '在 ## 未解决问题 下添加：\n### [YYYY-MM-DD] 标题\n\n> **发现时间**: YYYY-MM-DDTHH:mm:ss+08:00 | **影响**: P0-P3\n\n**现象**：哪个文件哪一行出了什么问题\n**根因**：问题代码是什么，为什么错\n**影响范围**：影响多大，是否阻塞\n**建议方案**：怎么修，改哪些文件',
-  // T-471: 新增详情段落格式（7 处引用，P0 修复 walkthrough 遗漏）
-  walkthroughDetail: '## YYYY-MM-DD CHG-ID 摘要\n**T-NNN 任务标题**\n- 改动：`file`:`line`，改动意图\n- 验证：Terminal/Browser 运行结果（通过/失败+原因）',
+  archiveOp: '归档 = 派 paceflow-artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
+  findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
+  findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
+  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 | CHG-YYYYMMDD-NN |',
   // Skill 引用
   skillRef: '格式参考：paceflow:artifact-management skill',
 };
@@ -132,17 +122,16 @@ function getArtifactDir(cwd) {
   if (VAULT_PATH) {
     const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
     try {
-      // vault 有 artifact → vault（迁移后）
-      if (fs.existsSync(vaultDir) &&
-          ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) {
+      // v6 项目信号：vault 项目目录存在 changes/
+      if (fs.existsSync(path.join(vaultDir, 'changes'))) {
         result = vaultDir;
         _artifactDirCache = { cwd, dir: result };
         return result;
       }
     } catch(e) {}
   }
-  // CWD 有 artifact → CWD（未迁移项目，向后兼容）
-  if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) {
+  // CWD 有 changes/ → CWD
+  if (fs.existsSync(path.join(cwd, 'changes'))) {
     _artifactDirCache = { cwd, dir: cwd };
     return cwd;
   }
@@ -237,14 +226,13 @@ function isPaceProject(cwd) {
   try {
     // T-080: 豁免信号（最高优先级）— 用户主动禁用 PACE（.pace/disabled）
     if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
-    // 信号 1（最强）：已有任何 PACE artifact 文件（CWD 或 vault）
-    if (ARTIFACT_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return 'artifact';
+    // 信号 1（最强）：v6 项目必须有 changes/ 目录
+    if (fs.existsSync(path.join(cwd, 'changes'))) return 'artifact';
     // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
     if (VAULT_PATH) {
       const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
       try {
-        if (fs.existsSync(vaultDir) &&
-            ARTIFACT_FILES.some(f => fs.existsSync(path.join(vaultDir, f)))) return 'artifact';
+        if (fs.existsSync(path.join(vaultDir, 'changes'))) return 'artifact';
       } catch(e) {}
     }
     // 信号 2（强）：Superpowers plan 文件
@@ -322,6 +310,9 @@ function createTemplates(cwd) {
   const artDir = getArtifactDir(cwd);
   // 确保目标目录存在（vault 模式下可能尚未创建）
   try { fs.mkdirSync(artDir, { recursive: true }); } catch(e) {}
+  for (const sub of ['changes', 'changes/findings', 'changes/corrections']) {
+    try { fs.mkdirSync(path.join(artDir, sub), { recursive: true }); } catch(e) {}
+  }
   const created = [];
   for (const file of ARTIFACT_FILES) {
     const target = path.join(artDir, file);
@@ -356,7 +347,7 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
 }
 
 /**
- * 检查 impl_plan 全文中所有 [x] 索引是否有对应 ### CHG-ID 详情段落
+ * legacy fallback：检查 impl_plan 全文中所有 [x] 索引是否有对应详情段落
  * @param {string} planFull - implementation_plan.md 全文
  * @returns {string[]} 缺少详情的 CHG/HOTFIX-ID 列表
  */
@@ -521,6 +512,138 @@ function detectLegacyImplFormat(text) {
   return { hasEmoji, hasTable };
 }
 
+/** 解析 v6 frontmatter 为普通对象 */
+function parseFrontmatter(content) {
+  const match = content && content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const out = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (m) out[m[1]] = m[2].trim();
+  }
+  return out;
+}
+
+/** 将 CHG/HOTFIX id 转成 v6 详情文件名 */
+function detailPathForId(artDir, id) {
+  if (!id) return null;
+  const lower = id.toLowerCase();
+  if (/^chg-\d{8}-\d{2}$/.test(lower) || /^hotfix-\d{8}-\d{2}$/.test(lower)) {
+    return path.join(artDir, 'changes', `${lower}.md`);
+  }
+  if (/^CHG-\d{8}-\d{2}$/.test(id)) return path.join(artDir, 'changes', `chg-${id.slice(4).toLowerCase()}.md`);
+  if (/^HOTFIX-\d{8}-\d{2}$/.test(id)) return path.join(artDir, 'changes', `hotfix-${id.slice(7).toLowerCase()}.md`);
+  return null;
+}
+
+/** 从 v6 索引活跃区提取 CHG/HOTFIX wikilink 行 */
+function parseChangeIndex(activeText) {
+  const entries = [];
+  const re = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/gmi;
+  let m;
+  while ((m = re.exec(activeText || '')) !== null) {
+    const slug = m[2].toLowerCase();
+    const id = slug.startsWith('chg-')
+      ? `CHG-${slug.slice(4).toUpperCase()}`
+      : `HOTFIX-${slug.slice(7).toUpperCase()}`;
+    entries.push({ checkbox: m[1], slug, id, rest: (m[3] || '').trim(), line: m[0] });
+  }
+  return entries;
+}
+
+/** 读取并解析 CHG/HOTFIX 详情文件 */
+function readChangeDetail(cwd, idOrSlug) {
+  const artDir = getArtifactDir(cwd);
+  const fp = detailPathForId(artDir, idOrSlug);
+  if (!fp) return null;
+  try {
+    const content = fs.readFileSync(fp, 'utf8');
+    return { path: fp, content, frontmatter: parseFrontmatter(content) };
+  } catch(e) {
+    return { path: fp, missing: true, content: '', frontmatter: {} };
+  }
+}
+
+/** 提取详情文件 ## 任务清单 段落 */
+function extractTaskSection(content) {
+  const text = content || '';
+  const header = text.match(/^## 任务清单\r?\n/m);
+  if (!header) return '';
+  const start = header.index + header[0].length;
+  const rest = text.slice(start);
+  const next = rest.search(/^## /m);
+  return next >= 0 ? rest.slice(0, next) : rest;
+}
+
+/** 统计详情任务状态 */
+function countDetailTasks(content) {
+  const section = extractTaskSection(content);
+  const pending = (section.match(/^- \[[ \/!]\]\s+T-\d+/gm) || []).length;
+  const done = (section.match(/^- \[(?:x|-)\]\s+T-\d+/gm) || []).length;
+  const inProgress = (section.match(/^- \[\/\]\s+T-\d+/gm) || []).length;
+  const blocked = (section.match(/^- \[!\]\s+T-\d+/gm) || []).length;
+  return { pending, done, total: pending + done, inProgress, blocked };
+}
+
+/** 返回 task.md 与 implementation_plan.md 活跃索引的交叉信息 */
+function getActiveChangeEntries(cwd) {
+  const taskEntries = parseChangeIndex(readActive(cwd, 'task.md') || '');
+  const implEntries = parseChangeIndex(readActive(cwd, 'implementation_plan.md') || '');
+  const taskBySlug = new Map(taskEntries.map(e => [e.slug, e]));
+  const implBySlug = new Map(implEntries.map(e => [e.slug, e]));
+  const slugs = new Set([...taskBySlug.keys(), ...implBySlug.keys()]);
+  const entries = [];
+  for (const slug of slugs) {
+    const task = taskBySlug.get(slug) || null;
+    const impl = implBySlug.get(slug) || null;
+    const base = task || impl;
+    const detail = readChangeDetail(cwd, slug);
+    entries.push({
+      slug,
+      id: base.id,
+      task,
+      impl,
+      taskCheckbox: task && task.checkbox,
+      implCheckbox: impl && impl.checkbox,
+      detail,
+    });
+  }
+  return entries;
+}
+
+/** v6 详情是否已批准 */
+function isChangeApproved(detail) {
+  if (!detail || detail.missing) return false;
+  return /<!-- APPROVED -->/.test(detail.content);
+}
+
+/** v6 详情是否已验证 */
+function isChangeVerified(detail) {
+  if (!detail || detail.missing) return false;
+  const verifiedDate = (detail.frontmatter['verified-date'] || '').trim();
+  return verifiedDate && verifiedDate !== 'null' && /<!-- VERIFIED -->/.test(detail.content);
+}
+
+/** 生成 compact/session-start 用的活跃 CHG 摘要 */
+function summarizeActiveChanges(cwd) {
+  return getActiveChangeEntries(cwd).map(entry => {
+    const fm = entry.detail && entry.detail.frontmatter || {};
+    const tasks = entry.detail && !entry.detail.missing ? countDetailTasks(entry.detail.content) : null;
+    return {
+      id: entry.id,
+      slug: entry.slug,
+      taskCheckbox: entry.taskCheckbox || null,
+      implCheckbox: entry.implCheckbox || null,
+      status: fm.status || (entry.detail && entry.detail.missing ? 'missing-detail' : 'unknown'),
+      approved: isChangeApproved(entry.detail),
+      verified: isChangeVerified(entry.detail),
+      pending: tasks ? tasks.pending : null,
+      done: tasks ? tasks.done : null,
+      path: entry.detail && entry.detail.path,
+    };
+  });
+}
+
 /** W-6: 从 Edit old/new string 中提取本次新标为 [x] 的 CHG/HOTFIX ID */
 function extractNewlyCompletedChgs(oldString, newString) {
   const newDone = (newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
@@ -591,6 +714,8 @@ module.exports = {
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
   // 统计与检查
   countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys, detectLegacyImplFormat, extractNewlyCompletedChgs,
+  parseFrontmatter, detailPathForId, parseChangeIndex, readChangeDetail, extractTaskSection,
+  countDetailTasks, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, createLogger, logEntry, formatBridgeHint,
   // stdin 解析

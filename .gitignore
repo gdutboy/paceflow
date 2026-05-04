@@ -12,6 +12,9 @@ skills-eval/
 
 # 测试文件（本地开发用）
 tests/*
+!tests/test-utils.js
+!tests/test-pace-utils.js
+!tests/test-hooks-e2e.js
 # 例外：agent 测试框架是产品资产（v6.0.0 起），但运行结果除外
 !tests/agent-tests/
 tests/agent-tests/results/
@@ -21,7 +24,7 @@ bump-version.js
 install.js
 migrate-artifacts.js
 verify.js
-config/
+config/*
 
 # 开发期间的计划文件
 docs/plans/

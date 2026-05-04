@@ -76,7 +76,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 | **建议测试** | 自动化或手动 | 业务逻辑函数、工具函数 |
 | **可选测试** | 手动验证即可 | UI 组件、一次性脚本 |
 
-验证替代：无测试框架时通过 Terminal/Browser 手动验证，结果记录到 walkthrough.md。
+验证替代：无测试框架时通过 Terminal/Browser 手动验证。通过后派 `paceflow-artifact-writer update-chg action=verify` 记录验证摘要；walkthrough 只保留索引行。
 
 ---
 
@@ -84,8 +84,9 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 
 | 阶段 | Hook | 行为 |
 |------|------|------|
-| C | PreToolUse | 无 `<!-- APPROVED -->` 或 `[/]`/`[!]` 任务 → **deny** |
-| C | PreToolUse | impl_plan 无 `[/]` 索引 → **deny** |
+| A | PreToolUse | 无活跃 `[[chg-*]]` / `[[hotfix-*]]` 索引和详情文件 → **deny** |
+| C | PreToolUse | 详情文件无 `<!-- APPROVED -->` 或状态不可执行 → **deny** |
+| C | PreToolUse | task.md 与 implementation_plan.md 活跃索引不一致 → **deny** |
 | E | PreToolUse | 项目外文件豁免 PACE 检查 |
-| V | Stop | `[x]` 无 `<!-- VERIFIED -->` → **block** |
-| V | Stop | walkthrough 无今日日期 → warning |
+| V | Stop | `status: completed` 但缺 `verified-date` / `<!-- VERIFIED -->` → **block** |
+| V | Stop | 已 verified 但仍在活跃索引中 → **block**，要求 `archive-chg` |

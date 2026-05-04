@@ -130,9 +130,9 @@ E. 代码质量
 
 ---
 
-## Agent 3：一致性审查员（辅助 Hook + Plugin + 工具链）
+## Agent 3：一致性审查员（辅助 Hook + Plugin + Agent 发布资产）
 
-**审查目标**：辅助 hook + Plugin 元数据 + 配置文件 + install/verify 脚本。
+**审查目标**：辅助 hook + Plugin 元数据 + hooks.json + agents 目录。`install.js` / `verify.js` 仅作为本地验证工具，不作为正式安装路径。
 
 ```
 你是 PACEflow 的代码审查员。
@@ -141,21 +141,21 @@ E. 代码质量
 
 ## 任务
 
-审查辅助 Hook、Plugin 结构和工具链的一致性。
+审查辅助 Hook、Plugin 结构和 Agent 发布资产的一致性。
 
 ### Step 1：发现文件
 1. 用 Glob 读取 `paceflow/hooks/*.js`，排除核心/生命周期 hook，识别辅助 hook
 2. 读取 `paceflow/.claude-plugin/plugin.json` 和 `paceflow/hooks/hooks.json`
-3. 读取 `paceflow/config/*.json`
-4. 读取 `paceflow/install.js` 和 `paceflow/verify.js`
+3. 用 Glob 读取 `paceflow/agents/**/*.md`
+4. 如本地存在 `paceflow/install.js` / `paceflow/verify.js`，只按 smoke/健康检查工具审查，不要求其承担 plugin 安装职责
 
 ### Step 2：审查维度
 
 A. 辅助 Hook — Bug/I/O 协议/功能正确性/teammate 降级逻辑
-B. Plugin 结构 — plugin.json 必填字段+版本一致性、hooks.json 事件覆盖完整性+matcher+command 路径、skills 目录结构
-C. 双配置一致性 — hooks.json vs settings 配置的事件/matcher 对应
-D. Install 脚本 — 安装模式逻辑、SKILL_MAP 覆盖度、错误处理
-E. Verify 脚本 — 检查组覆盖范围、常量与实际文件一致性
+B. Plugin 结构 — plugin.json/marketplace 版本一致性、hooks.json 事件覆盖完整性+matcher+command 路径
+C. Agent 发布资产 — `agents/paceflow-artifact-writer.md` 与 `agents/references/**` 是否随 repo/plugin 可用
+D. v6 注册一致性 — hooks 输出是否都指向 agent-driven artifact workflow，禁止 v5 fallback 提示
+E. 本地验证脚本 — 如存在，只检查 smoke 覆盖，不把缺少安装功能报为发布阻塞
 ```
 
 ---
@@ -205,15 +205,15 @@ E. 可执行性 — AI 能否无歧义执行、遗漏边界情况
 审查测试、文档和整体架构。
 
 ### Step 1：发现文件
-1. 用 Glob `paceflow/tests/*.js` 发现测试文件
+1. 用 Glob `paceflow/tests/**/*.js` 与 `paceflow/tests/agent-tests/**/*.yaml` 发现测试文件
 2. 读取 `paceflow/REFERENCE.md`、`paceflow/README.md`、`CLAUDE.md`
-3. 用 Glob `paceflow/hooks/*.js` 发现所有 hook 脚本
+3. 用 Glob `paceflow/hooks/*.js` 和 `paceflow/agents/**/*.md` 发现 hook/agent 资产
 
 ### Step 2：审查维度
 
-A. 测试覆盖度 — 未测试函数、E2E 场景覆盖、脆弱测试
-B. 文档准确性 — REFERENCE.md 函数签名 vs 代码、README 版本/文件列表、CLAUDE.md 架构 vs 实际、数量声称 vs Glob
-C. 架构评估 — P-A-C-E-V 各阶段 hook 保障、误阻塞风险、异常降级、.pace/ 多会话可靠性
+A. 测试覆盖度 — 未测试函数、Hook E2E、agent contract fixture、脆弱测试
+B. 文档准确性 — README/CLAUDE/REFERENCE 是否 v6-only，数量声称 vs Glob，是否误导主 session 直接写 artifact
+C. 架构评估 — P-A-C-E-V 各阶段 hook+agent 保障、误阻塞风险、异常降级、.pace/ 多会话可靠性
 D. 简化机会 — 过度工程、分工合理性、不必要复杂性
-E. 已知限制 — CLAUDE.md/findings.md 记录的限制、实际影响评估
+E. 已知限制 — CLAUDE.md、changes/findings、guidebook 记录的限制与实际影响评估
 ```

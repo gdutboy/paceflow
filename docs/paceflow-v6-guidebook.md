@@ -4,6 +4,8 @@
 > 范围：本地仓库、GitHub 远端 `origin/master`、PACEflow vault 流程图与项目 artifact
 > 结论：v6.0.0 按 breaking change 推进，不继续兼容 v5 运行格式
 
+> 执行状态更新（2026-05-04）：本文件最初是升级审计 guidebook，部分“当前缺口”章节描述的是修复前状态。后续已完成 P0.1 agent spec 自洽修复、P0.5 hook v6 改造、plugin marketplace 安装路径澄清、skills/CLAUDE/README/REFERENCE v6-only 口径收敛。`install.js` / `verify.js` 只作为本地验证工具，不是正式安装路径。剩余发布前重点是 marketplace 实装验证、vault 迁移重跑、完整 agent fixture 报告与流程图/长文档清理。
+
 ---
 
 ## 0. 阅读结论
@@ -570,13 +572,20 @@ v6 必做：
 
 - `paceflow-artifact-writer.md`
 - `agents/references/**`
-- `StopFailure` 在 `config/settings-hooks-excerpt.json` 中缺失，手动安装配置也要同步。
+- `StopFailure` 在 `hooks/hooks.json` 中必须保留。
 
 ### 6.9 `hooks/hooks.json` / `config/settings-hooks-excerpt.json`
 
-当前 `hooks/hooks.json` 有 StopFailure，`config/settings-hooks-excerpt.json` 没有 StopFailure。v6 发布前需同步。
+v6 正式安装路径是 Claude Code Plugin marketplace：
 
-Hook 注册机制可保持不变。
+```text
+/plugin marketplace add paceaitian/paceflow
+/plugin install paceflow@paceaitian-paceflow
+```
+
+`hooks/hooks.json` 是 hook 注册权威，当前已有 `StopFailure`。`config/settings-hooks-excerpt.json`、`install.js`、`verify.js` 只作为本地验证/手动调试工具，不作为 v6 发布安装链路的权威，不应进入发布面设计。
+
+Hook 注册机制可保持不变；发布前重点确认 plugin 安装后 `hooks/`、`skills/`、`agents/` 都随 marketplace 包可用。
 
 ---
 
@@ -732,14 +741,14 @@ v6 必做：
 - Stop v6 从详情任务清单统计 pending。
 - PostToolUse v6 做 schema/wikilink 校验。
 
-### 8.7 install / verify / plugin 缺口
+### 8.7 plugin 发布缺口
 
-v6 引入 agent 后，安装链路也必须升级：
+v6 引入 agent 后，正式发布链路必须以 Claude Code Plugin marketplace 为准：
 
-- `install.js` 手动安装路径当前只安装 `hooks/`、`skills/`、settings excerpt，不安装 `agents/`。
-- `install.js --plugin` 的 `PLUGIN_CONTENT` 当前是 `['.claude-plugin', 'hooks', 'skills']`，缺 `agents`。插件安装后会没有 `paceflow-artifact-writer`。
-- `verify.js` 仍检查 5 个 hook artifact 模板、5 skills、plugin/hook 配置一致性，不检查 `agents/`、agent references、agent-tests、v6 模板数量。
-- `.claude-plugin/plugin.json` 与 `.claude-plugin/marketplace.json` 仍是 `5.1.4`，发布前需 bump 到 `6.0.0` 并确认 Claude Code Plugin 是否自动加载 `agents/` 目录。
+- `/plugin marketplace add paceaitian/paceflow` + `/plugin install paceflow@paceaitian-paceflow` 是用户安装入口。
+- `install.js` / `verify.js` 仅用于本地 smoke/健康检查，不能作为 README 的正式安装说明，也不能作为 plugin 发布是否成功的权威。
+- plugin 发布包必须包含 `agents/paceflow-artifact-writer.md` 与 `agents/references/**`，否则插件安装后没有 artifact writer。
+- `.claude-plugin/plugin.json` 与 `.claude-plugin/marketplace.json` 仍是 `5.1.4`，发布前需 bump 到 `6.0.0` 并确认 Claude Code Plugin 自动加载 `agents/` 目录。
 - `bump-version.js` 已覆盖 `pace-utils.js`、plugin、marketplace、README/REFERENCE，但 v6 changelog 与 agent prompt 版本说明也应纳入发布清单。
 
 ---
@@ -803,7 +812,7 @@ done
 2. 修 `hooks/templates/` v6 模板。
 3. 修 `pre-tool-use.js` / `stop.js` / `post-tool-use.js` 三个核心 hook。
 4. 修 `session-start.js` / `todowrite-sync.js` / `pre-compact.js`。
-5. 修 `install.js` / `verify.js` / plugin 元数据，确保 `agents/` 随安装发布。
+5. 修 plugin 元数据并确认 marketplace 安装包含 `agents/`；`install.js` / `verify.js` 仅作本地验证。
 6. 修 skills。
 7. 更新 CLAUDE/README/REFERENCE。
 8. 跑 B 方案迁移 PACEflow vault。
@@ -834,7 +843,9 @@ Docs：
 
 ---
 
-## 11. 当前缺口总表
+## 11. 初始缺口总表
+
+> 下表保留初始审计视角，用于追踪 v6 升级来源。若与执行状态更新冲突，以本文件顶部“执行状态更新”和当前代码为准。
 
 | 优先级 | 文件/模块 | 缺口 |
 |---|---|---|
@@ -846,7 +857,7 @@ Docs：
 | P0 | `agents/references/artifact-writer-spec.md` | `findings.md` 模板残留 `## 未解决问题`，VERIFIED 位置未定义，`already-approved` 需与失败枚举对齐 |
 | P0 | `tests/agent-tests/fixtures/*` | v6 fixture 仍固化 `findings.md ## 未解决问题`，扩展 A/B 用例未形成新测试报告 |
 | P0 | `migrate/batch-archive-v5.js` | 不创建 `changes/` 子目录；新 `findings.md` 模板仍残留 `## 未解决问题` |
-| P0 | `install.js` / `verify.js` | 安装和验证链路不包含 `agents/`，plugin 模式不会发布 artifact writer |
+| P0 | plugin 发布链路 | marketplace 安装必须包含 `agents/`；`install.js` / `verify.js` 仅作本地验证，不作为正式安装路径 |
 | P0 | `skills/artifact-management/*` | v5 规则权威源，必须重写 |
 | P0 | `skills/pace-workflow/*` | A/C/E/V 仍要求主 session 直接 Edit artifact |
 | P0 | `skills/pace-bridge/SKILL.md` | 桥接仍写 task/impl_plan 内嵌详情 |

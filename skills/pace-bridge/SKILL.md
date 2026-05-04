@@ -2,103 +2,103 @@
 name: pace-bridge
 effort: medium
 description: >
-  将计划文件桥接到 PACEflow artifacts（task.md + implementation_plan.md）。
-  支持 Superpowers 计划（docs/plans/ 或 docs/superpowers/plans/）和 Claude Code
-  plan mode（~/.claude/plans/）。当 DENY 提示"检测到计划文件"或用户请求"同步计划"、
-  "桥接计划"时激活。
+  将 Superpowers/native plan 文件桥接到 PACEflow v6 artifacts。读取 docs/plans/、
+  docs/superpowers/plans/ 或 ~/.claude/plans/ 的计划，整理为 create-chg 输入，
+  然后派 paceflow-artifact-writer 创建 changes/<id>.md 与 task/implementation_plan 索引。
 ---
 
-# Superpowers → PACEflow 桥接
+# Plan → PACEflow 桥接
+
+pace-bridge 不直接 Edit `task.md` / `implementation_plan.md`。桥接的唯一写入路径是派 `paceflow-artifact-writer`。
+
+---
 
 ## 触发场景
 
-- PreToolUse DENY 消息包含"检测到 Superpowers 计划文件"
-- TodoWrite/TaskCreate DENY 消息包含"Superpowers 计划文件"
-- SessionStart 注入"Superpowers 桥接提醒"
-- 用户手动调用 `/pace-bridge`
+- PreToolUse / TodoWrite DENY 提示检测到计划文件。
+- SessionStart 注入 Superpowers/native plan 桥接提醒。
+- 用户要求“同步计划”“桥接计划”“把 plan 转成 PACE”。
+
+---
 
 ## 前提
 
-- `docs/plans/` 或 `docs/superpowers/plans/` 中存在 Superpowers plan 文件
-- `task.md` 无活跃任务
-- 用户已在 Superpowers 流程中审批计划（等价于 PACE C 阶段批准）
+- 存在未同步的 plan 文件：`docs/plans/`、`docs/superpowers/plans/` 或 `~/.claude/plans/`。
+- 当前没有同一计划对应的活跃 CHG。
+- 如果计划来自已获用户确认的 brainstorming/writing-plans，可执行 auto-APPROVED；否则桥接后进入 C 阶段等待用户批准。
+
+---
 
 ## 桥接步骤
 
 ### Step 1：读取计划
-Read `docs/plans/` 或 `docs/superpowers/plans/` 中最新的 plan 文件，提取任务列表和实施策略。
 
-### Step 2：生成变更 ID
-- 读取 `implementation_plan.md` 当天已有 CHG 数量，生成 `CHG-YYYYMMDD-NN`（格式详见 `paceflow:artifact-management` 编号规范）
-- 读取 `task.md`（含 ARCHIVE 区）最大 T 编号，从 `T-(max+1)` 开始
+读取最新未同步 plan，提取：
+- 标题与目标
+- 任务列表
+- 影响文件/模块
+- 技术决策与风险
+- 验收条件
+- 推荐执行方式（串行、TDD、subagent-driven、parallel agents）
 
-### Step 3：写入 implementation_plan.md
-Edit 变更索引区添加：
-```
-- [/] CHG-YYYYMMDD-NN 标题 #change [tasks:: T-NNN~T-NNN]
-```
+### Step 2：组织 create-chg 输入
 
-Edit 活跃变更详情区添加 `### CHG-ID 标题` 段落，**从源计划提取并展开为 4 段结构**：
-
-1. **背景**（Why）：从 plan 文件提取需求动机，用中文重述（技术术语保留英文）
-2. **范围**（What）：影响文件列表 + 预估改动量（从 plan 任务列表推断）
-3. **技术决策**（How）：从 plan 提取技术选型和设计决策（如"选择 SQLite 而非 PostgreSQL，因为..."）
-4. **任务分解**：每个 T-NNN 展开含文件定位（`file:line`）、改动意图（当前→目标）和验收条件
-
-> **禁止仅列任务标题**。Artifact 必须能独立理解，不需要回溯源 plan 文件。
-
-### Step 4：写入 task.md
-Edit 活跃区添加：
-```
-**焦点变更**：CHG-YYYYMMDD-NN 标题
-
-## 活跃任务
-
-### CHG-YYYYMMDD-NN: 标题
-
-<!-- APPROVED -->
-
-- [/] T-NNN 第一个任务
-- [ ] T-NNN 第二个任务
-...
+```text
+operation: create-chg
+title: <计划标题>
+tasks:
+  - T-001: <任务标题，含验收条件>
+  - T-002: <任务标题，含验收条件>
+background: <从 plan 提炼 Why>
+scope: <影响文件/模块与改动范围>
+technical-decision: <关键设计决策和取舍>
 ```
 
-### Step 5：验证
-确认 task.md 有 `[/]` 任务 + `<!-- APPROVED -->` + implementation_plan.md 有 `[/]` 变更。
+任务不能只复制标题。每个任务应能让后续执行者不回读 plan 也知道目标和验收标准。
 
-### Step 6：标记已同步
-将桥接的主计划文件**及其伴随文件**（同名前缀，如 `-design.md`）写入 `.pace/synced-plans`（每行一个文件名）。hook 检测匹配所有 `YYYY-MM-DD-*.md` 文件，伴随文件不记录会导致误 DENY。
-**禁止**一次性记录 `docs/plans/` 全部文件——多窗口场景下会吞掉其他窗口未桥接的计划。
-```bash
-# 示例：桥接 2026-03-08-context-memory.md 时，记录主文件及伴随文件
-echo "2026-03-08-context-memory.md" >> .pace/synced-plans
-echo "2026-03-08-context-memory-design.md" >> .pace/synced-plans
+### Step 3：派 artifact writer
+
+派 `paceflow-artifact-writer` 执行 `create-chg`。agent 会创建：
+- `changes/chg-yyyymmdd-nn.md`
+- `task.md` 活跃 wikilink 索引
+- `implementation_plan.md` 活跃 wikilink 索引
+
+### Step 4：auto-APPROVED（可选）
+
+如果用户已在上游计划流程中参与并确认设计，继续派：
+
+```text
+operation: update-chg
+target: <CHG-ID>
+action: approve
 ```
 
-## 重要提示
+批准标记写在 `changes/<id>.md`；`task.md` 只保留索引。
 
-- **artifact 文件是 .md**，不在 CODE_EXTS 中，Edit 操作不受"无活跃任务 DENY"限制
-- 使用 **Edit** 修改已有 artifact，不要用 Write 覆盖
-- 并发 subagent：第一个完成桥接后，后续 subagent 自动通过
+### Step 5：标记已同步
 
-## auto-APPROVED 说明
+把桥接的主计划文件及同名前缀伴随文件写入 `.pace/synced-plans`，每行一个文件名。
 
-pace-bridge 自动在 task.md 写入 `<!-- APPROVED -->`，这是设计行为而非遗漏：
-- 用户在 brainstorming 中已参与设计决策（What to build）
-- writing-plans 已生成详细实施计划（How to build）
-- 格式转换是机械性操作，不引入新的设计决策
-- 用户通过事后审阅 task.md 发现问题可随时叫停
+禁止一次性记录整个 `docs/plans/` 目录；多窗口场景下会吞掉其他窗口的未桥接计划。
 
-此行为等价于 PACE C 阶段的 `<!-- APPROVED -->`，使 C 阶段被吸收。
+---
+
+## 验证
+
+桥接完成后确认：
+- `task.md` 与 `implementation_plan.md` 都有同一 `[[chg-*]]` 索引。
+- `changes/<id>.md` 存在，frontmatter `status: planned` 或后续已批准。
+- auto-APPROVED 场景下详情文件含 `<!-- APPROVED -->`。
+
+---
 
 ## 转换摘要格式
 
-桥接完成后，**必须**输出以下结构化摘要供用户事后审阅：
-
-```
+```text
 === pace-bridge 转换摘要 ===
-源计划: docs/plans/YYYY-MM-DD-<feature>.md 或 docs/superpowers/plans/YYYY-MM-DD-<feature>.md
+源计划: <plan path>
 变更 ID: CHG-YYYYMMDD-NN
 任务范围: T-NNN ~ T-NNN（共 N 个）
-执行方式推荐: subagent-driven-development / executing-plans / dispatching-parallel-agents
+批准状态: pending / auto-approved
+执行方式推荐: subagent-driven-development / executing-plans / dispatching-parallel-agents / direct
 ```

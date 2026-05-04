@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -48,6 +48,10 @@ if (eventType === 'compact') {
       if (snap.artifacts?.['task.md']?.pending > 0) {
         lines.push(`待办任务: ${snap.artifacts['task.md'].pending} 个`);
       }
+      if (snap.activeChanges && snap.activeChanges.length > 0) {
+        lines.push('活跃 CHG:');
+        snap.activeChanges.forEach(c => lines.push(`  ${c.id} status=${c.status} pending=${c.pending} approved=${c.approved} verified=${c.verified}`));
+      }
       if (snap.runtime?.degraded) {
         lines.push('⚠️ Stop hook 之前已降级（本次已重置计数）');
       }
@@ -56,7 +60,7 @@ if (eventType === 'compact') {
         lines.push('');
         lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
         snap.nativePlans.forEach(p => lines.push(`  ${p}`));
-        lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引，完成后删除 .pace/current-native-plan。');
+        lines.push('请执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
       }
       // AI 主动记录的 native plan 路径（优先于扫描结果）
       const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
@@ -66,7 +70,7 @@ if (eventType === 'compact') {
           if (planPath) {
             lines.push('');
             lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-            lines.push('请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引，完成后删除 .pace/current-native-plan。');
+            lines.push('请执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
           }
         }
       } catch(e) {}
@@ -77,20 +81,20 @@ if (eventType === 'compact') {
         const formatLines = [
           '',
           '=== 格式快速参考 ===',
-          `任务格式：${FORMAT_SNIPPETS.taskEntry}`,
-          `索引格式：${FORMAT_SNIPPETS.implIndex}`,
+          `CHG 索引格式：${FORMAT_SNIPPETS.taskEntry}`,
+          `实施索引格式：${FORMAT_SNIPPETS.implIndex}`,
           `任务状态：${FORMAT_SNIPPETS.statusHelp}`,
-          `变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`,
+          `详情位置：changes/<id>.md`,
           `findings 格式：${FORMAT_SNIPPETS.findingsFormat}`,
-          `walkthrough 详情：${FORMAT_SNIPPETS.walkthroughDetail}`,
-          `标记位置：${FORMAT_SNIPPETS.approved}`,
+          `walkthrough 索引：${FORMAT_SNIPPETS.walkthroughDetail}`,
+          `批准标记：${FORMAT_SNIPPETS.approved}`,
           `验证标记：${FORMAT_SNIPPETS.verified}`,
-          `impl_plan 详情格式：${FORMAT_SNIPPETS.implDetail}`,
+          `impl_plan 规则：${FORMAT_SNIPPETS.implDetail}`,
           '',
           '=== G-9 完成检查（每个 CHG/HOTFIX 最后一个任务标 [x] 后立即执行）===',
-          `1. task.md — 已完成项标 [x]/[-] + ${FORMAT_SNIPPETS.verified} + 归档到 ARCHIVE 下方`,
-          `2. implementation_plan.md — 索引标 [x] + 详情段落归档（格式：${FORMAT_SNIPPETS.implDetail}）`,
-          `3. walkthrough.md — 追加索引行 + 详情段落。${FORMAT_SNIPPETS.walkthroughDetail}`,
+          `1. changes/<id>.md — 所有 T-NNN 标 [x]/[-] 后由 update-status 推 status=completed`,
+          `2. update-chg action=verify — 写 verified-date + <!-- VERIFIED -->`,
+          `3. archive-chg — 详情 status=archived，task/impl 索引移到 ARCHIVE 下方`,
           '4. spec.md — 同步技术栈变更（如有）',
           '',
         ];
@@ -118,7 +122,7 @@ if (eventType !== 'compact') {
       if (planPath) {
         process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
         process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
-        process.stdout.write(`请执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引，完成后删除 .pace/current-native-plan。\n\n`);
+        process.stdout.write(`请执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。\n\n`);
       }
     }
   } catch(e) {}
@@ -265,7 +269,7 @@ for (const file of ARTIFACT_FILES) {
         result.push(l);
       }
       output = result.join('\n');
-      output = output.replace(/(^## 活跃变更详情)/m, `（已省略 ${skipIds.size} 条已完成变更）\n\n$1`);
+      output = output.replace(/(^## 变更索引)/m, `（已省略 ${skipIds.size} 条已完成变更）\n\n$1`);
     }
   }
 
@@ -273,6 +277,17 @@ for (const file of ARTIFACT_FILES) {
   process.stdout.write(output);
   process.stdout.write('\n\n');
   found.push(`${file}(${output.length})`);
+}
+
+if (paceSignal === 'artifact') {
+  const summaries = summarizeActiveChanges(cwd);
+  if (summaries.length > 0) {
+    process.stdout.write(`=== 活跃 CHG 摘要 ===\n`);
+    for (const s of summaries) {
+      process.stdout.write(`- ${s.id} status=${s.status} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
+    }
+    process.stdout.write('\n');
+  }
 }
 
 // v4.8: artifact 存储在 vault 时，注入目录路径指引 AI 读写
@@ -345,7 +360,7 @@ if (taskFullCached) {
           const fileList = unsyncedPlans.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
           process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
           process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
-          process.stdout.write(`请在派 subagent 前执行桥接：Read plan → Edit task.md 添加任务 + APPROVED → Edit implementation_plan.md 添加 CHG 索引。\n`);
+          process.stdout.write(`请在派 subagent 前执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引。\n`);
           process.stdout.write(`详见 /pace-bridge skill。\n\n`);
           log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SUPERPOWERS_BRIDGE_HINT | plans: ${fileList}\n`);
         }
@@ -356,11 +371,11 @@ if (taskFullCached) {
     const hasPending = /- \[[ \/!]\]/.test(active);
     const hasCompleted = /- \[[x\-]\]/.test(active);
     if (hasPending) {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ task.md 是任务权威来源。TodoWrite 与 task.md 冲突时，以 task.md 为准。\n请为每个 task.md 顶层活跃任务创建或更新对应的 TodoWrite 项。\n\n`);
+      process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n请为当前活跃 CHG 的未完成 T-NNN 创建或更新对应 TodoWrite 项。\n\n`);
     } else if (hasCompleted) {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 活跃区有已完成/跳过任务待归档，无进行中任务。归档后再清空 TodoWrite。\n\n`);
+      process.stdout.write(`\n=== TodoWrite 同步 ===\n活跃索引中有已完成/跳过变更待 archive-chg，归档后再清空 TodoWrite。\n\n`);
     } else {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\ntask.md 无活跃任务。如 TodoWrite 仍有残留项，请清空。\n\n`);
+      process.stdout.write(`\n=== TodoWrite 同步 ===\n当前无活跃 CHG。如 TodoWrite 仍有残留项，请清空。\n\n`);
     }
   } catch(e) {}
 }

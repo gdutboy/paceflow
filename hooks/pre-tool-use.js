@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, detectLegacyImplFormat, extractNewlyCompletedChgs } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, detectLegacyImplFormat, extractNewlyCompletedChgs, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -21,7 +21,7 @@ const proj = getProjectName(cwd);
 paceUtils.withStdinParsed((stdin) => {
   try {
   const t0 = Date.now();
-  const { toolName, filePath, oldString, newString } = stdin;
+  const { toolName, filePath, oldString, newString, content } = stdin;
   log(paceUtils.logEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
@@ -141,7 +141,107 @@ paceUtils.withStdinParsed((stdin) => {
     }
   }
 
-  // v5.0.1: impl_plan 详情守门 — 标 [x] 前必须有 ### CHG-ID 详情段落
+  // v6: 项目一旦有 changes/，所有执行前检查只看详情文件与索引 wikilink。
+  // v6 已在上方返回，下面仅保留 legacy fallback。
+  if (paceSignal === 'artifact') {
+    const activeEntriesAll = getActiveChangeEntries(cwd);
+    const actionableEntries = activeEntriesAll.filter(e => {
+      const marks = [e.taskCheckbox, e.implCheckbox].filter(Boolean);
+      return marks.some(m => m === ' ' || m === '/' || m === '!');
+    });
+
+    // 阻止主 session 直接手写 C/V 阶段标志；应派 artifact writer。
+    const isChangeDetail = /\/changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(normalizedFile);
+    const mutationText = newString || content || '';
+    if ((toolName === 'Edit' || toolName === 'Write') && isChangeDetail && mutationText) {
+      const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');
+      const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
+      const setVerifiedDate = /^verified-date:\s*(?!null\b).+/m.test(mutationText) &&
+        !/^verified-date:\s*(?!null\b).+/m.test(oldString || '');
+      if (addedApproved || addedVerified || setVerifiedDate) {
+        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 paceflow-artifact-writer 执行 ${addedApproved ? 'update-chg action=approve' : 'update-chg action=verify'}。`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, { proj, file: filePath, dur: Date.now() - t0 }));
+        return;
+      }
+    }
+
+    if (isCodeFile && isInsideProject) {
+      if (actionableEntries.length === 0) {
+        const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
+        const reason = doneEntries.length > 0
+          ? `v6 项目当前只有已完成/跳过索引，请先派 paceflow-artifact-writer archive-chg 归档，或 create-chg 创建新的变更后再写代码。${FORMAT_SNIPPETS.archiveOp}`
+          : `v6 项目没有活跃 CHG/HOTFIX。请派 paceflow-artifact-writer create-chg 创建 changes/<id>.md，并同步 task.md / implementation_plan.md 索引后再写代码。`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
+        return;
+      }
+
+      const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
+      if (mismatched.length > 0) {
+        const ids = mismatched.map(e => e.id).join(', ');
+        const reason = `v6 索引不一致：${ids} 必须同时存在于 task.md 与 implementation_plan.md 活跃区。请派 paceflow-artifact-writer 修复索引。`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        return;
+      }
+
+      const missingDetails = actionableEntries.filter(e => !e.detail || e.detail.missing);
+      if (missingDetails.length > 0) {
+        const ids = missingDetails.map(e => e.id).join(', ');
+        const reason = `v6 详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 paceflow-artifact-writer create-chg 或修复 wikilink。`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        return;
+      }
+
+      const approvedEntries = actionableEntries.filter(e => isChangeApproved(e.detail));
+      if (approvedEntries.length === 0) {
+        const ids = actionableEntries.map(e => e.id).join(', ');
+        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请询问用户批准后派 paceflow-artifact-writer update-chg action=approve。${FORMAT_SNIPPETS.approved}`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        return;
+      }
+
+      const runnableEntries = approvedEntries.filter(e => {
+        const fmStatus = (e.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
+        return e.taskCheckbox === '/' && e.implCheckbox === '/' && fmStatus === 'in-progress';
+      });
+      if (runnableEntries.length === 0) {
+        const ids = approvedEntries.map(e => e.id).join(', ');
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。请派 paceflow-artifact-writer update-chg action=update-status，将当前任务标为 [/] 并联动 frontmatter status。`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        return;
+      }
+
+      const summaries = summarizeActiveChanges(cwd)
+        .filter(s => runnableEntries.some(e => e.slug === s.slug))
+        .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} impl=${s.implCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} path=${s.path}`)
+        .join('\n');
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          additionalContext: `当前 v6 活跃变更：\n${summaries}`
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(paceUtils.logEntry('PreToolUse', 'PASS_V6', { proj, tool: toolName, entries: runnableEntries.length, dur: Date.now() - t0 }));
+      return;
+    }
+
+    log(paceUtils.logEntry('PreToolUse', 'PASS_V6_NON_CODE', { proj, tool: toolName, dur: Date.now() - t0 }));
+    return;
+  }
+
+  // legacy fallback：impl_plan 详情守门
   if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
     const planFull = readFull(cwd, 'implementation_plan.md');
 
@@ -161,7 +261,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
     }
 
-    // T-325: 创建阶段详情守门 — 添加新 [ ]/[/] 索引时必须有 ### CHG-ID 详情段落
+    // legacy fallback：创建阶段详情守门
     const newPendingIds = (newString.match(/^- \[[ \/]\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
       .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
     const oldAnyIds = new Set((oldString.match(/^- \[.\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])

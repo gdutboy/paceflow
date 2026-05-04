@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, readActive, countByStatus, getProjectName } = paceUtils;
+const { ts, todayISO, isPaceProject, readActive, countByStatus, getProjectName, summarizeActiveChanges } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -23,6 +23,10 @@ try {
   }
 
   const snapshot = { timestamp: new Date().toISOString(), artifacts: {} };
+
+  if (paceSignal === 'artifact') {
+    snapshot.activeChanges = summarizeActiveChanges(cwd);
+  }
 
   // 收集 task.md 状态
   const taskActive = readActive(cwd, 'task.md');

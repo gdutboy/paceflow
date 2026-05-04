@@ -1,115 +1,74 @@
 # 变更 ID 生命周期
 
-> 本文件是 artifact-management 的变更管理详细参考。CHG-ID 生命周期、PACE 集成和跨 Artifact 联动规则。
+本文件是 PACEflow v6 的 CHG/HOTFIX 生命周期速查。完整操作步骤以 `agents/references/instructions/*.md` 为准。
 
 ---
 
-## CHG-ID 详细格式
+## ID 格式
 
-```
-CHG-YYYYMMDD-NN       （常规变更）
-HOTFIX-YYYYMMDD-NN    （紧急修复）
-
-CHG/HOTFIX = 固定前缀
-YYYYMMDD   = 创建日期（如 20260117）
-NN         = 当天序号（两位数，从 01 开始）
-
-示例：CHG-20260117-01、HOTFIX-20260304-01
+```text
+CHG-YYYYMMDD-NN
+HOTFIX-YYYYMMDD-NN
 ```
 
-### 生成规则
+详情文件名为小写：
 
-1. 获取当前日期（格式 YYYYMMDD）
-2. 读取 `implementation_plan.md` 索引表
-3. 统计当天已有变更数量（匹配 `CHG-{今日日期}-`）
-4. 新 ID = `CHG-{日期}-{已有数量 + 1}`（补零至两位）
+```text
+changes/chg-yyyymmdd-nn.md
+changes/hotfix-yyyymmdd-nn.md
+```
+
+ID 由 `paceflow-artifact-writer create-chg` 扫描 `changes/` 后生成，主 session 不自行写入文件。
+
+---
+
+## 生命周期
+
+| 阶段 | detail status | 索引状态 | agent 操作 |
+|------|---------------|----------|------------|
+| A 创建 | `planned` | `[ ]` | `create-chg` |
+| C 批准 | `planned` | `[ ]` | `update-chg action=approve` |
+| E 开始 | `in-progress` | `[/]` | `update-chg section=tasks action=update-status new-status=[/]` |
+| E 完成 | `completed` | `[x]` | 所有任务 `[x]`/`[-]` 后由 update-status 联动 |
+| V 验证 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg action=verify` |
+| 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg` |
+| 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 按 agent 规范处理 |
 
 ---
 
 ## PACE 集成
 
-变更 ID 在 PACE 各阶段的自动执行动作：
-
-| PACE 阶段 | 自动执行动作 |
-|-----------|-------------|
-| **P (Plan)** | 分析任务，判断是否需要变更 ID |
-| **A (Artifact)** | ① 生成变更 ID ② 更新索引表（`[ ]` 规划中）③ 追加变更详情 ④ 回写 findings `[change:: CHG-ID]` + 状态 `[x]` |
-| **C (Check)** | 用户确认后，状态改为 `[/]` 进行中 |
-| **E (Execute)** | ① 关联 task.md 任务 ② 完成后状态改为 `[x]` 完成 ③ 添加完成标记 ④ 写入 walkthrough.md |
-| **V (Verify)** | ① 验证通过后添加 `<!-- VERIFIED -->` ② 确认 findings 关联已更新 |
-
----
-
-## 跨 Artifact 联动
-
-### task.md 联动
-
-任务按变更 ID 分组，每个 CHG 独立 `###` 标题：
-
-```markdown
-## 活跃任务
-
-### CHG-20260117-01: 用户认证重构
-
-<!-- APPROVED -->
-
-- [ ] T-001 创建 AuthService 基础类
-- [ ] T-002 实现 Token 轮换
-- [x] T-003 添加请求签名
-
-### CHG-20260117-02: API 响应格式
-
-- [ ] T-004 定义统一响应结构
-```
-
-### walkthrough.md 联动
-
-完成记录引用变更 ID：
-
-```markdown
-## 2026-01-17 CHG-20260117-01 用户认证重构
-
-> **追加时间**: 2026-01-17T15:30:00+08:00
-
-- 执行 CHG-20260117-01：用户认证重构（已完成）
-  - **T-001**：创建了 AuthService 统一认证服务
-  - **T-002**：实现了 Token 轮换机制
-```
-
-### findings.md 联动
-
-外部调研关联变更 ID（索引区 + 详情区双区格式）：
-
-```markdown
-<!-- 索引区 -->
-- [x] JWT 安全最佳实践 — HMAC-SHA256 签名 + 15 分钟过期 #finding [date:: 2026-01-17] [change:: CHG-20260117-01]
-
-<!-- 详情区 -->
-### [2026-01-17] JWT 安全最佳实践
-**问题/目标**: JWT Token 安全加固
-**发现内容**: ...
-```
-
----
-
-## 状态流转图
-
-```
-[ ] 规划中 ─┬─→ [/] 进行中 ─┬─→ [x] 完成
-            │               │
-            └─→ [-] 废弃    └─→ [!] 暂停 ─→ [/] 进行中
-```
-
-**豁免条件**：简单任务（问答、单行修改、纯文档）无需变更 ID，详见 **User Rule G-8**。
+| PACE 阶段 | 主 session 职责 | artifact writer 职责 |
+|-----------|-----------------|----------------------|
+| P | 分析需求、识别范围、形成任务拆分 | 无 |
+| A | 组织 create-chg 输入 | 创建详情文件 + 根索引 |
+| C | 询问用户是否批准 | 写 `<!-- APPROVED -->` |
+| E | 修改代码、运行中维护进度请求 | 更新 T-NNN、frontmatter、根索引、工作记录 |
+| V | 运行验证并阅读结果 | 写 `verified-date` + `<!-- VERIFIED -->` |
+| 归档 | 确认验证通过后派归档 | 更新详情 status 并移动索引 |
 
 ---
 
 ## 完成检查清单
 
-任务完成前必须验证：
+结束一个 CHG/HOTFIX 前必须满足：
 
-- [ ] 变更索引表状态已更新为 `[x]` 完成
-- [ ] 关联任务 `[tasks:: T-NNN~T-NNN]` 已填写
-- [ ] 完成标记已添加（含时间戳）
-- [ ] walkthrough.md 已记录当天工作总结
-- [ ] **findings.md 关联条目状态已更新**（源自 finding 的变更须回写 `[x]`）
+- [ ] `changes/<id>.md` 所有任务为 `[x]` 或 `[-]`
+- [ ] frontmatter `status: completed`
+- [ ] `completed-date` 非 null
+- [ ] 已运行并阅读验证结果
+- [ ] `verified-date` 非 null
+- [ ] `<!-- VERIFIED -->` 存在且紧邻 `<!-- APPROVED -->`
+- [ ] `walkthrough.md` 有当天索引行
+- [ ] 已派 `archive-chg`，根索引不再留在活跃区
+
+Stop hook 会阻止 completed 未 verified、verified 未归档、索引/详情不一致等状态。
+
+---
+
+## Finding / Correction 联动
+
+- 源自 finding 的变更：`create-chg` 输入带 `related-finding`，agent 在详情中保留关联。
+- 新 finding：派 `record-finding` 写 `changes/findings/<id>.md` 和 `findings.md` 摘要索引。
+- 用户纠正：派 `record-correction` 写 `changes/corrections/<id>.md` 和 `corrections.md` 摘要索引。
+- 跨项目通用经验：再用 `paceflow:pace-knowledge` 沉淀到 `knowledge/`。
