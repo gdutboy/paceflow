@@ -134,8 +134,10 @@ Artifact 写入是确定性 CRUD，默认走最短工具路径。
 启动时执行：
 
 ```bash
-ls "$ARTIFACT_DIR/changes" 2>/dev/null
+test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 ```
+
+禁止用 `ls "$ARTIFACT_DIR/changes"` 的空输出判断目录不存在；空目录存在时 stdout 也为空。
 
 - 有 `changes/` 目录 → 继续执行
 - 无 `changes/` 目录 → 报告 `not-pace-project` 并退出

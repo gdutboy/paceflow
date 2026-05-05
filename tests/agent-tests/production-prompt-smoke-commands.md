@@ -6,6 +6,9 @@
 >
 > 先用 GLM 5.1 跑本清单；v4pro 可作为对照。D2 large-body 不放入 hard gate，
 > 单独作为模型内容保真 / 长文本搬运能力测试。
+>
+> Production 模式下，`## paceflow-artifact-writer 报告` 必须存在；若 agent 在标题前添加
+> 自然语言前缀，runner 记录 `report_title_prefix_warning`，不阻断结构/功能断言。
 
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow

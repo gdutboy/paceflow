@@ -42,7 +42,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## 操作步骤
 
-0. 前置检查：`$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
+0. 前置检查：用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
 1. 派生 title（参考上方规则）
 2. 归一化 knowledge-link / project-scope（参考上方规则）
 3. 生成 correction-id（CORRECTION-YYYY-MM-DD-NN，扫 `changes/corrections/` 同日序号 +1）

@@ -106,7 +106,7 @@ run_case() {
     echo "  WARN: claude exited non-zero; continuing to parse output"
   fi
 
-  if ! node "$PARSER" "$claude_json" "$report_file" > /dev/null 2>&1; then
+  if ! node "$PARSER" "$claude_json" "$report_file" --prompt-mode "$MODE" > /dev/null 2>&1; then
     echo "  FAIL: could not parse claude output"
     copy_failed_fixture "$target_dir" "$tc_id"
     (cd "$PACEFLOW_ROOT" && node "$RUNNER" teardown "$yaml_rel" >/dev/null 2>&1 || true)

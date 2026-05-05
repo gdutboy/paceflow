@@ -129,7 +129,8 @@ function cmdVerify(yamlPath, reportPath) {
   console.log(`${tc.id}: ${result.passed ? '✅ PASS' : '❌ FAIL'}`);
   console.log(`报告：${result.reportPath}`);
   for (const v of result.validations) {
-    console.log(`  ${v.ok ? '✓' : '✗'} ${v.name}${v.reason ? ' — ' + v.reason : ''}`);
+    const mark = v.warning ? '⚠' : (v.ok ? '✓' : '✗');
+    console.log(`  ${mark} ${v.name}${v.reason ? ' — ' + v.reason : ''}`);
   }
   process.exit(result.passed ? 0 : 1);
 }
@@ -300,7 +301,8 @@ function cmdDummy() {
   console.log(`   结果：${result.passed ? '✅ PASS' : '❌ FAIL'}`);
   console.log(`   报告：${path.relative(ROOT, result.reportPath)}`);
   for (const v of result.validations) {
-    console.log(`   ${v.ok ? '✓' : '✗'} ${v.name}${v.reason ? ' — ' + v.reason : ''}`);
+    const mark = v.warning ? '⚠' : (v.ok ? '✓' : '✗');
+    console.log(`   ${mark} ${v.name}${v.reason ? ' — ' + v.reason : ''}`);
   }
 
   console.log('4. teardown');

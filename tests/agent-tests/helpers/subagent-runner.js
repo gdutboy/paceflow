@@ -113,7 +113,8 @@ create-chg 资源路径要求：
 项目路径（ARTIFACT_DIR）：${ctx.targetDir}
 
 项目有效性硬约束：
-- 先检查 ${ctx.targetDir}/changes 是否存在且是目录
+- 先用 \`test -d "${ctx.targetDir}/changes" && echo EXISTS || echo MISSING\` 检查 ${ctx.targetDir}/changes 是否存在且是目录
+- 禁止用 \`ls ${ctx.targetDir}/changes\` 的空输出判断目录不存在；空目录也会没有 stdout
 - 如果 base changes/ 不存在，立即报告 \`status: FAILED\` / \`error_code: not-pace-project\`
 - 禁止创建 base changes/ 来初始化项目；此场景不得 Write / Edit 任何 artifact
 - 只有在 base changes/ 已存在时，才允许懒创建 changes/findings/ 或 changes/corrections/
@@ -187,9 +188,10 @@ function verifyAndReport(ctx, agentReport) {
     '',
     '## 验证项',
     '',
-    ...result.validations.map((v) =>
-      `- ${v.ok ? '✅' : '❌'} ${v.name}${v.reason ? ` — ${v.reason}` : ''}${v.actual !== undefined ? ` (actual=${v.actual} limit=${v.limit ?? '-'})` : ''}`,
-    ),
+    ...result.validations.map((v) => {
+      const mark = v.warning ? '⚠️' : (v.ok ? '✅' : '❌');
+      return `- ${mark} ${v.name}${v.reason ? ` — ${v.reason}` : ''}${v.actual !== undefined ? ` (actual=${v.actual} limit=${v.limit ?? '-'})` : ''}`;
+    }),
     '',
   ];
 

@@ -20,6 +20,14 @@ projects/<project>/
 
 `changes/` 根目录是 v6 项目 marker，必须预先存在。agent **不得**创建 base `changes/` 来初始化项目；缺失时立即报告 `not-pace-project`，且不得 Write / Edit 任何 artifact。
 
+目录存在性检查必须使用显式状态输出：
+
+```bash
+test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
+```
+
+禁止用 `ls "$ARTIFACT_DIR/changes"` 的空输出判断目录不存在；空目录存在时 stdout 也为空。
+
 `changes/findings/` 和 `changes/corrections/` 子目录在首次操作时**懒创建**（`mkdir -p`），但前提是 base `changes/` 已存在。
 
 `$ARTIFACT_DIR` 解析：

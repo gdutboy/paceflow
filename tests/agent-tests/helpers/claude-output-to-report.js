@@ -159,9 +159,24 @@ function convert(text) {
 }
 
 function main() {
-  const inputPath = process.argv[2];
-  const outputPath = process.argv[3];
+  let inputPath = null;
+  let outputPath = null;
+  let promptMode = process.env.PROMPT_MODE || null;
+  const positional = [];
+  for (let i = 2; i < process.argv.length; i += 1) {
+    const arg = process.argv[i];
+    if (arg === '--prompt-mode' && process.argv[i + 1]) {
+      promptMode = process.argv[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--prompt-mode=')) {
+      promptMode = arg.slice('--prompt-mode='.length);
+    } else {
+      positional.push(arg);
+    }
+  }
+  [inputPath, outputPath] = positional;
   const report = convert(readInput(inputPath));
+  if (promptMode) report.prompt_mode = promptMode;
   const json = JSON.stringify(report, null, 2);
   if (outputPath) fs.writeFileSync(outputPath, json + '\n', 'utf8');
   else process.stdout.write(json + '\n');

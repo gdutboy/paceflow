@@ -20,7 +20,7 @@
 
 > **报告标题强制**：最终输出的第一行必须字面是 `## paceflow-artifact-writer 报告`。禁止简化为 `## 报告`，禁止改写为 `## create-chg 报告` / `## 执行报告` / `## 操作摘要`，禁止在标题前添加任何说明文字。`report_title_strict` 会机械检查，标题不匹配即 FAIL。
 
-0. 前置检查：先校验必填字段；缺字段 → `missing-fields` 且不写文件。再检查 `$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
+0. 前置检查：先校验必填字段；缺字段 → `missing-fields` 且不写文件。再用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
 2. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
 3. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）

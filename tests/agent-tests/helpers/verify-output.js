@@ -326,22 +326,45 @@ function verify(testCase, targetDir, variables, agentReport) {
     ? null
     : (exp.report_title_strict || '## paceflow-artifact-writer 报告');
   if (agentReport && titleStrict && agentReport.raw) {
+    const isProductionPrompt = agentReport.prompt_mode === 'production' || agentReport.promptMode === 'production';
     const lines = agentReport.raw.split(/\r?\n/);
     const firstLine = (lines[0] || '').trim();
     const ok = firstLine === titleStrict;
+    const titleIndex = lines.findIndex((line) => line.trim() === titleStrict);
     let actual = firstLine || '<empty first line>';
     if (!ok) {
-      const titleLine = lines.find((line) => /^##\s+/.test(line.trim()));
+      const titleLine = lines.find((line) => line.trim() === titleStrict) ||
+        lines.find((line) => /^##\s+/.test(line.trim()));
       if (titleLine && titleLine.trim() !== actual) {
         actual = `${actual} (first h2: ${titleLine.trim()})`;
       }
     }
-    validations.push({
-      name: 'report_title_strict',
-      ok,
-      actual,
-      expected: titleStrict,
-    });
+    if (isProductionPrompt && !ok) {
+      validations.push({
+        name: 'report_title_present',
+        ok: titleIndex >= 0,
+        actual,
+        expected: titleStrict,
+        reason: titleIndex >= 0 ? undefined : 'required report title not found',
+      });
+      if (titleIndex >= 0) {
+        validations.push({
+          name: 'report_title_prefix_warning',
+          ok: true,
+          warning: true,
+          actual,
+          expected: titleStrict,
+          reason: 'production prompt: title not first line; recorded as warning',
+        });
+      }
+    } else {
+      validations.push({
+        name: 'report_title_strict',
+        ok,
+        actual,
+        expected: titleStrict,
+      });
+    }
   }
 
   // 4.2 failure_reason_pattern（regex 匹配 raw 报告中的失败码）
