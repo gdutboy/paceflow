@@ -9,7 +9,8 @@
  *
  * 用法：
  *   node run-tests.js list [phase]                 # 列出用例（默认 phase-a）
- *   node run-tests.js prepare <yaml-path>          # setup + 打印 prompt
+ *   node run-tests.js prepare <yaml-path> [--mode harness|production]
+ *                                                    # setup + 打印 prompt
  *   node run-tests.js verify <yaml-path> [json]    # 验证（json 文件路径 或 stdin）
  *   node run-tests.js teardown <yaml-path>         # 清理 fixture
  *   node run-tests.js dummy                        # 自测框架
@@ -43,10 +44,34 @@ function cmdList(phase) {
   }
 }
 
-function cmdPrepare(yamlPath) {
-  const ctx = runner.prepare(yamlPath);
+function parsePrepareOptions(args) {
+  let promptMode = 'harness';
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--production' || arg === 'production') {
+      promptMode = 'production';
+    } else if (arg === '--harness' || arg === 'harness') {
+      promptMode = 'harness';
+    } else if (arg === '--mode' && args[i + 1]) {
+      promptMode = args[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--mode=')) {
+      promptMode = arg.slice('--mode='.length);
+    }
+  }
+  if (!['harness', 'production'].includes(promptMode)) {
+    console.error(`Unknown prompt mode: ${promptMode}`);
+    process.exit(2);
+  }
+  return { promptMode };
+}
+
+function cmdPrepare(yamlPath, ...prepareArgs) {
+  const options = parsePrepareOptions(prepareArgs);
+  const ctx = runner.prepare(yamlPath, options);
   console.log('═'.repeat(70));
   console.log(`已准备：${ctx.testCase.id}  →  ${ctx.targetDir}`);
+  console.log(`Prompt mode：${ctx.promptMode}`);
   console.log('═'.repeat(70));
   console.log('\n--- AGENT PROMPT（拷给主 session 派遣 paceflow-artifact-writer）---\n');
   console.log(ctx.agentPrompt);
@@ -54,8 +79,8 @@ function cmdPrepare(yamlPath) {
   console.log('下一步：');
   console.log(`  1. 主 session 用 Agent tool 派 paceflow-artifact-writer，prompt 见上`);
   console.log(`  2. 收到 agent 报告后，存为 JSON：{"status":"SUCCESS","tokens":N,"tool_uses":N,"duration_ms":N,"raw":"..."}`);
-  console.log(`  3. node run-tests.js verify ${path.relative(ROOT, yamlPath)} <report.json>`);
-  console.log(`  4. 完成后清理：node run-tests.js teardown ${path.relative(ROOT, yamlPath)}`);
+  console.log(`  3. node run-tests.js verify ${path.relative(ROOT, ctx.yamlPath)} <report.json>`);
+  console.log(`  4. 完成后清理：node run-tests.js teardown ${path.relative(ROOT, ctx.yamlPath)}`);
 }
 
 function readReport(reportPath) {
@@ -278,7 +303,7 @@ function main() {
   const [cmd, ...args] = process.argv.slice(2);
   switch (cmd) {
     case 'list': return cmdList(args[0]);
-    case 'prepare': return cmdPrepare(args[0]);
+    case 'prepare': return cmdPrepare(args[0], ...args.slice(1));
     case 'verify': return cmdVerify(args[0], args[1]);
     case 'verify-multi': return cmdVerifyMulti(args[0], ...args.slice(1));
     case 'teardown': return cmdTeardown(args[0]);
@@ -286,7 +311,7 @@ function main() {
     default:
       console.error('Usage:');
       console.error('  node run-tests.js list [phase]');
-      console.error('  node run-tests.js prepare <yaml-path>');
+      console.error('  node run-tests.js prepare <yaml-path> [--mode harness|production]');
       console.error('  node run-tests.js verify <yaml-path> [report.json]');
       console.error('  node run-tests.js verify-multi <yaml-path> <report1.json> <report2.json> [...]');
       console.error('  node run-tests.js teardown <yaml-path>');

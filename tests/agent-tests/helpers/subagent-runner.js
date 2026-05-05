@@ -40,18 +40,42 @@ function loadYaml(yamlPath) {
   return JSON.parse(json);
 }
 
-function buildAgentPrompt(testCase, ctx) {
-  const op = testCase.input.operation;
+function renderInputFields(testCase, variables) {
   const fields = testCase.input.fields || {};
-  const isAllowedOperation = ALLOWED_OPERATIONS.has(op);
-
-  // 渲染字段中的变量
   const renderedFields = {};
   for (const [k, v] of Object.entries(fields)) {
     renderedFields[k] = typeof v === 'string'
-      ? setupHelper.renderVariables(v, ctx.variables)
+      ? setupHelper.renderVariables(v, variables)
       : v;
   }
+  return renderedFields;
+}
+
+function buildProductionAgentPrompt(testCase, ctx) {
+  const op = testCase.input.operation;
+  const fieldsJson = JSON.stringify(renderInputFields(testCase, ctx.variables), null, 2);
+
+  return `执行 paceflow-artifact-writer。
+
+ARTIFACT_DIR: ${ctx.targetDir}
+operation: ${op}
+
+fields:
+\`\`\`json
+${fieldsJson}
+\`\`\``;
+}
+
+function buildAgentPrompt(testCase, ctx, options = {}) {
+  if (options.promptMode === 'production') {
+    return buildProductionAgentPrompt(testCase, ctx);
+  }
+
+  const op = testCase.input.operation;
+  const isAllowedOperation = ALLOWED_OPERATIONS.has(op);
+
+  // 渲染字段中的变量
+  const renderedFields = renderInputFields(testCase, ctx.variables);
 
   const fieldsJson = JSON.stringify(renderedFields, null, 2);
   const specPath = path.join(REPO_ROOT, 'agents', 'references', 'artifact-writer-spec.md');
@@ -114,7 +138,7 @@ ${unknownOperationHints}
 ${operationHints}`;
 }
 
-function prepare(yamlRelOrAbsPath) {
+function prepare(yamlRelOrAbsPath, options = {}) {
   const yamlPath = path.isAbsolute(yamlRelOrAbsPath)
     ? yamlRelOrAbsPath
     : path.join(ROOT, yamlRelOrAbsPath);
@@ -135,7 +159,8 @@ function prepare(yamlRelOrAbsPath) {
   );
 
   const ctx = { testCase, yamlPath, targetDir, variables };
-  ctx.agentPrompt = buildAgentPrompt(testCase, ctx);
+  ctx.promptMode = options.promptMode || 'harness';
+  ctx.agentPrompt = buildAgentPrompt(testCase, ctx, options);
   return ctx;
 }
 
@@ -199,4 +224,12 @@ function appendManifest(date, entry) {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
 }
 
-module.exports = { loadYaml, prepare, verifyAndReport, teardown, appendManifest, buildAgentPrompt };
+module.exports = {
+  loadYaml,
+  prepare,
+  verifyAndReport,
+  teardown,
+  appendManifest,
+  buildAgentPrompt,
+  buildProductionAgentPrompt,
+};

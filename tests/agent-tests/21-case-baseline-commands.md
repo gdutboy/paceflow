@@ -1,6 +1,8 @@
 # 21-case Agent Baseline Commands
 
 > 用途：PACEflow v6 agent fixture 全量 baseline（Phase A 8 个 + Phase B 9 个 + Phase D 4 个）。
+> 本文使用默认 `harness` prompt。真实主 session 派发路径见
+> `tests/agent-tests/production-prompt-smoke-commands.md`。
 >
 > 每个 case 的流程固定为：
 > 1. `prepare` 输出 agent prompt
@@ -13,6 +15,9 @@
 cd /mnt/k/AI/paceflow-hooks/paceflow
 mkdir -p /tmp/paceflow-agent-baseline
 ```
+
+不要并行执行使用同一 fixture 的 `prepare`。多个 case 共用 `/tmp/test-vault/empty-v6`，
+必须按 prepare → verify → teardown 串行跑。
 
 ## Phase A
 
