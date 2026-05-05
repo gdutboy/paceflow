@@ -15,6 +15,8 @@
 ## 操作步骤
 
 > **报告标题强制**：所有 action（append / replace / update-status / approve / verify）完成后，报告标题字面使用 `## paceflow-artifact-writer 报告`（见 `agents/paceflow-artifact-writer.md` §报告格式与§你不要做的事 #9）。**禁止**改写为 `## 执行报告` / `## paceflow-artifact-writer 执行报告` / `## 强制报告格式` / `## 操作摘要` 等变体，**禁止**加任何副标题如 `（批量 update-status + frontmatter 联动）`。
+> **全局对话样式豁免**：最终报告不得继承主 session / CLAUDE.md 的时间戳、Insight 块、固定结尾语或任何前后缀。第一行必须直接是 `## paceflow-artifact-writer 报告`。
+> **错误码层级**：`operation=update-chg` 已识别时，非法 `action` 是字段值非法，必须报告 `format-violation`；禁止报告 `out-of-scope`。`out-of-scope` 仅用于未知 operation（如 `delete-chg`）。
 
 ### 通用前置
 
@@ -106,6 +108,8 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
    - Edit 详情正文：在 `<!-- APPROVED -->` 行之后、紧邻插入 `<!-- VERIFIED -->`（不空行间隔）
    - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary 或 "无附加说明"> |`
 6. 报告 `status: SUCCESS`，`files_modified: ["changes/chg-xxx.md"]`
+   - 最终回答第一行必须直接是 `## paceflow-artifact-writer 报告`
+   - 禁止在报告前写"验证通过"、"最终状态验证通过"、"报告如下"等过渡句
 
 修改前：
 ```
@@ -141,7 +145,7 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
 
 - target 不存在 → `target-not-found`
 - section 不在枚举内 → `format-violation`
-- action 不在 `append` / `replace` / `update-status` / `approve` / `verify` 枚举内 → `format-violation`
+- action 不在 `append` / `replace` / `update-status` / `approve` / `verify` 枚举内 → `format-violation`（不是 `out-of-scope`）
 - action=update-status 但 section ≠ tasks → `format-violation`
 - task-id 在 tasks 段中找不到 → `target-not-found`
 - action=approve 但 `<!-- APPROVED -->` 已存在 → SUCCESS 幂等（reason: `already approved, no change`）

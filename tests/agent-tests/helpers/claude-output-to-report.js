@@ -127,16 +127,16 @@ function inferStatus(raw, resultEvent) {
   if (resultEvent && resultEvent.is_error) return 'FAILED';
 
   const text = String(raw || '');
-  if (/(?:^|\b|["|*_ -])status(?:["`*_ -]|\s)*[:|]\s*`?FAILED`?/im.test(text)) return 'FAILED';
+  if (/(?:^|\b|["|*_ -])(?:status|状态)(?:["`*_ -]|\s)*[:|：]\s*`?FAILED`?/im.test(text)) return 'FAILED';
   if (/\berror_code\b/im.test(text) && /\bFAILED\b/im.test(text)) return 'FAILED';
   if (/\bSUCCESS_WITH_WARNINGS\b/im.test(text) || /SUCCESS\s*\(\s*with warnings\s*\)/im.test(text)) {
     return 'SUCCESS_WITH_WARNINGS';
   }
-  if (/(?:^|\b|["|*_ -])status(?:["`*_ -]|\s)*[:|]\s*`?(?:SUCCESS|OK|COMPLETED|success)`?/im.test(text)) {
+  if (/(?:^|\b|["|*_ -])(?:status|状态)(?:["`*_ -]|\s)*[:|：]\s*`?(?:SUCCESS|OK|success|ok)`?/im.test(text)) {
     return 'SUCCESS';
   }
   if (/\bFAILED\b/im.test(text)) return 'FAILED';
-  if (/\bSUCCESS\b|\bCOMPLETED\b/im.test(text)) return 'SUCCESS';
+  if (/\bSUCCESS\b/im.test(text)) return 'SUCCESS';
   return raw ? 'UNKNOWN' : 'FAILED';
 }
 
