@@ -65,9 +65,43 @@ input:
 
       Phase A 测试结果显示，agent 在 happy path 下功能 5/5 通过，但 token 消耗超出预算 3-4 倍。这是 sub-agent 启动的"固定成本"——每次派遣需要加载 system prompt + 读取 spec + 读取对应指令的 instruction 文件。Phase B 错误路径测试，agent 全部正确报 FAILED 含详细诊断，agent 失败处理质量超过预期。Phase C 集成测试 5 步串行调用，验证了 multi-turn 场景下的 spec/instruction cache 复用机制和跨索引一致性。
 
+      ## 段 6：长段兼容性压力内容
+
+      大 body 的核心风险不只是"内容多"，还包括 agent 在生成详情文件时可能主动摘要、截断、合并列表、改写代码块、丢失表格空行，或者把正文里的 wikilink 当成 frontmatter 级引用强行校验。这个测试故意把多种 Markdown 结构放在同一个 body 中，要求详情文件原样包含输入正文。验证器应当用机械方式检查输入 body 是否作为连续文本出现在生成的 finding 详情中，而不是仅相信 agent 报告里的"完整保留"声明。
+
+      在实际项目里，finding 经常承载较长的技术调研记录，例如 API 行为对照、hook 日志样本、失败路径复盘、多个候选方案的 tradeoff、以及后续 CHG 需要引用的决策依据。如果 agent 在写入这类 finding 时省略了中间段落，表面上索引和 frontmatter 仍然合规，但知识资产已经损坏。尤其是 PACEflow 的 v6 设计把索引文件保持为轻量 wikilink，把正文责任转移到详情文件，因此详情文件的完整性必须被视为一等测试目标。
+
+      第二个风险是格式保真。Markdown 表格里的竖线、代码块围栏、引用块前缀、中文冒号、全角标点、列表缩进和空行都可能影响 Obsidian 渲染结果。agent 如果为了压缩输出把代码块改成行内代码，或者把表格重写为普通列表，就会让用户后续阅读和复制验证成本上升。D2 不要求 agent 理解正文语义，只要求它把主 session 提供的 body 当作不可省略的内容块写入 finding 详情。
+
+      第三个风险是验证范围混淆。record-finding 的 body 是 Markdown 内容，允许包含背景引用、历史 CHG 链接、任务索引链接和普通说明性 wikilink；这些链接不等同于 frontmatter `related-changes` 字段。通用 wikilink 完整性检查如果直接扫描整个详情文件，就会把正文里的说明性链接误判为强约束引用。v6 verifier 因此只对 detail 文件的 frontmatter 做强校验，对 body 内 wikilink 保持内容层处理。
+
+      第四个风险是成本控制。大 body 写入会天然推高 token 和 duration，但这不应成为 agent 二次读取全文、统计行数、或为了报告展示而重复扫描详情文件的理由。正确路径应该是：写入前基于 payload 自检，Write 成功后依赖工具返回和 hook 反馈，必要时只做最小验证。D2 的资源预算给到 70K tokens / 300s，是为了容纳较长输入和一次详情写入，而不是鼓励反复 Read。
+
+      第五个风险是索引与详情脱钩。finding 的摘要索引行必须足够短，不能把大 body 塞回 findings.md；详情文件才是长内容载体。这个测试同时检查 `findings.md` 只新增一条摘要行，而不是把长正文复制进根索引。只要根索引保持轻量，v6 的 split-index 架构才能解决 v5 大文件退化问题。
+
+      第六个风险是后续迁移。旧版项目可能已有历史调研散落在 task.md、implementation_plan.md 或普通 note 中，迁移到 v6 时需要把较长调研内容变成 finding 详情。如果 agent 在大段迁移中省略"看似重复"的段落，未来的审计和回溯会失去证据链。D2 用固定大 body 做 baseline，是为了在版本升级时尽早发现这种内容保真回归。
+
+      第七个风险是报告可信度。agent 可以在报告中声称"5 段全部保留"，但测试不能只验证报告文字。机械 verifier 必须读取实际生成的详情文件，并确认输入 body 完整出现在文件中。只有报告、文件存在、frontmatter schema、wikilink 规则和 body 完整性同时通过，D2 才能算真正 PASS。
+
+      第八个风险是跨平台换行。用户可能在 Windows、WSL、macOS 或 Linux 环境之间移动 vault，文件内容会出现 CRLF 与 LF 的差异。body 完整性检查不应该因为换行风格不同而误报失败，但也不能宽松到允许段落缺失。验证器因此需要先归一化换行，再检查输入 body 是否作为连续文本存在。这个策略比逐行关键词检查更严格，也比 byte-for-byte 比较更能适应真实工作区。
+
+      第九个风险是 YAML 输入到 Markdown 输出的转义边界。测试 body 在 YAML block scalar 中保存，agent 写出到 Markdown 文件时不应额外添加转义符，也不应把缩进当作代码块保留下来。尤其是包含反引号围栏、表格分隔行和引用块的内容，如果写出时前面多了统一缩进，Obsidian 会把整段渲染成代码块，从而破坏阅读结构。D2 的目标是让正文进入详情文件后仍然是普通 Markdown。
+
+      第十个风险是长文本中的局部重复。真实调研经常重复出现相同术语，例如 PACEflow、artifact、frontmatter、wikilink、ARCHIVE、verified-date、record-finding、implementation_plan。agent 在压缩或改写时可能把重复段落合并成一句"同上"，这种做法对总结报告可以接受，但对 artifact 详情文件不可接受。artifact 是后续执行和审计的输入，不是临时摘要。
+
+      第十一个风险是 partial success 难以发现。如果 agent 只写入前半段正文，frontmatter、索引行、资源预算和报告标题仍然会全部通过，用户只有打开详情文件逐段检查才会发现缺失。把 body 完整性纳入 verifier 后，这类问题会在 baseline 阶段直接暴露，而不是进入后续 PACE 流程后才形成隐性数据损坏。
+
+      第十二个风险是测试报告污染。agent 可以输出很长的成功说明，但 runner 的 report 只应保存必要的 raw 和验证项，不应把生成的整个 finding body 复制到报告里。这样可以避免测试结果目录膨胀，同时保持失败排查足够清楚：如果 body 不完整，验证项给出 checked_files、matched_files 和 expected_chars，开发者再打开对应 fixture 文件定位即可。
+
+      第十三个风险是局部顺序被改写。长调研通常按"背景 → 证据 → 分析 → 结论"组织，顺序本身就是语义的一部分。agent 如果把结论提前、把代码示例移到附录、或者把表格拆散到不同位置，单独看每个关键词都还存在，但原始证据链已经改变。D2 的连续文本匹配可以捕获这种顺序漂移，因为它要求整段输入 body 按原顺序出现在详情文件里。
+
+      第十四个风险是未来模型行为变化。当前模型可能倾向于完整写入，但后续模型、提示压缩、工具返回格式或 hook additionalContext 变化，都可能让 agent 更积极地摘要长内容。把 5K+ body 固化为 baseline，可以在升级模型或调整 agent prompt 时提供一个稳定回归点，避免只通过短文本 happy path 就误以为 record-finding 写入能力没有退化。
+
+      第十五个风险是用户信任边界。用户把长正文交给 agent 写入 artifact 时，默认期望是"保存这段材料"，不是"帮我概括这段材料"。如果系统没有机械验证，用户必须人工逐段对照输入和输出，测试成本会直接抵消 agent 自动化带来的收益。因此 D2 把完整保存定义为硬指标，而不是报告中的软承诺；任何省略、重排或摘要都应被视为回归，后续维护也必须保留这个边界。
+
       # 结论
 
-      本 finding 详情文件期望保留所有 5 段内容完整，agent 不应"为了节省 token"省略任何段落。
+      本 finding 详情文件期望保留所有段落内容完整，agent 不应"为了节省 token"省略任何段落。
 
 expected:
   status: SUCCESS

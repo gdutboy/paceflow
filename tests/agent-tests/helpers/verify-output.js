@@ -144,6 +144,10 @@ function pushNumericLimit(validations, agentReport, field, limit, name) {
   validations.push({ name, ok: actual <= limit, actual, limit });
 }
 
+function normalizeNewlines(s) {
+  return String(s || '').replace(/\r\n/g, '\n');
+}
+
 /**
  * @param {object} testCase   解析后的用例对象
  * @param {string} targetDir  临时 vault 路径
@@ -182,6 +186,23 @@ function verify(testCase, targetDir, variables, agentReport) {
     }
   }
 
+  // 2.1 files_created_optional：记录可选产物证据，不影响通过/失败。
+  if (exp.files_created_optional) {
+    const optionalPatterns = Array.isArray(exp.files_created_optional)
+      ? exp.files_created_optional
+      : [exp.files_created_optional];
+    for (const rel of optionalPatterns) {
+      const { rendered, matchedPattern, matches } = resolveExpectedFiles(targetDir, rel, variables, exp);
+      validations.push({
+        name: `files_created_optional:${rendered}`,
+        ok: true,
+        found: matches,
+        matchedPattern: matchedPattern !== rendered ? matchedPattern : undefined,
+        optional: true,
+      });
+    }
+  }
+
   // 3. frontmatter / wikilink / cross-index 等（针对 created files）
   if ((exp.validations || {}).frontmatter_schema === 'pass') {
     for (const rel of (exp.files_created || [])) {
@@ -204,6 +225,32 @@ function verify(testCase, targetDir, variables, agentReport) {
       const scope = isDetailFile(fp) ? 'frontmatter-only' : 'all';
       const r = checkWikilinkIntegrity(content, targetDir, scope);
       validations.push({ name: `wikilink:${path.basename(fp)}`, ok: r.ok, issues: r.issues });
+    }
+  }
+
+  if (exp.body_completeness_check) {
+    const expectedBody = normalizeNewlines(
+      setupInputBody(testCase, variables),
+    ).trim();
+    const createdFiles = (exp.files_created || [])
+      .flatMap((rel) => resolveExpectedFiles(targetDir, rel, variables, exp).matches)
+      .filter((fp) => isDetailFile(fp));
+    if (!expectedBody) {
+      validations.push({ name: 'body_completeness_check', ok: false, reason: 'input.fields.body missing' });
+    } else if (createdFiles.length === 0) {
+      validations.push({ name: 'body_completeness_check', ok: false, reason: 'no created detail file found' });
+    } else {
+      const matchingFiles = createdFiles.filter((fp) =>
+        normalizeNewlines(fs.readFileSync(fp, 'utf8')).includes(expectedBody),
+      );
+      validations.push({
+        name: 'body_completeness_check',
+        ok: matchingFiles.length > 0,
+        expected_chars: expectedBody.length,
+        checked_files: createdFiles.map((fp) => path.basename(fp)),
+        matched_files: matchingFiles.map((fp) => path.basename(fp)),
+        reason: matchingFiles.length > 0 ? undefined : 'body not found verbatim in created detail file',
+      });
     }
   }
 
@@ -249,6 +296,17 @@ function verify(testCase, targetDir, variables, agentReport) {
     });
   }
 
+  if (agentReport && exp.raw_must_contain && agentReport.raw) {
+    const expectedRaw = renderVariables(exp.raw_must_contain, variables);
+    const ok = agentReport.raw.includes(expectedRaw);
+    validations.push({
+      name: 'raw_must_contain',
+      ok,
+      actual: ok ? 'matched' : 'not matched',
+      expected: expectedRaw,
+    });
+  }
+
   // 5. agent status
   if (agentReport && agentReport.status && exp.status) {
     validations.push({ name: 'agent_status', ok: agentReport.status === exp.status, actual: agentReport.status, expected: exp.status });
@@ -256,6 +314,11 @@ function verify(testCase, targetDir, variables, agentReport) {
 
   const passed = validations.every((v) => v.ok);
   return { passed, validations, diffs };
+}
+
+function setupInputBody(testCase, variables) {
+  const body = testCase.input && testCase.input.fields && testCase.input.fields.body;
+  return typeof body === 'string' ? renderVariables(body, variables) : '';
 }
 
 module.exports = { verify, checkBelowArchive, parseFrontmatter };
