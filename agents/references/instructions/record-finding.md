@@ -15,12 +15,18 @@
 - `status`（默认 `open`，可选 `investigating` / `accepted` / `rejected` / `merged` / `blocked`）
 - `rejection-reason`（status=rejected 时必填，≥ 10 字符）
 
+`body` 是 opaque Markdown payload，必须原样写入详情文件：
+- 不得摘要、截断、改写、重排、合并段落或删除重复内容
+- 不得把正文中的 wikilink 当成 frontmatter 强约束引用
+- 允许的唯一归一化是换行风格（CRLF/LF）；正文字符、段落顺序、代码块、表格、引用块必须保持
+- 如果无法完整写入 body，不得报告 SUCCESS
+
 ## 操作步骤
 
 0. 前置检查：`$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
 1. 生成 finding-id（FINDING-YYYY-MM-DD-slug，slug 参考 spec slug 规则）
 2. `mkdir -p changes/findings/`（仅在 base `changes/` 已存在时）
-3. Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下）
+3. Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下；`body` 必须使用输入原文）
 4. Read + Edit `findings.md` 摘要索引添加索引行（spec §5.4 模板）
 
 ## 详情文件结构
@@ -57,6 +63,7 @@
 
 - summary > 200 字符 → `format-violation`
 - body 缺失 → `missing-fields`
+- body 被摘要 / 截断 / 改写 / 重排 → `format-violation`
 - status=rejected 但缺 rejection-reason 或长度 < 10 → `missing-fields`
 - merges 中 wikilink 指向不存在的 finding → 警告但不阻止（建议主 session 检查）
 - related-changes 中 wikilink 指向不存在的 CHG → 警告但不阻止（建议主 session 检查）

@@ -17,6 +17,7 @@ const path = require('path');
 const { renderVariables } = require('./fixture-setup');
 
 const INDEX_FILES = new Set(['task', 'implementation_plan', 'walkthrough', 'findings', 'corrections']);
+const FIXTURES_ROOT = path.join(__dirname, '..', 'fixtures');
 
 function isIndexFile(filePath) {
   const baseName = path.basename(filePath, '.md');
@@ -148,6 +149,48 @@ function normalizeNewlines(s) {
   return String(s || '').replace(/\r\n/g, '\n');
 }
 
+function collectFileMap(rootDir) {
+  const out = {};
+  if (!fs.existsSync(rootDir)) return out;
+
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(rootDir, full).split(path.sep).join('/');
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        out[rel] = fs.readFileSync(full, 'utf8');
+      }
+    }
+  }
+
+  walk(rootDir);
+  return out;
+}
+
+function buildExpectedFixtureMap(testCase, variables) {
+  const fixtureName = testCase.setup && testCase.setup.fixture;
+  const fixtureDir = path.join(FIXTURES_ROOT, fixtureName || '');
+  const expected = collectFileMap(fixtureDir);
+  for (const pf of ((testCase.setup && testCase.setup.pre_files) || [])) {
+    const renderedPath = renderVariables(pf.path, variables).split(path.sep).join('/');
+    expected[renderedPath] = renderVariables(pf.content, variables);
+  }
+  return expected;
+}
+
+function compareFileMaps(expected, actual) {
+  const expectedKeys = Object.keys(expected).sort();
+  const actualKeys = Object.keys(actual).sort();
+  const missing = expectedKeys.filter((k) => !Object.prototype.hasOwnProperty.call(actual, k));
+  const unexpected = actualKeys.filter((k) => !Object.prototype.hasOwnProperty.call(expected, k));
+  const changed = expectedKeys
+    .filter((k) => Object.prototype.hasOwnProperty.call(actual, k))
+    .filter((k) => normalizeNewlines(expected[k]) !== normalizeNewlines(actual[k]));
+  return { missing, unexpected, changed };
+}
+
 /**
  * @param {object} testCase   解析后的用例对象
  * @param {string} targetDir  临时 vault 路径
@@ -252,6 +295,23 @@ function verify(testCase, targetDir, variables, agentReport) {
         reason: matchingFiles.length > 0 ? undefined : 'body not found verbatim in created detail file',
       });
     }
+  }
+
+  if (exp.fixture_unchanged) {
+    const expectedMap = buildExpectedFixtureMap(testCase, variables);
+    const actualMap = collectFileMap(targetDir);
+    const comparison = compareFileMaps(expectedMap, actualMap);
+    const ok = comparison.missing.length === 0 &&
+      comparison.unexpected.length === 0 &&
+      comparison.changed.length === 0;
+    validations.push({
+      name: 'fixture_unchanged',
+      ok,
+      missing: comparison.missing,
+      unexpected: comparison.unexpected,
+      changed: comparison.changed,
+      reason: ok ? undefined : 'fixture changed',
+    });
   }
 
   // 4. resource budgets

@@ -11,11 +11,16 @@
 - `related-finding`（可选，wikilink）
 - `background` / `scope` / `technical-decision`（可选）
 
+缺失必填字段时必须立即报告 `missing-fields`，且不得推断 / 兜底：
+- 缺 `title` 或 `title` 为空 → `missing-fields: title`，禁止用 `background` / `scope` / task 描述派生标题
+- 缺 `tasks` 或 `tasks` 为空 → `missing-fields: tasks`
+- 任一必填字段缺失时，不分配 CHG-ID，不读取索引，不 Write / Edit 任何 artifact
+
 ## 操作步骤
 
 > **报告标题强制**：最终输出的第一行必须字面是 `## paceflow-artifact-writer 报告`。禁止简化为 `## 报告`，禁止改写为 `## create-chg 报告` / `## 执行报告` / `## 操作摘要`，禁止在标题前添加任何说明文字。`report_title_strict` 会机械检查，标题不匹配即 FAIL。
 
-0. 前置检查：`$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
+0. 前置检查：先校验必填字段；缺字段 → `missing-fields` 且不写文件。再检查 `$ARTIFACT_DIR/changes` 目录必须已存在；不存在 → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
 2. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
 3. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
@@ -79,6 +84,12 @@
 ```
 
 刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
+
+## 边界
+
+- 缺 `title` 或 `title` 为空 → `missing-fields: title`，不得使用其他字段兜底
+- 缺 `tasks` 或 `tasks` 为空 → `missing-fields: tasks`
+- `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 
 PACE 流程后续：
 - C 阶段批准 → 主 session 调用 `update-chg action=approve` 添加 `<!-- APPROVED -->`

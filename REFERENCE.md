@@ -135,7 +135,7 @@ for f in hooks/*.js; do node -c "$f" || exit 1; done
 ## 8. 发布检查
 
 - `PACE_VERSION` 为 `v6.0.0`
-- `.claude-plugin/plugin.json` 为 `6.0.4`（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
+- `.claude-plugin/plugin.json` 为 `6.0.5`（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
 - `hooks/templates/` 有 `corrections.md`
 - `hooks/hooks.json` 注册 `StopFailure`
 - `agents/paceflow-artifact-writer.md` 与 `agents/references/**` 存在

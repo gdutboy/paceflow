@@ -20,7 +20,7 @@ input:
 
 expected:
   status: FAILED
-  failure_reason_pattern: "missing-fields|title"
+  failure_reason_pattern: "(error_code|失败原因|错误类型).*missing-fields|missing-fields: title|缺少.*title|缺.*title"
   report_title_strict: "## paceflow-artifact-writer 报告"
   files_created: []
   files_modified: []
