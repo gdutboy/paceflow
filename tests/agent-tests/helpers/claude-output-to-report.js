@@ -94,6 +94,18 @@ function sumTokenFields(value, seen = new Set()) {
   return total;
 }
 
+function budgetTokensFromUsage(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  if (Number.isFinite(usage.total_tokens)) return usage.total_tokens;
+  const keys = [
+    'input_tokens',
+    'output_tokens',
+    'cache_creation_input_tokens',
+  ];
+  const total = keys.reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
+  return total > 0 ? total : null;
+}
+
 function countToolUseBlocks(value, seen = new Set()) {
   if (!value || typeof value !== 'object') return 0;
   if (seen.has(value)) return 0;
@@ -133,7 +145,7 @@ function convert(text) {
   const resultEvent = findResultEvent(events);
   const raw = extractRaw(events, plainText);
   const usageSource = resultEvent.usage || (resultEvent.message && resultEvent.message.usage) || payload || {};
-  const tokenTotal = sumTokenFields(usageSource);
+  const tokenTotal = budgetTokensFromUsage(usageSource) || sumTokenFields(usageSource);
   const toolUseBlocks = countToolUseBlocks(events);
   const toolUses = toolUseBlocks || resultEvent.tool_uses || resultEvent.num_tool_uses || resultEvent.num_turns || 0;
 

@@ -55,9 +55,7 @@ function buildProductionAgentPrompt(testCase, ctx) {
   const op = testCase.input.operation;
   const fieldsJson = JSON.stringify(renderInputFields(testCase, ctx.variables), null, 2);
 
-  return `执行 paceflow-artifact-writer。
-
-ARTIFACT_DIR: ${ctx.targetDir}
+  return `ARTIFACT_DIR: ${ctx.targetDir}
 operation: ${op}
 
 fields:

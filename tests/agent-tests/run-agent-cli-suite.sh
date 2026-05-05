@@ -10,6 +10,7 @@
 # Useful env:
 #   MODEL=sonnet|opus|...       Pass --model to claude
 #   MODE=production|harness     Prompt mode for run-tests.js prepare
+#   AGENT_NAME=...              Defaults to paceflow:paceflow-artifact-writer
 #   OUTDIR=/tmp/...             Output directory
 #   PLUGIN_DIR=/path/to/plugin  Defaults to this repository
 
@@ -24,6 +25,7 @@ SUITE="${1:-production-smoke}"
 MODE="${MODE:-production}"
 OUTDIR="${OUTDIR:-/tmp/paceflow-agent-baseline-${MODE}}"
 PLUGIN_DIR="${PLUGIN_DIR:-$PACEFLOW_ROOT}"
+AGENT_NAME="${AGENT_NAME:-paceflow:paceflow-artifact-writer}"
 SESSION_CWD="${SESSION_CWD:-$OUTDIR/session-cwd}"
 PRESERVE_FAILED_FIXTURE="${PRESERVE_FAILED_FIXTURE:-1}"
 SUMMARY="$OUTDIR/summary.txt"
@@ -92,7 +94,7 @@ run_case() {
   echo "  [2/4] claude agent"
   if ! (cd "$SESSION_CWD" && claude \
       "${CLAUDE_ARGS[@]}" \
-      --agent paceflow-artifact-writer \
+      --agent "$AGENT_NAME" \
       --plugin-dir "$PLUGIN_DIR" \
       --add-dir "$PACEFLOW_ROOT" \
       --add-dir /tmp/test-vault \
@@ -196,6 +198,7 @@ echo "  mode:  $MODE"
 echo "  root:  $PACEFLOW_ROOT"
 echo "  out:   $OUTDIR"
 echo "  cwd:   $SESSION_CWD"
+echo "  agent: $AGENT_NAME"
 if [[ -n "${MODEL:-}" ]]; then echo "  model: $MODEL"; fi
 echo
 

@@ -32,6 +32,12 @@ MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production-content tests/age
 MODEL=sonnet MODE=production tests/agent-tests/run-agent-cli-suite.sh production-smoke
 ```
 
+脚本默认使用 Claude CLI 中的插件限定 agent 名：
+
+```bash
+AGENT_NAME=paceflow:paceflow-artifact-writer MODE=production tests/agent-tests/run-agent-cli-suite.sh production-smoke
+```
+
 不要并行执行使用同一 fixture 的 `prepare`。多个 case 共用 `/tmp/test-vault/empty-v6`，
 必须按 prepare → verify → teardown 串行跑。
 
