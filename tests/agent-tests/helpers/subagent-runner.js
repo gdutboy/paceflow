@@ -44,11 +44,20 @@ function renderInputFields(testCase, variables) {
   const fields = testCase.input.fields || {};
   const renderedFields = {};
   for (const [k, v] of Object.entries(fields)) {
-    renderedFields[k] = typeof v === 'string'
-      ? setupHelper.renderVariables(v, variables)
-      : v;
+    renderedFields[k] = renderInputValue(v, variables);
   }
   return renderedFields;
+}
+
+function renderInputValue(value, variables) {
+  if (typeof value === 'string') return setupHelper.renderVariables(value, variables);
+  if (Array.isArray(value)) return value.map((item) => renderInputValue(item, variables));
+  if (value && typeof value === 'object') {
+    const rendered = {};
+    for (const [k, v] of Object.entries(value)) rendered[k] = renderInputValue(v, variables);
+    return rendered;
+  }
+  return value;
 }
 
 function buildProductionAgentPrompt(testCase, ctx) {

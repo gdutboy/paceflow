@@ -131,18 +131,31 @@ function checkBelowArchive(filePath, wikilinkId) {
   };
 }
 
-function pushNumericLimit(validations, agentReport, field, limit, name) {
+function pushNumericLimit(validations, agentReport, field, limit, name, options = {}) {
   if (!limit) return;
+  const warnOnly = Boolean(options.warnOnly);
+  const push = (entry) => {
+    if (warnOnly && !entry.ok) {
+      validations.push({
+        ...entry,
+        ok: true,
+        warning: true,
+        reason: entry.reason || 'production prompt: resource budget recorded as warning',
+      });
+      return;
+    }
+    validations.push(entry);
+  };
   if (!agentReport) {
-    validations.push({ name, ok: false, reason: 'agent report missing', limit });
+    push({ name, ok: false, reason: 'agent report missing', limit });
     return;
   }
   const actual = Number(agentReport[field]);
   if (!Number.isFinite(actual)) {
-    validations.push({ name, ok: false, reason: `${field} missing`, actual: agentReport[field], limit });
+    push({ name, ok: false, reason: `${field} missing`, actual: agentReport[field], limit });
     return;
   }
-  validations.push({ name, ok: actual <= limit, actual, limit });
+  push({ name, ok: actual <= limit, actual, limit });
 }
 
 function normalizeNewlines(s) {
@@ -314,10 +327,13 @@ function verify(testCase, targetDir, variables, agentReport) {
     });
   }
 
+  const isProductionPrompt = agentReport &&
+    (agentReport.prompt_mode === 'production' || agentReport.promptMode === 'production');
+
   // 4. resource budgets
-  pushNumericLimit(validations, agentReport, 'tokens', exp.max_tokens, 'max_tokens');
-  pushNumericLimit(validations, agentReport, 'duration_ms', exp.max_duration_ms, 'max_duration_ms');
-  pushNumericLimit(validations, agentReport, 'tool_uses', exp.max_tool_uses, 'max_tool_uses');
+  pushNumericLimit(validations, agentReport, 'tokens', exp.max_tokens, 'max_tokens', { warnOnly: isProductionPrompt });
+  pushNumericLimit(validations, agentReport, 'duration_ms', exp.max_duration_ms, 'max_duration_ms', { warnOnly: isProductionPrompt });
+  pushNumericLimit(validations, agentReport, 'tool_uses', exp.max_tool_uses, 'max_tool_uses', { warnOnly: isProductionPrompt });
 
   // 4.1 report_title_strict（字面匹配 agent 报告第一行标题）
   // 默认值：## paceflow-artifact-writer 报告（spec 输出契约）
@@ -326,7 +342,6 @@ function verify(testCase, targetDir, variables, agentReport) {
     ? null
     : (exp.report_title_strict || '## paceflow-artifact-writer 报告');
   if (agentReport && titleStrict && agentReport.raw) {
-    const isProductionPrompt = agentReport.prompt_mode === 'production' || agentReport.promptMode === 'production';
     const lines = agentReport.raw.split(/\r?\n/);
     const firstLine = (lines[0] || '').trim();
     const ok = firstLine === titleStrict;

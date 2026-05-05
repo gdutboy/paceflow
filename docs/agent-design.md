@@ -151,7 +151,7 @@ description: |
   指令下精准完成 artifact 操作。支持 v5 双区结构和 v6 索引-详情结构双轨。
 tools: [Read, Write, Edit, Bash, Glob, Grep]
 model: sonnet
-effort: medium
+effort: max
 ---
 ```
 
@@ -183,7 +183,7 @@ effort: medium
 
 ### 3.4 Effort 选择
 
-`effort: medium` —— agent 任务通常是结构化的，不需要 high effort 的深度思考。
+`effort: max` —— artifact writer 是文件事务执行器，目标是一次写对并让 hooks/verifier 机械兜底。subagent token 不进入主 session 上下文；相比低 effort 后返工，较高 effort 更符合 v6 的质量优先边界。
 
 ---
 

@@ -6,7 +6,7 @@ description: |
   详细规范在 ${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md 与 ${CLAUDE_PLUGIN_ROOT}/agents/references/instructions/。
 tools: [Read, Write, Edit, Bash]
 model: sonnet
-effort: low
+effort: max
 version: "4.0"
 ---
 

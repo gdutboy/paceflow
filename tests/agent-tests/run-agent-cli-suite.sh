@@ -4,11 +4,15 @@
 # Defaults to production prompt smoke:
 #   tests/agent-tests/run-agent-cli-suite.sh
 #
+# Production release gate (structural / mechanical checks, excludes optional content fidelity):
+#   MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
+#
 # Full harness baseline:
 #   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 21
 #
 # Useful env:
 #   MODEL=sonnet|opus|...       Pass --model to claude
+#   EFFORT=low|medium|high|xhigh|max
 #   MODE=production|harness     Prompt mode for run-tests.js prepare
 #   AGENT_NAME=...              Defaults to paceflow:paceflow-artifact-writer
 #   OUTDIR=/tmp/...             Output directory
@@ -41,6 +45,9 @@ mkdir -p "$OUTDIR" "$SESSION_CWD"
 CLAUDE_ARGS=()
 if [[ -n "${MODEL:-}" ]]; then
   CLAUDE_ARGS+=(--model "$MODEL")
+fi
+if [[ -n "${EFFORT:-}" ]]; then
+  CLAUDE_ARGS+=(--effort "$EFFORT")
 fi
 
 case_target_dir() {
@@ -161,6 +168,29 @@ ALL_CASES=(
   "cases/phase-d/tc-d5-broken-wikilink.yaml TC-D5"
 )
 
+PRODUCTION_GATE_CASES=(
+  "cases/phase-a/tc-a1-create-chg.yaml TC-A1"
+  "cases/phase-a/tc-a2-update-chg.yaml TC-A2"
+  "cases/phase-a/tc-a3-archive-chg.yaml TC-A3"
+  "cases/phase-a/tc-a4-record-finding.yaml TC-A4"
+  "cases/phase-a/tc-a5-record-correction.yaml TC-A5"
+  "cases/phase-a/tc-a6-hotfix.yaml TC-A6"
+  "cases/phase-a/tc-a7-merges-field.yaml TC-A7"
+  "cases/phase-a/tc-a8-update-chg-verify.yaml TC-A8"
+  "cases/phase-b/tc-b1-missing-title.yaml TC-B1"
+  "cases/phase-b/tc-b2-target-not-found.yaml TC-B2"
+  "cases/phase-b/tc-b3-archive-with-in-progress.yaml TC-B3"
+  "cases/phase-b/tc-b4-summary-too-long.yaml TC-B4"
+  "cases/phase-b/tc-b5-wrong-behavior-too-short.yaml TC-B5"
+  "cases/phase-b/tc-b6-id-mismatch.yaml TC-B6"
+  "cases/phase-b/tc-b7-out-of-scope.yaml TC-B7"
+  "cases/phase-b/tc-b8-unknown-operation.yaml TC-B8"
+  "cases/phase-b/tc-b9-not-pace-project.yaml TC-B9"
+  "cases/phase-d/tc-d1-corrections-md-missing.yaml TC-D1"
+  "cases/phase-d/tc-d3-archive-marker-missing.yaml TC-D3"
+  "cases/phase-d/tc-d5-broken-wikilink.yaml TC-D5"
+)
+
 PRODUCTION_SMOKE_CASES=(
   "cases/phase-a/tc-a1-create-chg.yaml TC-A1"
   "cases/phase-a/tc-a8-update-chg-verify.yaml TC-A8"
@@ -177,7 +207,13 @@ OPTIONAL_CONTENT_CASES=(
 
 case "$SUITE" in
   21|all)
+    if [[ "$MODE" == "production" ]]; then
+      echo "NOTE: suite '$SUITE' includes optional content fidelity case TC-D2; use production-gate for release blocking." >&2
+    fi
     CASES=("${ALL_CASES[@]}")
+    ;;
+  production-gate|gate|structural)
+    CASES=("${PRODUCTION_GATE_CASES[@]}")
     ;;
   production-smoke|smoke)
     CASES=("${PRODUCTION_SMOKE_CASES[@]}")
@@ -187,7 +223,7 @@ case "$SUITE" in
     ;;
   *)
     echo "Unknown suite: $SUITE" >&2
-    echo "Available: production-smoke, content, 21" >&2
+    echo "Available: production-gate, production-smoke, content, 21" >&2
     exit 2
     ;;
 esac
@@ -200,6 +236,7 @@ echo "  out:   $OUTDIR"
 echo "  cwd:   $SESSION_CWD"
 echo "  agent: $AGENT_NAME"
 if [[ -n "${MODEL:-}" ]]; then echo "  model: $MODEL"; fi
+if [[ -n "${EFFORT:-}" ]]; then echo "  effort: $EFFORT"; fi
 echo
 
 failures=0

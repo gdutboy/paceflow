@@ -1,11 +1,13 @@
-# Production Prompt Smoke Commands
+# Production Prompt Test Commands
 
 > 用途：验证真实主 session 派发路径。`prepare --mode production` 只输出
 > `ARTIFACT_DIR`、`operation`、`fields`，不注入 harness 里的详细规范、spec 绝对路径、
 > report title 约束或资源约束。
 >
-> 先用 GLM 5.1 跑本清单；v4pro 可作为对照。D2 large-body 不放入 hard gate，
-> 单独作为模型内容保真 / 长文本搬运能力测试。
+> Production release gate 只阻断可机械判断的结构性合同：文件创建/修改、frontmatter
+> schema、wikilink、状态机、错误码、fixture 不变性。资源预算在 production 模式记录为
+> warning，用于发现异常回环，不作为发布阻断。TC-D2 large-body 不放入 hard gate，
+> 单独作为模型内容保真 / 长文本搬运能力 benchmark。
 >
 > Production 模式下，`## paceflow-artifact-writer 报告` 必须存在；若 agent 在标题前添加
 > 自然语言前缀，runner 记录 `report_title_prefix_warning`，不阻断结构/功能断言。
@@ -15,30 +17,42 @@ cd /mnt/k/AI/paceflow-hooks/paceflow
 mkdir -p /tmp/paceflow-agent-baseline-production
 ```
 
-## Automated CLI Runner
+## Production Release Gate
+
+20 个结构性用例，不含 TC-D2。发布前优先跑这个。
+
+```bash
+cd /mnt/k/AI/paceflow-hooks/paceflow
+MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production-gate tests/agent-tests/run-agent-cli-suite.sh production-gate
+```
+
+## Production Smoke
 
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow
 MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production tests/agent-tests/run-agent-cli-suite.sh production-smoke
 ```
 
-可选长正文保真用例：
+## Optional Content Fidelity Benchmark
 
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow
 MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production-content tests/agent-tests/run-agent-cli-suite.sh content
 ```
 
+TC-D2 失败代表当前模型/输入链路在长正文原样搬运上存在波动，不代表 v6 artifact
+结构合同失败。它应进入模型选择或 prompt 压缩评估，不直接阻断 production release gate。
+
 如需指定模型：
 
 ```bash
-MODEL=sonnet MODE=production tests/agent-tests/run-agent-cli-suite.sh production-smoke
+MODEL=sonnet EFFORT=max MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
 ```
 
 脚本默认使用 Claude CLI 中的插件限定 agent 名：
 
 ```bash
-AGENT_NAME=paceflow:paceflow-artifact-writer MODE=production tests/agent-tests/run-agent-cli-suite.sh production-smoke
+AGENT_NAME=paceflow:paceflow-artifact-writer MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
 ```
 
 不要并行执行使用同一 fixture 的 `prepare`。多个 case 共用 `/tmp/test-vault/empty-v6`，
