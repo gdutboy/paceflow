@@ -1,5 +1,14 @@
 # 21-case Agent Baseline Commands
 
+自动化入口：
+
+```bash
+cd /mnt/k/AI/paceflow-hooks/paceflow
+MODE=harness OUTDIR=/tmp/paceflow-agent-baseline tests/agent-tests/run-agent-cli-suite.sh 21
+```
+
+下面是手工分步命令，主要用于单 case 调试。
+
 > 用途：PACEflow v6 agent fixture 全量 baseline（Phase A 8 个 + Phase B 9 个 + Phase D 4 个）。
 > 本文使用默认 `harness` prompt。真实主 session 派发路径见
 > `tests/agent-tests/production-prompt-smoke-commands.md`。

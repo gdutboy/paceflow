@@ -17,6 +17,13 @@ const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
 
+function hasNonNullVerifiedDate(text) {
+  const match = String(text || '').match(/^verified-date:[ \t]*(.*)$/m);
+  if (!match) return false;
+  const value = match[1].trim();
+  return value !== '' && value !== 'null';
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
@@ -153,16 +160,23 @@ paceUtils.withStdinParsed((stdin) => {
     // 阻止主 session 直接手写 C/V 阶段标志；应派 artifact writer。
     const isChangeDetail = /\/changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(normalizedFile);
     const mutationText = newString || content || '';
-    if ((toolName === 'Edit' || toolName === 'Write') && isChangeDetail && mutationText) {
+    if ((toolName === 'Edit' || toolName === 'Write') && isInsideProject && isChangeDetail && mutationText) {
       const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');
       const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
-      const setVerifiedDate = /^verified-date:\s*(?!null\b).+/m.test(mutationText) &&
-        !/^verified-date:\s*(?!null\b).+/m.test(oldString || '');
+      const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
+        !hasNonNullVerifiedDate(oldString || '');
       if (addedApproved || addedVerified || setVerifiedDate) {
         const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 paceflow-artifact-writer 执行 ${addedApproved ? 'update-chg action=approve' : 'update-chg action=verify'}。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, { proj, file: filePath, dur: Date.now() - t0 }));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
+          proj,
+          file: filePath,
+          addedApproved,
+          addedVerified,
+          setVerifiedDate,
+          dur: Date.now() - t0,
+        }));
         return;
       }
     }

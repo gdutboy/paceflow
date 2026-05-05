@@ -12,6 +12,26 @@ cd /mnt/k/AI/paceflow-hooks/paceflow
 mkdir -p /tmp/paceflow-agent-baseline-production
 ```
 
+## Automated CLI Runner
+
+```bash
+cd /mnt/k/AI/paceflow-hooks/paceflow
+MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production tests/agent-tests/run-agent-cli-suite.sh production-smoke
+```
+
+可选长正文保真用例：
+
+```bash
+cd /mnt/k/AI/paceflow-hooks/paceflow
+MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production-content tests/agent-tests/run-agent-cli-suite.sh content
+```
+
+如需指定模型：
+
+```bash
+MODEL=sonnet MODE=production tests/agent-tests/run-agent-cli-suite.sh production-smoke
+```
+
 不要并行执行使用同一 fixture 的 `prepare`。多个 case 共用 `/tmp/test-vault/empty-v6`，
 必须按 prepare → verify → teardown 串行跑。
 

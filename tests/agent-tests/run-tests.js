@@ -9,7 +9,7 @@
  *
  * 用法：
  *   node run-tests.js list [phase]                 # 列出用例（默认 phase-a）
- *   node run-tests.js prepare <yaml-path> [--mode harness|production]
+ *   node run-tests.js prepare <yaml-path> [--mode harness|production] [--prompt-file <path>]
  *                                                    # setup + 打印 prompt
  *   node run-tests.js verify <yaml-path> [json]    # 验证（json 文件路径 或 stdin）
  *   node run-tests.js teardown <yaml-path>         # 清理 fixture
@@ -46,6 +46,7 @@ function cmdList(phase) {
 
 function parsePrepareOptions(args) {
   let promptMode = 'harness';
+  let promptFile = null;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === '--production' || arg === 'production') {
@@ -57,21 +58,31 @@ function parsePrepareOptions(args) {
       i += 1;
     } else if (arg.startsWith('--mode=')) {
       promptMode = arg.slice('--mode='.length);
+    } else if (arg === '--prompt-file' && args[i + 1]) {
+      promptFile = args[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--prompt-file=')) {
+      promptFile = arg.slice('--prompt-file='.length);
     }
   }
   if (!['harness', 'production'].includes(promptMode)) {
     console.error(`Unknown prompt mode: ${promptMode}`);
     process.exit(2);
   }
-  return { promptMode };
+  return { promptMode, promptFile };
 }
 
 function cmdPrepare(yamlPath, ...prepareArgs) {
   const options = parsePrepareOptions(prepareArgs);
   const ctx = runner.prepare(yamlPath, options);
+  if (options.promptFile) {
+    fs.mkdirSync(path.dirname(path.resolve(options.promptFile)), { recursive: true });
+    fs.writeFileSync(options.promptFile, ctx.agentPrompt, 'utf8');
+  }
   console.log('═'.repeat(70));
   console.log(`已准备：${ctx.testCase.id}  →  ${ctx.targetDir}`);
   console.log(`Prompt mode：${ctx.promptMode}`);
+  if (options.promptFile) console.log(`Prompt file：${path.resolve(options.promptFile)}`);
   console.log('═'.repeat(70));
   console.log('\n--- AGENT PROMPT（拷给主 session 派遣 paceflow-artifact-writer）---\n');
   console.log(ctx.agentPrompt);
@@ -311,7 +322,7 @@ function main() {
     default:
       console.error('Usage:');
       console.error('  node run-tests.js list [phase]');
-      console.error('  node run-tests.js prepare <yaml-path> [--mode harness|production]');
+      console.error('  node run-tests.js prepare <yaml-path> [--mode harness|production] [--prompt-file <path>]');
       console.error('  node run-tests.js verify <yaml-path> [report.json]');
       console.error('  node run-tests.js verify-multi <yaml-path> <report1.json> <report2.json> [...]');
       console.error('  node run-tests.js teardown <yaml-path>');

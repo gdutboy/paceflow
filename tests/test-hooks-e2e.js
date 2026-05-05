@@ -211,6 +211,23 @@ test('9. 主 session 直接写 VERIFIED → DENY verify action', () => {
   assert.ok(r.stdout.includes('action=verify'));
 });
 
+test('9b. create-chg 写 verified-date null → 放行', () => {
+  const dir = makeV6Project('ptu-create-null', { withIndex: false, detail: false });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: fp,
+        content: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
 console.log('\n--- stop.js ---');
 
 test('10. v6 未完成详情任务 → exit 2', () => {
