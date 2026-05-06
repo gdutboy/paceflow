@@ -677,6 +677,62 @@ function countDetailTasks(content) {
   return { pending, done, total: pending + done, inProgress, blocked };
 }
 
+function normalizeFrontmatterStatus(value) {
+  return String(value || '').replace(/^["']|["']$/g, '').trim();
+}
+
+/**
+ * 将 v6 CHG/HOTFIX 活跃项机械分类，供 Stop / SessionStart / TodoWrite 复用。
+ * 分类只基于索引 checkbox、frontmatter、APPROVED/VERIFIED 标记和任务清单状态。
+ */
+function classifyChange(entry) {
+  const detail = entry && entry.detail;
+  const status = normalizeFrontmatterStatus(detail && detail.frontmatter && detail.frontmatter.status);
+  const tasks = detail && !detail.missing ? countDetailTasks(detail.content) : { pending: 0, done: 0, total: 0, inProgress: 0, blocked: 0 };
+  const approved = isChangeApproved(detail);
+  const verified = isChangeVerified(detail);
+  const taskCheckbox = entry && entry.taskCheckbox;
+  const implCheckbox = entry && entry.implCheckbox;
+  const base = {
+    id: entry && entry.id,
+    slug: entry && entry.slug,
+    status,
+    tasks,
+    approved,
+    verified,
+    taskCheckbox,
+    implCheckbox,
+    detail,
+    category: 'backlog',
+    reason: '',
+  };
+
+  if (!entry || !entry.task || !entry.impl) {
+    return { ...base, category: 'inconsistent', reason: 'index-missing' };
+  }
+  if (!detail || detail.missing) {
+    return { ...base, category: 'inconsistent', reason: 'detail-missing' };
+  }
+  if (taskCheckbox && implCheckbox && taskCheckbox !== implCheckbox) {
+    return { ...base, category: 'inconsistent', reason: 'index-mismatch' };
+  }
+  if ((taskCheckbox === 'x' || implCheckbox === 'x') && tasks.pending > 0) {
+    return { ...base, category: 'inconsistent', reason: 'index-completed-with-pending-tasks' };
+  }
+  if ((taskCheckbox === 'x' || implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
+    return { ...base, category: 'inconsistent', reason: 'index-completed-status-mismatch' };
+  }
+
+  if (status === 'archived') return { ...base, category: 'archived' };
+  if (status === 'cancelled' || taskCheckbox === '-' || implCheckbox === '-') return { ...base, category: 'cancelled' };
+  if (taskCheckbox === '!' || implCheckbox === '!' || tasks.blocked > 0) return { ...base, category: 'blocked' };
+  if (status === 'completed' || taskCheckbox === 'x' || implCheckbox === 'x') return { ...base, category: 'closing-required' };
+  if (status === 'in-progress' || taskCheckbox === '/' || implCheckbox === '/') return { ...base, category: 'running' };
+  if (status === 'planned' && approved) return { ...base, category: 'ready' };
+  if (status === 'planned' || status === '') return { ...base, category: 'backlog' };
+  return { ...base, category: 'inconsistent', reason: 'unknown-status' };
+}
+
 /** 返回 task.md 与 implementation_plan.md 活跃索引的交叉信息 */
 function getActiveChangeEntries(cwd) {
   const taskEntries = parseChangeIndex(readActive(cwd, 'task.md') || '');
@@ -720,13 +776,15 @@ function isChangeVerified(detail) {
 function summarizeActiveChanges(cwd) {
   return getActiveChangeEntries(cwd).map(entry => {
     const fm = entry.detail && entry.detail.frontmatter || {};
-    const tasks = entry.detail && !entry.detail.missing ? countDetailTasks(entry.detail.content) : null;
+    const classified = classifyChange(entry);
+    const tasks = entry.detail && !entry.detail.missing ? classified.tasks : null;
     return {
       id: entry.id,
       slug: entry.slug,
       taskCheckbox: entry.taskCheckbox || null,
       implCheckbox: entry.implCheckbox || null,
       status: fm.status || (entry.detail && entry.detail.missing ? 'missing-detail' : 'unknown'),
+      category: classified.category,
       approved: isChangeApproved(entry.detail),
       verified: isChangeVerified(entry.detail),
       pending: tasks ? tasks.pending : null,
@@ -810,7 +868,7 @@ module.exports = {
   // 统计与检查
   countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys, detectLegacyImplFormat, extractNewlyCompletedChgs,
   parseFrontmatter, detailPathForId, parseChangeIndex, readChangeDetail, extractTaskSection,
-  countDetailTasks, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
+  countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, createLogger, logEntry, formatBridgeHint,
   // stdin 解析

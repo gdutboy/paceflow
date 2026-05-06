@@ -9,7 +9,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, isTeammate, getArtifactDir, getProjectName, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks } = paceUtils;
+const { ts, isPaceProject, readActive, isTeammate, getArtifactDir, getProjectName, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS, getActiveChangeEntries, classifyChange } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -53,17 +53,15 @@ paceUtils.withStdinParsed((stdin) => {
     const hints = [];
 
     if (paceSignal === 'artifact') {
-      const entries = getActiveChangeEntries(cwd).filter(e => e.task && e.impl && e.detail && !e.detail.missing);
-      const activeTaskCount = entries.reduce((sum, e) => sum + countDetailTasks(e.detail.content).pending, 0);
-      const completedActiveChanges = entries.filter(e => {
-        const status = (e.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
-        return status === 'completed';
-      }).length;
+      const changes = getActiveChangeEntries(cwd).map(e => classifyChange(e));
+      const currentChanges = changes.filter(c => ['running', 'blocked'].includes(c.category));
+      const activeTaskCount = currentChanges.reduce((sum, c) => sum + c.tasks.pending, 0);
+      const completedActiveChanges = changes.filter(c => c.category === 'closing-required').length;
 
-      if (isWriteOp && activeTaskCount === 0 && entries.length === 0) {
+      if (isWriteOp && activeTaskCount === 0 && changes.length === 0) {
         hints.push(`v6 项目当前无活跃 CHG。请先派 artifact-writer create-chg 创建变更，再更新 Claude 任务列表。`);
       } else if (isWriteOp && activeTaskCount > 0) {
-        hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前详情文件有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 Claude 任务列表项。`);
+        hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前执行中的 CHG 有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 Claude 任务列表项。`);
       } else if (isWriteOp && activeTaskCount === 0 && completedActiveChanges > 0) {
         hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 verify/archive。归档后再清空 Claude 任务列表。${FORMAT_SNIPPETS.archiveOp}`);
       }

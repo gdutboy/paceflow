@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, countDetailTasks, isChangeApproved, isChangeVerified } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, classifyChange } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -55,58 +55,64 @@ if (paceSignal === 'artifact') {
     if (archFmt) warnings.push(archFmt);
   }
 
-  const entries = getActiveChangeEntries(cwd);
-  const actionableEntries = entries.filter(e => {
-    const marks = [e.taskCheckbox, e.implCheckbox].filter(Boolean);
-    return marks.some(m => m === ' ' || m === '/' || m === '!' || m === 'x');
-  });
-
-  const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
-  if (mismatched.length > 0) {
-    warnings.push(`task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${mismatched.map(e => e.id).join(', ')}。请派 artifact-writer 修复索引。`);
-  }
+  const classifiedEntries = getActiveChangeEntries(cwd).map(e => classifyChange(e));
 
   let totalPending = 0;
-  for (const entry of actionableEntries) {
-    if (!entry.detail || entry.detail.missing) {
-      warnings.push(`${entry.id} 的详情文件缺失（应为 changes/${entry.slug}.md），请派 artifact-writer 修复。`);
-      continue;
-    }
-    const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
-    const tasks = countDetailTasks(entry.detail.content);
-    totalPending += tasks.pending;
+  let requiresWalkthrough = false;
+  for (const change of classifiedEntries) {
+    if (['backlog', 'ready', 'archived', 'cancelled'].includes(change.category)) continue;
 
-    if (entry.taskCheckbox && entry.implCheckbox && entry.taskCheckbox !== entry.implCheckbox) {
-      warnings.push(`${entry.id} 索引状态不一致：task.md=[${entry.taskCheckbox}]，implementation_plan.md=[${entry.implCheckbox}]。请派 update-chg action=update-status 修复。`);
-    }
-
-    if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
-      warnings.push(`${entry.id} 索引已是 [x]，但详情 frontmatter status=${status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
-    }
-
-    if (tasks.pending > 0) {
-      if (!isChangeApproved(entry.detail)) {
-        warnings.push(`${entry.id} 还有 ${tasks.pending} 个未完成任务但未批准。请用 AskUserQuestion 询问用户是否批准，批准后派 update-chg action=approve。${FORMAT_SNIPPETS.approved}`);
+    if (change.category === 'inconsistent') {
+      if (change.reason === 'index-missing') {
+        warnings.push(`task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${change.id} 必须同时存在。请派 artifact-writer 修复索引。`);
+      } else if (change.reason === 'detail-missing') {
+        warnings.push(`${change.id} 的详情文件缺失（应为 changes/${change.slug}.md），请派 artifact-writer 修复。`);
+      } else if (change.reason === 'index-mismatch') {
+        warnings.push(`${change.id} 索引状态不一致：task.md=[${change.taskCheckbox}]，implementation_plan.md=[${change.implCheckbox}]。请派 update-chg action=update-status 修复。`);
+      } else if (change.reason === 'index-completed-with-pending-tasks') {
+        warnings.push(`${change.id} 索引已是 [x]，但详情仍有 ${change.tasks.pending} 个未完成任务。请派 update-chg action=update-status 修复状态联动，或继续完成任务。`);
+      } else if (change.reason === 'index-completed-status-mismatch') {
+        warnings.push(`${change.id} 索引已是 [x]，但详情 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
       } else {
-        warnings.push(`${entry.id} 还有 ${tasks.pending} 个未完成任务（完成 ${tasks.done}/${tasks.total}）。请继续执行，并用 update-chg action=update-status 维护 T-NNN 状态。`);
+        warnings.push(`${change.id} 状态无法识别（status=${change.status || 'missing'}）。请派 artifact-writer 修复 frontmatter/index 状态。`);
       }
       continue;
     }
 
-    if (tasks.total > 0 && !['completed', 'archived', 'cancelled'].includes(status)) {
-      warnings.push(`${entry.id} 任务已全部完成，但 frontmatter status=${status || 'missing'}。请派 update-chg action=update-status 推到 completed。`);
+    requiresWalkthrough = true;
+    totalPending += change.tasks.pending;
+
+    if (change.category === 'blocked') {
+      warnings.push(`${change.id} 有阻塞任务（[!]），请用 AskUserQuestion 询问用户如何处理，或派 update-chg action=update-status 标记完成/跳过。`);
       continue;
     }
 
-    if (status === 'completed' && !isChangeVerified(entry.detail)) {
-      warnings.push(`${entry.id} 已 completed 但未验证。请派 artifact-writer update-chg action=verify 写入 verified-date 与 <!-- VERIFIED -->。`);
-    } else if (status === 'completed' && isChangeVerified(entry.detail)) {
-      warnings.push(`${entry.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
+    if (change.category === 'running') {
+      if (!change.approved) {
+        warnings.push(`${change.id} 正在执行但未批准。请用 AskUserQuestion 询问用户是否批准，批准后派 update-chg action=approve。${FORMAT_SNIPPETS.approved}`);
+        continue;
+      }
+      if (change.tasks.pending > 0) {
+        warnings.push(`${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。请继续执行，并用 update-chg action=update-status 维护 T-NNN 状态。`);
+        continue;
+      }
+      if (change.tasks.total > 0) {
+        warnings.push(`${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 推到 completed。`);
+      }
+      continue;
+    }
+
+    if (change.category === 'closing-required') {
+      if (!change.verified) {
+        warnings.push(`${change.id} 已 completed 但未验证。请派 artifact-writer update-chg action=verify 写入 verified-date 与 <!-- VERIFIED -->。`);
+      } else {
+        warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
+      }
     }
   }
 
   const walkActive = readActive(cwd, 'walkthrough.md');
-  if (walkActive !== null && actionableEntries.length > 0) {
+  if (walkActive !== null && requiresWalkthrough) {
     const today = todayISO();
     const hasToday = new RegExp(`^\\|\\s*${today}\\s*\\|`, 'm').test(walkActive);
     if (!hasToday) {

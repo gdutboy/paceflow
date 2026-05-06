@@ -295,7 +295,7 @@ if (paceSignal === 'artifact') {
   if (summaries.length > 0) {
     process.stdout.write(`=== 活跃 CHG 摘要 ===\n`);
     for (const s of summaries) {
-      process.stdout.write(`- ${s.id} status=${s.status} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
+      process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
     }
     process.stdout.write('\n');
   }
@@ -379,15 +379,18 @@ if (taskFullCached) {
     }
 
     // v4.3.6 方案 A + v6 修正：Claude 任务列表同步以详情 T-NNN 为权威，task.md 只是索引。
-    const detailPending = activeChangeSummaries.reduce((sum, s) => sum + (Number.isFinite(s.pending) ? s.pending : 0), 0);
-    const hasCompleted = activeChangeSummaries.some(s => ['x', '-'].includes(s.taskCheckbox) || ['x', '-'].includes(s.implCheckbox));
+    const currentCategories = new Set(['running', 'blocked']);
+    const detailPending = activeChangeSummaries
+      .filter(s => currentCategories.has(s.category))
+      .reduce((sum, s) => sum + (Number.isFinite(s.pending) ? s.pending : 0), 0);
+    const hasCompleted = activeChangeSummaries.some(s => s.category === 'closing-required');
     const hasIndexPending = /- \[[ \/!]\]/.test(active);
     if (detailPending > 0) {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前详情文件有 ${detailPending} 个未完成 T-NNN，请为它们创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN，请为它们创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
     } else if (hasCompleted) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 archive-chg，归档后再清空 Claude 任务列表。\n\n`);
     } else if (hasIndexPending && paceSignal === 'artifact') {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前活跃 CHG 详情中没有未完成 T-NNN；task.md/implementation_plan.md 只是索引，不需要按索引行创建任务列表项。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；planned backlog 不需要按索引行创建任务列表项。\n\n`);
     } else {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前无活跃 CHG。如 Claude 任务列表仍有残留项，请清空。\n\n`);
     }

@@ -45,12 +45,21 @@ function today() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
 }
 
-function chgDetail({ status = 'in-progress', task = '[/]', approved = true, verified = false } = {}) {
+function slugFromId(id) {
+  const lower = id.toLowerCase();
+  if (lower.startsWith('chg-') || lower.startsWith('hotfix-')) return lower;
+  if (id.startsWith('CHG-')) return `chg-${id.slice(4).toLowerCase()}`;
+  if (id.startsWith('HOTFIX-')) return `hotfix-${id.slice(7).toLowerCase()}`;
+  return lower;
+}
+
+function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]', tasks = null, approved = true, verified = false } = {}) {
   const completedDate = status === 'completed' || status === 'archived' ? `${today()}T12:00:00+08:00` : 'null';
   const verifiedDate = verified ? `${today()}T12:30:00+08:00` : 'null';
+  const taskLines = tasks || [`- ${task} T-001 测试任务`];
   return [
     '---',
-    'chg-id: CHG-20260504-01',
+    `chg-id: ${id}`,
     `status: ${status}`,
     'date: 2026-05-04',
     'type: change',
@@ -69,7 +78,7 @@ function chgDetail({ status = 'in-progress', task = '[/]', approved = true, veri
     '',
     '## 任务清单',
     '',
-    `- ${task} T-001 测试任务`,
+    ...taskLines,
     '',
     approved ? '<!-- APPROVED -->' : '',
     verified ? '<!-- VERIFIED -->' : '',
@@ -130,6 +139,37 @@ function makeVaultBackedWorktree(label) {
   return { worktree, vaultDir, projectName };
 }
 
+function makeV6ProjectWithChanges(label, changes, opts = {}) {
+  const dir = makeV6Project(label, { withIndex: false, detail: false, walkToday: opts.walkToday });
+  const lines = changes.map(c => {
+    const id = c.id || 'CHG-20260504-01';
+    const mark = c.indexMark || '[ ]';
+    return `- ${mark} [[${slugFromId(id)}]] ${c.title || `变更 ${id}`} #change [tasks:: T-001]`;
+  }).join('\n');
+  const indexBlock = lines ? `${lines}\n` : '';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${indexBlock}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${indexBlock}\n<!-- ARCHIVE -->\n`, 'utf8');
+  if (opts.walkToday !== false) {
+    fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n| ${today()} | smoke | CHG-20260504-01 |\n<!-- ARCHIVE -->\n`, 'utf8');
+  }
+  for (const c of changes) {
+    const id = c.id || 'CHG-20260504-01';
+    fs.writeFileSync(
+      path.join(dir, 'changes', `${slugFromId(id)}.md`),
+      chgDetail({
+        id,
+        status: c.status || 'planned',
+        task: c.task || '[ ]',
+        tasks: c.tasks || null,
+        approved: c.approved || false,
+        verified: c.verified || false,
+      }),
+      'utf8'
+    );
+  }
+  return dir;
+}
+
 function codeEditStdin(dir) {
   return { tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'src.js'), old_string: 'a', new_string: 'b' } };
 }
@@ -165,23 +205,35 @@ test('2. v6 artifact 注入 + 活跃 CHG 摘要', () => {
 
 test('2a. SessionStart 任务列表同步按详情 pending T-NNN 提示', () => {
   const dir = makeV6Project('ss-v6-detail-pending', {
-    indexMark: '[x]',
+    indexMark: '[/]',
     detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
   });
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('当前详情文件有 1 个未完成 T-NNN'));
+  assert.ok(r.stdout.includes('当前执行中的 CHG 有 1 个未完成 T-NNN'));
 });
 
 test('2b. SessionStart 仅索引活跃但详情无 pending 时不夸大任务列表', () => {
   const dir = makeV6Project('ss-v6-index-only', {
-    indexMark: '[/]',
+    indexMark: '[x]',
     detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true }),
   });
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('详情中没有未完成 T-NNN'));
+  assert.ok(r.stdout.includes('待 archive-chg'));
   assert.ok(!r.stdout.includes('请为当前活跃 CHG 的未完成 T-NNN'));
+});
+
+test('2c. SessionStart 不把 planned backlog 任务计入当前任务列表', () => {
+  const dir = makeV6ProjectWithChanges('ss-v6-backlog-only', [
+    { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+    { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+  ]);
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('category=backlog'));
+  assert.ok(!r.stdout.includes('当前执行中的 CHG 有 2 个未完成 T-NNN'));
+  assert.ok(r.stdout.includes('当前没有执行中的未完成 T-NNN'));
 });
 
 test('3. compact 恢复显示 activeChanges', () => {
@@ -596,6 +648,25 @@ test('10. v6 未完成详情任务 → exit 2', () => {
   assert.ok(r.stderr.includes('未完成任务'));
 });
 
+test('10a. 多任务 CHG 部分完成 → 继续执行，不提示 verify/archive', () => {
+  const dir = makeV6Project('stop-partial-multitask', {
+    detail: chgDetail({
+      status: 'in-progress',
+      approved: true,
+      tasks: [
+        '- [x] T-001 已完成',
+        '- [ ] T-002 待完成',
+        '- [ ] T-003 待完成',
+      ],
+    }),
+  });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('还有 2 个未完成任务'));
+  assert.ok(!r.stderr.includes('update-chg action=verify'));
+  assert.ok(!r.stderr.includes('archive-chg'));
+});
+
 test('11. v6 completed 但未 verified → exit 2', () => {
   const dir = makeV6Project('stop-unverified', {
     indexMark: '[x]',
@@ -637,6 +708,61 @@ test('14b. legacy v5 Stop 只提示迁移或桥接', () => {
   assert.ok(r.stderr.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stderr.includes('artifact-writer create-chg'));
   assert.ok(!r.stderr.includes('补齐实施详情'));
+});
+
+test('14c. 多 CHG backlog 不阻止 Stop', () => {
+  const dir = makeV6ProjectWithChanges('stop-backlog-only', [
+    { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+    { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+    { id: 'CHG-20260504-03', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 0);
+});
+
+test('14d. 多 CHG 中仅 running 阻止，planned backlog 不阻止', () => {
+  const dir = makeV6ProjectWithChanges('stop-running-with-backlog', [
+    { id: 'CHG-20260504-01', indexMark: '[/]', status: 'in-progress', task: '[/]', approved: true },
+    { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+    { id: 'CHG-20260504-03', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('CHG-20260504-01'));
+  assert.ok(!r.stderr.includes('CHG-20260504-02'));
+  assert.ok(!r.stderr.includes('CHG-20260504-03'));
+});
+
+test('14e. 多 CHG 中 completed 必须 verify/archive，planned backlog 不阻止', () => {
+  const dir = makeV6ProjectWithChanges('stop-completed-with-backlog', [
+    { id: 'CHG-20260504-01', indexMark: '[x]', status: 'completed', task: '[x]', approved: true, verified: true },
+    { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+    { id: 'CHG-20260504-03', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('CHG-20260504-01'));
+  assert.ok(r.stderr.includes('archive-chg'));
+  assert.ok(!r.stderr.includes('CHG-20260504-02'));
+  assert.ok(!r.stderr.includes('CHG-20260504-03'));
+});
+
+test('14f. approved planned backlog 不阻止 Stop', () => {
+  const dir = makeV6ProjectWithChanges('stop-ready-backlog', [
+    { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: true },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 0);
+});
+
+test('14g. 索引 [x] 但 status in-progress → inconsistent 阻止修复', () => {
+  const dir = makeV6ProjectWithChanges('stop-x-status-mismatch', [
+    { id: 'CHG-20260504-01', indexMark: '[x]', status: 'in-progress', task: '[x]', approved: true },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('索引已是 [x]'));
+  assert.ok(r.stderr.includes('status=in-progress'));
 });
 
 console.log('\n--- post-tool-use.js ---');
@@ -691,6 +817,19 @@ test('18. TodoWrite 按详情未完成任务数提示', () => {
   const r = runHook('todowrite-sync.js', { cwd: dir, stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'x' }, { content: 'y' }, { content: 'z' }, { content: 'w' }, { content: 'q' }] } } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('changes/<id>.md') || r.stdout.includes('未完成 T-NNN'));
+});
+
+test('18c. TodoWrite 不把 planned backlog 计入当前任务数', () => {
+  const dir = makeV6ProjectWithChanges('tw-backlog-only', [
+    { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+    { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+  ]);
+  const r = runHook('todowrite-sync.js', {
+    cwd: dir,
+    stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'future task' }] } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('当前执行中的 CHG 有 2 个未完成 T-NNN'));
 });
 
 test('18a. TaskCreate 走 Claude 任务列表同步提示', () => {
