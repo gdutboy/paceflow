@@ -264,6 +264,15 @@ test('artifact-root=vault → 返回 vault 项目目录', () => {
   assert.strictEqual(getArtifactDir(dir), expected);
 });
 
+test('artifact-root 带引号/大小写 → 仍按关键词解析', () => {
+  const dir = makeTmpDir('gad-choice-quoted-local');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), '"LOCAL"\n', 'utf8');
+  assert.strictEqual(readArtifactRootChoice(dir), 'LOCAL');
+  assert.strictEqual(getArtifactDir(dir), dir);
+  assert.ok(!fs.existsSync(path.join(dir, '"LOCAL"')), '不应把带引号关键词当作相对目录名');
+});
+
 test('PACE_ARTIFACT_ROOT=local → 自动化环境跳过询问', () => {
   const dir = makeTmpDir('gad-choice-env-local');
   const prev = process.env.PACE_ARTIFACT_ROOT;

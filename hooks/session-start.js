@@ -444,8 +444,9 @@ try {
 // T-117: Git 状态注入（辅助跨会话上下文恢复）
 try {
   const { execSync } = require('child_process');
-  const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', timeout: 5000 }).trim();
-  const lastCommit = execSync('git log --oneline -1', { cwd, encoding: 'utf8', timeout: 5000 }).trim();
+  const gitOpts = { cwd, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] };
+  const branch = execSync('git rev-parse --abbrev-ref HEAD', gitOpts).trim();
+  const lastCommit = execSync('git log --oneline -1', gitOpts).trim();
   if (branch && lastCommit) {
     process.stdout.write(`=== Git 状态 ===\n分支: ${branch}\n最近提交: ${lastCommit}\n\n`);
   }

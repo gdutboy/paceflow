@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const HOOKS_DIR = path.join(__dirname, '..', 'hooks');
 const { createTestRunner } = require('./test-utils');
@@ -39,6 +39,18 @@ function runHook(hookName, { cwd, stdin = {}, env = {} }) {
   } catch(e) {
     return { code: e.status || 1, stdout: e.stdout || '', stderr: e.stderr || '' };
   }
+}
+
+function runHookDetailed(hookName, { cwd, stdin = {}, env = {} }) {
+  const hookPath = path.resolve(HOOKS_DIR, hookName);
+  const r = spawnSync('node', [hookPath], {
+    cwd,
+    input: typeof stdin === 'string' ? stdin : JSON.stringify(stdin),
+    encoding: 'utf8',
+    timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
+  });
+  return { code: r.status || 0, stdout: r.stdout || '', stderr: r.stderr || '' };
 }
 
 function today() {
@@ -522,10 +534,11 @@ test('9c3. SessionStart 首次启用只提示选择，不自动创建模板', ()
   const dir = makeTmpDir('ss-artifact-root-choice');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
   const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
-  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  const r = runHookDetailed('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('Artifact 目录选择'));
   assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.strictEqual(r.stderr, '', '非 git 项目不应泄漏 git fatal stderr');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '选择前不应在 vault 懒创建 changes/');
 });

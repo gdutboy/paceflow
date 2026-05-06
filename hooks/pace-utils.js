@@ -224,18 +224,30 @@ function getArtifactRootChoicePath(cwd) {
   return path.join(getProjectStateDir(cwd), '.pace', ARTIFACT_ROOT_CHOICE_FILE);
 }
 
+function normalizeArtifactRootChoice(choice) {
+  let raw = String(choice || '').trim();
+  if (!raw) return '';
+  const first = raw[0];
+  const last = raw[raw.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'") || (first === '`' && last === '`')) {
+    raw = raw.slice(1, -1).trim();
+  }
+  return raw;
+}
+
 function readArtifactRootChoice(cwd) {
   const envChoice = process.env.PACE_ARTIFACT_ROOT || process.env.PACEFLOW_ARTIFACT_ROOT || '';
-  if (String(envChoice).trim()) return String(envChoice).trim();
-  try { return fs.readFileSync(getArtifactRootChoicePath(cwd), 'utf8').trim(); } catch(e) { return ''; }
+  if (String(envChoice).trim()) return normalizeArtifactRootChoice(envChoice);
+  try { return normalizeArtifactRootChoice(fs.readFileSync(getArtifactRootChoicePath(cwd), 'utf8')); } catch(e) { return ''; }
 }
 
 function artifactDirFromChoice(cwd, choice) {
-  const raw = String(choice || '').trim();
+  const raw = normalizeArtifactRootChoice(choice);
   if (!raw) return null;
+  const keyword = raw.toLowerCase();
   const stateDir = getProjectStateDir(cwd);
-  if (raw === 'local') return stateDir;
-  if (raw === 'vault') {
+  if (keyword === 'local') return stateDir;
+  if (keyword === 'vault') {
     if (!VAULT_PATH) return null;
     return path.join(VAULT_PATH, 'projects', getProjectNameCandidates(cwd)[0]);
   }
@@ -271,7 +283,7 @@ function artifactRootChoiceMessage(cwd) {
     `Obsidian vault: ${vaultDir}`,
     `本地项目目录: ${stateDir}`,
     '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"。',
-    `用户选择后，写入 ${choicePath}：选择 vault 时内容为 "vault"，选择本地时内容为 "local"。`,
+    `用户选择后，写入 ${choicePath}：选择 vault 时写入纯文本 vault；选择本地时写入纯文本 local；不要包含引号。`,
     '写入后重试本次操作，hook 会在所选位置懒创建 task.md / implementation_plan.md / changes/**。'
   ].join('\n');
 }
