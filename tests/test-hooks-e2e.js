@@ -256,6 +256,27 @@ test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
   assert.ok(!verify.stdout.includes('"deny"'));
 });
 
+test('9aa. 未知 subagent 仍不能写 APPROVED / VERIFIED 标志', () => {
+  const dir = makeV6Project('ptu-marker-unknown-agent');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-other',
+      agent_type: 'code-reviewer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('artifact-writer'));
+});
+
 test('9b. create-chg 写 verified-date null → 放行', () => {
   const dir = makeV6Project('ptu-create-null', { withIndex: false, detail: false });
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
@@ -400,6 +421,36 @@ test('18. TodoWrite 按详情未完成任务数提示', () => {
   const r = runHook('todowrite-sync.js', { cwd: dir, stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'x' }, { content: 'y' }, { content: 'z' }, { content: 'w' }, { content: 'q' }] } } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('changes/<id>.md') || r.stdout.includes('未完成 T-NNN'));
+});
+
+test('18a. TaskCreate 走 Claude 任务列表同步提示', () => {
+  const dir = makeV6Project('taskcreate-v6');
+  const r = runHook('todowrite-sync.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'TaskCreate',
+      tool_input: { subject: 'T-901 验证 TaskCreate hook matcher', description: '覆盖交互式任务创建工具' }
+    }
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('Claude 任务列表同步校验'));
+  assert.ok(r.stdout.includes('未完成 T-NNN'));
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'todowrite-used')));
+});
+
+test('18b. TaskUpdate 走 Claude 任务列表同步提示', () => {
+  const dir = makeV6Project('taskupdate-v6');
+  const r = runHook('todowrite-sync.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'TaskUpdate',
+      tool_input: { task_id: 'task-001', status: 'in_progress' }
+    }
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('Claude 任务列表同步校验'));
+  assert.ok(r.stdout.includes('未完成 T-NNN'));
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'todowrite-used')));
 });
 
 test('19. PreCompact 写 activeChanges 快照', () => {

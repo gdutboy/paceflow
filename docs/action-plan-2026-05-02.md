@@ -16,6 +16,94 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
+### 0.1 当前执行视图（2026-05-06，v6.0.10）
+
+本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
+
+当前依据：
+
+- `docs/claude-code-2.1.76-2.1.129-paceflow-evaluation.md`
+- `docs/claude-code-2.1.76-2.1.131-validation-report.md`
+- GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
+- v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/todowrite-sync.js`
+
+#### 0.1.1 P0 — 当前已实现代码中的阻断级修复
+
+| ID | 任务 | 问题 | 改动范围 | 验证 |
+|---|---|---|---|---|
+| P0-20260506-01 | 修复 worktree/vault 下 `changes/**/*.md` 详情文件路由 | 当前 vault 重定向只覆盖根索引 artifact；worktree 中写 `changes/chg-*.md` 可能分裂出本地详情文件，违背“worktree 与主项目共用 artifacts”决策 | `hooks/pre-tool-use.js`、`hooks/pace-utils.js`、`tests/test-hooks-e2e.js` | worktree 本地 `changes/chg-*.md` Write/Edit 必须 deny 并提示 vault 正确路径；vault 正确路径放行 |
+| P0-20260506-02 | PreToolUse enforcement 路径 stdin 解析失败 fail-closed | 历史 finding 和 GitHub issue 均显示 hook stdin/JSON 在某些环境可能异常；当前部分 hook 在 `stdin.ok=false` 时可能自然放行 | `hooks/pre-tool-use.js`、必要时 `hooks/todowrite-sync.js`、`tests/test-hooks-e2e.js` | PACE 项目中 Write/Edit stdin 非 JSON 或缺关键字段时 deny；非 PACE 项目保持低干扰 |
+
+执行原则：
+
+- P0-01 不改变“worktree 共用主项目 artifact 目录”决策，只补全详情文件路由。
+- P0-02 只对核心执行保护 fail-closed，避免把非 PACE/非写入场景误伤成硬阻塞。
+
+#### 0.1.2 P1 — 当前代码语义不干净但不阻断
+
+| ID | 任务 | 问题 | 改动范围 | 验证 |
+|---|---|---|---|---|
+| P1-20260506-01 | SessionStart 任务列表提示改为读取 CHG 详情任务统计 | 当前提示仍用 `task.md` 索引 checkbox 判断任务列表同步；v6 子任务权威是 `changes/<id>.md ## 任务清单` | `hooks/session-start.js`、`tests/test-hooks-e2e.js` | 有详情 pending T-NNN 时提示同步 Claude 任务列表；仅索引无详情任务时不夸大 |
+| P1-20260506-02 | worktree 项目名识别收紧 | 仅凭路径中有 `worktrees/` 就归一到父目录，普通项目也可能误判 | `hooks/pace-utils.js`、`tests/test-pace-utils.js` | 只有 `.claude/worktrees/*` 或 `.git -> .git/worktrees/*` 等真实 worktree 信号才归一 |
+| P1-20260506-03 | marker 相关日志记录 `agent_id` / `agent_type` | GitHub 上游仍有 agent identity 稳定性讨论；生产排障需要完整日志 | `hooks/pre-tool-use.js`、可选日志断言 | `DENY_V6_MARKER` / `PASS_V6_MARKER_AGENT` 日志含 agent identity |
+| P1-20260506-04 | 消除 `claude plugin validate .` marketplace description warning | 当前 validate 通过但有 warning，release gate 不够干净 | `.claude-plugin/marketplace.json` | `claude plugin validate .` clean pass |
+
+#### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
+
+| ID | 任务 | 当前结论 | 执行口径 |
+|---|---|---|---|
+| P1-POC-01 | `SubagentStop` 报告标题验证 | 有价值，但 GitHub 有 SubagentStop 行为/文档问题；先 PoC，不直接强依赖 | 只针对 `artifact-writer`；必须设计 bounded retry，避免 Stop loop |
+| P1-POC-02 | `CwdChanged` 项目/Artifact 路由重算 | 有价值，但 `/resume` env cache stale issue 存在 | 可用作提示/刷新，不让 env-file 成为唯一权威 |
+| P1-POC-03 | `PostToolUseFailure` 恢复提示 | 适合 Write/Edit/Bash 失败后给精确信息 | P1，可实现为 additionalContext，不做硬门禁 |
+| P1-POC-04 | `PostToolBatch` 只读一致性观察 | 可减少并行工具重复提醒 | 首版只读，不写 `.pace/`，避免并发竞态 |
+| P2-POC-01 | `updatedInput` vault 路径重写 | GitHub 有多 hook / Agent tool 下失效报告 | 只做隔离 PoC，不用于核心 artifact redirect |
+| P2-POC-02 | `updatedToolOutput` 裁剪/脱敏/标注 | 官方已支持全工具，但不应静默修改 artifact | 禁止 silent fix；仅限输出降噪或敏感信息遮蔽 |
+| P2-POC-03 | `FileChanged` 监控 vault 外路径 | GitHub 有 watcher/security/perf 风险 | 只监控小型配置文件，不监控大型 artifact 内容 |
+| P2-POC-04 | `${CLAUDE_EFFORT}` skill body 自适应 | 官方支持；当前 skills 未用 | 仅优化 `pace-workflow` / `audit` 的分支提示 |
+
+#### 0.1.4 暂缓或明确不采用
+
+| 项 | 决策 | 原因 |
+|---|---|---|
+| 原生 `EnterWorktree` / `Agent isolation: "worktree"` 作为核心 P0 链路 | 暂缓 | GitHub 上存在 worktree 删除绕过 hook、CWD 漂移、隔离不可靠、并行 worktree agent 丢工作等高风险 issue |
+| `WorktreeCreate` / `WorktreeRemove` hook 接管默认行为 | 暂缓 | 官方语义会替换默认 worktree 行为，风险高；当前 PaceFlow 只需要 artifact 路由归一 |
+| `updatedToolOutput` 自动修复 artifact | 不采用 | 与 PaceFlow “hook 做结构兜底，不静默改内容”的理念冲突 |
+| `skillOverrides` 默认隐藏核心 skills | 不作为默认 | 会降低模型自纠错和用户发现能力；可写成用户级 tuning 建议 |
+| `--bare` 用于 PaceFlow 验证 | 禁止 | `--bare` 跳过 hooks/plugins/skills，不能验证 PaceFlow |
+| Windows PowerShell/cmd destructive cleanup 指令 | 禁止作为文档建议 | GitHub 有 PowerShell/cmd quoting 导致灾难性删除报告 |
+
+#### 0.1.5 上游 GitHub 风险登记
+
+| 风险 | 代表 issue | 对 PaceFlow 的影响 | 当前处理 |
+|---|---|---|---|
+| Worktree exit prompt 绕过 PreToolUse 并可能删除 worktree | https://github.com/anthropics/claude-code/issues/56349 | 不能依赖 PreToolUse 阻止 native ExitWorktree | 不把 native worktree 生命周期纳入核心链路 |
+| PowerShell/cmd quoting 导致灾难性删除 | https://github.com/anthropics/claude-code/issues/56603 | Windows 用户执行破坏性清理风险高 | 文档和 hook 提示避免推荐 `cmd /c rd /s /q` |
+| Claude Code 2.1.129 Bedrock beta flags 回归 | https://github.com/anthropics/claude-code/issues/56595 | Bedrock 用户可能无法使用 2.1.129 | 发布说明提示 Bedrock 用户先验证/固定可用版本 |
+| Windows compact 后 Bash session-env EEXIST | https://github.com/anthropics/claude-code/issues/56593 / https://github.com/anthropics/claude-code/issues/56191 | compact/resume 后 Bash/hook-adjacent 流程可能异常 | 不把 env-file 作为唯一权威；必要时提示重启 session |
+| `/resume` env cache stale | https://github.com/anthropics/claude-code/issues/56400 | `CwdChanged` / SessionStart env 值可能过期 | 每个 hook 内重算关键 artifact 路由 |
+| Bash CWD 漂移到 worktree | https://github.com/anthropics/claude-code/issues/56147 | git 命令可能写错目标 | 文档建议 `git -C` / 先 `pwd && git status`；artifact 路由不跟随 Bash CWD |
+| Subagent hook enforcement 在部分环境有争议 | https://github.com/anthropics/claude-code/issues/34692 / https://github.com/anthropics/claude-code/issues/21460 / https://github.com/anthropics/claude-code/issues/44534 | 生产环境仍需 smoke test | 保留 installed plugin production smoke gate |
+
+#### 0.1.6 当前验证基线
+
+最近一次验证结果：
+
+```bash
+node tests/test-hooks-e2e.js      # 30/30 PASS
+node tests/test-pace-utils.js     # 83/83 PASS
+node tests/test-install.js        # 21/21 PASS
+claude plugin validate .          # PASS，当前有 marketplace description warning
+git diff --check                  # PASS
+```
+
+当前本机 Claude Code：
+
+```text
+2.1.128 (Claude Code)
+```
+
+官方 changelog 已检查到 `2.1.131`；`2.1.131` 暂未发现推翻上述决策的 PaceFlow task/hook 变更。
+
 ---
 
 ## 1. 调研背景

@@ -152,12 +152,13 @@ if (paceSignal === 'artifact') {
   }
 }
 
-// TodoWrite 残留检测：本会话用过 TodoWrite 且 task.md 无活跃任务 → 仅 log + 清理 flag（不阻止退出，因 hook 无法查询 TodoWrite 实际状态）
+// Claude 任务列表残留检测：本会话用过任务列表工具且 task.md 无活跃任务 → 仅 log + 清理 flag
+// 不阻止退出，因为 hook 无法查询 Claude 内部任务列表实际状态。flag 文件名沿用 todowrite-used。
 const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
 if (paceSignal !== 'artifact' && fs.existsSync(twFlag) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
   if (pending === 0 && done === 0) {
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TW_CLEANUP | TodoWrite flag 清理（无活跃任务）\n`);
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TW_CLEANUP | task-list flag 清理（无活跃任务）\n`);
     try { fs.unlinkSync(twFlag); } catch(e) {}
   }
 }

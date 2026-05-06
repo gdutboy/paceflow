@@ -53,7 +53,7 @@ const FORMAT_SNIPPETS = {
 // 会话级 flag 文件集中管理（session-start 重置用）
 const SESSION_SCOPED_FLAGS = [
   'degraded',                    // stop.js 降级标记（3 次 block 后静默放行）
-  'todowrite-used',              // todowrite-sync.js 标记（本会话已使用 TodoWrite）
+  'todowrite-used',              // todowrite-sync.js 标记（本会话已使用 Claude 任务列表工具）
   'archive-reminded',            // post-tool-use.js H3（task.md 归档提醒，每会话一次）
   'findings-reminded',           // post-tool-use.js H7（findings ⚠️ 提醒，每会话一次）
   'impl-archive-reminded',       // post-tool-use.js H10（impl_plan 归档提醒，每会话一次）

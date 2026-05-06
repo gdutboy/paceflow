@@ -490,7 +490,7 @@ v6 必做：
 - impl_plan 详情归档/完整性仍基于 `### CHG-ID`。
 - findings 详情完整性/归档仍基于 `findings.md` 内详情段。
 - correction 双写仍检测 `findings.md` 的 `### Correction:`。
-- TodoWrite 提醒是 v5 顶层任务模式。
+- Claude 任务列表提醒仍按 v5 顶层任务模式处理。
 
 v6 必做：
 
@@ -547,13 +547,13 @@ v6 必做：
 当前问题：
 
 - `task.md` 被视为任务权威来源。
-- 顶层 checkbox 数量与 TodoWrite 对齐。
+- 顶层 checkbox 数量与 Claude 任务列表对齐。
 
 v6 必做：
 
 1. `task.md` 是 CHG 索引，不是子任务权威。
 2. 子任务权威改为活跃 `changes/<id>.md ## 任务清单`。
-3. TodoWrite 应映射到 `T-NNN` 子任务，附带 CHG ID。
+3. Claude 任务列表项应映射到 `T-NNN` 子任务，附带 CHG ID。交互式 Claude Code 使用 `TaskCreate/TaskUpdate`，非交互/SDK 使用 `TodoWrite`。
 4. `task.md` 无顶层任务不能说明无任务，需要检查详情文件。
 5. Superpowers 桥接 deny 改为 “派 agent create-chg”。
 

@@ -660,6 +660,24 @@ test('parseHookStdin — 完整字段正常解析', () => {
   assert.strictEqual(r.lastMessage, 'done');
 });
 
+test('parseHookStdin — 相对 file_path 保持相对且正斜杠规范化', () => {
+  const r = paceUtils.parseHookStdin(JSON.stringify({
+    tool_name: 'Write',
+    tool_input: { file_path: 'docs\\plans\\test.md' }
+  }));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.filePath, 'docs/plans/test.md');
+});
+
+test('parseHookStdin — POSIX 绝对 file_path 保持原样', () => {
+  const r = paceUtils.parseHookStdin(JSON.stringify({
+    tool_name: 'Read',
+    tool_input: { file_path: '/mnt/k/AI/Paceflow-hooks/paceflow/task.md' }
+  }));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.filePath, '/mnt/k/AI/Paceflow-hooks/paceflow/task.md');
+});
+
 test('parseHookStdin — 空字符串 → ok:false + 全空字段', () => {
   const r = paceUtils.parseHookStdin('');
   assert.strictEqual(r.ok, false);

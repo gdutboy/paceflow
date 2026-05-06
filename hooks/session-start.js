@@ -367,15 +367,15 @@ if (taskFullCached) {
       }
     }
 
-    // v4.3.6 方案 A：TodoWrite 同步指令注入（复用 active）
+    // v4.3.6 方案 A：Claude 任务列表同步指令注入（复用 active）
     const hasPending = /- \[[ \/!]\]/.test(active);
     const hasCompleted = /- \[[x\-]\]/.test(active);
     if (hasPending) {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n请为当前活跃 CHG 的未完成 T-NNN 创建或更新对应 TodoWrite 项。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n请为当前活跃 CHG 的未完成 T-NNN 创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
     } else if (hasCompleted) {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\n活跃索引中有已完成/跳过变更待 archive-chg，归档后再清空 TodoWrite。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 archive-chg，归档后再清空 Claude 任务列表。\n\n`);
     } else {
-      process.stdout.write(`\n=== TodoWrite 同步 ===\n当前无活跃 CHG。如 TodoWrite 仍有残留项，请清空。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前无活跃 CHG。如 Claude 任务列表仍有残留项，请清空。\n\n`);
     }
   } catch(e) {}
 }

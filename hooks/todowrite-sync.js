@@ -1,5 +1,6 @@
-// PreToolUse:TodoWrite|TaskCreate|TaskUpdate hook 方案 D
-// 拦截 TodoWrite（批量）和 TaskCreate/TaskUpdate（单项）操作，校验与 task.md 一致性
+// PreToolUse:TaskCreate|TaskUpdate|TodoWrite hook 方案 D
+// 拦截 Claude 任务列表写入：交互式 TaskCreate/TaskUpdate + 非交互/SDK TodoWrite。
+// 校验任务列表与 v6 changes/<id>.md 任务清单的一致性。
 // 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与操作的合理性
 const fs = require('fs');
 const path = require('path');
@@ -60,11 +61,11 @@ paceUtils.withStdinParsed((stdin) => {
       }).length;
 
       if (isWriteOp && activeTaskCount === 0 && entries.length === 0) {
-        hints.push(`v6 项目当前无活跃 CHG。请先派 artifact-writer create-chg 创建变更，再使用 TodoWrite。`);
+        hints.push(`v6 项目当前无活跃 CHG。请先派 artifact-writer create-chg 创建变更，再更新 Claude 任务列表。`);
       } else if (isWriteOp && activeTaskCount > 0) {
-        hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前详情文件有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 TodoWrite 项。`);
+        hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前详情文件有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 Claude 任务列表项。`);
       } else if (isWriteOp && activeTaskCount === 0 && completedActiveChanges > 0) {
-        hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 verify/archive。归档后再清空 TodoWrite。${FORMAT_SNIPPETS.archiveOp}`);
+        hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 verify/archive。归档后再清空 Claude 任务列表。${FORMAT_SNIPPETS.archiveOp}`);
       }
 
       if (toolName === 'TodoWrite') {
@@ -77,7 +78,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (taskActive) {
       if (isWriteOp) {
-        hints.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。TodoWrite 不再从 v5 task.md 同步；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。`);
+        hints.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。Claude 任务列表不再从 v5 task.md 同步；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。`);
       }
     } else {
       // task.md 不存在但在创建 todo
@@ -99,7 +100,7 @@ paceUtils.withStdinParsed((stdin) => {
     }
     }
 
-    // 标记本会话使用过 TodoWrite（供 Stop hook 检测残留）—— 仅写入操作且通过 DENY 检查后才标记
+    // 标记本会话使用过任务列表工具（供 Stop hook 检测残留）。文件名沿用旧称，避免迁移 runtime 状态。
     if (isWriteOp) {
       const PACE_RUNTIME = path.join(cwd, '.pace');
       try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
@@ -107,7 +108,7 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     if (hints.length > 0) {
-      const ctx = `TodoWrite 同步校验：${hints.join(' ')}`;
+      const ctx = `Claude 任务列表同步校验：${hints.join(' ')}`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
