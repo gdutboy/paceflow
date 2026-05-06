@@ -8,7 +8,7 @@
 > 执行状态更新（2026-05-06）：agent 显示名已去重为 `artifact-writer`（插件 UI 预期显示 `paceflow:artifact-writer`），审计 skill 已去重为 `audit`，agent frontmatter 已加入 `color: orange`。hook legacy fallback 不再给 v5 自修提示，统一要求迁移或桥接到 v6。
 > 执行状态更新（2026-05-06）：worktree artifact 路由已修复。真实 Git worktree（`.git -> .../.git/worktrees/*`）和 `.claude/worktrees/*` 会归一到宿主项目，优先沿用 `$PACE_VAULT_PATH/projects/<project>/changes`；避免在临时 worktree 根目录误创建独立 artifacts。
 > 执行状态更新（2026-05-06）：PreToolUse C/V 标志保护已区分 subagent。`agent_type=artifact-writer` / `paceflow:artifact-writer` 可写 `APPROVED`、`VERIFIED`、`verified-date`；主 session 或其他 agent 直接写入仍会被 deny。
-> 执行状态更新（2026-05-06，v6.0.11）：P0/P1 hook 审计项已完成：worktree 本地 `changes/` 详情文件会重定向到 vault；PACE 项目写入 hook 解析失败或缺 `file_path` 时 fail-closed；`Write/Edit/MultiEdit` 均纳入同一写入保护链路；SessionStart 的 Claude 任务列表提示改以 CHG 详情 `T-NNN` 统计为准；marker 日志记录 `agent_id` / `agent_type`；`claude plugin validate .` clean pass。
+> 执行状态更新（2026-05-06，v6.0.12）：P0/P1 hook 审计项已完成：worktree 本地 `changes/` 详情文件会重定向到 vault；PACE 项目写入 hook 解析失败或缺 `file_path` 时 fail-closed；`Write/Edit/MultiEdit` 均纳入同一写入保护链路；`PreToolUse:Agent` 会阻止未携带 vault `artifact_dir` 的 `paceflow:artifact-writer` 派遣；SessionStart 的 Claude 任务列表提示改以 CHG 详情 `T-NNN` 统计为准；marker 日志记录 `agent_id` / `agent_type`；`claude plugin validate .` clean pass。
 
 ---
 
@@ -154,6 +154,8 @@ fields:
 ```
 
 必须给出 `artifact_dir` 或足够让 agent 判断 `$ARTIFACT_DIR` 的 cwd / vault 上下文。并发派 agent 时，确保不同 agent 不操作同一个 CHG/finding/correction 详情文件。
+
+当工作目录与 Obsidian vault artifact 目录分离时，`artifact_dir` 不再只是建议字段，而是派 `paceflow:artifact-writer` 的必填字段。`PreToolUse:Agent` 会在 prompt 未包含 hook 解析出的 artifact 路径时 deny 本次派遣，要求主 session 重派。`.pace-enabled` / `.pace/` 只表示代码项目启用 PaceFlow，不表示 cwd 就是 artifact 根目录。
 
 ### 3.3 Agent 的硬性输出
 

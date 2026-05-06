@@ -32,6 +32,36 @@ function isFileMutationTool(toolName) {
   return ['Write', 'Edit', 'MultiEdit'].includes(toolName);
 }
 
+function isAgentTool(toolName) {
+  return toolName === 'Agent';
+}
+
+function isArtifactWriterAgentTool(stdin) {
+  const agentType = String(stdin.toolInput.subagent_type || stdin.toolInput.subagentType || '').toLowerCase();
+  return agentType === 'artifact-writer' || agentType === 'paceflow:artifact-writer' || agentType.endsWith(':artifact-writer');
+}
+
+function displayDir(dir) {
+  return String(dir || '').replace(/\\/g, '/').replace(/\/?$/, '/');
+}
+
+function promptIncludesPath(prompt, dir) {
+  const text = String(prompt || '').replace(/\\/g, '/');
+  const withoutSlash = displayDir(dir).replace(/\/$/, '');
+  return text.includes(withoutSlash);
+}
+
+function agentArtifactDirDenyReason(artDir) {
+  const dir = displayDir(artDir);
+  return [
+    `派 paceflow:artifact-writer 时缺少当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}`,
+    '请重派同一个 agent，并在 prompt 顶部加入：',
+    `artifact_dir: ${dir}`,
+    '所有 task.md / implementation_plan.md / changes/** 读写都必须使用该目录。',
+    '不要让 artifact-writer fallback 到 cwd；cwd 可能只是代码工作目录，不是 artifact 根目录。'
+  ].join('\n');
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
@@ -89,9 +119,47 @@ paceUtils.withStdinParsed((stdin) => {
       );
       return;
     }
+    if (isAgentTool(toolName)) {
+      if (isArtifactWriterAgentTool(stdin) && artDir !== cwd && !promptIncludesPath(stdin.toolInput.prompt, artDir)) {
+        const reason = agentArtifactDirDenyReason(artDir);
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason
+          }
+        };
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_DIR', {
+          proj,
+          agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+          artifact_dir: displayDir(artDir),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      if (isArtifactWriterAgentTool(stdin) && artDir !== cwd) {
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}`
+          }
+        };
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT_ARTIFACT_DIR', {
+          proj,
+          agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+          artifact_dir: displayDir(artDir),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT', { proj, tool: toolName, dur: Date.now() - t0 }));
+      return;
+    }
     if (!isFileMutationTool(toolName)) {
       hardDeny(
-        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit，已阻止以避免绕过保护。`,
+        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit/Agent，已阻止以避免绕过保护。`,
         'DENY_BAD_TOOL'
       );
       return;

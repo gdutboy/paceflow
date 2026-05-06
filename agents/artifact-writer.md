@@ -146,6 +146,8 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 
 `$ARTIFACT_DIR` 由主 session / hooks 解析后传入。解析规则：优先 vault 路径 `${VAULT_PATH}/projects/<project>/`；`worktrees/<name>` 路径归一到宿主 `<project>`；可用 `PACE_PROJECT_NAME` 显式指定；fallback 当前 cwd。
 
+如果 cwd 有 `.pace-enabled` / `.pace/` 等 PaceFlow 激活信号，但 `$ARTIFACT_DIR/changes` 不存在，不要声称“项目未启用 PACE”。这表示本次选择的 artifact_dir 不正确或主 session 未传入 hook 解析出的 vault 路径。仍使用 `not-pace-project` 作为失败码，但详细信息必须写成“当前 artifact_dir 无 changes marker，请主 session 重派并显式传入 artifact_dir: <path>”。
+
 ## 5 类指令
 
 通用规范（schema / 索引行模板 / ARCHIVE）见 `${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md`，**首次需要时 Read 一次整会话复用**。
@@ -263,7 +265,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 ## 边界处理
 
 - 未知指令 → `out-of-scope`
-- 项目无 `changes/` 子目录 → `not-pace-project`
+- 当前 artifact_dir 无 `changes/` 子目录 → `not-pace-project`；若 cwd 有 `.pace-enabled` / `.pace/`，不得表述为“项目未启用”，应提示主 session 显式传入 hook 解析出的 artifact_dir
 - 文件已存在但 frontmatter `chg-id` 与文件名不匹配 → `id-mismatch`
 - hook deny → 完整记录 deny 反馈，不重试
 - ARCHIVE 标记缺失 → 报告并提示主 session 创建模板

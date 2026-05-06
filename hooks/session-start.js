@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -15,14 +15,6 @@ const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
-
-// v4: 重置 Stop 防无限循环计数器 + 清除降级标记 + 确保 .pace/ 目录存在
-try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
-try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
-// W-code-4: 使用 SESSION_SCOPED_FLAGS 常量（与 pace-utils 保持同步）
-for (const flag of SESSION_SCOPED_FLAGS) {
-  try { const fp = path.join(PACE_RUNTIME, flag); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
-}
 
 // S-1: 统一 stdin 解析
 const eventType = paceUtils.parseStdinSync().type || 'startup';
@@ -33,6 +25,23 @@ try {
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
 const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
+
+// v4: PACE 项目才创建/重置运行态 .pace 文件；避免普通目录被 SessionStart 污染。
+if (paceSignal) {
+  try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
+  try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
+  // W-code-4: 使用 SESSION_SCOPED_FLAGS 常量（与 pace-utils 保持同步）
+  for (const flag of SESSION_SCOPED_FLAGS) {
+    try { const fp = path.join(PACE_RUNTIME, flag); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
+  }
+  try {
+    for (const f of fs.readdirSync(PACE_RUNTIME)) {
+      if (SESSION_SCOPED_FLAG_PREFIXES.some(prefix => f.startsWith(prefix))) {
+        try { fs.unlinkSync(path.join(PACE_RUNTIME, f)); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+}
 
 // v4.5: compact 事件读取 PreCompact 快照
 if (eventType === 'compact') {

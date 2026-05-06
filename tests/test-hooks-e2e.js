@@ -150,6 +150,7 @@ test('1. 非 PACE 项目静默放行', () => {
   const r = runHook('session-start.js', { cwd: dir });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('=== task.md ==='));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace')), '非 PACE 项目不应被 SessionStart 创建 .pace');
 });
 
 test('2. v6 artifact 注入 + 活跃 CHG 摘要', () => {
@@ -198,6 +199,23 @@ test('3. compact 恢复显示 activeChanges', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('Compact 恢复'));
   assert.ok(r.stdout.includes('活跃 CHG'));
+});
+
+test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
+  const dir = makeV6Project('ss-session-flags', {
+    paceRuntime: {
+      'archive-reminded-chg-20260504-01': '1',
+      'cli-refresh-done': '1',
+      'todowrite-used': '1',
+      'findings-age-2026-05-06': '1',
+    },
+  });
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'archive-reminded-chg-20260504-01')));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'cli-refresh-done')));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'todowrite-used')));
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'findings-age-2026-05-06')), '每日 findings 去重 flag 不应按 session 清理');
 });
 
 console.log('\n--- pre-tool-use.js ---');
@@ -489,6 +507,61 @@ test('9ha. worktree 普通代码文件 MultiEdit 不触发 artifact 重定向', 
   assert.ok(!r.stdout.includes('DENY_REDIRECT'));
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('additionalContext'));
+});
+
+test('9hb. artifact-writer Agent 未带 vault artifact_dir → DENY 重派', () => {
+  const { worktree, vaultDir } = makeVaultBackedWorktree('agent-artdir-deny');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: '使用 create-chg 流程创建一个新的变更记录，请创建 changes/<id>.md。',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('artifact_dir'));
+  assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
+});
+
+test('9hc. artifact-writer Agent 带 vault artifact_dir → 放行', () => {
+  const { worktree, vaultDir } = makeVaultBackedWorktree('agent-artdir-pass');
+  const prompt = `artifact_dir: ${vaultDir.replace(/\\/g, '/')}/\n使用 create-chg 流程创建一个新的变更记录。`;
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hd. 非 artifact-writer Agent 不受 artifact_dir 约束', () => {
+  const { worktree } = makeVaultBackedWorktree('agent-other-pass');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'code-reviewer',
+        description: 'Review',
+        prompt: '检查代码。',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
 });
 
 test('9i. PACE 项目 malformed stdin → fail-closed deny', () => {

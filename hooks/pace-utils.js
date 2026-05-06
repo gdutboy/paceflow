@@ -54,12 +54,16 @@ const FORMAT_SNIPPETS = {
 const SESSION_SCOPED_FLAGS = [
   'degraded',                    // stop.js 降级标记（3 次 block 后静默放行）
   'todowrite-used',              // todowrite-sync.js 标记（本会话已使用 Claude 任务列表工具）
-  'archive-reminded',            // post-tool-use.js H3（task.md 归档提醒，每会话一次）
+  'archive-reminded',            // post-tool-use.js H3 legacy flag（task.md 归档提醒，每会话一次）
   'findings-reminded',           // post-tool-use.js H7（findings ⚠️ 提醒，每会话一次）
   'impl-archive-reminded',       // post-tool-use.js H10（impl_plan 归档提醒，每会话一次）
   'cli-refresh-done',            // post-tool-use.js H12（Obsidian CLI 索引刷新标记）
   'walkthrough-archive-reminded', // post-tool-use.js（walkthrough 详情>3 归档提醒）
   'findings-archive-reminded',   // post-tool-use.js（findings 已解决详情归档提醒）
+];
+
+const SESSION_SCOPED_FLAG_PREFIXES = [
+  'archive-reminded-',           // post-tool-use.js：按 CHG slug 去重归档提醒
 ];
 
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
@@ -793,7 +797,7 @@ module.exports = {
   // 常量
   PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
-  TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, PLAN_DIRS,
+  TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
