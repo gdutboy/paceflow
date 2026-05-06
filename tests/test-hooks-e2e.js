@@ -53,6 +53,10 @@ function slugFromId(id) {
   return lower;
 }
 
+function projectNameForDir(dir) {
+  return path.basename(dir).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]', tasks = null, approved = true, verified = false } = {}) {
   const completedDate = status === 'completed' || status === 'archived' ? `${today()}T12:00:00+08:00` : 'null';
   const verifiedDate = verified ? `${today()}T12:30:00+08:00` : 'null';
@@ -488,6 +492,72 @@ test('9c. native plan 桥接提示走 artifact writer', () => {
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'native plan deny 前应创建 v6 changes/ 基础目录');
 });
 
+test('9c1. 首次启用且 vault/local 都无 artifact → DENY 要求选择 artifact root', () => {
+  const dir = makeTmpDir('ptu-artifact-root-choice');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(r.stdout.includes('artifact-root'));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '选择前不应在 vault 懒创建 changes/');
+});
+
+test('9c2. artifact-root=local 后首次 DENY 会在本地懒创建模板', () => {
+  const dir = makeTmpDir('ptu-artifact-root-local');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('已自动创建 Artifact 模板'));
+  assert.ok(fs.existsSync(path.join(dir, 'changes')), 'local 选择应在本地懒创建 changes/');
+  assert.ok(fs.existsSync(path.join(dir, 'task.md')), 'local 选择应在本地创建 task.md');
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), 'local 选择不应在 vault 创建 changes/');
+});
+
+test('9c3. SessionStart 首次启用只提示选择，不自动创建模板', () => {
+  const dir = makeTmpDir('ss-artifact-root-choice');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('Artifact 目录选择'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '选择前不应在 vault 懒创建 changes/');
+});
+
+test('9c4. code-count 首次触发也先要求选择 artifact root', () => {
+  const dir = makeTmpDir('ptu-artifact-root-code-count');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n', 'utf8');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Write', tool_input: { file_path: path.join(dir, 'c.js'), content: 'c\n' } },
+  });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '选择前不应在 vault 懒创建 changes/');
+});
+
+test('9c5. PACE_ARTIFACT_ROOT=local 自动化环境跳过询问并本地懒创建', () => {
+  const dir = makeTmpDir('ptu-artifact-root-env-local');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: codeEditStdin(dir),
+    env: { PACE_ARTIFACT_ROOT: 'local' },
+  });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('AskUserQuestion'));
+  assert.ok(fs.existsSync(path.join(dir, 'changes')), 'env local 应在本地懒创建 changes/');
+});
+
 test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
   const dir = makeLegacyProject('ptu-legacy');
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
@@ -563,6 +633,26 @@ test('9ha. worktree 普通代码文件 MultiEdit 不触发 artifact 重定向', 
   assert.ok(!r.stdout.includes('DENY_REDIRECT'));
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('additionalContext'));
+});
+
+test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', () => {
+  const dir = makeTmpDir('agent-artifact-root-choice');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: '使用 create-chg 流程创建一个新的变更记录。',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(r.stdout.includes('artifact-root'));
 });
 
 test('9hb. artifact-writer Agent 未带 vault artifact_dir → DENY 重派', () => {

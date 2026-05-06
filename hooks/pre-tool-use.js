@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -98,6 +98,8 @@ paceUtils.withStdinParsed((stdin) => {
   // W-3: 缓存 isPaceProject 结果（避免多次调用）
   const paceSignal = isPaceProject(cwd);
   const artDir = getArtifactDir(cwd);
+  const needsArtifactRootChoice = artifactRootChoiceNeeded(cwd);
+  const artifactRootChoiceReason = needsArtifactRootChoice ? artifactRootChoiceMessage(cwd) : '';
   const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
 
@@ -120,6 +122,16 @@ paceUtils.withStdinParsed((stdin) => {
       );
     }
     if (isAgentTool(toolName)) {
+      if (isArtifactWriterAgentTool(stdin) && needsArtifactRootChoice) {
+        const output = denyOrHint(artifactRootChoiceReason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_AGENT_ARTIFACT_ROOT_CHOICE${teammateTag}`, {
+          proj,
+          agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
       if (isArtifactWriterAgentTool(stdin) && artDir !== cwd && !promptIncludesPath(stdin.toolInput.prompt, artDir)) {
         const reason = agentArtifactDirDenyReason(artDir);
         const output = {
@@ -396,6 +408,12 @@ paceUtils.withStdinParsed((stdin) => {
   if (isCodeFile && isInsideProject && !hasActiveTasks && paceSignal) {
     const nativePlan = getNativePlanPath(cwd);
     if (nativePlan) {
+      if (needsArtifactRootChoice) {
+        const output = denyOrHint(artifactRootChoiceReason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+        return;
+      }
       let createdFiles = [];
       if (!taskFileExists) {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
@@ -417,6 +435,12 @@ paceUtils.withStdinParsed((stdin) => {
     // 第一级：强信号 DENY（superpowers/manual/artifact/code-count）
     // I-06: isPaceProject() 返回 false 或字符串，truthy 检查等价于四重比较
     if (paceSignal) {
+      if (needsArtifactRootChoice) {
+        const output = denyOrHint(artifactRootChoiceReason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+        return;
+      }
       // T-076: DENY 前懒创建缺失的模板文件
       let createdFiles = [];
       if (!taskFileExists) {
@@ -456,6 +480,12 @@ paceUtils.withStdinParsed((stdin) => {
     if (!paceSignal && toolName === 'Write' && !fs.existsSync(filePath)) {
       const futureCount = codeCount + 1;
       if (futureCount >= 3) {
+        if (needsArtifactRootChoice) {
+          const output = denyOrHint(artifactRootChoiceReason);
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+          return;
+        }
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';

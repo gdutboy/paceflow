@@ -51,7 +51,7 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 
 安装后 8 个 hook + 5 个 skill + `artifact-writer` agent 自动注册，零配置。重启 Claude Code 生效。
 
-> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault，artifact 将自动存储到 `$PACE_VAULT_PATH/projects/<项目名>/`，实现跨项目知识沉淀。真实 Git worktree 和 `.claude/worktrees/<name>` 会自动归一到宿主项目名；也可用 `PACE_PROJECT_NAME` 显式指定项目名。
+> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault。新项目首次启用时，PACEflow 会要求主 session 询问 artifact 存放在 `$PACE_VAULT_PATH/projects/<项目名>/` 还是本地项目目录，并把选择持久化到 `.pace/artifact-root`；已有 `changes/` 的项目沿用现有位置。真实 Git worktree 和 `.claude/worktrees/<name>` 会自动归一到宿主项目名；也可用 `PACE_PROJECT_NAME` 显式指定项目名。自动化/headless 环境可设置 `PACE_ARTIFACT_ROOT=local|vault|/abs/path` 跳过询问。
 
 ---
 
@@ -87,7 +87,7 @@ brainstorming（需求探索 + 方案设计）
 
 设置 `PACE_VAULT_PATH` 后解锁跨项目知识管理：
 
-- Artifact 自动存储到 `projects/<项目名>/`
+- 首次启用可选择将 Artifact 存储到 `projects/<项目名>/` 或本地项目目录，选择写入 `.pace/artifact-root`
 - Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
@@ -230,6 +230,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.16 | 2026-05-07 | 新项目首次懒创建时支持选择 artifact 存放位置（Obsidian vault project 或本地项目目录），选择持久化到 `.pace/artifact-root`；worktree 沿用宿主选择，自动化可用 `PACE_ARTIFACT_ROOT` 跳过询问 |
 | v6.0.15 | 2026-05-06 | 新增 `update-chg action=approve-and-start` 与 `close-chg`，合并批准+开始、验证+归档收尾链路；hook/skill/guidebook 同步推荐合并操作 |
 | v6.0.14 | 2026-05-06 | `todowrite-sync.js` 更名为 `task-list-sync.js`，公开文档统一为 Claude 任务列表同步；Stop 对活跃区残留 `archived/cancelled/[-]` 增加阻断修复 |
 | v6.0.13 | 2026-05-06 | Stop / SessionStart / Claude 任务列表同步改用统一 CHG 分类器，planned backlog 不再阻断 Stop 或计入当前任务列表 |
@@ -256,4 +257,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.15 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.16 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

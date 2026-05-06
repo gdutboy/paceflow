@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -246,6 +246,57 @@ test('新项目（无 artifact）→ vault 目录', () => {
   assert.strictEqual(getArtifactDir(dir), expected);
 });
 
+test('artifact-root=local → 返回项目本地目录', () => {
+  const dir = makeTmpDir('gad-choice-local');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  assert.strictEqual(readArtifactRootChoice(dir), 'local');
+  assert.strictEqual(getConfiguredArtifactDir(dir), dir);
+  assert.strictEqual(getArtifactDir(dir), dir);
+});
+
+test('artifact-root=vault → 返回 vault 项目目录', () => {
+  const dir = makeTmpDir('gad-choice-vault');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
+  const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
+  const expected = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  assert.strictEqual(getArtifactDir(dir), expected);
+});
+
+test('PACE_ARTIFACT_ROOT=local → 自动化环境跳过询问', () => {
+  const dir = makeTmpDir('gad-choice-env-local');
+  const prev = process.env.PACE_ARTIFACT_ROOT;
+  process.env.PACE_ARTIFACT_ROOT = 'local';
+  try {
+    assert.strictEqual(readArtifactRootChoice(dir), 'local');
+    assert.strictEqual(artifactRootChoiceNeeded(dir), false);
+    assert.strictEqual(getArtifactDir(dir), dir);
+  } finally {
+    if (prev === undefined) delete process.env.PACE_ARTIFACT_ROOT;
+    else process.env.PACE_ARTIFACT_ROOT = prev;
+  }
+});
+
+test('首次启用且 vault/local 都无 changes → 需要选择 artifact root', () => {
+  const dir = makeTmpDir('gad-choice-needed');
+  assert.strictEqual(artifactRootChoiceNeeded(dir), true);
+  const msg = artifactRootChoiceMessage(dir);
+  assert.ok(msg.includes('AskUserQuestion'));
+  assert.ok(msg.includes(getArtifactRootChoicePath(dir)));
+});
+
+test('已有 changes 或已有选择 → 不需要 artifact root 选择', () => {
+  const withChanges = makeTmpDir('gad-choice-existing');
+  fs.mkdirSync(path.join(withChanges, 'changes'), { recursive: true });
+  assert.strictEqual(artifactRootChoiceNeeded(withChanges), false);
+
+  const withChoice = makeTmpDir('gad-choice-existing-choice');
+  fs.mkdirSync(path.join(withChoice, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(withChoice, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  assert.strictEqual(artifactRootChoiceNeeded(withChoice), false);
+});
+
 test('worktree 有本地 changes 时仍优先沿用宿主 vault artifact', () => {
   const projectName = `pace-worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const root = makeTmpDir('gad-worktree-root');
@@ -259,6 +310,21 @@ test('worktree 有本地 changes 时仍优先沿用宿主 vault artifact', () =>
 
   assert.deepStrictEqual(getProjectNameCandidates(worktree).slice(0, 2), [projectName, 'smoke']);
   assert.strictEqual(getArtifactDir(worktree), vaultDir);
+});
+
+test('worktree 读取宿主 artifact-root=local → 返回宿主项目目录', () => {
+  const projectName = `pace-worktree-choice-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const root = makeTmpDir('gad-worktree-choice-root');
+  const host = path.join(root, projectName);
+  const worktree = path.join(host, 'worktrees', 'smoke');
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
+
+  assert.strictEqual(getProjectStateDir(worktree), host);
+  assert.strictEqual(getArtifactRootChoicePath(worktree), path.join(host, '.pace', 'artifact-root'));
+  assert.strictEqual(getArtifactDir(worktree), host);
 });
 
 test('worktree 无本地 artifact 但宿主 vault 有 changes → artifact', () => {

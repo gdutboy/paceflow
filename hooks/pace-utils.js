@@ -7,6 +7,7 @@ const PACE_VERSION = 'v6.0.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
+const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
@@ -196,6 +197,85 @@ function getProjectName(cwd) {
   return getProjectNameCandidates(cwd)[0] || 'unknown-project';
 }
 
+function gitWorktreeHostDir(cwd) {
+  const safeCwd = cwd || '';
+  try {
+    const gitFile = path.join(safeCwd, '.git');
+    if (!fs.existsSync(gitFile) || !fs.statSync(gitFile).isFile()) return null;
+    const content = fs.readFileSync(gitFile, 'utf8');
+    const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
+    if (!match) return null;
+    const gitDir = path.resolve(safeCwd, match[1].trim());
+    const marker = `${path.sep}.git${path.sep}worktrees${path.sep}`;
+    const idx = gitDir.indexOf(marker);
+    if (idx < 0) return null;
+    return path.dirname(gitDir.slice(0, idx + 5));
+  } catch(e) {
+    return null;
+  }
+}
+
+/** 项目级运行态目录归属；worktree 读取宿主项目 .pace。 */
+function getProjectStateDir(cwd) {
+  return worktreeBaseDir(cwd) || gitWorktreeHostDir(cwd) || cwd;
+}
+
+function getArtifactRootChoicePath(cwd) {
+  return path.join(getProjectStateDir(cwd), '.pace', ARTIFACT_ROOT_CHOICE_FILE);
+}
+
+function readArtifactRootChoice(cwd) {
+  const envChoice = process.env.PACE_ARTIFACT_ROOT || process.env.PACEFLOW_ARTIFACT_ROOT || '';
+  if (String(envChoice).trim()) return String(envChoice).trim();
+  try { return fs.readFileSync(getArtifactRootChoicePath(cwd), 'utf8').trim(); } catch(e) { return ''; }
+}
+
+function artifactDirFromChoice(cwd, choice) {
+  const raw = String(choice || '').trim();
+  if (!raw) return null;
+  const stateDir = getProjectStateDir(cwd);
+  if (raw === 'local') return stateDir;
+  if (raw === 'vault') {
+    if (!VAULT_PATH) return null;
+    return path.join(VAULT_PATH, 'projects', getProjectNameCandidates(cwd)[0]);
+  }
+  if (isPortableAbsolutePath(raw)) return path.resolve(raw);
+  return path.resolve(stateDir, raw);
+}
+
+function getConfiguredArtifactDir(cwd) {
+  return artifactDirFromChoice(cwd, readArtifactRootChoice(cwd));
+}
+
+function hasChangesDir(dir) {
+  try { return !!dir && fs.existsSync(path.join(dir, 'changes')); } catch(e) { return false; }
+}
+
+function artifactRootChoiceNeeded(cwd) {
+  if (!VAULT_PATH) return false;
+  if (getConfiguredArtifactDir(cwd)) return false;
+  if (hasChangesDir(getProjectStateDir(cwd))) return false;
+  for (const projectName of getProjectNameCandidates(cwd)) {
+    if (hasChangesDir(path.join(VAULT_PATH, 'projects', projectName))) return false;
+  }
+  return true;
+}
+
+function artifactRootChoiceMessage(cwd) {
+  const projectName = getProjectName(cwd);
+  const stateDir = getProjectStateDir(cwd);
+  const vaultDir = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectName) : '';
+  const choicePath = getArtifactRootChoicePath(cwd);
+  return [
+    'PACEflow 首次启用需要选择 artifact 存放位置。',
+    `Obsidian vault: ${vaultDir}`,
+    `本地项目目录: ${stateDir}`,
+    '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"。',
+    `用户选择后，写入 ${choicePath}：选择 vault 时内容为 "vault"，选择本地时内容为 "local"。`,
+    '写入后重试本次操作，hook 会在所选位置懒创建 task.md / implementation_plan.md / changes/**。'
+  ].join('\n');
+}
+
 // T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
 let _artifactDirCache = { cwd: null, dir: null };
 
@@ -208,6 +288,11 @@ let _artifactDirCache = { cwd: null, dir: null };
 function getArtifactDir(cwd) {
   if (_artifactDirCache.cwd === cwd) return _artifactDirCache.dir;
   let result = cwd;
+  const configuredDir = getConfiguredArtifactDir(cwd);
+  if (configuredDir) {
+    _artifactDirCache = { cwd, dir: configuredDir };
+    return configuredDir;
+  }
   const projectCandidates = getProjectNameCandidates(cwd);
   // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 分支，直接走 CWD 路径
   if (VAULT_PATH) {
@@ -319,15 +404,20 @@ function isPaceProject(cwd) {
   try {
     // T-080: 豁免信号（最高优先级）— 用户主动禁用 PACE（.pace/disabled）
     if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
-    // 信号 1（最强）：v6 项目必须有 changes/ 目录
-    if (fs.existsSync(path.join(cwd, 'changes'))) return 'artifact';
-    // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
-    if (VAULT_PATH) {
-      for (const projectName of getProjectNameCandidates(cwd)) {
-        const vaultDir = path.join(VAULT_PATH, 'projects', projectName);
-        try {
-          if (fs.existsSync(path.join(vaultDir, 'changes'))) return 'artifact';
-        } catch(e) {}
+    const configuredDir = getConfiguredArtifactDir(cwd);
+    if (configuredDir) {
+      if (fs.existsSync(path.join(configuredDir, 'changes'))) return 'artifact';
+    } else {
+      // 信号 1（最强）：v6 项目必须有 changes/ 目录
+      if (fs.existsSync(path.join(cwd, 'changes'))) return 'artifact';
+      // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
+      if (VAULT_PATH) {
+        for (const projectName of getProjectNameCandidates(cwd)) {
+          const vaultDir = path.join(VAULT_PATH, 'projects', projectName);
+          try {
+            if (fs.existsSync(path.join(vaultDir, 'changes'))) return 'artifact';
+          } catch(e) {}
+        }
       }
     }
     // 信号 2（强）：Superpowers plan 文件
@@ -833,14 +923,16 @@ function parseStdinSync() {
 // I-04: 多行格式按功能分组，便于 diff 审阅
 module.exports = {
   // 常量
-  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH,
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
-  isPaceProject, isTeammate, getArtifactDir, ensureProjectInfra,
+  isPaceProject, isTeammate, getArtifactDir, getProjectStateDir,
+  getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
+  artifactRootChoiceNeeded, artifactRootChoiceMessage, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates,
   // 计划文件

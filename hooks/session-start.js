@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, formatBridgeHint, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, formatBridgeHint, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -150,8 +150,13 @@ if (paceSignal) {
   try { ensureProjectInfra(cwd); } catch(e) {}
 }
 
+// 首次启用且 vault/local 都无 artifact 时，先让主 session 询问用户存放位置。
+if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md')) && artifactRootChoiceNeeded(cwd)) {
+  const msg = artifactRootChoiceMessage(cwd);
+  process.stdout.write(`\n=== Artifact 目录选择 ===\n${msg}\n\n`);
+  log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE', { cwd, signal: paceSignal }));
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
-if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
+} else if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
   if (created.length > 0) {
     log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', { cwd, signal: paceSignal, files: created.join(', ') }));
