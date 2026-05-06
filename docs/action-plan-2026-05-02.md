@@ -67,6 +67,7 @@
 | P2-POC-02 | `updatedToolOutput` 裁剪/脱敏/标注 | 官方已支持全工具，但不应静默修改 artifact | 禁止 silent fix；仅限输出降噪或敏感信息遮蔽 |
 | P2-POC-03 | `FileChanged` 监控 vault 外路径 | GitHub 有 watcher/security/perf 风险 | 只监控小型配置文件，不监控大型 artifact 内容 |
 | P2-POC-04 | `${CLAUDE_EFFORT}` skill body 自适应 | 官方支持；当前 skills 未用 | 仅优化 `pace-workflow` / `audit` 的分支提示 |
+| P1-POC-05 | 首次懒创建 artifact 目录选择 | 当前 `PACE_VAULT_PATH` 存在时新项目默认写入 Obsidian vault；用户希望可选择写入 vault project 还是本地项目目录 | 只在首次创建且 vault/local 均无 `changes/` 时询问并持久化；非交互/headless 保持默认策略 |
 
 #### 0.1.4 暂缓或明确不采用
 
@@ -78,6 +79,7 @@
 | `skillOverrides` 默认隐藏核心 skills | 不作为默认 | 会降低模型自纠错和用户发现能力；可写成用户级 tuning 建议 |
 | `--bare` 用于 PaceFlow 验证 | 禁止 | `--bare` 跳过 hooks/plugins/skills，不能验证 PaceFlow |
 | Windows PowerShell/cmd destructive cleanup 指令 | 禁止作为文档建议 | GitHub 有 PowerShell/cmd quoting 导致灾难性删除报告 |
+| Production prompt 的 `report_title_prefix_warning` 作为 release blocker | 不采用 | 用户级 `UserPromptSubmit` date hook + 全局 `CLAUDE.md` 时间戳回复样式可能在 `artifact-writer` 报告前加时间戳；这不影响 artifact 写入、hook 判定、状态/schema/wikilink，只影响测试报告首行机械检查。harness 继续严格，production gate 仅记录 warning；未来 `SubagentStop` verifier 可允许一个合法时间戳前缀或解析第一个协议标题行 |
 
 #### 0.1.5 上游 GitHub 风险登记
 
@@ -112,6 +114,10 @@ git diff --check                  # PASS
 官方 changelog 已检查到 `2.1.131`；`2.1.131` 暂未发现推翻上述决策的 PaceFlow task/hook 变更。
 
 Native plan 备注（2026-05-07 复核）：官方 changelog 没有单独声明“plan 文件名不再随机”，但 2.1.77 已将接受计划后的 session 命名改为按 plan 内容生成，并改进 VS Code plan preview 标题；2.1.119 修复 `/plan` / `/plan open` 不作用于既有 plan；2.1.71 修复 fork/branch 共享同一个 plan 文件。PaceFlow 后续 bridge 测试应按明确路径、内容和最近修改时间判断 plan，不依赖随机文件名假设。
+
+Production title warning 记录（2026-05-07）：当前本机主 `settings.json` 有全局 `UserPromptSubmit` hook 执行 `date '+[%Y-%m-%d %H:%M:%S]'`，主 `CLAUDE.md` 又要求普通回复第一行带时间戳。因此 production prompt 下 `artifact-writer` 偶发继承展示层样式，在 `## artifact-writer 报告` 前输出时间戳。结论：这是测试/verifier 层的协议首行 warning，不是功能损害；不要通过堆更长 prompt 追求 100% 风格稳定。后续若实现 `SubagentStop` 报告校验，应把“最多一个合法时间戳前缀”作为兼容输入，或直接定位第一个非空协议标题行。
+
+Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vault 与本地项目目录。更合理的首次体验是：当项目首次触发懒创建，且 `PACE_VAULT_PATH/projects/<project>/changes` 与 `cwd/changes` 都不存在时，hook 不应静默决定唯一位置；可 deny 并提示主 session 用 AskUserQuestion 询问用户选择“Obsidian vault project”或“本地项目目录”。选择后将结果持久化到当前项目 `.pace/`（例如 `.pace/artifact-root` 或 `.pace/config.json`），后续 `getArtifactDir()` 优先读取该项目级选择。已有 `changes/` 的项目不再询问；真实 worktree 仍沿用宿主项目持久化选择；非交互/SDK/headless 环境保持当前默认策略（有 `PACE_VAULT_PATH` 则 vault，否则 cwd），避免阻断自动化。
 
 ---
 
