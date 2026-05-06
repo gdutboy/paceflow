@@ -28,7 +28,7 @@ function listCases(phase) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
     .filter((f) => f.endsWith('.yaml'))
-    .sort()
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .map((f) => path.join(dir, f));
 }
 

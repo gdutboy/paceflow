@@ -19,7 +19,7 @@ mkdir -p /tmp/paceflow-agent-baseline-production
 
 ## Production Release Gate
 
-20 个结构性用例，不含 TC-D2。发布前优先跑这个。
+22 个结构性用例，不含 TC-D2。发布前优先跑这个。
 
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow
@@ -31,6 +31,13 @@ MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production-gate tests/agent-
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow
 MODE=production OUTDIR=/tmp/paceflow-agent-baseline-production tests/agent-tests/run-agent-cli-suite.sh production-smoke
+```
+
+## Merged Operation Smoke
+
+```bash
+cd /mnt/k/AI/paceflow-hooks/paceflow
+MODE=production OUTDIR=/tmp/paceflow-agent-merged tests/agent-tests/run-agent-cli-suite.sh merged
 ```
 
 ## Optional Content Fidelity Benchmark
@@ -68,6 +75,14 @@ node tests/agent-tests/run-tests.js teardown cases/phase-a/tc-a1-create-chg.yaml
 node tests/agent-tests/run-tests.js prepare cases/phase-a/tc-a8-update-chg-verify.yaml --mode production
 node tests/agent-tests/run-tests.js verify cases/phase-a/tc-a8-update-chg-verify.yaml /tmp/paceflow-agent-baseline-production/tc-a8-report.json
 node tests/agent-tests/run-tests.js teardown cases/phase-a/tc-a8-update-chg-verify.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-a/tc-a9-close-chg.yaml --mode production
+node tests/agent-tests/run-tests.js verify cases/phase-a/tc-a9-close-chg.yaml /tmp/paceflow-agent-baseline-production/tc-a9-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-a/tc-a9-close-chg.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-a/tc-a10-approve-and-start.yaml --mode production
+node tests/agent-tests/run-tests.js verify cases/phase-a/tc-a10-approve-and-start.yaml /tmp/paceflow-agent-baseline-production/tc-a10-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-a/tc-a10-approve-and-start.yaml
 
 node tests/agent-tests/run-tests.js prepare cases/phase-b/tc-b1-missing-title.yaml --mode production
 node tests/agent-tests/run-tests.js verify cases/phase-b/tc-b1-missing-title.yaml /tmp/paceflow-agent-baseline-production/tc-b1-report.json

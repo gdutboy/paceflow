@@ -8,7 +8,7 @@
 #   MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
 #
 # Full harness baseline:
-#   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 21
+#   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 23
 #
 # Useful env:
 #   MODEL=sonnet|opus|...       Pass --model to claude
@@ -153,6 +153,8 @@ ALL_CASES=(
   "cases/phase-a/tc-a6-hotfix.yaml TC-A6"
   "cases/phase-a/tc-a7-merges-field.yaml TC-A7"
   "cases/phase-a/tc-a8-update-chg-verify.yaml TC-A8"
+  "cases/phase-a/tc-a9-close-chg.yaml TC-A9"
+  "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
   "cases/phase-b/tc-b1-missing-title.yaml TC-B1"
   "cases/phase-b/tc-b2-target-not-found.yaml TC-B2"
   "cases/phase-b/tc-b3-archive-with-in-progress.yaml TC-B3"
@@ -177,6 +179,8 @@ PRODUCTION_GATE_CASES=(
   "cases/phase-a/tc-a6-hotfix.yaml TC-A6"
   "cases/phase-a/tc-a7-merges-field.yaml TC-A7"
   "cases/phase-a/tc-a8-update-chg-verify.yaml TC-A8"
+  "cases/phase-a/tc-a9-close-chg.yaml TC-A9"
+  "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
   "cases/phase-b/tc-b1-missing-title.yaml TC-B1"
   "cases/phase-b/tc-b2-target-not-found.yaml TC-B2"
   "cases/phase-b/tc-b3-archive-with-in-progress.yaml TC-B3"
@@ -194,6 +198,8 @@ PRODUCTION_GATE_CASES=(
 PRODUCTION_SMOKE_CASES=(
   "cases/phase-a/tc-a1-create-chg.yaml TC-A1"
   "cases/phase-a/tc-a8-update-chg-verify.yaml TC-A8"
+  "cases/phase-a/tc-a9-close-chg.yaml TC-A9"
+  "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
   "cases/phase-b/tc-b1-missing-title.yaml TC-B1"
   "cases/phase-b/tc-b7-out-of-scope.yaml TC-B7"
   "cases/phase-b/tc-b8-unknown-operation.yaml TC-B8"
@@ -205,8 +211,13 @@ OPTIONAL_CONTENT_CASES=(
   "cases/phase-d/tc-d2-large-body.yaml TC-D2"
 )
 
+MERGED_OPERATION_CASES=(
+  "cases/phase-a/tc-a9-close-chg.yaml TC-A9"
+  "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
+)
+
 case "$SUITE" in
-  21|all)
+  21|23|all)
     if [[ "$MODE" == "production" ]]; then
       echo "NOTE: suite '$SUITE' includes optional content fidelity case TC-D2; use production-gate for release blocking." >&2
     fi
@@ -221,9 +232,12 @@ case "$SUITE" in
   content|optional-content)
     CASES=("${OPTIONAL_CONTENT_CASES[@]}")
     ;;
+  merged|new-agent)
+    CASES=("${MERGED_OPERATION_CASES[@]}")
+    ;;
   *)
     echo "Unknown suite: $SUITE" >&2
-    echo "Available: production-gate, production-smoke, content, 21" >&2
+    echo "Available: production-gate, production-smoke, content, merged, 23, 21" >&2
     exit 2
     ;;
 esac

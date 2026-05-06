@@ -23,6 +23,9 @@
 
 **禁止**由 agent 自行判断验证是否通过。`verification-confirmed` 缺失或非 true 时，不得写任何 artifact。
 
+> **报告标题强制**：最终报告第一行必须字面使用 `## artifact-writer 报告`。禁止在标题前输出任何自然语言、空行或说明，尤其禁止 `所有编辑均已通过。生成报告。` / `操作完成，报告如下：` / `验证通过。` 等前缀。失败、幂等、部分修复场景同样适用。
+> **全局对话样式豁免**：最终报告不得继承主 session / CLAUDE.md 的时间戳、Insight 块、固定结尾语或任何前后缀。第一个字符必须是 `#`。
+
 ## 前置检查
 
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。
@@ -95,3 +98,20 @@
 - ARCHIVE 标记缺失 → `format-violation: archive marker missing`
 - 根索引行在活跃区和 ARCHIVE 下方都找不到 → `format-violation: index row not found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
+
+## 最终报告硬约束（最后执行）
+
+完成所有 Write/Edit 后，不要先描述“编辑成功”“准备生成报告”“验证通过”。最终回答必须从下面这一行开始：
+
+```markdown
+## artifact-writer 报告
+```
+
+以下前缀会导致本次 `close-chg` 被视为格式失败，即使 artifact 内容正确也不允许：
+
+- `所有编辑成功。生成报告。`
+- `所有 Edit 成功。构造最终报告。`
+- `验证通过，报告如下：`
+- `操作已完成。`
+
+只输出报告本身。第一个字符必须是 `#`。

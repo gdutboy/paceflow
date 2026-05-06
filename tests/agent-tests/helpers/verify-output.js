@@ -131,6 +131,46 @@ function checkBelowArchive(filePath, wikilinkId) {
   };
 }
 
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function slugFromTarget(testCase, variables) {
+  const target = testCase.input && testCase.input.fields && testCase.input.fields.target;
+  if (!target || typeof target !== 'string') return '';
+  return renderVariables(target, variables).toLowerCase();
+}
+
+function detailPathForTarget(targetDir, slug) {
+  if (!slug) return '';
+  return path.join(targetDir, 'changes', `${slug}.md`);
+}
+
+function isNonNullValue(value) {
+  const s = String(value || '').trim();
+  return Boolean(s) && s !== 'null';
+}
+
+function normalizeCheckbox(value) {
+  const s = String(value || '').trim();
+  const bracketed = s.match(/^\[([^\]]*)\]$/);
+  if (bracketed) return bracketed[1].trim();
+  return s;
+}
+
+function taskStatus(content, taskId) {
+  const re = new RegExp(`^- \\[([^\\]]*)\\]\\s+${escapeRegex(taskId)}\\b`, 'm');
+  const m = String(content || '').match(re);
+  return m ? m[1] : null;
+}
+
+function indexCheckbox(filePath, wikilinkId) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const re = new RegExp(`^- \\[([^\\]]*)\\]\\s+\\[\\[${escapeRegex(wikilinkId)}\\]\\]`, 'm');
+  const m = content.match(re);
+  return m ? m[1] : null;
+}
+
 function pushNumericLimit(validations, agentReport, field, limit, name, options = {}) {
   if (!limit) return;
   const warnOnly = Boolean(options.warnOnly);
@@ -284,6 +324,122 @@ function verify(testCase, targetDir, variables, agentReport) {
     }
   }
 
+  const expectedValidations = exp.validations || {};
+  const targetSlug = slugFromTarget(testCase, variables);
+  const detailPath = detailPathForTarget(targetDir, targetSlug);
+  let targetDetail = null;
+  let targetFrontmatter = null;
+  if (targetSlug && fileExists(detailPath)) {
+    targetDetail = fs.readFileSync(detailPath, 'utf8');
+    targetFrontmatter = parseFrontmatter(targetDetail);
+  }
+
+  if (expectedValidations.frontmatter_status) {
+    const actual = targetFrontmatter && targetFrontmatter.status;
+    validations.push({
+      name: 'frontmatter_status',
+      ok: actual === expectedValidations.frontmatter_status,
+      actual,
+      expected: expectedValidations.frontmatter_status,
+      reason: targetFrontmatter ? undefined : 'target detail frontmatter missing',
+    });
+  }
+
+  for (const [key, field] of [
+    ['completed_date_set', 'completed-date'],
+    ['verified_date_set', 'verified-date'],
+    ['archived_date_set', 'archived-date'],
+  ]) {
+    if (expectedValidations[key] !== undefined) {
+      const actual = targetFrontmatter && targetFrontmatter[field];
+      const ok = expectedValidations[key]
+        ? isNonNullValue(actual)
+        : !isNonNullValue(actual);
+      validations.push({ name: key, ok, actual, expected: expectedValidations[key] });
+    }
+  }
+
+  if (expectedValidations.verified_marker_set !== undefined) {
+    const ok = Boolean(targetDetail) &&
+      (expectedValidations.verified_marker_set
+        ? /<!-- APPROVED -->\r?\n<!-- VERIFIED -->/.test(targetDetail)
+        : !/<!-- VERIFIED -->/.test(targetDetail));
+    validations.push({
+      name: 'verified_marker_set',
+      ok,
+      expected: expectedValidations.verified_marker_set,
+      reason: targetDetail ? undefined : 'target detail missing',
+    });
+  }
+
+  if (expectedValidations.approved_marker_set !== undefined) {
+    const hasMarker = Boolean(targetDetail) && /<!-- APPROVED -->/.test(targetDetail);
+    validations.push({
+      name: 'approved_marker_set',
+      ok: expectedValidations.approved_marker_set ? hasMarker : !hasMarker,
+      expected: expectedValidations.approved_marker_set,
+      reason: targetDetail ? undefined : 'target detail missing',
+    });
+  }
+
+  if (expectedValidations.detail_task_status) {
+    for (const [taskId, expectedStatus] of Object.entries(expectedValidations.detail_task_status)) {
+      const actualRaw = targetDetail ? taskStatus(targetDetail, taskId) : null;
+      const actual = actualRaw === null ? null : normalizeCheckbox(actualRaw);
+      const expected = normalizeCheckbox(expectedStatus);
+      validations.push({
+        name: `detail_task_status:${taskId}`,
+        ok: actual === expected,
+        actual,
+        expected,
+        reason: targetDetail ? undefined : 'target detail missing',
+      });
+    }
+  }
+
+  for (const [key, rel] of [
+    ['task_md_index_checkbox', 'task.md'],
+    ['impl_plan_index_checkbox', 'implementation_plan.md'],
+  ]) {
+    if (expectedValidations[key] !== undefined) {
+      const full = path.join(targetDir, rel);
+      const actualRaw = targetSlug && fileExists(full) ? indexCheckbox(full, targetSlug) : null;
+      const actual = actualRaw === null ? null : normalizeCheckbox(actualRaw);
+      const expected = normalizeCheckbox(expectedValidations[key]);
+      validations.push({
+        name: key,
+        ok: actual === expected,
+        actual,
+        expected,
+        reason: actual === null ? 'index row not found' : undefined,
+      });
+    }
+  }
+
+  for (const [key, rel] of [
+    ['task_md_index_below_archive', 'task.md'],
+    ['impl_plan_index_below_archive', 'implementation_plan.md'],
+  ]) {
+    if (expectedValidations[key] !== undefined) {
+      const full = path.join(targetDir, rel);
+      const r = targetSlug && fileExists(full)
+        ? checkBelowArchive(full, targetSlug)
+        : { ok: false, reason: 'index file or target missing' };
+      validations.push({ name: key, ok: expectedValidations[key] ? r.ok : !r.ok, reason: r.reason });
+    }
+  }
+
+  if (expectedValidations.walkthrough_row_added !== undefined) {
+    const full = path.join(targetDir, 'walkthrough.md');
+    const content = fileExists(full) ? fs.readFileSync(full, 'utf8') : '';
+    const hasRow = targetSlug ? content.includes(`[[${targetSlug}]]`) : false;
+    validations.push({
+      name: 'walkthrough_row_added',
+      ok: expectedValidations.walkthrough_row_added ? hasRow : !hasRow,
+      expected: expectedValidations.walkthrough_row_added,
+    });
+  }
+
   if (exp.body_completeness_check) {
     const expectedBody = normalizeNewlines(
       setupInputBody(testCase, variables),
@@ -346,6 +502,7 @@ function verify(testCase, targetDir, variables, agentReport) {
     const firstLine = (lines[0] || '').trim();
     const ok = firstLine === titleStrict;
     const titleIndex = lines.findIndex((line) => line.trim() === titleStrict);
+    const allowTitlePrefix = Boolean(exp.report_title_prefix_allowed) || isProductionPrompt;
     let actual = firstLine || '<empty first line>';
     if (!ok) {
       const titleLine = lines.find((line) => line.trim() === titleStrict) ||
@@ -354,7 +511,7 @@ function verify(testCase, targetDir, variables, agentReport) {
         actual = `${actual} (first h2: ${titleLine.trim()})`;
       }
     }
-    if (isProductionPrompt && !ok) {
+    if (allowTitlePrefix && !ok) {
       validations.push({
         name: 'report_title_present',
         ok: titleIndex >= 0,
@@ -369,7 +526,9 @@ function verify(testCase, targetDir, variables, agentReport) {
           warning: true,
           actual,
           expected: titleStrict,
-          reason: 'production prompt: title not first line; recorded as warning',
+          reason: isProductionPrompt
+            ? 'production prompt: title not first line; recorded as warning'
+            : 'title not first line; recorded as warning',
         });
       }
     } else {
