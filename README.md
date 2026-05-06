@@ -51,7 +51,7 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 
 安装后 8 个 hook + 5 个 skill + `artifact-writer` agent 自动注册，零配置。重启 Claude Code 生效。
 
-> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault，artifact 将自动存储到 `$PACE_VAULT_PATH/projects/<项目名>/`，实现跨项目知识沉淀。
+> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault，artifact 将自动存储到 `$PACE_VAULT_PATH/projects/<项目名>/`，实现跨项目知识沉淀。`worktrees/<name>` 路径会自动归一到宿主项目名；也可用 `PACE_PROJECT_NAME` 显式指定项目名。
 
 ---
 
@@ -88,6 +88,7 @@ brainstorming（需求探索 + 方案设计）
 设置 `PACE_VAULT_PATH` 后解锁跨项目知识管理：
 
 - Artifact 自动存储到 `projects/<项目名>/`
+- Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
 - 兼容 Obsidian Tasks / Dataview 跨项目查询
@@ -227,6 +228,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.8 | 2026-05-06 | 修复 worktree artifact 路由：`worktrees/<name>` 归一到宿主项目名，优先沿用 `$PACE_VAULT_PATH/projects/<project>/changes` |
 | v6.0.7 | 2026-05-06 | agent 显示名改为 `artifact-writer` 并添加 `color: orange`；审计 skill 改为 `audit`；legacy v5 活跃分支统一提示迁移/桥接 |
 | v6.0.6 | 2026-05-05 | 将 `artifact-writer` 默认提升为 `effort: max`；新增 production release gate（20 个结构性用例，不含 D2）；production 资源预算改为 warning，TC-D2 作为内容保真 benchmark |
 | v6.0.5 | 2026-05-05 | 收紧 `create-chg` 必填字段失败路径，明确 `record-finding body` 必须原样写入，并补强 fixture unchanged 验证 |
@@ -246,4 +248,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.7 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.8 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

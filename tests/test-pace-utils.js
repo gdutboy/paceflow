@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -15,7 +15,7 @@ const t = createTestRunner('pace-test');
 const { test, makeTmpDir } = t;
 
 // ============================================================
-// 1. isPaceProject() — 7 个测试
+// 1. isPaceProject()
 // ============================================================
 console.log('\n--- isPaceProject ---');
 
@@ -138,7 +138,7 @@ test('文件不存在 → null', () => {
 });
 
 // ============================================================
-// 5. getProjectName() — 2 个测试
+// 5. getProjectName()
 // ============================================================
 console.log('\n--- getProjectName ---');
 
@@ -150,8 +150,16 @@ test('已小写无空格 → 原样返回', () => {
   assert.strictEqual(getProjectName('/foo/paceflow-hooks'), 'paceflow-hooks');
 });
 
+test('worktrees/<name> 路径 → 宿主项目名', () => {
+  assert.strictEqual(getProjectName('/foo/paceflow-hooks/worktrees/smoke-test'), 'paceflow-hooks');
+});
+
+test('.claude/worktrees/<name> 路径 → .claude 父级项目名', () => {
+  assert.strictEqual(getProjectName('/foo/paceflow/.claude/worktrees/smoke-test'), 'paceflow');
+});
+
 // ============================================================
-// 6. getArtifactDir() — 4 个测试
+// 6. getArtifactDir()
 // ============================================================
 console.log('\n--- getArtifactDir ---');
 
@@ -188,6 +196,31 @@ test('新项目（无 artifact）→ vault 目录', () => {
   const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
   const expected = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   assert.strictEqual(getArtifactDir(dir), expected);
+});
+
+test('worktree 有本地 changes 时仍优先沿用宿主 vault artifact', () => {
+  const projectName = `pace-worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const root = makeTmpDir('gad-worktree-root');
+  const worktree = path.join(root, projectName, 'worktrees', 'smoke');
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  fs.mkdirSync(path.join(worktree, 'changes'), { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
+  t.tmpDirs.push(vaultDir);
+
+  assert.deepStrictEqual(getProjectNameCandidates(worktree).slice(0, 2), [projectName, 'smoke']);
+  assert.strictEqual(getArtifactDir(worktree), vaultDir);
+});
+
+test('worktree 无本地 artifact 但宿主 vault 有 changes → artifact', () => {
+  const projectName = `pace-worktree-signal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const root = makeTmpDir('signal-worktree-root');
+  const worktree = path.join(root, projectName, 'worktrees', 'smoke');
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
+  t.tmpDirs.push(vaultDir);
+
+  assert.strictEqual(isPaceProject(worktree), 'artifact');
 });
 
 // ============================================================

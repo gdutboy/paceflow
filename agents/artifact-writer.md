@@ -144,7 +144,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 - 无 `changes/` 目录 → 报告 `not-pace-project` 并退出
 - **禁止**创建 base `changes/` 来初始化项目；仅 `changes/findings/` / `changes/corrections/` 子目录可在 base `changes/` 已存在时懒创建
 
-`$ARTIFACT_DIR` 优先 vault 路径 `${VAULT_PATH}/projects/<project>/`，fallback 当前 cwd。
+`$ARTIFACT_DIR` 由主 session / hooks 解析后传入。解析规则：优先 vault 路径 `${VAULT_PATH}/projects/<project>/`；`worktrees/<name>` 路径归一到宿主 `<project>`；可用 `PACE_PROJECT_NAME` 显式指定；fallback 当前 cwd。
 
 ## 5 类指令
 

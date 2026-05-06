@@ -96,14 +96,64 @@ function normalizePath(p) {
   return isWin ? n.toLowerCase() : n;
 }
 
-/** 从 cwd 提取项目名（小写+连字符格式） */
+function sanitizeProjectName(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function worktreeBaseDir(cwd) {
+  const resolved = path.resolve(cwd || '');
+  const parts = resolved.split(path.sep);
+  for (let i = parts.length - 2; i >= 0; i--) {
+    if (parts[i] !== 'worktrees') continue;
+    let baseParts = parts.slice(0, i);
+    if (baseParts[baseParts.length - 1] === '.claude') baseParts = baseParts.slice(0, -1);
+    if (baseParts.length === 0) return null;
+    return baseParts.join(path.sep) || path.sep;
+  }
+  return null;
+}
+
+function addProjectCandidate(candidates, name) {
+  const normalized = sanitizeProjectName(name);
+  if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+}
+
+function getProjectNameCandidates(cwd) {
+  const candidates = [];
+  const safeCwd = cwd || '';
+  addProjectCandidate(candidates, process.env.PACE_PROJECT_NAME);
+  addProjectCandidate(candidates, process.env.PACEFLOW_PROJECT_NAME);
+
+  const wtBase = worktreeBaseDir(safeCwd);
+  if (wtBase) addProjectCandidate(candidates, path.basename(wtBase));
+
+  // Git worktree outside a conventional worktrees/ directory still exposes the
+  // main checkout through .git -> gitdir: <main>/.git/worktrees/<name>.
+  try {
+    const gitFile = path.join(safeCwd, '.git');
+    if (fs.existsSync(gitFile) && fs.statSync(gitFile).isFile()) {
+      const content = fs.readFileSync(gitFile, 'utf8');
+      const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
+      if (match) {
+        const gitDir = path.resolve(safeCwd, match[1].trim());
+        const marker = `${path.sep}.git${path.sep}worktrees${path.sep}`;
+        const idx = gitDir.indexOf(marker);
+        if (idx >= 0) addProjectCandidate(candidates, path.basename(path.dirname(gitDir.slice(0, idx + 5))));
+      }
+    }
+  } catch(e) {}
+
+  addProjectCandidate(candidates, path.basename(safeCwd));
+  return candidates.length > 0 ? candidates : ['unknown-project'];
+}
+
+/** 从 cwd 提取项目名（小写+连字符格式）；worktree 路径归一到宿主项目名 */
 function getProjectName(cwd) {
   // I-1: 空值/极端路径防御
   if (!cwd || cwd === '.' || cwd === '/' || cwd === '\\') return 'unknown-project';
   // W-code-3: Windows 盘符根路径守卫（path.basename('C:\\') 返回空字符串）
   if (/^[A-Z]:\\\\?$/i.test(cwd)) return 'unknown-project';
-  const name = path.basename(cwd).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return name || 'unknown-project';
+  return getProjectNameCandidates(cwd)[0] || 'unknown-project';
 }
 
 // T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
@@ -118,17 +168,20 @@ let _artifactDirCache = { cwd: null, dir: null };
 function getArtifactDir(cwd) {
   if (_artifactDirCache.cwd === cwd) return _artifactDirCache.dir;
   let result = cwd;
+  const projectCandidates = getProjectNameCandidates(cwd);
   // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 分支，直接走 CWD 路径
   if (VAULT_PATH) {
-    const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-    try {
-      // v6 项目信号：vault 项目目录存在 changes/
-      if (fs.existsSync(path.join(vaultDir, 'changes'))) {
-        result = vaultDir;
-        _artifactDirCache = { cwd, dir: result };
-        return result;
-      }
-    } catch(e) {}
+    for (const projectName of projectCandidates) {
+      const vaultDir = path.join(VAULT_PATH, 'projects', projectName);
+      try {
+        // v6 项目信号：vault 项目目录存在 changes/
+        if (fs.existsSync(path.join(vaultDir, 'changes'))) {
+          result = vaultDir;
+          _artifactDirCache = { cwd, dir: result };
+          return result;
+        }
+      } catch(e) {}
+    }
   }
   // CWD 有 changes/ → CWD
   if (fs.existsSync(path.join(cwd, 'changes'))) {
@@ -136,7 +189,7 @@ function getArtifactDir(cwd) {
     return cwd;
   }
   // 新项目 → vault（有 VAULT_PATH 时）或 CWD（无 VAULT_PATH）
-  result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', getProjectName(cwd)) : cwd;
+  result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectCandidates[0]) : cwd;
   _artifactDirCache = { cwd, dir: result };
   return result;
 }
@@ -230,10 +283,12 @@ function isPaceProject(cwd) {
     if (fs.existsSync(path.join(cwd, 'changes'))) return 'artifact';
     // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
     if (VAULT_PATH) {
-      const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-      try {
-        if (fs.existsSync(path.join(vaultDir, 'changes'))) return 'artifact';
-      } catch(e) {}
+      for (const projectName of getProjectNameCandidates(cwd)) {
+        const vaultDir = path.join(VAULT_PATH, 'projects', projectName);
+        try {
+          if (fs.existsSync(path.join(vaultDir, 'changes'))) return 'artifact';
+        } catch(e) {}
+      }
     }
     // 信号 2（强）：Superpowers plan 文件
     if (hasPlanFiles(cwd)) return 'superpowers';
@@ -705,7 +760,7 @@ module.exports = {
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
-  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, normalizePath,
+  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath,
   // 项目检测与路径
   isPaceProject, isTeammate, getArtifactDir, ensureProjectInfra,
   // 文件读写

@@ -32,6 +32,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 
 `$ARTIFACT_DIR` 解析：
 - 优先 vault 路径 `${VAULT_PATH}/projects/<project-name>/`
+- `worktrees/<name>` 路径归一到宿主 `<project-name>`；可用 `PACE_PROJECT_NAME` 显式指定
 - fallback 当前 cwd
 
 ---
