@@ -7,7 +7,7 @@
  * 主 session 用法：
  *   const runner = require('./helpers/subagent-runner');
  *   const ctx = runner.prepare('cases/phase-a/tc-a1-create-chg.yaml');
- *   // 主 session 用 Agent tool 派遣 paceflow-artifact-writer，prompt = ctx.agentPrompt
+ *   // 主 session 用 Agent tool 派遣 artifact-writer，prompt = ctx.agentPrompt
  *   // 收到 agent 报告后：
  *   const result = runner.verifyAndReport(ctx, agentReport);
  *   runner.teardown(ctx);
@@ -111,10 +111,10 @@ create-chg 资源路径要求：
 - 立即报告 \`status: FAILED\` / \`error_code: out-of-scope\`
 - 禁止 Write / Edit；files_created / files_modified 必须为空`;
 
-  return `执行 paceflow-artifact-writer 指令：${op}
+  return `执行 artifact-writer 指令：${op}
 
 最终输出硬约束（机械检查）：
-- 最终回答第一行必须完全等于：## paceflow-artifact-writer 报告
+- 最终回答第一行必须完全等于：## artifact-writer 报告
 - 禁止输出 ## 报告 / ## 执行报告 / ## ${op} 报告 / 任何标题变体
 - 标题前不能有任何自然语言、空行或说明；不匹配会导致 report_title_strict FAIL
 - 即使发现错误，也必须先输出标题；错误解释放在标题之后
@@ -139,7 +139,7 @@ ${fieldsJson}
 
 操作要求：
 - 严格按 ${op} 规范执行
-- 操作完成后按报告格式输出，第一行必须是 \`## paceflow-artifact-writer 报告\`
+- 操作完成后按报告格式输出，第一行必须是 \`## artifact-writer 报告\`
 - 不做超出 ${op} 范围的额外修改
 - 资源预算是硬约束的一部分；避免为报告展示而额外 Read/Bash
 ${unknownOperationHints}

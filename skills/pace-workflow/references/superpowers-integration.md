@@ -76,7 +76,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 | **建议测试** | 自动化或手动 | 业务逻辑函数、工具函数 |
 | **可选测试** | 手动验证即可 | UI 组件、一次性脚本 |
 
-验证替代：无测试框架时通过 Terminal/Browser 手动验证。通过后派 `paceflow-artifact-writer update-chg action=verify` 记录验证摘要；walkthrough 只保留索引行。
+验证替代：无测试框架时通过 Terminal/Browser 手动验证。通过后派 `artifact-writer update-chg action=verify` 记录验证摘要；walkthrough 只保留索引行。
 
 ---
 

@@ -9,10 +9,10 @@ description: >
 
 # Artifact 文件管理规则
 
-PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `paceflow-artifact-writer` 执行。
+PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
 
 权威规范：
-- Agent prompt：`agents/paceflow-artifact-writer.md`
+- Agent prompt：`agents/artifact-writer.md`
 - Schema / 索引模板：`agents/references/artifact-writer-spec.md`
 - 操作步骤：`agents/references/instructions/*.md`
 
@@ -49,7 +49,7 @@ changes/
 
 | 目标 | 操作 |
 |------|------|
-| 创建 CHG/HOTFIX | 派 `paceflow-artifact-writer`，operation=`create-chg` |
+| 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
 | 批准 C 阶段 | operation=`update-chg`，action=`approve` |
 | 更新任务状态 | operation=`update-chg`，section=`tasks`，action=`update-status` |
 | 追加工作记录/实施说明 | operation=`update-chg`，section=`work-record` / `implementation`，action=`append` |
@@ -123,7 +123,7 @@ changes/
 创建变更：
 
 ```text
-派 paceflow-artifact-writer:
+派 artifact-writer:
 operation: create-chg
 title: <标题>
 tasks:
@@ -136,7 +136,7 @@ technical-decision: <How>
 批准：
 
 ```text
-派 paceflow-artifact-writer:
+派 artifact-writer:
 operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: approve
@@ -145,7 +145,7 @@ action: approve
 验证：
 
 ```text
-派 paceflow-artifact-writer:
+派 artifact-writer:
 operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: verify
@@ -155,7 +155,7 @@ verify-summary: <验证通过摘要>
 归档：
 
 ```text
-派 paceflow-artifact-writer:
+派 artifact-writer:
 operation: archive-chg
 target: CHG-YYYYMMDD-NN
 ```

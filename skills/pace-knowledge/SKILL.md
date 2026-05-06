@@ -4,7 +4,7 @@ effort: medium
 description: >
   PACEflow 知识库笔记管理。自动激活：(1) 创建/更新 thoughts/ 或 knowledge/ 笔记，
   (2) 从 changes/findings 详情提取知识到 knowledge/，(3) 用户被纠正时通过
-  paceflow-artifact-writer 记录 correction 并双写
+  artifact-writer 记录 correction 并双写
   knowledge/，(4) 技术调研记录到 findings。定义 frontmatter 结构和 L0/L1/L2 信息分层。
 ---
 
@@ -147,9 +147,9 @@ sources:
 
 此 SOP **不仅**由用户手动触发。以下场景应**主动评估**是否需要提取：
 
-- **记录新 finding 时**（由 `paceflow-artifact-writer record-finding` 触发）：recording finding → 评估通用性 → 通用则执行本 SOP
+- **记录新 finding 时**（由 `artifact-writer record-finding` 触发）：recording finding → 评估通用性 → 通用则执行本 SOP
 - **Corrections 双写时**：`record-correction` → 评估通用性 → 通用则提取到 knowledge/
-- **审查发现时**（由 `paceflow:paceflow-audit` Phase 3 触发）：P0/P1 发现 → 评估是否为通用模式
+- **审查发现时**（由 `paceflow:audit` Phase 3 触发）：P0/P1 发现 → 评估是否为通用模式
 
 > artifact-management 的"finding/correction 联动检查"会指引 AI 在 agent 写入详情后主动评估并触发本 SOP。
 
@@ -159,7 +159,7 @@ sources:
 
 被用户纠正时（"不对"、"别这样"、"错了"等），CLAUDE.md G-3 要求通过 artifact writer 记录 correction，并评估 knowledge 双写：
 
-1. **记录 correction**：派 `paceflow-artifact-writer record-correction`，写入 `changes/corrections/<id>.md` 和 `corrections.md` 索引，包含错误行为 + 正确做法 + 触发场景 + 根本原因
+1. **记录 correction**：派 `artifact-writer record-correction`，写入 `changes/corrections/<id>.md` 和 `corrections.md` 索引，包含错误行为 + 正确做法 + 触发场景 + 根本原因
 2. **评估通用性**：该纠正是否跨项目通用？
    - **通用**（如 AI 验证习惯、决策偏差模式）→ 步骤 3
    - **仅限本项目**（如特定 API 用法）→ agent 输入 `project-scope: project-only`，结束

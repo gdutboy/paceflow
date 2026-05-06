@@ -9,7 +9,7 @@ description: >
 
 # PACE 协议工作流程
 
-v6 的核心变化：artifact 由 `paceflow-artifact-writer` agent 创建和维护。主 session 负责分析、执行代码、验证和向用户确认；artifact 写入动作统一派 agent。
+v6 的核心变化：artifact 由 `artifact-writer` agent 创建和维护。主 session 负责分析、执行代码、验证和向用户确认；artifact 写入动作统一派 agent。
 
 ---
 
@@ -48,7 +48,7 @@ P 阶段产物：
 
 ### 有 plan 文件
 
-调用 `paceflow:pace-bridge`。bridge 的唯一职责是读取 plan 并派 `paceflow-artifact-writer create-chg`，生成：
+调用 `paceflow:pace-bridge`。bridge 的唯一职责是读取 plan 并派 `artifact-writer create-chg`，生成：
 
 - `changes/chg-yyyymmdd-nn.md`
 - `task.md` wikilink 索引

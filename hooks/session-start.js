@@ -60,7 +60,7 @@ if (eventType === 'compact') {
         lines.push('');
         lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
         snap.nativePlans.forEach(p => lines.push(`  ${p}`));
-        lines.push('请执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
+        lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
       }
       // AI 主动记录的 native plan 路径（优先于扫描结果）
       const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
@@ -70,7 +70,7 @@ if (eventType === 'compact') {
           if (planPath) {
             lines.push('');
             lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-            lines.push('请执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
+            lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
           }
         }
       } catch(e) {}
@@ -122,7 +122,7 @@ if (eventType !== 'compact') {
       if (planPath) {
         process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
         process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
-        process.stdout.write(`请执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。\n\n`);
+        process.stdout.write(`请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。\n\n`);
       }
     }
   } catch(e) {}
@@ -360,7 +360,7 @@ if (taskFullCached) {
           const fileList = unsyncedPlans.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
           process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
           process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
-          process.stdout.write(`请在派 subagent 前执行桥接：Read plan → 派 paceflow-artifact-writer create-chg 创建 changes/<id>.md 与索引。\n`);
+          process.stdout.write(`请在派 subagent 前执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引。\n`);
           process.stdout.write(`详见 /pace-bridge skill。\n\n`);
           log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SUPERPOWERS_BRIDGE_HINT | plans: ${fileList}\n`);
         }

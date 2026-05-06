@@ -1,11 +1,11 @@
 ---
-name: paceflow-audit
+name: audit
 effort: high
 description: >
   PACEflow 系统全面审查框架。启动 5-agent 并行团队审查代码质量、流程完整性、
   一致性、Skill模板同步和架构优化，产出去重分级的审查报告。当用户说"完整分析"、
   "全面审查"、"全面检查"、"审计"、"代码审查"、"full audit"、"code review"、
-  "comprehensive review"或调用 /paceflow-audit 时触发。版本发布前的质量门控也应使用此 skill。
+  "comprehensive review"或调用 /audit 时触发。版本发布前的质量门控也应使用此 skill。
 ---
 
 # PACEflow 全面审查
@@ -13,7 +13,7 @@ description: >
 ## 触发场景
 
 - 用户说"完整分析"、"全面审查"、"全面检查"
-- 用户调用 `/paceflow-audit`
+- 用户调用 `/audit`
 - 版本发布前的质量门控
 
 ## 审查范围
@@ -100,7 +100,7 @@ W/I 级快速扫描去重合并，不逐一验证。
 
 ```mermaid
 flowchart TD
-    A["/paceflow-audit 触发"] --> B["Phase 1: 5 subagent 并行审查"]
+    A["/audit 触发"] --> B["Phase 1: 5 subagent 并行审查"]
     B --> C1["Agent 1: 核心 Hook"]
     B --> C2["Agent 2: 生命周期 Hook"]
     B --> C3["Agent 3: 辅助 Hook + 工具链"]

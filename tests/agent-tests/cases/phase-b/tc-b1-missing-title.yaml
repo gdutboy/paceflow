@@ -21,7 +21,7 @@ input:
 expected:
   status: FAILED
   failure_reason_pattern: "(error_code|失败原因|错误类型).*missing-fields|missing-fields: title|缺少.*title|缺.*title"
-  report_title_strict: "## paceflow-artifact-writer 报告"
+  report_title_strict: "## artifact-writer 报告"
   files_created: []
   files_modified: []
   max_tokens: 40000

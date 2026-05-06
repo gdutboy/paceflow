@@ -122,7 +122,7 @@ archived-date: null
 ## 关联调研
 ```
 
-创建时不含 `APPROVED` / `VERIFIED`。批准和验证只能由 `paceflow-artifact-writer update-chg` 写入。
+创建时不含 `APPROVED` / `VERIFIED`。批准和验证只能由 `artifact-writer update-chg` 写入。
 
 ---
 

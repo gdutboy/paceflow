@@ -18,7 +18,7 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 `paceflow-artifact-writer create-chg` 扫描 `changes/` 后生成，主 session 不自行写入文件。
+ID 由 `artifact-writer create-chg` 扫描 `changes/` 后生成，主 session 不自行写入文件。
 
 ---
 

@@ -39,7 +39,7 @@ expected:
   # 主 session 收到 agent 报告后判断：SUCCESS+warning 还是 FAILED
   raw_must_contain: "wikilink"
   files_created_optional: "changes/findings/finding-{ISO_DATE}-tc-d5-*.md"
-  report_title_strict: "## paceflow-artifact-writer 报告"
+  report_title_strict: "## artifact-writer 报告"
   max_tokens: 40000
   max_duration_ms: 180000
 

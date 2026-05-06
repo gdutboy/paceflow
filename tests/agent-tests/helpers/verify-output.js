@@ -336,11 +336,11 @@ function verify(testCase, targetDir, variables, agentReport) {
   pushNumericLimit(validations, agentReport, 'tool_uses', exp.max_tool_uses, 'max_tool_uses', { warnOnly: isProductionPrompt });
 
   // 4.1 report_title_strict（字面匹配 agent 报告第一行标题）
-  // 默认值：## paceflow-artifact-writer 报告（spec 输出契约）
+  // 默认值：## artifact-writer 报告（spec 输出契约）
   // yaml 显式设为 false 可禁用此检查
   const titleStrict = exp.report_title_strict === false
     ? null
-    : (exp.report_title_strict || '## paceflow-artifact-writer 报告');
+    : (exp.report_title_strict || '## artifact-writer 报告');
   if (agentReport && titleStrict && agentReport.raw) {
     const lines = agentReport.raw.split(/\r?\n/);
     const firstLine = (lines[0] || '').trim();

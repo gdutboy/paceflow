@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, readFull, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, detectLegacyImplFormat, extractNewlyCompletedChgs, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -51,9 +51,6 @@ paceUtils.withStdinParsed((stdin) => {
 
   // v4.3.1: 仅 [ ]/[/]/[!] 算活跃任务，[x]/[-] 不算
   const hasActiveTasks = /- \[[ \/!]\]/.test(taskActiveContent);
-  // v4.3.2: C 阶段批准检查 — 有 [/] 进行中或 [!] 阻塞任务或 <!-- APPROVED --> 标记
-  const hasApproval = /- \[[\/!]\]/.test(taskActiveContent) || /^<!-- APPROVED -->$/m.test(taskActiveContent);
-
   const isCodeFile = CODE_EXTS.some(ext => filePath.endsWith(ext));
   const fileName = filePath ? path.basename(filePath) : '';
 
@@ -149,7 +146,6 @@ paceUtils.withStdinParsed((stdin) => {
   }
 
   // v6: 项目一旦有 changes/，所有执行前检查只看详情文件与索引 wikilink。
-  // v6 已在上方返回，下面仅保留 legacy fallback。
   if (paceSignal === 'artifact') {
     const activeEntriesAll = getActiveChangeEntries(cwd);
     const actionableEntries = activeEntriesAll.filter(e => {
@@ -166,7 +162,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
         !hasNonNullVerifiedDate(oldString || '');
       if (addedApproved || addedVerified || setVerifiedDate) {
-        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 paceflow-artifact-writer 执行 ${addedApproved ? 'update-chg action=approve' : 'update-chg action=verify'}。`;
+        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve' : 'update-chg action=verify'}。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
@@ -185,8 +181,8 @@ paceUtils.withStdinParsed((stdin) => {
       if (actionableEntries.length === 0) {
         const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
         const reason = doneEntries.length > 0
-          ? `v6 项目当前只有已完成/跳过索引，请先派 paceflow-artifact-writer archive-chg 归档，或 create-chg 创建新的变更后再写代码。${FORMAT_SNIPPETS.archiveOp}`
-          : `v6 项目没有活跃 CHG/HOTFIX。请派 paceflow-artifact-writer create-chg 创建 changes/<id>.md，并同步 task.md / implementation_plan.md 索引后再写代码。`;
+          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer archive-chg 归档，或 create-chg 创建新的变更后再写代码。${FORMAT_SNIPPETS.archiveOp}`
+          : `v6 项目没有活跃 CHG/HOTFIX。请派 artifact-writer create-chg 创建 changes/<id>.md，并同步 task.md / implementation_plan.md 索引后再写代码。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
@@ -196,7 +192,7 @@ paceUtils.withStdinParsed((stdin) => {
       const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
       if (mismatched.length > 0) {
         const ids = mismatched.map(e => e.id).join(', ');
-        const reason = `v6 索引不一致：${ids} 必须同时存在于 task.md 与 implementation_plan.md 活跃区。请派 paceflow-artifact-writer 修复索引。`;
+        const reason = `v6 索引不一致：${ids} 必须同时存在于 task.md 与 implementation_plan.md 活跃区。请派 artifact-writer 修复索引。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -206,7 +202,7 @@ paceUtils.withStdinParsed((stdin) => {
       const missingDetails = actionableEntries.filter(e => !e.detail || e.detail.missing);
       if (missingDetails.length > 0) {
         const ids = missingDetails.map(e => e.id).join(', ');
-        const reason = `v6 详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 paceflow-artifact-writer create-chg 或修复 wikilink。`;
+        const reason = `v6 详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -216,7 +212,7 @@ paceUtils.withStdinParsed((stdin) => {
       const approvedEntries = actionableEntries.filter(e => isChangeApproved(e.detail));
       if (approvedEntries.length === 0) {
         const ids = actionableEntries.map(e => e.id).join(', ');
-        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请询问用户批准后派 paceflow-artifact-writer update-chg action=approve。${FORMAT_SNIPPETS.approved}`;
+        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请询问用户批准后派 artifact-writer update-chg action=approve。${FORMAT_SNIPPETS.approved}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -229,7 +225,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。请派 paceflow-artifact-writer update-chg action=update-status，将当前任务标为 [/] 并联动 frontmatter status。`;
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。请派 artifact-writer update-chg action=update-status，将当前任务标为 [/] 并联动 frontmatter status。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -255,72 +251,25 @@ paceUtils.withStdinParsed((stdin) => {
     return;
   }
 
-  // legacy fallback：impl_plan 详情守门
-  if (toolName === 'Edit' && paceSignal && fileName === 'implementation_plan.md') {
-    const planFull = readFull(cwd, 'implementation_plan.md');
-
-    // W-6: 使用共享提取函数（消除与 post-tool-use.js 的重复）
-    const newlyCompleted = extractNewlyCompletedChgs(oldString, newString);
-    if (newlyCompleted.length > 0 && planFull) {
-      const missing = newlyCompleted.filter(id => {
-        const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
-      });
-      if (missing.length > 0) {
-        const reason = `不能将 ${missing.join(', ')} 标记为已完成 [x]：缺少详情段落。请先在 implementation_plan.md 添加详情记录具体变更内容，再标记索引为 [x]。\n格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_DETAIL${teammateTag} | missing: ${missing.join(', ')}\n`);
-        return;
-      }
-    }
-
-    // legacy fallback：创建阶段详情守门
-    const newPendingIds = (newString.match(/^- \[[ \/]\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
-      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
-    const oldAnyIds = new Set((oldString.match(/^- \[.\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
-      .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
-    const newlyAddedIds = newPendingIds.filter(id => !oldAnyIds.has(id));
-    if (newlyAddedIds.length > 0) {
-      const missing325 = newlyAddedIds.filter(id => {
-        const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // 同一次 Edit 中同时包含索引和详情 → 放行
-        if (new RegExp(`^### ${esc}`, 'm').test(newString)) return false;
-        // 已有详情段落 → 放行
-        if (planFull && new RegExp(`^### ${esc}`, 'm').test(planFull)) return false;
-        return true;
-      });
-      if (missing325.length > 0) {
-        const reason = `添加新变更索引 ${missing325.join(', ')} 时缺少详情段落。请先添加详情段落，再添加索引。\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_IMPL_CREATE${teammateTag} | missing: ${missing325.join(', ')}\n`);
-        return;
-      }
-    }
-
-    // v5.0.2: impl_plan 旧格式检测 DENY — 阻止在 emoji/表格格式基础上编辑
-    if (planFull) {
-      const archiveMatch = planFull.match(ARCHIVE_PATTERN);
-      const implActive = archiveMatch ? planFull.slice(0, archiveMatch.index) : planFull;
-      // W-5: 使用共享检测函数（消除与 session-start.js 的重复）
-      const { hasEmoji, hasTable } = detectLegacyImplFormat(implActive);
-      if (hasEmoji || hasTable) {
-        const format = hasEmoji ? 'emoji 状态标记' : '表格格式';
-        const reason = `implementation_plan.md 活跃区检测到旧的${format}，hook 无法识别。请先将内容迁移到新格式再编辑。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n详情格式：${FORMAT_SNIPPETS.implDetail}\n${FORMAT_SNIPPETS.skillRef}`;
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_OLD_FORMAT${teammateTag} | file: ${filePath} | format: ${format}\n`);
-        return;
-      }
-    }
+  // v6-only：有 legacy task.md 但没有 changes/ 时，不再给 v5 自修提示。
+  if (paceSignal && taskFileExists && taskActiveContent.trim() && isInsideProject && (isCodeFile || ARTIFACT_FILES.includes(fileName))) {
+    const reason = `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md / implementation_plan.md wikilink 索引。不要继续在 task.md / implementation_plan.md 手写 v5 详情、APPROVED 或 VERIFIED。`;
+    const output = denyOrHint(reason);
+    process.stdout.write(JSON.stringify(output));
+    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_LEGACY_ACTIVE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+    return;
   }
 
   // v5.0.1: native plan 桥接引导 — 检测 .pace/current-native-plan + task.md 无任务
   if (isCodeFile && isInsideProject && !hasActiveTasks && paceSignal) {
     const nativePlan = getNativePlanPath(cwd);
     if (nativePlan) {
-      const reason = `检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → Edit task.md 添加任务 + <!-- APPROVED --> → Edit implementation_plan.md 添加 CHG 索引 + 详情 → 删除 .pace/current-native-plan。`;
+      let createdFiles = [];
+      if (!taskFileExists) {
+        try { createdFiles = createTemplates(cwd); } catch(e) {}
+      }
+      const createdMsg = createdFiles.length > 0 ? `已自动创建 v6 Artifact 模板（${createdFiles.join(', ')}）。` : '';
+      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认，再派 update-chg action=approve；完成后删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_NATIVE_PLAN${teammateTag} | plan: ${nativePlan}\n`);
@@ -359,11 +308,11 @@ paceUtils.withStdinParsed((stdin) => {
         } else {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
-            ? `检测到未同步的 Superpowers 计划文件，请将计划中的任务同步到 task.md 后再写代码。详见 paceflow:pace-bridge skill。`
+            ? `检测到未同步的 Superpowers 计划文件，请调用 paceflow:pace-bridge：Read plan → 派 artifact-writer create-chg 创建 v6 CHG 后再写代码。`
             : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
         }
       } else {
-        reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请用 Write 创建 task.md 定义任务（其余 Artifact 文件将在后续操作中自动创建）。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;
+        reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引。\n${FORMAT_SNIPPETS.skillRef}`;
       }
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
@@ -378,7 +327,7 @@ paceUtils.withStdinParsed((stdin) => {
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先在 task.md 中定义任务，获取用户批准后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve 后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
@@ -391,7 +340,7 @@ paceUtils.withStdinParsed((stdin) => {
       // I-9: 变量名语义化
       const isNewFileForHint = toolName === 'Write' && !fs.existsSync(filePath);
       const displayCountForHint = codeCount + (isNewFileForHint ? 1 : 0);
-      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件，如果这是正式项目，建议先创建 PACE Artifact 文件（task.md 等）再继续写代码。`;
+      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件，如果这是正式项目，建议先派 artifact-writer create-chg 建立 v6 CHG 后再继续写代码。`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -408,32 +357,9 @@ paceUtils.withStdinParsed((stdin) => {
     return;
   }
 
-  // v4.3.2: C 阶段检查 — 有活跃任务但未获批准时 deny
-  if (isCodeFile && isInsideProject && hasActiveTasks && !hasApproval) {
-    const reason = `task.md 有待做任务但未获用户批准。请先执行 C 阶段（Check）：询问用户是否批准计划，获批后在 task.md 活跃区添加 <!-- APPROVED --> 标记或将任务标为 [/] 进行中。\n${FORMAT_SNIPPETS.approved}\n状态：${FORMAT_SNIPPETS.statusHelp}\n⚠️ 请直接询问用户是否批准当前计划，而非反复尝试写代码。`;
-    const output = denyOrHint(reason);
-    process.stdout.write(JSON.stringify(output));
-    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_C_PHASE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
-    return;
-  }
-
-  // v4.4.3: E 阶段前提检查 — implementation_plan.md 需有 [/] 进行中的变更索引
-  if (isCodeFile && isInsideProject && hasActiveTasks && hasApproval) {
-    const planActive = readActive(cwd, 'implementation_plan.md');
-    if (planActive === null || !/^- \[\/\]/m.test(planActive)) {
-      const reason = planActive === null
-        ? `implementation_plan.md 不存在。请先在 A 阶段创建变更索引（CHG-YYYYMMDD-NN），标记为 [/] 进行中后再写代码。\n索引格式：${FORMAT_SNIPPETS.implIndex}\n${FORMAT_SNIPPETS.formatRule}`
-        : `implementation_plan.md 无进行中的变更索引（[/]）。请先将当前变更的索引状态从 [ ] 改为 [/] 后再写代码。\n${FORMAT_SNIPPETS.formatRule}\n索引格式：${FORMAT_SNIPPETS.implIndex}`;
-      const output = denyOrHint(reason);
-      process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_E_PHASE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
-      return;
-    }
-  }
-
-  // 正常情况：注入 task.md 活跃区
+  // 非 v6 的 legacy task.md 不再作为可执行上下文注入。
   if (taskFileExists && taskActiveContent) {
-    const ctx = `当前任务状态：\n${taskActiveContent}`;
+    const ctx = `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。`;
     const output = {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",

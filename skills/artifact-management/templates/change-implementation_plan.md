@@ -1,6 +1,6 @@
 # v6 CHG 详情模板
 
-> 保留此文件名是为了兼容旧 skill 引用；v6 不再把变更详情写进 `implementation_plan.md`。真正的详情文件由 `paceflow-artifact-writer create-chg` 创建在 `changes/<id>.md`。
+> 保留此文件名是为了兼容旧 skill 引用；v6 不再把变更详情写进 `implementation_plan.md`。真正的详情文件由 `artifact-writer create-chg` 创建在 `changes/<id>.md`。
 
 ```markdown
 ---

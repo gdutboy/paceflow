@@ -18,7 +18,7 @@ MODE=harness OUTDIR=/tmp/paceflow-agent-baseline tests/agent-tests/run-agent-cli
 >
 > 每个 case 的流程固定为：
 > 1. `prepare` 输出 agent prompt
-> 2. 在 Claude Code 主 session 派遣 `paceflow-artifact-writer`
+> 2. 在 Claude Code 主 session 派遣 `artifact-writer`
 > 3. 将 agent 报告保存为 `/tmp/paceflow-agent-baseline/<tc-id>-report.json`
 > 4. `verify`
 > 5. `teardown`

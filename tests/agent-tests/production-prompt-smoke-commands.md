@@ -9,7 +9,7 @@
 > warning，用于发现异常回环，不作为发布阻断。TC-D2 large-body 不放入 hard gate，
 > 单独作为模型内容保真 / 长文本搬运能力 benchmark。
 >
-> Production 模式下，`## paceflow-artifact-writer 报告` 必须存在；若 agent 在标题前添加
+> Production 模式下，`## artifact-writer 报告` 必须存在；若 agent 在标题前添加
 > 自然语言前缀，runner 记录 `report_title_prefix_warning`，不阻断结构/功能断言。
 
 ```bash
@@ -52,7 +52,7 @@ MODEL=sonnet EFFORT=max MODE=production tests/agent-tests/run-agent-cli-suite.sh
 脚本默认使用 Claude CLI 中的插件限定 agent 名：
 
 ```bash
-AGENT_NAME=paceflow:paceflow-artifact-writer MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
+AGENT_NAME=paceflow:artifact-writer MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
 ```
 
 不要并行执行使用同一 fixture 的 `prepare`。多个 case 共用 `/tmp/test-vault/empty-v6`，

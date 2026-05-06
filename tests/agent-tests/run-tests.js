@@ -84,11 +84,11 @@ function cmdPrepare(yamlPath, ...prepareArgs) {
   console.log(`Prompt mode：${ctx.promptMode}`);
   if (options.promptFile) console.log(`Prompt file：${path.resolve(options.promptFile)}`);
   console.log('═'.repeat(70));
-  console.log('\n--- AGENT PROMPT（拷给主 session 派遣 paceflow-artifact-writer）---\n');
+  console.log('\n--- AGENT PROMPT（拷给主 session 派遣 artifact-writer）---\n');
   console.log(ctx.agentPrompt);
   console.log('\n' + '═'.repeat(70));
   console.log('下一步：');
-  console.log(`  1. 主 session 用 Agent tool 派 paceflow-artifact-writer，prompt 见上`);
+  console.log(`  1. 主 session 用 Agent tool 派 artifact-writer，prompt 见上`);
   console.log(`  2. 收到 agent 报告后，存为 JSON：{"status":"SUCCESS","tokens":N,"tool_uses":N,"duration_ms":N,"raw":"..."}`);
   console.log(`  3. node run-tests.js verify ${path.relative(ROOT, ctx.yamlPath)} <report.json>`);
   console.log(`  4. 完成后清理：node run-tests.js teardown ${path.relative(ROOT, ctx.yamlPath)}`);
@@ -287,7 +287,7 @@ function cmdDummy() {
     tokens: 5000,
     tool_uses: 7,
     duration_ms: 12000,
-    raw: '## paceflow-artifact-writer 报告\n**操作**：create-chg\n（mock 报告，dummy 自测用）',
+    raw: '## artifact-writer 报告\n**操作**：create-chg\n（mock 报告，dummy 自测用）',
   };
   const dummyCtx = {
     ...ctx,

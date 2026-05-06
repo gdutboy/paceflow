@@ -113,6 +113,15 @@ function codeEditStdin(dir) {
   return { tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'src.js'), old_string: 'a', new_string: 'b' } };
 }
 
+function makeLegacyProject(label) {
+  const dir = makeTmpDir(label);
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'console.log(1)\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'console.log(2)\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'c.js'), 'console.log(3)\n', 'utf8');
+  return dir;
+}
+
 console.log('\n--- session-start.js ---');
 
 test('1. 非 PACE 项目静默放行', () => {
@@ -228,6 +237,29 @@ test('9b. create-chg 写 verified-date null → 放行', () => {
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
+test('9c. native plan 桥接提示走 artifact writer', () => {
+  const dir = makeTmpDir('ptu-native-plan');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.writeFileSync(path.join(dir, '.pace', 'current-native-plan'), path.join(dir, 'plan.md'), 'utf8');
+  fs.writeFileSync(path.join(dir, 'plan.md'), '# Native plan\n', 'utf8');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
+  assert.ok(r.stdout.includes('deny'));
+  assert.ok(r.stdout.includes('artifact-writer create-chg'));
+  assert.ok(!r.stdout.includes('Edit task.md'));
+  assert.ok(fs.existsSync(path.join(dir, 'changes')), 'native plan deny 前应创建 v6 changes/ 基础目录');
+});
+
+test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
+  const dir = makeLegacyProject('ptu-legacy');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
+  assert.ok(r.stdout.includes('deny'));
+  assert.ok(r.stdout.includes('legacy task.md'));
+  assert.ok(r.stdout.includes('migrate/batch-archive-v5.js'));
+  assert.ok(r.stdout.includes('artifact-writer create-chg'));
+  assert.ok(!r.stdout.includes('补齐实施详情'));
+});
+
 console.log('\n--- stop.js ---');
 
 test('10. v6 未完成详情任务 → exit 2', () => {
@@ -270,6 +302,16 @@ test('14. .pace/disabled → exit 0', () => {
   assert.strictEqual(r.code, 0);
 });
 
+test('14b. legacy v5 Stop 只提示迁移或桥接', () => {
+  const dir = makeLegacyProject('stop-legacy');
+  const r = runHook('stop.js', { cwd: dir, stdin: { stop_hook_active: false }, env: { PACE_VAULT_PATH: '' } });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('legacy task.md'));
+  assert.ok(r.stderr.includes('migrate/batch-archive-v5.js'));
+  assert.ok(r.stderr.includes('artifact-writer create-chg'));
+  assert.ok(!r.stderr.includes('补齐实施详情'));
+});
+
 console.log('\n--- post-tool-use.js ---');
 
 test('15. v6 schema 缺 verified-date → warning', () => {
@@ -303,6 +345,16 @@ test('17. vault 内 changes 详情编辑 → cli-refresh flag', () => {
   const r = runHook('post-tool-use.js', { cwd, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
   assert.strictEqual(r.code, 0);
   assert.ok(fs.existsSync(path.join(cwd, '.pace', 'cli-refresh-done')));
+});
+
+test('17b. legacy v5 PostToolUse 只提示迁移或桥接', () => {
+  const dir = makeLegacyProject('post-legacy');
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('additionalContext'));
+  assert.ok(r.stdout.includes('legacy task.md'));
+  assert.ok(r.stdout.includes('artifact-writer create-chg'));
+  assert.ok(r.stdout.includes('不再校验或修复 v5'));
 });
 
 console.log('\n--- todowrite / pre-compact / config ---');

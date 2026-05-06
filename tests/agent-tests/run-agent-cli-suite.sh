@@ -14,7 +14,7 @@
 #   MODEL=sonnet|opus|...       Pass --model to claude
 #   EFFORT=low|medium|high|xhigh|max
 #   MODE=production|harness     Prompt mode for run-tests.js prepare
-#   AGENT_NAME=...              Defaults to paceflow:paceflow-artifact-writer
+#   AGENT_NAME=...              Defaults to paceflow:artifact-writer
 #   OUTDIR=/tmp/...             Output directory
 #   PLUGIN_DIR=/path/to/plugin  Defaults to this repository
 
@@ -29,7 +29,7 @@ SUITE="${1:-production-smoke}"
 MODE="${MODE:-production}"
 OUTDIR="${OUTDIR:-/tmp/paceflow-agent-baseline-${MODE}}"
 PLUGIN_DIR="${PLUGIN_DIR:-$PACEFLOW_ROOT}"
-AGENT_NAME="${AGENT_NAME:-paceflow:paceflow-artifact-writer}"
+AGENT_NAME="${AGENT_NAME:-paceflow:artifact-writer}"
 SESSION_CWD="${SESSION_CWD:-$OUTDIR/session-cwd}"
 PRESERVE_FAILED_FIXTURE="${PRESERVE_FAILED_FIXTURE:-1}"
 SUMMARY="$OUTDIR/summary.txt"

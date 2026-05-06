@@ -1,6 +1,6 @@
 # record-finding 指令详细规范
 
-> 关联 agent：`paceflow-artifact-writer.md`
+> 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`
 
 ## 输入字段

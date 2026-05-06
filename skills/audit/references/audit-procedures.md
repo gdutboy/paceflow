@@ -1,6 +1,6 @@
 # 审计流程详情
 
-> 本文件是 paceflow-audit 的 Phase 2/3 详细流程和误报防御策略。
+> 本文件是 audit 的 Phase 2/3 详细流程和误报防御策略。
 
 ---
 
@@ -87,7 +87,7 @@ Phase 2 验证结果: X 确认 / Y 部分正确 / Z 误报
 | **P0 必修** | 确认的 C 级 + 影响可靠性的 H 级 | 本次变更修复 |
 | **P1 建议** | 确认的 W 级中代码质量问题 | 建议修复 |
 | **P2 文档** | 文档过时、版本号不一致 | 顺手修复 |
-| **P3 延后** | I 级优化建议 | 派 `paceflow-artifact-writer record-finding` 记录到 `changes/findings/` |
+| **P3 延后** | I 级优化建议 | 派 `artifact-writer record-finding` 记录到 `changes/findings/` |
 
 ---
 

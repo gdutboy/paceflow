@@ -24,13 +24,13 @@ const SKILL_DIRS = [
   'artifact-management',
   'pace-knowledge',
   'pace-bridge',
-  'paceflow-audit',
+  'audit',
 ];
 
 // v6 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
 const FORMAT_SNIPPETS = {
   taskEntry: '- [ ] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
-  taskGroup: '任务详情不写入 task.md。请派 paceflow-artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
+  taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
   implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
   implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
   approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；唯一写入路径是 update-chg action=approve',
@@ -42,7 +42,7 @@ const FORMAT_SNIPPETS = {
   // 格式要求（E 阶段 DENY 核心信息）
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
   // 归档操作（T-441: 移动标记而非内容）
-  archiveOp: '归档 = 派 paceflow-artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
+  archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
   walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 | CHG-YYYYMMDD-NN |',
@@ -488,7 +488,7 @@ function formatBridgeHint(cwd, artDir) {
   if (planFiles.length === 0) return null;
   const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
   const artPath = (artDir || cwd).replace(/\\/g, '/');
-  const bridgeSteps = `Read plan → Edit ${artPath}/task.md 添加任务 + APPROVED → Edit ${artPath}/implementation_plan.md 添加 CHG 索引。详见 /pace-bridge skill。`;
+  const bridgeSteps = `Read plan → 派 artifact-writer create-chg 创建 ${artPath}/changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若 plan 已获用户确认，再派 update-chg action=approve。详见 /pace-bridge skill。`;
   return { fileList, bridgeSteps };
 }
 

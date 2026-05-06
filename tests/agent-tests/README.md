@@ -1,4 +1,4 @@
-# paceflow-artifact-writer 测试框架
+# artifact-writer 测试框架
 
 > v6.0.0 Phase A-D 测试套件。Phase A 已就绪。
 
@@ -15,7 +15,7 @@ tests/agent-tests/
 ├── helpers/                 # 框架基础设施
 │   ├── fixture-setup.js     # cp -r fixture → /tmp/test-vault/
 │   ├── fixture-teardown.js  # rm -rf /tmp/test-vault/
-│   ├── subagent-runner.js   # 协调 paceflow-artifact-writer 派遣 + 报告捕获
+│   ├── subagent-runner.js   # 协调 artifact-writer 派遣 + 报告捕获
 │   └── verify-output.js     # YAML expected vs 真实产出对比
 └── results/                 # 历史结果（按日期分组，git-ignored）
     └── YYYY-MM-DD/
@@ -42,7 +42,7 @@ node run-tests.js dummy        # 跑 mock 用例验证框架基础设施
    const runner = require('./helpers/subagent-runner');
    const tc = runner.loadCase('cases/phase-a/tc-a1-create-chg.yaml');
    await runner.setupFixture(tc);
-   // 主 session 派遣 paceflow-artifact-writer agent，prompt 由 runner 生成
+   // 主 session 派遣 artifact-writer agent，prompt 由 runner 生成
    // agent 完成后，主 session 调用 verify
    await runner.verifyAndReport(tc, agentReport);
    await runner.teardown(tc);
@@ -103,5 +103,5 @@ teardown:
 
 - `docs/agent-testing-strategy.md`：完整 5 Phase 策略 + 验收
 - `docs/v6.0.0-design.md`：架构设计
-- `agents/paceflow-artifact-writer.md`：被测 agent
+- `agents/artifact-writer.md`：被测 agent
 - `ticket.md`：Sprint 3 实施记录

@@ -4,12 +4,12 @@ effort: medium
 description: >
   将 Superpowers/native plan 文件桥接到 PACEflow v6 artifacts。读取 docs/plans/、
   docs/superpowers/plans/ 或 ~/.claude/plans/ 的计划，整理为 create-chg 输入，
-  然后派 paceflow-artifact-writer 创建 changes/<id>.md 与 task/implementation_plan 索引。
+  然后派 artifact-writer 创建 changes/<id>.md 与 task/implementation_plan 索引。
 ---
 
 # Plan → PACEflow 桥接
 
-pace-bridge 不直接 Edit `task.md` / `implementation_plan.md`。桥接的唯一写入路径是派 `paceflow-artifact-writer`。
+pace-bridge 不直接 Edit `task.md` / `implementation_plan.md`。桥接的唯一写入路径是派 `artifact-writer`。
 
 ---
 
@@ -58,7 +58,7 @@ technical-decision: <关键设计决策和取舍>
 
 ### Step 3：派 artifact writer
 
-派 `paceflow-artifact-writer` 执行 `create-chg`。agent 会创建：
+派 `artifact-writer` 执行 `create-chg`。agent 会创建：
 - `changes/chg-yyyymmdd-nn.md`
 - `task.md` 活跃 wikilink 索引
 - `implementation_plan.md` 活跃 wikilink 索引

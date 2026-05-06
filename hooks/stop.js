@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, readFull, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, findMissingImplDetails, findMissingFindingsDetails, FORMAT_SNIPPETS, ARCHIVE_MARKER, extractOpenKeys, COMPLETION_PHRASES, getActiveChangeEntries, countDetailTasks, isChangeApproved, isChangeVerified } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, countDetailTasks, isChangeApproved, isChangeVerified } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -63,13 +63,13 @@ if (paceSignal === 'artifact') {
 
   const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
   if (mismatched.length > 0) {
-    warnings.push(`task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${mismatched.map(e => e.id).join(', ')}。请派 paceflow-artifact-writer 修复索引。`);
+    warnings.push(`task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${mismatched.map(e => e.id).join(', ')}。请派 artifact-writer 修复索引。`);
   }
 
   let totalPending = 0;
   for (const entry of actionableEntries) {
     if (!entry.detail || entry.detail.missing) {
-      warnings.push(`${entry.id} 的详情文件缺失（应为 changes/${entry.slug}.md），请派 paceflow-artifact-writer 修复。`);
+      warnings.push(`${entry.id} 的详情文件缺失（应为 changes/${entry.slug}.md），请派 artifact-writer 修复。`);
       continue;
     }
     const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
@@ -99,9 +99,9 @@ if (paceSignal === 'artifact') {
     }
 
     if (status === 'completed' && !isChangeVerified(entry.detail)) {
-      warnings.push(`${entry.id} 已 completed 但未验证。请派 paceflow-artifact-writer update-chg action=verify 写入 verified-date 与 <!-- VERIFIED -->。`);
+      warnings.push(`${entry.id} 已 completed 但未验证。请派 artifact-writer update-chg action=verify 写入 verified-date 与 <!-- VERIFIED -->。`);
     } else if (status === 'completed' && isChangeVerified(entry.detail)) {
-      warnings.push(`${entry.id} 已 completed 且 verified，仍在活跃索引中。请派 paceflow-artifact-writer archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
+      warnings.push(`${entry.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
     }
   }
 
@@ -133,140 +133,7 @@ if (paceSignal === 'artifact') {
   }
 
 } else if (taskActive) {
-  // 0. 检查 ARCHIVE 格式
-  const archFmt1 = checkArchiveFormat(cwd, 'task.md');
-  if (archFmt1) warnings.push(archFmt1);
-  const archFmt2 = checkArchiveFormat(cwd, 'implementation_plan.md');
-  if (archFmt2) warnings.push(archFmt2);
-
-  // 1. 统一使用 countByStatus（仅顶层任务）
-  // I-4: doneCount = [x] + [-]（countByStatus 设计），xCount 下方单独统计纯 [x]
-  const { pending: pendingCount, done: doneCount } = countByStatus(taskActive, { topLevelOnly: true });
-  if (pendingCount > 0) {
-    const total = pendingCount + doneCount;
-    // HOTFIX-20260314-02: 场景感知消息——区分 C 阶段等审批 / 全阻塞 / E 阶段执行中
-    const hasApproved = /^<!-- APPROVED -->$/m.test(taskActive);
-    const hasInProgress = /^- \[\/\]/m.test(taskActive);
-    const hasOpenTasks = /^- \[[ \/]\]/m.test(taskActive); // [ ] 或 [/]
-    const hasBlocked = /^- \[!\]/m.test(taskActive);
-
-    if (!hasApproved && !hasInProgress) {
-      // C 阶段：等用户审批
-      warnings.push(`task.md 有 ${pendingCount} 个未完成任务且未获审批（缺少 APPROVED 标记）。请用 AskUserQuestion 询问用户是否批准执行计划。${FORMAT_SNIPPETS.approved}`);
-    } else if (!hasOpenTasks && hasBlocked) {
-      // 全部阻塞：需用户决策
-      warnings.push(`task.md 所有 ${pendingCount} 个剩余任务均为 [!] 阻塞状态。请用 AskUserQuestion 询问用户如何处理阻塞项`);
-    } else {
-      // E 阶段：正常执行中，继续完成任务
-      warnings.push(`task.md 还有 ${pendingCount} 个未完成任务（进度 ${doneCount}/${total}），请继续执行。状态：${FORMAT_SNIPPETS.statusHelp}`);
-    }
-  }
-
-  // 2. 检查活跃区已完成项（W7 V/归档优先级，xCount 单独统计 [x] 不含 [-]）
-  const xCount = (taskActive.match(/^- \[x\]/gm) || []).length;
-  if (xCount > 0) {
-    if (!/^<!-- VERIFIED -->$/m.test(taskActive)) {
-      // W7: 未验证时只报验证，不报归档
-      warnings.push(`task.md 有 ${xCount} 个已完成任务但未验证，请先执行 V 阶段验证后添加 <!-- VERIFIED --> 标记。${FORMAT_SNIPPETS.verified}`);
-    } else if (doneCount > 0) {
-      // W7: 已验证时只报归档
-      warnings.push(`task.md 活跃区有 ${doneCount} 个已完成项已验证，请归档到 ARCHIVE 下方。${FORMAT_SNIPPETS.archiveOp}`);
-    }
-  } else if (doneCount > 0) {
-    // 只有 [-] 跳过项，直接提醒归档
-    warnings.push(`task.md 活跃区有 ${doneCount} 个已完成项未归档。${FORMAT_SNIPPETS.archiveOp}`);
-  }
-
-  // 3. 检查 implementation_plan.md 状态一致性
-  const planActive = readActive(cwd, 'implementation_plan.md');
-  if (planActive && pendingCount === 0 && doneCount > 0 && /^- \[\/\]/m.test(planActive)) {
-    warnings.push(`implementation_plan.md 仍有 [/] 进行中，但任务已全部完成。请将索引状态改为 [x] 完成。格式：${FORMAT_SNIPPETS.implIndex}`);
-  }
-
-  // legacy fallback：impl_plan 详情终态检查
-  if (planActive) {
-    const planFullStop = readFull(cwd, 'implementation_plan.md');
-    if (planFullStop) {
-      const missingDetails = findMissingImplDetails(planFullStop);
-      if (missingDetails.length > 0) {
-        const display = missingDetails.length <= 3 ? missingDetails.join(', ') : missingDetails.slice(0, 3).join(', ') + ` 等 ${missingDetails.length} 个`;
-        warnings.push(`implementation_plan.md 有 ${missingDetails.length} 个已完成变更缺少详情段落：${display}，请补充 "### CHG-..." 记录。格式：${FORMAT_SNIPPETS.implDetail}`);
-      }
-    }
-  }
-
-  // v5.0.2: findings.md 详情终态检查 — [ ] 索引必须有 ### 详情
-  const findingsFull = readFull(cwd, 'findings.md');
-  if (findingsFull) {
-    const missingDetails = findMissingFindingsDetails(findingsFull);
-    if (missingDetails.length > 0) {
-      const display = missingDetails.length <= 2
-        ? missingDetails.join('；')
-        : missingDetails[0] + ` 等 ${missingDetails.length} 个`;
-      warnings.push(`findings.md 有 ${missingDetails.length} 个 [ ] 索引缺少详情段落：${display}，请补充。${FORMAT_SNIPPETS.findingsDetail}`);
-    }
-  }
-
-  // v5.0.2: findings 过期检测（>14 天的 [ ] 项）
-  const findingsActive = readActive(cwd, 'findings.md');
-  if (findingsActive) {
-    const agedMatches = [...findingsActive.matchAll(/^- \[ \] .+\[date:: (\d{4}-\d{2}-\d{2})\]/gm)];
-    const now = Date.now();
-    const agedCount = agedMatches.filter(m => {
-      return (now - new Date(m[1]).getTime()) / 86400000 >= 14;
-    }).length;
-    if (agedCount > 0) {
-      warnings.push(`findings.md 有 ${agedCount} 个超过 14 天的开放项需要用户决策，请用 AskUserQuestion 询问处理方式（采纳/否定/保持现状）`);
-    }
-
-    // T-383: findings 归档检查 — 活跃区 [x]/[-] 详情段落存在时 warning
-    const openKeys = extractOpenKeys(findingsActive);
-    const staleHeaders = findingsActive.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/gm) || [];
-    const staleCount = staleHeaders.filter(h => {
-      const title = h.replace(/^### \[\d{4}-\d{2}-\d{2}\] /, '');
-      return !openKeys.some(p => title.includes(p));
-    }).length;
-    if (staleCount > 0) {
-      warnings.push(`findings 活跃区有 ${staleCount} 个已解决详情段落未归档。${FORMAT_SNIPPETS.archiveOp}`);
-    }
-  }
-
-  // 4. 检查 walkthrough.md（索引表日期 + 详情段落日期 + 分层报告）
-  const walkActive = readActive(cwd, 'walkthrough.md');
-  // W-6: walkActive 可能为空字符串（文件存在但活跃区为空），需额外判断
-  if (walkActive !== null && walkActive.trim() && (doneCount > 0 || pendingCount > 0)) {
-    const today = todayISO();
-    // 详情段落日期（**时间**: YYYY-MM-DD 或 **追加时间**: YYYY-MM-DD）+ 详情标题（## YYYY-MM-DD）
-    // T-472: 增加 ## YYYY-MM-DD 标题匹配，兼容 walkthroughDetail 新格式
-    const detailDates = [...walkActive.matchAll(/\*\*(?:追加)?时间\*\*:\s*(\d{4})-(\d{1,2})-(\d{1,2})/g), ...walkActive.matchAll(/^## (\d{4})-(\d{1,2})-(\d{1,2})/gm)]
-      .map(m => ({ full: `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` }));
-    // 索引表日期（| YYYY-MM-DD |）
-    const indexDates = [...walkActive.matchAll(/^\| (\d{4})-(\d{1,2})-(\d{1,2}) \|/gm)]
-      .map(m => ({ full: `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` }));
-    const hasDetailToday = detailDates.some(m => m.full === today);
-    const hasIndexToday = indexDates.some(m => m.full === today);
-    if (!hasDetailToday && !hasIndexToday) {
-      // 索引和详情都没有今天的记录
-      const allDates = [...detailDates.map(m => m.full), ...indexDates.map(m => m.full)];
-      // P3-2: 不修改原数组，使用 spread + at(-1) 安全取最后一个
-      const latest = [...allDates].sort().at(-1) || null;
-      if (latest) {
-        warnings.push(`walkthrough.md 最近更新是 ${latest}，今天的工作尚未记录。请创建索引行 + 详情段落。${FORMAT_SNIPPETS.walkthroughDetail}`);
-      } else {
-        warnings.push(`walkthrough.md 活跃区无日期记录，请更新工作记录。${FORMAT_SNIPPETS.walkthroughDetail}`);
-      }
-    } else if (hasIndexToday && !hasDetailToday) {
-      // 索引有今天的记录但详情没有 → 提醒补写详情段落
-      warnings.push(`walkthrough.md 索引已更新但缺少详情段落，请补充详情段落。${FORMAT_SNIPPETS.walkthroughDetail}`);
-    }
-    // T-383: walkthrough 归档检查 — 活跃区详情 > 3 时 warning
-    const walkDetailCount = (walkActive.match(/^## \d{4}-\d{2}-\d{2}/gm) || []).length;
-    if (walkDetailCount > 3) {
-      warnings.push(`walkthrough 活跃区有 ${walkDetailCount} 个详情段落（建议保留最近 3 个），请将旧详情归档到 ${ARCHIVE_MARKER} 下方。${FORMAT_SNIPPETS.archiveOp}`);
-    }
-  } else if (!fs.existsSync(path.join(artDir, 'walkthrough.md'))) {
-    warnings.push(`walkthrough.md 不存在。请创建并记录今日工作。${FORMAT_SNIPPETS.walkthroughDetail}`);
-  }
+  warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。不要继续在 task.md/implementation_plan.md/findings.md 手写 v5 活跃详情或 C/V 标记。`);
 
 } else if (existing.length > 0) {
   // task.md 不存在，但有其他 artifact → 不完整
@@ -296,7 +163,7 @@ if (paceSignal !== 'artifact' && fs.existsSync(twFlag) && taskActive) {
 }
 
 // T-424: 交叉验证移出 warnings.length===0 守卫，确保已有 warning 时仍检测虚假完成声明
-if (paceSignal !== 'artifact' && lastMessage) {
+if (paceSignal !== 'artifact' && lastMessage && !taskActive) {
   // I-13: 交叉验证中文短语使用 pace-utils 常量
   if (COMPLETION_PHRASES.test(lastMessage)) {
     // I-3: 复用上方已读取的 taskActive，避免重复 readActive

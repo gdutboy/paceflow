@@ -11,7 +11,7 @@
 | 范围 | 权威文件 |
 |------|----------|
 | 用户安装 | `.claude-plugin/plugin.json` + `hooks/hooks.json`，通过 Claude Code `/plugin install` |
-| Artifact 写入 | `agents/paceflow-artifact-writer.md` |
+| Artifact 写入 | `agents/artifact-writer.md` |
 | Artifact schema | `agents/references/artifact-writer-spec.md` |
 | Agent 操作步骤 | `agents/references/instructions/*.md` |
 | Hook 运行逻辑 | `hooks/*.js` + `hooks/pace-utils.js` |
@@ -135,9 +135,9 @@ for f in hooks/*.js; do node -c "$f" || exit 1; done
 ## 8. 发布检查
 
 - `PACE_VERSION` 为 `v6.0.0`
-- `.claude-plugin/plugin.json` 为 `6.0.5`（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
+- `.claude-plugin/plugin.json` 为 `6.0.7`（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
 - `hooks/templates/` 有 `corrections.md`
 - `hooks/hooks.json` 注册 `StopFailure`
-- `agents/paceflow-artifact-writer.md` 与 `agents/references/**` 存在
+- `agents/artifact-writer.md` 与 `agents/references/**` 存在
 - README/CLAUDE/skills 不再要求主 session 直接 Edit artifact
 - README/CLAUDE/skills/hooks 模板不再出现 v5 活跃详情区、task 承载 C/V 标记、task 任务权威、findings 内 correction 区等旧口径

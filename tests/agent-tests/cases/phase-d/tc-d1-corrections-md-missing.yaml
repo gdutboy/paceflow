@@ -27,7 +27,7 @@ expected:
   validations:
     frontmatter_schema: pass
     wikilink_integrity: pass
-  report_title_strict: "## paceflow-artifact-writer 报告"
+  report_title_strict: "## artifact-writer 报告"
   max_tokens: 40000
   max_duration_ms: 180000
 
