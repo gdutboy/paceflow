@@ -27,7 +27,10 @@ paceUtils.withStdinParsed((stdin) => {
     return;
   }
 
-  const { toolName, filePath, oldString, newString, content } = stdin;
+  const { toolName, filePath, content } = stdin;
+  const editList = Array.isArray(stdin.toolInput.edits) ? stdin.toolInput.edits : [];
+  const oldString = stdin.oldString || editList.map(e => e.old_string || '').join('\n');
+  const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
 
   const warnings = [];
   // W-dry-4: 每会话首次提醒辅助函数（flag 检查+写入去重）

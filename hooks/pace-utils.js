@@ -96,6 +96,40 @@ function normalizePath(p) {
   return isWin ? n.toLowerCase() : n;
 }
 
+function isPortableAbsolutePath(p) {
+  const normalized = String(p || '').replace(/\\/g, '/');
+  return path.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized);
+}
+
+/** 将 Claude tool_input.file_path 解析成当前项目下的绝对路径；绝对路径保持原样 */
+function resolveToolFilePath(cwd, filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  if (!normalized) return '';
+  if (isPortableAbsolutePath(normalized)) return normalized;
+  return path.resolve(cwd || process.cwd(), normalized).replace(/\\/g, '/');
+}
+
+function isArtifactRelativePath(relPath) {
+  const rel = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (ARTIFACT_FILES.includes(rel)) return true;
+  return /^changes\/.+\.md$/i.test(rel);
+}
+
+/**
+ * 如果 filePath 指向 baseDir 内的 v6 artifact，返回 artifact 相对路径；否则返回 null。
+ * 覆盖根索引文件和 changes/ 下的 markdown 详情文件。
+ */
+function artifactRelativePathForFile(baseDir, filePath) {
+  if (!baseDir || !filePath) return null;
+  const absFile = resolveToolFilePath(baseDir, filePath);
+  const normalizedBase = normalizePath(path.resolve(baseDir));
+  const normalizedFile = normalizePath(absFile);
+  const baseWithSlash = normalizedBase.endsWith('/') ? normalizedBase : normalizedBase + '/';
+  if (!normalizedFile.startsWith(baseWithSlash)) return null;
+  const rel = normalizedFile.slice(baseWithSlash.length);
+  return isArtifactRelativePath(rel) ? rel : null;
+}
+
 function sanitizeProjectName(name) {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -103,10 +137,9 @@ function sanitizeProjectName(name) {
 function worktreeBaseDir(cwd) {
   const resolved = path.resolve(cwd || '');
   const parts = resolved.split(path.sep);
-  for (let i = parts.length - 2; i >= 0; i--) {
-    if (parts[i] !== 'worktrees') continue;
-    let baseParts = parts.slice(0, i);
-    if (baseParts[baseParts.length - 1] === '.claude') baseParts = baseParts.slice(0, -1);
+  for (let i = parts.length - 3; i >= 0; i--) {
+    if (parts[i] !== '.claude' || parts[i + 1] !== 'worktrees') continue;
+    const baseParts = parts.slice(0, i);
     if (baseParts.length === 0) return null;
     return baseParts.join(path.sep) || path.sep;
   }
@@ -763,6 +796,7 @@ module.exports = {
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath,
+  resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
   isPaceProject, isTeammate, getArtifactDir, ensureProjectInfra,
   // 文件读写

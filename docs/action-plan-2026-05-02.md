@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-06，v6.0.10）
+### 0.1 当前执行视图（2026-05-06，v6.0.11）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,12 +27,18 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/todowrite-sync.js`
 
+执行状态（v6.0.11）：
+
+- P0-20260506-01 / P0-20260506-02：已完成。
+- P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04：已完成。
+- P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
+
 #### 0.1.1 P0 — 当前已实现代码中的阻断级修复
 
-| ID | 任务 | 问题 | 改动范围 | 验证 |
-|---|---|---|---|---|
-| P0-20260506-01 | 修复 worktree/vault 下 `changes/**/*.md` 详情文件路由 | 当前 vault 重定向只覆盖根索引 artifact；worktree 中写 `changes/chg-*.md` 可能分裂出本地详情文件，违背“worktree 与主项目共用 artifacts”决策 | `hooks/pre-tool-use.js`、`hooks/pace-utils.js`、`tests/test-hooks-e2e.js` | worktree 本地 `changes/chg-*.md` Write/Edit 必须 deny 并提示 vault 正确路径；vault 正确路径放行 |
-| P0-20260506-02 | PreToolUse enforcement 路径 stdin 解析失败 fail-closed | 历史 finding 和 GitHub issue 均显示 hook stdin/JSON 在某些环境可能异常；当前部分 hook 在 `stdin.ok=false` 时可能自然放行 | `hooks/pre-tool-use.js`、必要时 `hooks/todowrite-sync.js`、`tests/test-hooks-e2e.js` | PACE 项目中 Write/Edit stdin 非 JSON 或缺关键字段时 deny；非 PACE 项目保持低干扰 |
+| ID | 状态 | 任务 | 问题 | 改动范围 | 验证 |
+|---|---|---|---|---|---|
+| P0-20260506-01 | ✅ v6.0.11 | 修复 worktree/vault 下 `changes/**/*.md` 详情文件路由 | vault 重定向只覆盖根索引 artifact；worktree 中写 `changes/chg-*.md` 可能分裂出本地详情文件，违背“worktree 与主项目共用 artifacts”决策 | `hooks/pre-tool-use.js`、`hooks/pace-utils.js`、`tests/test-hooks-e2e.js` | worktree 本地 `changes/chg-*.md` / finding / correction 详情 Write/Edit/MultiEdit deny 并提示 vault 正确路径；vault 正确路径放行 |
+| P0-20260506-02 | ✅ v6.0.11 | PreToolUse enforcement 路径 stdin 解析失败 fail-closed | hook stdin/JSON 在某些环境可能异常；`stdin.ok=false` 时不能自然放行 | `hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js` | PACE 项目中 Write/Edit/MultiEdit stdin 非 JSON 或缺 `file_path` 时 deny；非 PACE 项目保持低干扰 |
 
 执行原则：
 
@@ -41,12 +47,12 @@
 
 #### 0.1.2 P1 — 当前代码语义不干净但不阻断
 
-| ID | 任务 | 问题 | 改动范围 | 验证 |
-|---|---|---|---|---|
-| P1-20260506-01 | SessionStart 任务列表提示改为读取 CHG 详情任务统计 | 当前提示仍用 `task.md` 索引 checkbox 判断任务列表同步；v6 子任务权威是 `changes/<id>.md ## 任务清单` | `hooks/session-start.js`、`tests/test-hooks-e2e.js` | 有详情 pending T-NNN 时提示同步 Claude 任务列表；仅索引无详情任务时不夸大 |
-| P1-20260506-02 | worktree 项目名识别收紧 | 仅凭路径中有 `worktrees/` 就归一到父目录，普通项目也可能误判 | `hooks/pace-utils.js`、`tests/test-pace-utils.js` | 只有 `.claude/worktrees/*` 或 `.git -> .git/worktrees/*` 等真实 worktree 信号才归一 |
-| P1-20260506-03 | marker 相关日志记录 `agent_id` / `agent_type` | GitHub 上游仍有 agent identity 稳定性讨论；生产排障需要完整日志 | `hooks/pre-tool-use.js`、可选日志断言 | `DENY_V6_MARKER` / `PASS_V6_MARKER_AGENT` 日志含 agent identity |
-| P1-20260506-04 | 消除 `claude plugin validate .` marketplace description warning | 当前 validate 通过但有 warning，release gate 不够干净 | `.claude-plugin/marketplace.json` | `claude plugin validate .` clean pass |
+| ID | 状态 | 任务 | 问题 | 改动范围 | 验证 |
+|---|---|---|---|---|---|
+| P1-20260506-01 | ✅ v6.0.11 | SessionStart 任务列表提示改为读取 CHG 详情任务统计 | 提示不应只用 `task.md` 索引 checkbox 判断任务列表同步；v6 子任务权威是 `changes/<id>.md ## 任务清单` | `hooks/session-start.js`、`tests/test-hooks-e2e.js` | 有详情 pending T-NNN 时提示同步 Claude 任务列表；仅索引无详情任务时不夸大 |
+| P1-20260506-02 | ✅ v6.0.11 | worktree 项目名识别收紧 | 仅凭路径中有 `worktrees/` 就归一到父目录，普通项目也可能误判 | `hooks/pace-utils.js`、`tests/test-pace-utils.js` | 只有 `.claude/worktrees/*` 或 `.git -> .git/worktrees/*` 等真实 worktree 信号才归一 |
+| P1-20260506-03 | ✅ v6.0.11 | marker 相关日志记录 `agent_id` / `agent_type` | GitHub 上游仍有 agent identity 稳定性讨论；生产排障需要完整日志 | `hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js` | `DENY_V6_MARKER` / `PASS_V6_MARKER_AGENT` 日志含 agent identity |
+| P1-20260506-04 | ✅ v6.0.11 | 消除 `claude plugin validate .` marketplace description warning | validate 通过但有 warning，release gate 不够干净 | `.claude-plugin/marketplace.json` | `claude plugin validate .` clean pass |
 
 #### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
 
@@ -89,10 +95,10 @@
 最近一次验证结果：
 
 ```bash
-node tests/test-hooks-e2e.js      # 30/30 PASS
-node tests/test-pace-utils.js     # 83/83 PASS
-node tests/test-install.js        # 21/21 PASS
-claude plugin validate .          # PASS，当前有 marketplace description warning
+node tests/test-hooks-e2e.js      # 42/42 PASS
+node tests/test-pace-utils.js     # 89/89 PASS
+node tests/test-install.js        # 22/22 PASS
+claude plugin validate .          # PASS，无 warning
 git diff --check                  # PASS
 ```
 

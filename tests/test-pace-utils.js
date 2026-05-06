@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -150,12 +150,53 @@ test('已小写无空格 → 原样返回', () => {
   assert.strictEqual(getProjectName('/foo/paceflow-hooks'), 'paceflow-hooks');
 });
 
-test('worktrees/<name> 路径 → 宿主项目名', () => {
-  assert.strictEqual(getProjectName('/foo/paceflow-hooks/worktrees/smoke-test'), 'paceflow-hooks');
+test('普通 worktrees/<name> 路径无 git 信号 → 不误判宿主项目', () => {
+  assert.strictEqual(getProjectName('/foo/paceflow-hooks/worktrees/smoke-test'), 'smoke-test');
 });
 
 test('.claude/worktrees/<name> 路径 → .claude 父级项目名', () => {
   assert.strictEqual(getProjectName('/foo/paceflow/.claude/worktrees/smoke-test'), 'paceflow');
+});
+
+test('真实 git worktree .git 文件 → 宿主项目名', () => {
+  const root = makeTmpDir('gpn-git-worktree');
+  const host = path.join(root, 'paceflow-hooks');
+  const worktree = path.join(host, 'worktrees', 'smoke-test');
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke-test')}\n`, 'utf8');
+  assert.strictEqual(getProjectName(worktree), 'paceflow-hooks');
+});
+
+// ============================================================
+// 5b. artifact path helpers
+// ============================================================
+console.log('\n--- artifact path helpers ---');
+
+test('resolveToolFilePath: 相对路径基于 cwd 解析', () => {
+  const dir = makeTmpDir('rtfp-relative');
+  assert.strictEqual(resolveToolFilePath(dir, 'changes/chg-20260506-01.md'), path.join(dir, 'changes', 'chg-20260506-01.md').replace(/\\/g, '/'));
+});
+
+test('resolveToolFilePath: 绝对路径保持原样', () => {
+  assert.strictEqual(resolveToolFilePath('/tmp/project', '/tmp/project/task.md'), '/tmp/project/task.md');
+});
+
+test('isArtifactRelativePath: 根索引和 changes 详情为 artifact', () => {
+  assert.strictEqual(isArtifactRelativePath('task.md'), true);
+  assert.strictEqual(isArtifactRelativePath('changes/chg-20260506-01.md'), true);
+  assert.strictEqual(isArtifactRelativePath('changes/findings/finding-2026-05-06-test.md'), true);
+  assert.strictEqual(isArtifactRelativePath('src/task.md'), false);
+});
+
+test('artifactRelativePathForFile: 返回 cwd 内 artifact 相对路径', () => {
+  const dir = makeTmpDir('arff-artifact');
+  assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'changes', 'corrections', 'correction-2026-05-06-01-test.md')), 'changes/corrections/correction-2026-05-06-01-test.md');
+});
+
+test('artifactRelativePathForFile: 普通代码文件返回 null', () => {
+  const dir = makeTmpDir('arff-code');
+  assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src', 'task.md')), null);
+  assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src.js')), null);
 });
 
 // ============================================================
@@ -201,9 +242,11 @@ test('新项目（无 artifact）→ vault 目录', () => {
 test('worktree 有本地 changes 时仍优先沿用宿主 vault artifact', () => {
   const projectName = `pace-worktree-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const root = makeTmpDir('gad-worktree-root');
-  const worktree = path.join(root, projectName, 'worktrees', 'smoke');
+  const host = path.join(root, projectName);
+  const worktree = path.join(host, 'worktrees', 'smoke');
   const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   fs.mkdirSync(path.join(worktree, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
   fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
   t.tmpDirs.push(vaultDir);
 
@@ -214,9 +257,11 @@ test('worktree 有本地 changes 时仍优先沿用宿主 vault artifact', () =>
 test('worktree 无本地 artifact 但宿主 vault 有 changes → artifact', () => {
   const projectName = `pace-worktree-signal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const root = makeTmpDir('signal-worktree-root');
-  const worktree = path.join(root, projectName, 'worktrees', 'smoke');
+  const host = path.join(root, projectName);
+  const worktree = path.join(host, 'worktrees', 'smoke');
   const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
   fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
   t.tmpDirs.push(vaultDir);
 

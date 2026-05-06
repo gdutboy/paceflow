@@ -28,11 +28,20 @@ function isArtifactWriterAgent(stdin) {
   return ['artifact-writer', 'paceflow:artifact-writer'].includes(stdin.agentType || '');
 }
 
+function isFileMutationTool(toolName) {
+  return ['Write', 'Edit', 'MultiEdit'].includes(toolName);
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
   const t0 = Date.now();
-  const { toolName, filePath, oldString, newString, content } = stdin;
+  const { toolName, content } = stdin;
+  const editList = Array.isArray(stdin.toolInput.edits) ? stdin.toolInput.edits : [];
+  const oldString = stdin.oldString || editList.map(e => e.old_string || '').join('\n');
+  const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
+  const rawFilePath = stdin.filePath || '';
+  const filePath = paceUtils.resolveToolFilePath(cwd, rawFilePath);
   log(paceUtils.logEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
@@ -41,6 +50,17 @@ paceUtils.withStdinParsed((stdin) => {
       return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${reason}` } };
     }
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } };
+  }
+  function hardDeny(reason, action, fields = {}) {
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: reason
+      }
+    };
+    process.stdout.write(JSON.stringify(output));
+    log(paceUtils.logEntry('PreToolUse', action, { proj, tool: toolName, file: filePath, ...fields, dur: Date.now() - t0 }));
   }
   const teammateTag = isTeammate() ? '_TEAMMATE' : '';
 
@@ -58,6 +78,33 @@ paceUtils.withStdinParsed((stdin) => {
   const isCodeFile = CODE_EXTS.some(ext => filePath.endsWith(ext));
   const fileName = filePath ? path.basename(filePath) : '';
 
+  // P0-20260506-02: PACE 项目的 Write/Edit 保护链路必须 fail-closed。
+  // 非 PACE 项目保持低干扰；PACE 项目中坏 stdin 或缺关键字段不能自然放行。
+  if (paceSignal) {
+    if (!stdin.ok) {
+      hardDeny(
+        'PACE hook 无法解析 Claude Code 提供的 Write/Edit JSON 输入。为避免绕过 artifact 保护，本次写入已阻止；请重试工具调用。',
+        'DENY_BAD_STDIN',
+        { stdin_ok: false }
+      );
+      return;
+    }
+    if (!isFileMutationTool(toolName)) {
+      hardDeny(
+        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit，已阻止以避免绕过保护。`,
+        'DENY_BAD_TOOL'
+      );
+      return;
+    }
+    if (!rawFilePath) {
+      hardDeny(
+        'PACE hook 缺少 tool_input.file_path，无法判断写入是否会修改 artifact。为避免绕过保护，本次写入已阻止；请重试工具调用。',
+        'DENY_MISSING_FILE_PATH'
+      );
+      return;
+    }
+  }
+
   // v4.3.1: 项目外文件豁免（CWD 和 vault artifact 目录均视为"项目内"）
   // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
   const normalizedFile = paceUtils.normalizePath(filePath);
@@ -71,9 +118,10 @@ paceUtils.withStdinParsed((stdin) => {
   }
 
   // v4.8: artifact 已迁移到 vault 时，拦截对 CWD 中 artifact 文件的 Write/Edit 并重定向
-  if ((toolName === 'Write' || toolName === 'Edit') && artDir !== cwd && paceSignal) {
-    if (ARTIFACT_FILES.includes(fileName) && normalizedFile.startsWith(cwdWithSlash)) {
-      const correctPath = path.join(artDir, fileName).replace(/\\/g, '/');
+  if (isFileMutationTool(toolName) && artDir !== cwd && paceSignal) {
+    const cwdArtifactRel = paceUtils.artifactRelativePathForFile(cwd, filePath);
+    if (cwdArtifactRel) {
+      const correctPath = path.join(artDir, cwdArtifactRel).replace(/\\/g, '/');
       const reason = `artifact 文件已迁移到 Obsidian vault。请将 file_path 修改为：${correctPath}`;
       const output = {
         hookSpecificOutput: {
@@ -83,7 +131,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_REDIRECT | tool: ${toolName} | file: ${filePath}\n  redirect: ${correctPath}\n`);
+      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_REDIRECT | tool: ${toolName} | file: ${filePath}\n  artifact: ${cwdArtifactRel}\n  redirect: ${correctPath}\n`);
       return;
     }
   }
@@ -160,7 +208,7 @@ paceUtils.withStdinParsed((stdin) => {
     // 阻止主 session 直接手写 C/V 阶段标志；应派 artifact writer。
     const isChangeDetail = /\/changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(normalizedFile);
     const mutationText = newString || content || '';
-    if ((toolName === 'Edit' || toolName === 'Write') && isInsideProject && isChangeDetail && mutationText) {
+    if (isFileMutationTool(toolName) && isInsideProject && isChangeDetail && mutationText) {
       const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');
       const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
       const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
@@ -172,6 +220,8 @@ paceUtils.withStdinParsed((stdin) => {
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
           proj,
           file: filePath,
+          agent_id: stdin.agentId,
+          agent_type: stdin.agentType,
           addedApproved,
           addedVerified,
           setVerifiedDate,
@@ -183,7 +233,8 @@ paceUtils.withStdinParsed((stdin) => {
         log(paceUtils.logEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
           proj,
           file: filePath,
-          agent: stdin.agentType,
+          agent_id: stdin.agentId,
+          agent_type: stdin.agentType,
           addedApproved,
           addedVerified,
           setVerifiedDate,

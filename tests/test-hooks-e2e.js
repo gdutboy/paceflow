@@ -109,6 +109,27 @@ function makeV6Project(label, opts = {}) {
   return dir;
 }
 
+function makeVaultBackedWorktree(label) {
+  const root = makeTmpDir(`${label}-root`);
+  const projectName = `pace-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const host = path.join(root, projectName);
+  const worktree = path.join(host, 'worktrees', 'smoke');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectName);
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
+  fs.mkdirSync(path.join(vaultDir, 'changes', 'findings'), { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes', 'corrections'), { recursive: true });
+
+  const index = '- [/] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n';
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${index}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${index}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'walkthrough.md'), '# 工作记录\n\n## 最近工作\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'findings.md'), '# 调研记录\n\n## 摘要索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'corrections.md'), '# Corrections 记录\n\n## 索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'changes', 'chg-20260504-01.md'), chgDetail(), 'utf8');
+  return { worktree, vaultDir, projectName };
+}
+
 function codeEditStdin(dir) {
   return { tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'src.js'), old_string: 'a', new_string: 'b' } };
 }
@@ -139,6 +160,27 @@ test('2. v6 artifact 注入 + 活跃 CHG 摘要', () => {
   assert.ok(r.stdout.includes('=== corrections.md ==='));
   assert.ok(r.stdout.includes('=== 活跃 CHG 摘要 ==='));
   assert.ok(r.stdout.includes('CHG-20260504-01'));
+});
+
+test('2a. SessionStart 任务列表同步按详情 pending T-NNN 提示', () => {
+  const dir = makeV6Project('ss-v6-detail-pending', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('当前详情文件有 1 个未完成 T-NNN'));
+});
+
+test('2b. SessionStart 仅索引活跃但详情无 pending 时不夸大任务列表', () => {
+  const dir = makeV6Project('ss-v6-index-only', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true }),
+  });
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('详情中没有未完成 T-NNN'));
+  assert.ok(!r.stdout.includes('请为当前活跃 CHG 的未完成 T-NNN'));
 });
 
 test('3. compact 恢复显示 activeChanges', () => {
@@ -220,6 +262,28 @@ test('9. 主 session 直接写 VERIFIED → DENY verify action', () => {
   assert.ok(r.stdout.includes('action=verify'));
 });
 
+test('9m. MultiEdit 直接写 VERIFIED → DENY verify action', () => {
+  const dir = makeV6Project('ptu-marker-multiedit');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'MultiEdit',
+      tool_input: {
+        file_path: fp,
+        edits: [
+          {
+            old_string: '<!-- APPROVED -->',
+            new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+          },
+        ],
+      },
+    },
+  });
+  assert.ok(r.stdout.includes('deny'));
+  assert.ok(r.stdout.includes('action=verify'));
+});
+
 test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
   const dir = makeV6Project('ptu-marker-agent');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
@@ -277,6 +341,49 @@ test('9aa. 未知 subagent 仍不能写 APPROVED / VERIFIED 标志', () => {
   assert.ok(r.stdout.includes('artifact-writer'));
 });
 
+test('9ab. marker 日志包含 agent_id / agent_type', () => {
+  const dir = makeV6Project('ptu-marker-agent-log');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const logFile = path.join(HOOKS_DIR, 'pace-hooks.log');
+  const before = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
+
+  runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-log-deny',
+      agent_type: 'code-reviewer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-log-pass',
+      agent_type: 'artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+
+  const after = fs.readFileSync(logFile, 'utf8');
+  const delta = after.slice(before.length);
+  assert.ok(delta.includes('act=DENY_V6_MARKER'));
+  assert.ok(delta.includes('agent_id=agent-log-deny'));
+  assert.ok(delta.includes('agent_type=code-reviewer'));
+  assert.ok(delta.includes('act=PASS_V6_MARKER_AGENT'));
+  assert.ok(delta.includes('agent_id=agent-log-pass'));
+  assert.ok(delta.includes('agent_type=artifact-writer'));
+});
+
 test('9b. create-chg 写 verified-date null → 放行', () => {
   const dir = makeV6Project('ptu-create-null', { withIndex: false, detail: false });
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
@@ -315,6 +422,96 @@ test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
   assert.ok(r.stdout.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
   assert.ok(!r.stdout.includes('补齐实施详情'));
+});
+
+test('9e. worktree 本地 CHG 详情写入 → DENY 并重定向到 vault', () => {
+  const { worktree, vaultDir } = makeVaultBackedWorktree('redirect-chg');
+  const localFp = path.join(worktree, 'changes', 'chg-20260504-02.md');
+  const expected = path.join(vaultDir, 'changes', 'chg-20260504-02.md').replace(/\\/g, '/');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: { tool_name: 'Write', tool_input: { file_path: localFp, content: '# local detail\n' } },
+  });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes(expected));
+});
+
+test('9f. worktree 本地 finding/correction 详情写入 → DENY 并重定向到 vault', () => {
+  const { worktree, vaultDir } = makeVaultBackedWorktree('redirect-subdetails');
+  for (const rel of [
+    'changes/findings/finding-2026-05-06-test.md',
+    'changes/corrections/correction-2026-05-06-01-test.md',
+  ]) {
+    const localFp = path.join(worktree, rel);
+    const expected = path.join(vaultDir, rel).replace(/\\/g, '/');
+    const r = runHook('pre-tool-use.js', {
+      cwd: worktree,
+      stdin: { tool_name: 'Write', tool_input: { file_path: localFp, content: '# local detail\n' } },
+    });
+    assert.ok(r.stdout.includes('"deny"'), `${rel} should be denied`);
+    assert.ok(r.stdout.includes(expected), `${rel} should point at vault`);
+  }
+});
+
+test('9g. worktree 写 vault 中的详情路径 → 放行', () => {
+  const { worktree, vaultDir } = makeVaultBackedWorktree('redirect-vault-pass');
+  const fp = path.join(vaultDir, 'changes', 'chg-20260504-02.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: { tool_name: 'Write', tool_input: { file_path: fp, content: '# vault detail\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('9h. worktree 普通代码文件不触发 artifact 重定向', () => {
+  const { worktree } = makeVaultBackedWorktree('redirect-code-pass');
+  const r = runHook('pre-tool-use.js', { cwd: worktree, stdin: codeEditStdin(worktree) });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('DENY_REDIRECT'));
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('additionalContext'));
+});
+
+test('9ha. worktree 普通代码文件 MultiEdit 不触发 artifact 重定向', () => {
+  const { worktree } = makeVaultBackedWorktree('redirect-code-multiedit-pass');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'MultiEdit',
+      tool_input: {
+        file_path: path.join(worktree, 'src.js'),
+        edits: [{ old_string: 'a', new_string: 'b' }],
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('DENY_REDIRECT'));
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('additionalContext'));
+});
+
+test('9i. PACE 项目 malformed stdin → fail-closed deny', () => {
+  const dir = makeV6Project('ptu-bad-stdin');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: 'not json {{{' });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('无法解析'));
+});
+
+test('9j. PACE 项目缺 file_path → fail-closed deny', () => {
+  const dir = makeV6Project('ptu-missing-file-path');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'Write', tool_input: { content: 'x' } } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('file_path'));
+});
+
+test('9k. 非 PACE 项目 malformed stdin 保持低干扰', () => {
+  const dir = makeTmpDir('ptu-bad-stdin-nonpace');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: 'not json {{{' });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
 });
 
 console.log('\n--- stop.js ---');

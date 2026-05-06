@@ -144,6 +144,7 @@ if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 
 // 提取活跃区注入上下文（缓存 task.md 全文供后续复用）
 const found = [];
 let taskFullCached = null;
+let activeChangeSummaries = [];
 
 for (const file of ARTIFACT_FILES) {
   const fp = path.join(artDir, file);
@@ -281,6 +282,7 @@ for (const file of ARTIFACT_FILES) {
 
 if (paceSignal === 'artifact') {
   const summaries = summarizeActiveChanges(cwd);
+  activeChangeSummaries = summaries;
   if (summaries.length > 0) {
     process.stdout.write(`=== 活跃 CHG 摘要 ===\n`);
     for (const s of summaries) {
@@ -367,13 +369,16 @@ if (taskFullCached) {
       }
     }
 
-    // v4.3.6 方案 A：Claude 任务列表同步指令注入（复用 active）
-    const hasPending = /- \[[ \/!]\]/.test(active);
-    const hasCompleted = /- \[[x\-]\]/.test(active);
-    if (hasPending) {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n请为当前活跃 CHG 的未完成 T-NNN 创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
+    // v4.3.6 方案 A + v6 修正：Claude 任务列表同步以详情 T-NNN 为权威，task.md 只是索引。
+    const detailPending = activeChangeSummaries.reduce((sum, s) => sum + (Number.isFinite(s.pending) ? s.pending : 0), 0);
+    const hasCompleted = activeChangeSummaries.some(s => ['x', '-'].includes(s.taskCheckbox) || ['x', '-'].includes(s.implCheckbox));
+    const hasIndexPending = /- \[[ \/!]\]/.test(active);
+    if (detailPending > 0) {
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前详情文件有 ${detailPending} 个未完成 T-NNN，请为它们创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
     } else if (hasCompleted) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 archive-chg，归档后再清空 Claude 任务列表。\n\n`);
+    } else if (hasIndexPending && paceSignal === 'artifact') {
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前活跃 CHG 详情中没有未完成 T-NNN；task.md/implementation_plan.md 只是索引，不需要按索引行创建任务列表项。\n\n`);
     } else {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前无活跃 CHG。如 Claude 任务列表仍有残留项，请清空。\n\n`);
     }

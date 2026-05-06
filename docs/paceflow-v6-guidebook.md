@@ -6,8 +6,9 @@
 
 > 执行状态更新（2026-05-04）：本文件最初是升级审计 guidebook，部分“当前缺口”章节描述的是修复前状态。后续已完成 P0.1 agent spec 自洽修复、P0.5 hook v6 改造、plugin marketplace 安装路径澄清、skills/CLAUDE/README/REFERENCE v6-only 口径收敛。`install.js` / `verify.js` 只作为本地验证工具，不是正式安装路径。剩余发布前重点是 marketplace 实装验证、vault 迁移重跑、完整 agent fixture 报告与流程图/长文档清理。
 > 执行状态更新（2026-05-06）：agent 显示名已去重为 `artifact-writer`（插件 UI 预期显示 `paceflow:artifact-writer`），审计 skill 已去重为 `audit`，agent frontmatter 已加入 `color: orange`。hook legacy fallback 不再给 v5 自修提示，统一要求迁移或桥接到 v6。
-> 执行状态更新（2026-05-06）：worktree artifact 路由已修复。`.../<project>/worktrees/<name>` 会归一到宿主 `<project>`，优先沿用 `$PACE_VAULT_PATH/projects/<project>/changes`；避免在临时 worktree 根目录误创建独立 artifacts。
+> 执行状态更新（2026-05-06）：worktree artifact 路由已修复。真实 Git worktree（`.git -> .../.git/worktrees/*`）和 `.claude/worktrees/*` 会归一到宿主项目，优先沿用 `$PACE_VAULT_PATH/projects/<project>/changes`；避免在临时 worktree 根目录误创建独立 artifacts。
 > 执行状态更新（2026-05-06）：PreToolUse C/V 标志保护已区分 subagent。`agent_type=artifact-writer` / `paceflow:artifact-writer` 可写 `APPROVED`、`VERIFIED`、`verified-date`；主 session 或其他 agent 直接写入仍会被 deny。
+> 执行状态更新（2026-05-06，v6.0.11）：P0/P1 hook 审计项已完成：worktree 本地 `changes/` 详情文件会重定向到 vault；PACE 项目写入 hook 解析失败或缺 `file_path` 时 fail-closed；`Write/Edit/MultiEdit` 均纳入同一写入保护链路；SessionStart 的 Claude 任务列表提示改以 CHG 详情 `T-NNN` 统计为准；marker 日志记录 `agent_id` / `agent_type`；`claude plugin validate .` clean pass。
 
 ---
 
