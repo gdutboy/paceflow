@@ -1,4 +1,4 @@
-// PostToolUse hook：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + TodoWrite 同步提醒）
+// PostToolUse hook：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + Claude 任务列表同步提醒）
 const fs = require('fs');
 const path = require('path');
 let paceUtils;

@@ -258,7 +258,7 @@ test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
     paceRuntime: {
       'archive-reminded-chg-20260504-01': '1',
       'cli-refresh-done': '1',
-      'todowrite-used': '1',
+      'task-list-used': '1',
       'findings-age-2026-05-06': '1',
     },
   });
@@ -266,7 +266,7 @@ test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'archive-reminded-chg-20260504-01')));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'cli-refresh-done')));
-  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'todowrite-used')));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
   assert.ok(fs.existsSync(path.join(dir, '.pace', 'findings-age-2026-05-06')), '每日 findings 去重 flag 不应按 session 清理');
 });
 
@@ -765,6 +765,35 @@ test('14g. 索引 [x] 但 status in-progress → inconsistent 阻止修复', () 
   assert.ok(r.stderr.includes('status=in-progress'));
 });
 
+test('14h. status archived 但索引仍在活跃区 → inconsistent 阻止修复', () => {
+  const dir = makeV6ProjectWithChanges('stop-active-archived', [
+    { id: 'CHG-20260504-01', indexMark: '[x]', status: 'archived', task: '[x]', approved: true, verified: true },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('已 archived'));
+  assert.ok(r.stderr.includes('仍在活跃区'));
+});
+
+test('14i. [-] 或 cancelled 仍在活跃区 → inconsistent 阻止修复', () => {
+  const dir = makeV6ProjectWithChanges('stop-active-cancelled', [
+    { id: 'CHG-20260504-01', indexMark: '[-]', status: 'cancelled', task: '[-]', approved: true },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('已取消'));
+  assert.ok(r.stderr.includes('仍在活跃区'));
+});
+
+test('14j. in-progress 详情没有 T-NNN 任务行 → inconsistent 阻止修复', () => {
+  const dir = makeV6ProjectWithChanges('stop-empty-task-list', [
+    { id: 'CHG-20260504-01', indexMark: '[/]', status: 'in-progress', tasks: ['- [ ] 不是 T 编号任务'], approved: true },
+  ]);
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('没有可识别的 T-NNN'));
+});
+
 console.log('\n--- post-tool-use.js ---');
 
 test('15. v6 schema 缺 verified-date → warning', () => {
@@ -810,11 +839,11 @@ test('17b. legacy v5 PostToolUse 只提示迁移或桥接', () => {
   assert.ok(r.stdout.includes('不再校验或修复 v5'));
 });
 
-console.log('\n--- todowrite / pre-compact / config ---');
+console.log('\n--- task-list / pre-compact / config ---');
 
 test('18. TodoWrite 按详情未完成任务数提示', () => {
   const dir = makeV6Project('tw-v6');
-  const r = runHook('todowrite-sync.js', { cwd: dir, stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'x' }, { content: 'y' }, { content: 'z' }, { content: 'w' }, { content: 'q' }] } } });
+  const r = runHook('task-list-sync.js', { cwd: dir, stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'x' }, { content: 'y' }, { content: 'z' }, { content: 'w' }, { content: 'q' }] } } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('changes/<id>.md') || r.stdout.includes('未完成 T-NNN'));
 });
@@ -824,7 +853,7 @@ test('18c. TodoWrite 不把 planned backlog 计入当前任务数', () => {
     { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
     { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
   ]);
-  const r = runHook('todowrite-sync.js', {
+  const r = runHook('task-list-sync.js', {
     cwd: dir,
     stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'future task' }] } },
   });
@@ -834,7 +863,7 @@ test('18c. TodoWrite 不把 planned backlog 计入当前任务数', () => {
 
 test('18a. TaskCreate 走 Claude 任务列表同步提示', () => {
   const dir = makeV6Project('taskcreate-v6');
-  const r = runHook('todowrite-sync.js', {
+  const r = runHook('task-list-sync.js', {
     cwd: dir,
     stdin: {
       tool_name: 'TaskCreate',
@@ -844,12 +873,12 @@ test('18a. TaskCreate 走 Claude 任务列表同步提示', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('Claude 任务列表同步校验'));
   assert.ok(r.stdout.includes('未完成 T-NNN'));
-  assert.ok(fs.existsSync(path.join(dir, '.pace', 'todowrite-used')));
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
 });
 
 test('18b. TaskUpdate 走 Claude 任务列表同步提示', () => {
   const dir = makeV6Project('taskupdate-v6');
-  const r = runHook('todowrite-sync.js', {
+  const r = runHook('task-list-sync.js', {
     cwd: dir,
     stdin: {
       tool_name: 'TaskUpdate',
@@ -859,7 +888,7 @@ test('18b. TaskUpdate 走 Claude 任务列表同步提示', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('Claude 任务列表同步校验'));
   assert.ok(r.stdout.includes('未完成 T-NNN'));
-  assert.ok(fs.existsSync(path.join(dir, '.pace', 'todowrite-used')));
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
 });
 
 test('19. PreCompact 写 activeChanges 快照', () => {

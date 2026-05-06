@@ -73,6 +73,12 @@ if (paceSignal === 'artifact') {
         warnings.push(`${change.id} 索引已是 [x]，但详情仍有 ${change.tasks.pending} 个未完成任务。请派 update-chg action=update-status 修复状态联动，或继续完成任务。`);
       } else if (change.reason === 'index-completed-status-mismatch') {
         warnings.push(`${change.id} 索引已是 [x]，但详情 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
+      } else if (change.reason === 'active-archived') {
+        warnings.push(`${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
+      } else if (change.reason === 'active-cancelled') {
+        warnings.push(`${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
+      } else if (change.reason === 'task-list-empty') {
+        warnings.push(`${change.id} 详情 status=${change.status}，但 ## 任务清单 中没有可识别的 T-NNN 任务行。请派 artifact-writer 修复 changes/${change.slug}.md 任务清单。`);
       } else {
         warnings.push(`${change.id} 状态无法识别（status=${change.status || 'missing'}）。请派 artifact-writer 修复 frontmatter/index 状态。`);
       }
@@ -159,13 +165,15 @@ if (paceSignal === 'artifact') {
 }
 
 // Claude 任务列表残留检测：本会话用过任务列表工具且 task.md 无活跃任务 → 仅 log + 清理 flag
-// 不阻止退出，因为 hook 无法查询 Claude 内部任务列表实际状态。flag 文件名沿用 todowrite-used。
-const twFlag = path.join(PACE_RUNTIME, 'todowrite-used');
-if (paceSignal !== 'artifact' && fs.existsSync(twFlag) && taskActive) {
+// 不阻止退出，因为 hook 无法查询 Claude 内部任务列表实际状态。
+const taskListFlags = [path.join(PACE_RUNTIME, 'task-list-used'), path.join(PACE_RUNTIME, 'todowrite-used')];
+if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
   if (pending === 0 && done === 0) {
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TW_CLEANUP | task-list flag 清理（无活跃任务）\n`);
-    try { fs.unlinkSync(twFlag); } catch(e) {}
+    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TASK_LIST_CLEANUP | task-list flag 清理（无活跃任务）\n`);
+    for (const flag of taskListFlags) {
+      try { fs.unlinkSync(flag); } catch(e) {}
+    }
   }
 }
 

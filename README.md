@@ -148,7 +148,7 @@ paceflow/
 │   ├── session-start.js              #   会话启动：上下文注入
 │   ├── stop.js                       #   会话结束：完成度检查
 │   ├── stop-failure.js               #   API 错误中断：事件日志
-│   ├── todowrite-sync.js             #   任务列表：一致性校验
+│   ├── task-list-sync.js             #   任务列表：一致性校验
 │   ├── config-guard.js               #   配置保护
 │   ├── pre-compact.js                #   Compact 前快照
 │   └── templates/                    #   6 个索引模板
@@ -188,7 +188,7 @@ paceflow/
 |------|------|
 | `stop-block-count` | Stop 连续阻止计数（≥3 降级）|
 | `degraded` | 降级标记 |
-| `todowrite-used` | 本会话是否用过 TodoWrite |
+| `task-list-used` | 本会话是否用过 Claude 任务列表工具 |
 | `disabled` | 豁免标记（用户手动创建）|
 | `synced-plans` | 已桥接的 plan 文件列表 |
 
@@ -214,7 +214,7 @@ paceflow/
 - 信息性 hook → 保持生效
 
 **已知限制**：
-- todowrite-sync 无法区分团队任务与 PACE 任务（等待官方 `agent_id` 字段）
+- task-list-sync 无法区分团队任务与 PACE 任务（等待官方 `agent_id` 字段）
 - 多 teammate 并发修改 `.pace/` 理论竞态风险（未实际触发）
 
 ## 日志
@@ -228,6 +228,8 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.14 | 2026-05-06 | `todowrite-sync.js` 更名为 `task-list-sync.js`，公开文档统一为 Claude 任务列表同步；Stop 对活跃区残留 `archived/cancelled/[-]` 增加阻断修复 |
+| v6.0.13 | 2026-05-06 | Stop / SessionStart / Claude 任务列表同步改用统一 CHG 分类器，planned backlog 不再阻断 Stop 或计入当前任务列表 |
 | v6.0.11 | 2026-05-06 | 修复 worktree 本地 `changes/` 详情 artifact 分裂风险；PACE 项目写入 hook 解析失败 fail-closed；显式覆盖 MultiEdit；SessionStart 任务列表提示改看详情 T-NNN；worktree 识别收紧；marker 日志补 agent 身份；plugin validate clean pass |
 | v6.0.10 | 2026-05-06 | 重新验证 Claude Code 任务工具语义：交互式 `TaskCreate/TaskUpdate` + 非交互/SDK `TodoWrite` 双轨；任务同步提示改为 Claude 任务列表，并补 TaskCreate/TaskUpdate 回归测试 |
 | v6.0.9 | 2026-05-06 | 修复 `artifact-writer` subagent 写入 `APPROVED` / `VERIFIED` 被 PreToolUse 误伤；主 session 直接手写仍 deny |

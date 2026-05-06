@@ -98,11 +98,11 @@ paceUtils.withStdinParsed((stdin) => {
     }
     }
 
-    // 标记本会话使用过任务列表工具（供 Stop hook 检测残留）。文件名沿用旧称，避免迁移 runtime 状态。
+    // 标记本会话使用过任务列表工具（供 Stop hook 检测残留）。
     if (isWriteOp) {
       const PACE_RUNTIME = path.join(cwd, '.pace');
       try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
-      try { fs.writeFileSync(path.join(PACE_RUNTIME, 'todowrite-used'), ts(), 'utf8'); } catch(e) {}
+      try { fs.writeFileSync(path.join(PACE_RUNTIME, 'task-list-used'), ts(), 'utf8'); } catch(e) {}
     }
 
     if (hints.length > 0) {

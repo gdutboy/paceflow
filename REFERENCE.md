@@ -84,7 +84,7 @@ projects/<project>/
 | `pre-tool-use.js` | 写代码前检查活跃 CHG、详情文件、APPROVED、可执行状态 |
 | `post-tool-use.js` | schema/wikilink/直接 C-V 写入/correction knowledge 提醒 |
 | `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致 |
-| `todowrite-sync.js` | 用 `changes/<id>.md` 任务清单校验 Claude 任务列表（TaskCreate/TaskUpdate/TodoWrite） |
+| `task-list-sync.js` | 用 `changes/<id>.md` 任务清单校验 Claude 任务列表（TaskCreate/TaskUpdate/TodoWrite） |
 | `pre-compact.js` | 快照活跃 CHG、pending、approved、verified 状态 |
 | `config-guard.js` | 防止 hook 配置被误删 |
 | `stop-failure.js` | API 错误中断日志 |

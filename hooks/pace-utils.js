@@ -15,7 +15,7 @@ const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->$/m;
 // 交叉验证：AI 声称完成时匹配的中文短语
 const COMPLETION_PHRASES = /(?:任务完成|已完成所有|全部完成|归档完毕)/;
 
-// TodoWrite 与 task.md 数量差异阈值（超过此值触发提醒）
+// Claude 任务列表与详情任务数量差异阈值（超过此值触发提醒）
 const TODO_DRIFT_THRESHOLD = 3;
 
 // v5.0.0: skill 目录名列表（install.js + verify.js 共用）
@@ -53,7 +53,8 @@ const FORMAT_SNIPPETS = {
 // 会话级 flag 文件集中管理（session-start 重置用）
 const SESSION_SCOPED_FLAGS = [
   'degraded',                    // stop.js 降级标记（3 次 block 后静默放行）
-  'todowrite-used',              // todowrite-sync.js 标记（本会话已使用 Claude 任务列表工具）
+  'task-list-used',              // task-list-sync.js 标记（本会话已使用 Claude 任务列表工具）
+  'todowrite-used',              // legacy 运行态 flag，保留清理以避免旧版本残留
   'archive-reminded',            // post-tool-use.js H3 legacy flag（task.md 归档提醒，每会话一次）
   'findings-reminded',           // post-tool-use.js H7（findings ⚠️ 提醒，每会话一次）
   'impl-archive-reminded',       // post-tool-use.js H10（impl_plan 归档提醒，每会话一次）
@@ -682,7 +683,7 @@ function normalizeFrontmatterStatus(value) {
 }
 
 /**
- * 将 v6 CHG/HOTFIX 活跃项机械分类，供 Stop / SessionStart / TodoWrite 复用。
+ * 将 v6 CHG/HOTFIX 活跃项机械分类，供 Stop / SessionStart / Claude 任务列表同步复用。
  * 分类只基于索引 checkbox、frontmatter、APPROVED/VERIFIED 标记和任务清单状态。
  */
 function classifyChange(entry) {
@@ -722,9 +723,12 @@ function classifyChange(entry) {
   if ((taskCheckbox === 'x' || implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
     return { ...base, category: 'inconsistent', reason: 'index-completed-status-mismatch' };
   }
+  if ((['in-progress', 'completed'].includes(status) || taskCheckbox === '/' || implCheckbox === '/') && tasks.total === 0) {
+    return { ...base, category: 'inconsistent', reason: 'task-list-empty' };
+  }
 
-  if (status === 'archived') return { ...base, category: 'archived' };
-  if (status === 'cancelled' || taskCheckbox === '-' || implCheckbox === '-') return { ...base, category: 'cancelled' };
+  if (status === 'archived') return { ...base, category: 'inconsistent', reason: 'active-archived' };
+  if (status === 'cancelled' || taskCheckbox === '-' || implCheckbox === '-') return { ...base, category: 'inconsistent', reason: 'active-cancelled' };
   if (taskCheckbox === '!' || implCheckbox === '!' || tasks.blocked > 0) return { ...base, category: 'blocked' };
   if (status === 'completed' || taskCheckbox === 'x' || implCheckbox === 'x') return { ...base, category: 'closing-required' };
   if (status === 'in-progress' || taskCheckbox === '/' || implCheckbox === '/') return { ...base, category: 'running' };

@@ -8,7 +8,7 @@
 > 执行状态更新（2026-05-06）：agent 显示名已去重为 `artifact-writer`（插件 UI 预期显示 `paceflow:artifact-writer`），审计 skill 已去重为 `audit`，agent frontmatter 已加入 `color: orange`。hook legacy fallback 不再给 v5 自修提示，统一要求迁移或桥接到 v6。
 > 执行状态更新（2026-05-06）：worktree artifact 路由已修复。真实 Git worktree（`.git -> .../.git/worktrees/*`）和 `.claude/worktrees/*` 会归一到宿主项目，优先沿用 `$PACE_VAULT_PATH/projects/<project>/changes`；避免在临时 worktree 根目录误创建独立 artifacts。
 > 执行状态更新（2026-05-06）：PreToolUse C/V 标志保护已区分 subagent。`agent_type=artifact-writer` / `paceflow:artifact-writer` 可写 `APPROVED`、`VERIFIED`、`verified-date`；主 session 或其他 agent 直接写入仍会被 deny。
-> 执行状态更新（2026-05-06，v6.0.13）：P0/P1 hook 审计项已完成：worktree 本地 `changes/` 详情文件会重定向到 vault；PACE 项目写入 hook 解析失败或缺 `file_path` 时 fail-closed；`Write/Edit/MultiEdit` 均纳入同一写入保护链路；`PreToolUse:Agent` 会阻止未携带 vault `artifact_dir` 的 `paceflow:artifact-writer` 派遣；Stop / SessionStart / TodoWrite 使用统一 CHG 分类器区分 backlog、running、closing-required；SessionStart 的 Claude 任务列表提示改以执行中 CHG 的详情 `T-NNN` 统计为准；marker 日志记录 `agent_id` / `agent_type`；`claude plugin validate .` clean pass。
+> 执行状态更新（2026-05-06，v6.0.14）：P0/P1 hook 审计项已完成：worktree 本地 `changes/` 详情文件会重定向到 vault；PACE 项目写入 hook 解析失败或缺 `file_path` 时 fail-closed；`Write/Edit/MultiEdit` 均纳入同一写入保护链路；`PreToolUse:Agent` 会阻止未携带 vault `artifact_dir` 的 `paceflow:artifact-writer` 派遣；Stop / SessionStart / Claude 任务列表同步使用统一 CHG 分类器区分 backlog、running、closing-required；SessionStart 的 Claude 任务列表提示改以执行中 CHG 的详情 `T-NNN` 统计为准；`task-list-sync.js` 取代旧 `todowrite-sync.js` 命名；活跃区出现 `archived/cancelled/[-]` 视为索引归档未完成并阻断修复；marker 日志记录 `agent_id` / `agent_type`；`claude plugin validate .` clean pass。
 
 ---
 
@@ -270,8 +270,8 @@ Stop / SessionStart / Claude 任务列表同步必须使用同一套机械分类
 | `running` | `[/]` 或 `status=in-progress` | 阻止直到详情任务清单 pending=0 |
 | `blocked` | `[!]` 或详情任务含 `[!]` | 阻止并要求用户决策 |
 | `closing-required` | `[x]` 或 `status=completed` | 阻止直到 verified + archive |
-| `archived` / `cancelled` | `status=archived/cancelled` 或 `[-]` | 不阻止 |
-| `inconsistent` | 索引缺失、索引状态不一致、详情缺失、`[x]` 但 status 非 completed/archived | 阻止修复 |
+| `archived` / `cancelled` | ARCHIVE 下方历史项，不在活跃区分类内 | 不阻止 |
+| `inconsistent` | 索引缺失、索引状态不一致、详情缺失、`[x]` 但 status 非 completed/archived、`archived/cancelled/[-]` 仍在活跃区、running/completed 但无 T-NNN 任务行 | 阻止修复 |
 
 多 CHG backlog 是允许的；planned backlog 的 T-NNN 不计入当前 Claude 任务列表。已开始或已完成的 CHG 必须闭环，不能用后续 backlog 稀释当前 CHG 的 verify/archive 要求。
 
@@ -560,7 +560,7 @@ v6 必做：
 4. 模板懒创建必须创建 `changes/`、`changes/findings/`、`changes/corrections/`、`corrections.md`。
 5. B 方案执行后，对 v5 历史只提示 “ARCHIVE 下方历史，按需 Read”，不再尝试截断 v5 详情。
 
-### 6.6 `hooks/todowrite-sync.js`
+### 6.6 `hooks/task-list-sync.js`
 
 当前问题：
 
@@ -833,7 +833,7 @@ done
 1. 修 `pace-utils.js` v6 基础函数和模板常量。
 2. 修 `hooks/templates/` v6 模板。
 3. 修 `pre-tool-use.js` / `stop.js` / `post-tool-use.js` 三个核心 hook。
-4. 修 `session-start.js` / `todowrite-sync.js` / `pre-compact.js`。
+4. 修 `session-start.js` / `task-list-sync.js` / `pre-compact.js`。
 5. 修 plugin 元数据并确认 marketplace 安装包含 `agents/`；`install.js` / `verify.js` 仅作本地验证。
 6. 修 skills。
 7. 更新 CLAUDE/README/REFERENCE。
