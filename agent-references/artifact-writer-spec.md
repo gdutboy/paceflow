@@ -35,7 +35,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 - `worktrees/<name>` 路径归一到宿主 `<project-name>`；可用 `PACE_PROJECT_NAME` 显式指定
 - fallback 当前 cwd
 
-注意：`.pace-enabled` / `.pace/` 是 PaceFlow 激活信号，不等于 artifact 根目录。若 cwd 已启用 PaceFlow 但 `$ARTIFACT_DIR/changes` 缺失，不能在报告中写“项目未启用 PACE”；应说明“当前 artifact_dir 无 changes marker，可能未传入 vault artifact_dir”，并要求主 session 重派时显式提供 `artifact_dir: <path>`。
+注意：`.pace-enabled` 是 PaceFlow 手动激活信号，`.pace/disabled` 是显式豁免；运行态 `.pace/` 目录本身不等于启用信号，也不等于 artifact 根目录。若 cwd 已启用 PaceFlow 但 `$ARTIFACT_DIR/changes` 缺失，不能在报告中写“项目未启用 PACE”；应说明“当前 artifact_dir 无 changes marker，可能未传入 vault artifact_dir”，并要求主 session 重派时显式提供 `artifact_dir: <path>`。
 
 ---
 

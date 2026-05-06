@@ -44,6 +44,13 @@ test('有 .pace-enabled → manual', () => {
   assert.strictEqual(isPaceProject(dir), 'manual');
 });
 
+test('只有运行态 .pace/ 目录 → false（不等于启用信号）', () => {
+  const dir = makeTmpDir('runtime-pace-dir');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', '.gitignore'), '*\n');
+  assert.strictEqual(isPaceProject(dir), false);
+});
+
 test('有 docs/plans/2026-01-01-test.md → superpowers', () => {
   const dir = makeTmpDir('superpowers');
   fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });

@@ -159,7 +159,7 @@ fields:
 
 必须给出 `artifact_dir` 或足够让 agent 判断 `$ARTIFACT_DIR` 的 cwd / vault 上下文。并发派 agent 时，确保不同 agent 不操作同一个 CHG/finding/correction 详情文件。
 
-当工作目录与 Obsidian vault artifact 目录分离时，`artifact_dir` 不再只是建议字段，而是派 `paceflow:artifact-writer` 的必填字段。`PreToolUse:Agent` 会在 prompt 未包含 hook 解析出的 artifact 路径时 deny 本次派遣，要求主 session 重派。`.pace-enabled` / `.pace/` 只表示代码项目启用 PaceFlow，不表示 cwd 就是 artifact 根目录。
+当工作目录与 Obsidian vault artifact 目录分离时，`artifact_dir` 不再只是建议字段，而是派 `paceflow:artifact-writer` 的必填字段。`PreToolUse:Agent` 会在 prompt 未包含 hook 解析出的 artifact 路径时 deny 本次派遣，要求主 session 重派。`.pace-enabled` 只表示代码项目启用 PaceFlow，不表示 cwd 就是 artifact 根目录；运行态 `.pace/` 目录本身不是启用信号，`.pace/disabled` 是显式豁免。
 
 ### 3.3 Agent 的硬性输出
 
@@ -482,7 +482,7 @@ agent：
 
 ### 6.1 `hooks/pace-utils.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按下列 v6 目标迁移）：
 
 - `PACE_VERSION` 仍是 `v5.1.4`。
 - `ARTIFACT_FILES` 缺 `corrections.md`。
@@ -491,7 +491,7 @@ agent：
 - `findMissingFindingsDetails()` 查 `findings.md` 内 `### [日期]`。
 - 无 wikilink / frontmatter / detail 文件工具。
 
-v6 必做：
+v6 目标：
 
 1. `PACE_VERSION = 'v6.0.0'`。
 2. `ARTIFACT_FILES = ['spec.md','task.md','implementation_plan.md','walkthrough.md','findings.md','corrections.md']`。
@@ -504,7 +504,7 @@ v6 必做：
 
 ### 6.2 `hooks/pre-tool-use.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - Write 覆盖保护仍禁止已有 `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` Write。
 - 新建 artifact 时注入 v5 模板。
@@ -513,7 +513,7 @@ v6 必做：
 - E 阶段只查 `implementation_plan.md` 是否有 `- [/]`。
 - native/Superpowers 桥接提示要求主 session 直接 Edit `task.md` + `implementation_plan.md`。
 
-v6 必做：
+v6 目标：
 
 1. 对 artifact 操作给出 “请派 `artifact-writer`” 的 deny/hint，而不是要求主 session 手写格式。
 2. 代码文件执行前，解析 `task.md` 和 `implementation_plan.md` 中活跃 wikilink，确认至少一个当前 CHG 有详情文件。
@@ -525,7 +525,7 @@ v6 必做：
 
 ### 6.3 `hooks/post-tool-use.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - 只把 5 个主文件视为 artifact。
 - ARCHIVE 格式检查不覆盖 `corrections.md`。
@@ -536,7 +536,7 @@ v6 必做：
 - correction 双写仍检测 `findings.md` 的 `### Correction:`。
 - Claude 任务列表提醒仍按 v5 顶层任务模式处理。
 
-v6 必做：
+v6 目标：
 
 1. Edit 索引文件后检查 wikilink 目标存在。
 2. Write/Edit `changes/**/*.md` 后校验 frontmatter schema。
@@ -548,7 +548,7 @@ v6 必做：
 
 ### 6.4 `hooks/stop.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - V 阶段验证从 `task.md` 查 `<!-- VERIFIED -->`。
 - C 阶段未批准从 `task.md` 查 `<!-- APPROVED -->`。
@@ -557,7 +557,7 @@ v6 必做：
 - walkthrough 今日详情仍要求主文件内详情段。
 - 任务 pending/done 统计只看 task.md 索引，不看详情文件任务清单。
 
-v6 必做：
+v6 目标：
 
 1. 以活跃 CHG wikilink 列表为入口，读取每个详情文件。
 2. 未完成任务统计来自 `changes/<id>.md ## 任务清单`。
@@ -570,7 +570,7 @@ v6 必做：
 
 ### 6.5 `hooks/session-start.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - 遍历 5 个 artifact，不注入 `corrections.md`。
 - 注入逻辑仍截断 v5 内嵌详情。
@@ -578,7 +578,7 @@ v6 必做：
 - Superpowers 桥接提示仍要求直接 Edit task/impl_plan。
 - 格式合规检查仍查 impl_plan 表格/emoji/双 ARCHIVE 等 v5 迁移问题。
 
-v6 必做：
+v6 目标：
 
 1. 注入 6 个索引文件活跃区。
 2. 对活跃 CHG/finding/correction wikilink 加 L0 摘要：id、status、summary/title、pending 任务数。
@@ -588,12 +588,12 @@ v6 必做：
 
 ### 6.6 `hooks/task-list-sync.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - `task.md` 被视为任务权威来源。
 - 顶层 checkbox 数量与 Claude 任务列表对齐。
 
-v6 必做：
+v6 目标：
 
 1. `task.md` 是 CHG 索引，不是子任务权威。
 2. 子任务权威改为活跃 `changes/<id>.md ## 任务清单`。
@@ -603,12 +603,12 @@ v6 必做：
 
 ### 6.7 `hooks/pre-compact.js`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - snapshot 只记录 task.md 统计与 impl_plan 是否有 `[/]`。
 - findings/walkthrough snapshot 仍基于主文件。
 
-v6 必做：
+v6 目标：
 
 1. snapshot 记录活跃 CHG 列表、详情 status、未完成 T 编号、APPROVED/VERIFIED 状态。
 2. snapshot 记录 open/investigating/blocked finding 统计。
@@ -641,7 +641,7 @@ Hook 注册机制可保持不变；发布前重点确认 plugin 安装后 `hooks
 
 ### 7.1 `skills/artifact-management`
 
-当前仍是 v5 主规则。必须全面重写为 v6 权威 skill：
+v6 初始审计时仍是 v5 主规则；目标是全面重写为 v6 权威 skill：
 
 - description 增加 `corrections.md`、`changes/`、wikilink、frontmatter。
 - 删除 “5 个核心 Artifact” 改为 “6 个索引文件 + changes 详情”。
@@ -656,9 +656,9 @@ Hook 注册机制可保持不变；发布前重点确认 plugin 安装后 `hooks
 
 ### 7.2 `skills/pace-workflow`
 
-当前 A/C/E/V 阶段都要求主 session 直接改 task/impl_plan。
+v6 初始审计时 A/C/E/V 阶段都要求主 session 直接改 task/impl_plan。
 
-v6 必做：
+v6 目标：
 
 - A 阶段：调用 `artifact-writer create-chg`。
 - C 阶段：用户批准后调用 `update-chg action=approve`；若立即开始，调用 `update-chg action=approve-and-start`。
@@ -668,9 +668,9 @@ v6 必做：
 
 ### 7.3 `skills/pace-bridge`
 
-当前桥接步骤写入 `implementation_plan.md` 详情区和 `task.md` CHG 分组。
+v6 初始审计时桥接步骤写入 `implementation_plan.md` 详情区和 `task.md` CHG 分组。
 
-v6 必做：
+v6 目标：
 
 - 从 plan 提取字段后派 agent `create-chg`，不要直接 Edit。
 - auto-APPROVED 改为派 agent `update-chg action=approve-and-start`，一次完成批准与首个任务 `[/]`。
@@ -679,9 +679,9 @@ v6 必做：
 
 ### 7.4 `skills/pace-knowledge`
 
-当前 corrections 双写仍写 `findings.md ## Corrections 记录`。
+v6 初始审计时 corrections 双写仍写 `findings.md ## Corrections 记录`。
 
-v6 必做：
+v6 目标：
 
 - correction 主记录改为 `record-correction`，写 `corrections.md` + `changes/corrections/*.md`。
 - finding 提取 knowledge 后，回写 finding 详情 frontmatter 或索引 extra-meta，而不是 v5 findings 详情段。
@@ -689,9 +689,9 @@ v6 必做：
 
 ### 7.5 `skills/audit`
 
-当前审计范围没有 `agents/`、`changes/`、v6 tests；prompt 仍要求读 `CLAUDE.md` v5 章节。
+v6 初始审计时审计范围没有 `agents/`、`changes/`、v6 tests；prompt 仍要求读 `CLAUDE.md` v5 章节。
 
-v6 必做：
+v6 目标：
 
 - 审查范围加入 `agents/*.md`、`agent-references/**/*.md`、`tests/agent-tests/**/*.js|yaml|md`、`migrate/*.js`。
 - Skill 模板审查关注 v6 索引模板、frontmatter schema、wikilink 解析。
@@ -704,7 +704,7 @@ v6 必做：
 
 ### 8.1 `CLAUDE.md`
 
-当前问题：
+v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - G-3 写明 SessionStart 注入 5 个 Artifact 文件，缺 `corrections.md` 与 `changes/`。
 - G-3 仍声明 `task.md` 是任务权威来源；v6 权威应是 `changes/<id>.md` 详情文件，`task.md` 只是索引。
@@ -715,7 +715,7 @@ v6 必做：
 - G-4 允许主 session 用 Edit 修改文件，但没有把 artifact CRUD 从主 session 移交给 `artifact-writer` agent。
 - G-4 “Subagent 分流” 是通用研究分流规则，不能替代 v6 artifact writer 的强制派发规则。
 
-v6 必做：
+v6 目标：
 
 1. 改成 v6.0.0 breaking change 项目说明。
 2. 改写上下文恢复：SessionStart 注入 6 个索引 + active `changes/*.md` 摘要，旧 5 文件规则删除。
@@ -727,7 +727,7 @@ v6 必做：
 
 ### 8.2 `README.md`
 
-当前仍写：
+v6 初始审计时仍写：
 
 - 5 个 artifact。
 - task/impl_plan 内嵌状态。
@@ -736,7 +736,7 @@ v6 必做：
 - 项目结构无 `agents/`、`migrate/`、`tests/agent-tests/`。
 - 版本 v5.1.4。
 
-v6 必做：
+v6 目标：
 
 - 首页说明 “6 个索引文件 + changes 详情 + agent writer”。
 - 安装后注册 hook/skills/agent。
@@ -803,9 +803,9 @@ v6 引入 agent 后，正式发布链路必须以 Claude Code Plugin marketplace
 
 ## 9. 模板缺口
 
-当前 `hooks/templates/` 仍是 v5 模板。
+v6 初始审计时 `hooks/templates/` 仍是 v5 模板。
 
-v6 必做：
+v6 目标：
 
 | 文件 | 当前问题 | v6 要求 |
 |---|---|---|
