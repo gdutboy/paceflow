@@ -712,7 +712,7 @@ function extractNewlyCompletedChgs(oldString, newString) {
 /**
  * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
  * @param {string} rawInput - stdin 原始文本
- * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, lastMessage: string, raw: object }}
+ * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, raw: object }}
  */
 function parseHookStdin(rawInput) {
   let parsed = {};
@@ -728,6 +728,8 @@ function parseHookStdin(rawInput) {
     toolInput: parsed.tool_input || {},
     // HOTFIX-20260315-05: CC SessionStart stdin 用 `source` 字段（非 `type`）传递事件类型
     type: parsed.source || parsed.type || '',
+    agentId: parsed.agent_id || '',
+    agentType: parsed.agent_type || '',
     lastMessage: parsed.last_assistant_message || '',
     raw: parsed
   };
@@ -746,7 +748,7 @@ function withStdinParsed(callback) {
 
 /**
  * 同步 stdin 解析 — 替代 session-start/stop 的 readFileSync(0) 模板
- * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, lastMessage: string, raw: object }}
+ * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, raw: object }}
  */
 function parseStdinSync() {
   try { return parseHookStdin(fs.readFileSync(0, 'utf8')); }

@@ -220,6 +220,42 @@ test('9. 主 session 直接写 VERIFIED → DENY verify action', () => {
   assert.ok(r.stdout.includes('action=verify'));
 });
 
+test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
+  const dir = makeV6Project('ptu-marker-agent');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const approve = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-test',
+      agent_type: 'artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '## 实施详情',
+        new_string: '<!-- APPROVED -->\n\n## 实施详情',
+      },
+    },
+  });
+  assert.strictEqual(approve.code, 0);
+  assert.ok(!approve.stdout.includes('"deny"'));
+
+  const verify = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-test',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->\nverified-date: 2026-05-06T12:00:00+08:00',
+      },
+    },
+  });
+  assert.strictEqual(verify.code, 0);
+  assert.ok(!verify.stdout.includes('"deny"'));
+});
+
 test('9b. create-chg 写 verified-date null → 放行', () => {
   const dir = makeV6Project('ptu-create-null', { withIndex: false, detail: false });
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');

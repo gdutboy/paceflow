@@ -24,6 +24,10 @@ function hasNonNullVerifiedDate(text) {
   return value !== '' && value !== 'null';
 }
 
+function isArtifactWriterAgent(stdin) {
+  return ['artifact-writer', 'paceflow:artifact-writer'].includes(stdin.agentType || '');
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
@@ -161,7 +165,7 @@ paceUtils.withStdinParsed((stdin) => {
       const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
       const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
         !hasNonNullVerifiedDate(oldString || '');
-      if (addedApproved || addedVerified || setVerifiedDate) {
+      if ((addedApproved || addedVerified || setVerifiedDate) && !isArtifactWriterAgent(stdin)) {
         const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve' : 'update-chg action=verify'}。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
@@ -174,6 +178,17 @@ paceUtils.withStdinParsed((stdin) => {
           dur: Date.now() - t0,
         }));
         return;
+      }
+      if (addedApproved || addedVerified || setVerifiedDate) {
+        log(paceUtils.logEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
+          proj,
+          file: filePath,
+          agent: stdin.agentType,
+          addedApproved,
+          addedVerified,
+          setVerifiedDate,
+          dur: Date.now() - t0,
+        }));
       }
     }
 

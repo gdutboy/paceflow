@@ -643,6 +643,8 @@ test('parseHookStdin — 完整字段正常解析', () => {
       content: 'full content'
     },
     type: 'startup',
+    agent_id: 'agent-123',
+    agent_type: 'artifact-writer',
     last_assistant_message: 'done'
   });
   const r = paceUtils.parseHookStdin(input);
@@ -653,6 +655,8 @@ test('parseHookStdin — 完整字段正常解析', () => {
   assert.strictEqual(r.newString, 'new');
   assert.strictEqual(r.content, 'full content');
   assert.strictEqual(r.type, 'startup');
+  assert.strictEqual(r.agentId, 'agent-123');
+  assert.strictEqual(r.agentType, 'artifact-writer');
   assert.strictEqual(r.lastMessage, 'done');
 });
 
@@ -665,6 +669,8 @@ test('parseHookStdin — 空字符串 → ok:false + 全空字段', () => {
   assert.strictEqual(r.newString, '');
   assert.strictEqual(r.content, '');
   assert.strictEqual(r.type, '');
+  assert.strictEqual(r.agentId, '');
+  assert.strictEqual(r.agentType, '');
   assert.strictEqual(r.lastMessage, '');
 });
 
