@@ -492,88 +492,91 @@ test('listUnsyncedPlanFiles: 主文件已同步时 -design.md 伴随文件也视
 });
 
 // ============================================================
-// 10. findMissingImplDetails() — 5 个测试
+// 10. v6 change parsing/classification
 // ============================================================
-console.log('\n--- findMissingImplDetails ---');
+console.log('\n--- v6 change parsing/classification ---');
 
-test('findMissingImplDetails — 全部有详情返回空', () => {
-  const plan = `- [x] CHG-20260307-01 标题\n\n### CHG-20260307-01\n\n- 内容`;
-  const result = paceUtils.findMissingImplDetails(plan);
-  assert.deepStrictEqual(result, []);
+function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progress', checkbox = '/', tasks = ['- [/] T-001 测试任务'], approved = true, verified = false } = {}) {
+  const slug = id.toLowerCase();
+  const indexLine = `- [${checkbox}] [[${slug}]] 测试变更 #change [tasks:: T-001]\n`;
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${indexLine}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${indexLine}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'changes', `${slug}.md`), [
+    '---',
+    `chg-id: ${id}`,
+    `status: ${status}`,
+    'date: 2026-05-07',
+    'type: change',
+    'parent-tasks: ["[[task]]"]',
+    'parent-impl: ["[[implementation_plan]]"]',
+    'related-finding: null',
+    'aliases: []',
+    'tags: []',
+    'schema-version: "6.0"',
+    'completed-date: null',
+    `verified-date: ${verified ? '2026-05-07T12:00:00+08:00' : 'null'}`,
+    'archived-date: null',
+    '---',
+    '',
+    '# 测试变更',
+    '',
+    '## 任务清单',
+    '',
+    ...tasks,
+    '',
+    approved ? '<!-- APPROVED -->' : '',
+    verified ? '<!-- VERIFIED -->' : '',
+    '',
+    '## 实施详情',
+    '',
+  ].filter((line, idx, arr) => line !== '' || arr[idx - 1] !== '').join('\n'));
+}
+
+test('getActiveChangeEntries + classifyChange — running', () => {
+  const dir = makeTmpDir('v6-class-running');
+  writeV6ChangeFixture(dir);
+  const entries = paceUtils.getActiveChangeEntries(dir);
+  assert.strictEqual(entries.length, 1);
+  assert.strictEqual(entries[0].id, 'CHG-20260507-01');
+  const classified = paceUtils.classifyChange(entries[0]);
+  assert.strictEqual(classified.category, 'running');
+  assert.strictEqual(classified.tasks.pending, 1);
 });
 
-test('findMissingImplDetails — 缺详情返回 CHG-ID', () => {
-  const plan = `- [x] CHG-20260307-01 标题\n- [x] CHG-20260307-02 标题\n\n### CHG-20260307-01\n\n- 内容`;
-  const result = paceUtils.findMissingImplDetails(plan);
-  assert.deepStrictEqual(result, ['CHG-20260307-02']);
+test('classifyChange — completed 未 verified 需要收尾', () => {
+  const dir = makeTmpDir('v6-class-closing');
+  writeV6ChangeFixture(dir, { status: 'completed', checkbox: 'x', tasks: ['- [x] T-001 测试任务'] });
+  const classified = paceUtils.classifyChange(paceUtils.getActiveChangeEntries(dir)[0]);
+  assert.strictEqual(classified.category, 'closing-required');
+  assert.strictEqual(classified.verified, false);
 });
 
-test('findMissingImplDetails — [/] 和 [ ] 不检查', () => {
-  const plan = `- [/] CHG-20260307-01 标题\n- [ ] CHG-20260307-02 标题`;
-  const result = paceUtils.findMissingImplDetails(plan);
-  assert.deepStrictEqual(result, []);
+test('classifyChange — archived/cancelled 活跃区视为 inconsistent', () => {
+  const dir = makeTmpDir('v6-class-terminal-active');
+  writeV6ChangeFixture(dir, { status: 'archived', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true });
+  const classified = paceUtils.classifyChange(paceUtils.getActiveChangeEntries(dir)[0]);
+  assert.strictEqual(classified.category, 'inconsistent');
+  assert.strictEqual(classified.reason, 'active-archived');
 });
 
-test('findMissingImplDetails — HOTFIX 前缀支持', () => {
-  const plan = `- [x] HOTFIX-20260307-01 标题`;
-  const result = paceUtils.findMissingImplDetails(plan);
-  assert.deepStrictEqual(result, ['HOTFIX-20260307-01']);
-});
-
-test('findMissingImplDetails — null/空输入返回空', () => {
-  assert.deepStrictEqual(paceUtils.findMissingImplDetails(null), []);
-  assert.deepStrictEqual(paceUtils.findMissingImplDetails(''), []);
-});
-
-// ============================================================
-// 11. findMissingFindingsDetails() — 9 个测试
-// ============================================================
-console.log('\n--- findMissingFindingsDetails ---');
-
-test('findMissingFindingsDetails — null 输入返回空数组', () => {
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(null), []);
-});
-
-test('findMissingFindingsDetails — 空字符串返回空数组', () => {
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(''), []);
-});
-
-test('findMissingFindingsDetails — 无 [ ] 索引返回空', () => {
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails('- [x] 已完成 — 结论'), []);
-});
-
-test('findMissingFindingsDetails — 有 [ ] 索引有对应详情返回空', () => {
-  const withDetail = `- [ ] knowledge 注入问题 — 结论\n\n## 未解决问题\n\n### [2026-03-08] knowledge 注入问题\n\n内容...`;
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(withDetail), []);
-});
-
-test('findMissingFindingsDetails — 有 [ ] 索引缺少详情返回标题', () => {
-  const noDetail = `- [ ] knowledge 注入问题 — 结论\n\n## 未解决问题\n`;
-  const missing = paceUtils.findMissingFindingsDetails(noDetail);
-  assert.strictEqual(missing.length, 1);
-  assert.ok(missing[0].startsWith('knowledge'), '标题应以 knowledge 开头');
-});
-
-test('findMissingFindingsDetails — 多个索引部分有详情', () => {
-  const mixed = `- [ ] 问题一号标题 — 结论1\n- [ ] 问题二号标题 — 结论2\n\n### [2026-03-08] 问题一号标题\n\n详情`;
-  const mixedMissing = paceUtils.findMissingFindingsDetails(mixed);
-  assert.strictEqual(mixedMissing.length, 1, '只缺 1 个');
-  assert.ok(mixedMissing[0].startsWith('问题二号'), '缺的是问题二');
-});
-
-test('findMissingFindingsDetails — [x]/[-] 不检查', () => {
-  const doneItems = `- [x] 已完成 — ok\n- [-] 已跳过 — reason\n`;
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(doneItems), []);
-});
-
-test('findMissingFindingsDetails — ### 无日期前缀也能匹配', () => {
-  const noDate = `- [ ] 特殊问题标题 — 结论\n\n### 特殊问题标题\n\n内容`;
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(noDate), []);
-});
-
-test('findMissingFindingsDetails — 标题短于 8 字也能匹配', () => {
-  const shortTitle = `- [ ] 短标题 — 结论\n\n### [2026-03-08] 短标题详细说明\n\n内容`;
-  assert.deepStrictEqual(paceUtils.findMissingFindingsDetails(shortTitle), []);
+test('countDetailTasks — 只识别 T-NNN 三位任务编号', () => {
+  const content = [
+    '## 任务清单',
+    '',
+    '- [/] T-001 正确编号',
+    '- [x] T-002 正确编号',
+    '- [ ] T-1 非规范编号',
+    '',
+    '## 实施详情',
+  ].join('\n');
+  assert.deepStrictEqual(paceUtils.countDetailTasks(content), {
+    pending: 1,
+    done: 1,
+    total: 2,
+    inProgress: 1,
+    blocked: 0,
+  });
 });
 
 // ============================================================

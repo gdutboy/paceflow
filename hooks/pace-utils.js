@@ -442,45 +442,6 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
 }
 
 /**
- * legacy fallback：检查 impl_plan 全文中所有 [x] 索引是否有对应详情段落
- * @param {string} planFull - implementation_plan.md 全文
- * @returns {string[]} 缺少详情的 CHG/HOTFIX-ID 列表
- */
-function findMissingImplDetails(planFull) {
-  if (!planFull) return [];
-  const doneIndex = planFull.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [];
-  if (doneIndex.length === 0) return [];
-  return doneIndex
-    .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0])
-    .filter(id => {
-      const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return !new RegExp(`^### ${escaped}`, 'm').test(planFull);
-    });
-}
-
-/**
- * 检查 findings.md 全文中 [ ] 索引是否有对应 ### 详情段落
- * 匹配规则：索引标题全文在详情 ### 行中子串匹配
- * @param {string} findingsFull - findings.md 全文
- * @returns {string[]} 缺少详情的标题列表
- */
-function findMissingFindingsDetails(findingsFull) {
-  if (!findingsFull) return [];
-  const unresolved = findingsFull.match(/^- \[ \] ([^—\n]+)/gm) || [];
-  if (unresolved.length === 0) return [];
-  const detailHeaders = (findingsFull.match(/^### .+$/gm) || [])
-    .map(h => h.replace(/^### (\[\d{4}-\d{2}-\d{2}\] )?/, ''));
-  const missing = [];
-  for (const line of unresolved) {
-    const title = line.replace(/^- \[ \] /, '').trim();
-    if (!detailHeaders.some(dt => dt.includes(title))) {
-      missing.push(title);
-    }
-  }
-  return missing;
-}
-
-/**
  * 读取 AI 记录的 native plan 文件路径
  * @param {string} cwd - 项目根目录
  * @returns {string|null} plan 文件路径或 null
@@ -497,6 +458,7 @@ function getNativePlanPath(cwd) {
  * @returns {Array<{title: string, summary: string, status: string}>}
  */
 function scanRelatedNotes(projectName) {
+  if (!VAULT_PATH) return [];
   const results = [];
   for (const dir of ['thoughts', 'knowledge']) {
     const dirPath = path.join(VAULT_PATH, dir);
@@ -539,7 +501,24 @@ const MAX_LOG_SIZE = 1024 * 1024;
  */
 function createLogger(logPath) {
   return (msg) => {
+    let lockFd = null;
+    const lockPath = `${logPath}.lock`;
     try {
+      try {
+        lockFd = fs.openSync(lockPath, 'wx');
+      } catch(e) {
+        try {
+          const stat = fs.statSync(lockPath);
+          if (Date.now() - stat.mtimeMs > 5000) {
+            fs.unlinkSync(lockPath);
+            lockFd = fs.openSync(lockPath, 'wx');
+          }
+        } catch(e2) {}
+      }
+      if (lockFd === null) {
+        fs.appendFileSync(logPath, msg);
+        return;
+      }
       try {
         const stat = fs.statSync(logPath);
         if (stat.size > MAX_LOG_SIZE) {
@@ -552,7 +531,13 @@ function createLogger(logPath) {
         }
       } catch(e) {}
       fs.appendFileSync(logPath, msg);
-    } catch(e) {}
+    } catch(e) {
+    } finally {
+      if (lockFd !== null) {
+        try { fs.closeSync(lockFd); } catch(e) {}
+        try { fs.unlinkSync(lockPath); } catch(e) {}
+      }
+    }
   };
 }
 
@@ -626,8 +611,6 @@ function detailPathForId(artDir, id) {
   if (/^chg-\d{8}-\d{2}$/.test(lower) || /^hotfix-\d{8}-\d{2}$/.test(lower)) {
     return path.join(artDir, 'changes', `${lower}.md`);
   }
-  if (/^CHG-\d{8}-\d{2}$/.test(id)) return path.join(artDir, 'changes', `chg-${id.slice(4).toLowerCase()}.md`);
-  if (/^HOTFIX-\d{8}-\d{2}$/.test(id)) return path.join(artDir, 'changes', `hotfix-${id.slice(7).toLowerCase()}.md`);
   return null;
 }
 
@@ -673,10 +656,10 @@ function extractTaskSection(content) {
 /** 统计详情任务状态 */
 function countDetailTasks(content) {
   const section = extractTaskSection(content);
-  const pending = (section.match(/^- \[[ \/!]\]\s+T-\d+/gm) || []).length;
-  const done = (section.match(/^- \[(?:x|-)\]\s+T-\d+/gm) || []).length;
-  const inProgress = (section.match(/^- \[\/\]\s+T-\d+/gm) || []).length;
-  const blocked = (section.match(/^- \[!\]\s+T-\d+/gm) || []).length;
+  const pending = (section.match(/^- \[[ \/!]\]\s+T-\d{3}\b/gm) || []).length;
+  const done = (section.match(/^- \[(?:x|-)\]\s+T-\d{3}\b/gm) || []).length;
+  const inProgress = (section.match(/^- \[\/\]\s+T-\d{3}\b/gm) || []).length;
+  const blocked = (section.match(/^- \[!\]\s+T-\d{3}\b/gm) || []).length;
   return { pending, done, total: pending + done, inProgress, blocked };
 }
 
@@ -800,15 +783,6 @@ function summarizeActiveChanges(cwd) {
   });
 }
 
-/** W-6: 从 Edit old/new string 中提取本次新标为 [x] 的 CHG/HOTFIX ID */
-function extractNewlyCompletedChgs(oldString, newString) {
-  const newDone = (newString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
-    .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]);
-  const oldDone = new Set((oldString.match(/^- \[x\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || [])
-    .map(m => m.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/)[0]));
-  return newDone.filter(id => !oldDone.has(id));
-}
-
 // S-1: 统一 stdin 解析 — 替换 6 个 hook 的重复 JSON.parse 模板
 /**
  * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
@@ -872,7 +846,7 @@ module.exports = {
   // 计划文件
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
   // 统计与检查
-  countByStatus, findMissingImplDetails, findMissingFindingsDetails, extractOpenKeys, detectLegacyImplFormat, extractNewlyCompletedChgs,
+  countByStatus, extractOpenKeys, detectLegacyImplFormat,
   parseFrontmatter, detailPathForId, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成

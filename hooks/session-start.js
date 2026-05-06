@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, listUnsyncedPlanFiles, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, formatBridgeHint, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -37,6 +37,14 @@ if (paceSignal) {
   try {
     for (const f of fs.readdirSync(PACE_RUNTIME)) {
       if (SESSION_SCOPED_FLAG_PREFIXES.some(prefix => f.startsWith(prefix))) {
+        try { fs.unlinkSync(path.join(PACE_RUNTIME, f)); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+  try {
+    const todayFindingsFlag = `findings-age-${todayISO()}`;
+    for (const f of fs.readdirSync(PACE_RUNTIME)) {
+      if (f.startsWith('findings-age-') && f !== todayFindingsFlag) {
         try { fs.unlinkSync(path.join(PACE_RUNTIME, f)); } catch(e) {}
       }
     }
@@ -146,7 +154,7 @@ if (paceSignal) {
 if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
   if (created.length > 0) {
-    log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: CREATE_TEMPLATES | signal: ${paceSignal} | files: ${created.join(', ')}\n`);
+    log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', { cwd, signal: paceSignal, files: created.join(', ') }));
   }
 }
 
@@ -359,21 +367,19 @@ if (taskFullCached) {
       process.stdout.write(`\n=== 跨会话提醒 ===\ntask.md 有 ${skipped.length} 个跳过的任务（[-]），请用 AskUserQuestion 询问用户这些跳过的任务是否需要重新开启或更新为 [x]：\n`);
       skipped.slice(-3).forEach(t => process.stdout.write(`  ${t}\n`));
       process.stdout.write('\n');
-      log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SKIPPED_REMINDER | count: ${skipped.length}\n`);
+      log(paceUtils.logEntry('SessionStart', 'SKIPPED_REMINDER', { cwd, count: skipped.length }));
     }
 
-    // Superpowers 桥接检测：有未同步的 plan 文件但 task.md 无活跃任务
+    // Superpowers/native plan 桥接检测：有未同步的 plan 文件但 task.md 无活跃任务
     if (paceSignal) {
-      const unsyncedPlans = listUnsyncedPlanFiles(cwd);
-      if (unsyncedPlans.length > 0) {
+      const bridgeHint = formatBridgeHint(cwd, artDir);
+      if (bridgeHint) {
         const hasActive = active && /- \[[ \/!]\]/.test(active);
         if (!hasActive) {
-          const fileList = unsyncedPlans.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
           process.stdout.write(`\n=== Superpowers 桥接提醒 ===\n`);
-          process.stdout.write(`检测到计划文件（${fileList}）但 task.md 无活跃任务。\n`);
-          process.stdout.write(`请在派 subagent 前执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引。\n`);
-          process.stdout.write(`详见 /pace-bridge skill。\n\n`);
-          log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: SUPERPOWERS_BRIDGE_HINT | plans: ${fileList}\n`);
+          process.stdout.write(`检测到计划文件（${bridgeHint.fileList}）但 task.md 无活跃任务。\n`);
+          process.stdout.write(`请在派 subagent 前执行桥接：${bridgeHint.bridgeSteps}\n\n`);
+          log(paceUtils.logEntry('SessionStart', 'SUPERPOWERS_BRIDGE_HINT', { cwd, plans: bridgeHint.fileList }));
         }
       }
     }
@@ -425,11 +431,6 @@ try {
         process.stdout.write('\n');
       }
       try { fs.writeFileSync(ageFlag, '1', 'utf8'); } catch(e) {}
-      // 清理过期去重标记
-      try {
-        const flags = fs.readdirSync(PACE_RUNTIME).filter(f => f.startsWith('findings-age-') && f !== `findings-age-${yyyy}`);
-        flags.forEach(f => { try { fs.unlinkSync(path.join(PACE_RUNTIME, f)); } catch(e) {} });
-      } catch(e) {}
     }
   }
 } catch(e) {}
@@ -459,9 +460,9 @@ try {
   }
 } catch(e) {} // Vault 不可用静默跳过
 
-log(`[${ts()}] SessionStart | cwd: ${cwd} | ${PACE_VERSION}\n  action: INJECT | proj: ${proj} | event: ${eventType} | files: ${found.length ? found.join(', ') : '无 Artifact 文件'}\n`);
+log(paceUtils.logEntry('SessionStart', 'INJECT', { cwd, proj, event: eventType, files: found.length ? found.join(', ') : '无 Artifact 文件', version: PACE_VERSION }));
 
 } catch(e) {
   // H-3: 顶层异常捕获，静默放行
-  try { log(`[${ts()}] SessionStart | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+  try { log(paceUtils.logEntry('SessionStart', 'ERROR', { cwd, error: e.message })); } catch(e2) {}
 }

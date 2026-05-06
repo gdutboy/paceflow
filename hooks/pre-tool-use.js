@@ -91,6 +91,7 @@ paceUtils.withStdinParsed((stdin) => {
     };
     process.stdout.write(JSON.stringify(output));
     log(paceUtils.logEntry('PreToolUse', action, { proj, tool: toolName, file: filePath, ...fields, dur: Date.now() - t0 }));
+    return output;
   }
   const teammateTag = isTeammate() ? '_TEAMMATE' : '';
 
@@ -112,12 +113,11 @@ paceUtils.withStdinParsed((stdin) => {
   // 非 PACE 项目保持低干扰；PACE 项目中坏 stdin 或缺关键字段不能自然放行。
   if (paceSignal) {
     if (!stdin.ok) {
-      hardDeny(
+      return hardDeny(
         'PACE hook 无法解析 Claude Code 提供的 Write/Edit JSON 输入。为避免绕过 artifact 保护，本次写入已阻止；请重试工具调用。',
         'DENY_BAD_STDIN',
         { stdin_ok: false }
       );
-      return;
     }
     if (isAgentTool(toolName)) {
       if (isArtifactWriterAgentTool(stdin) && artDir !== cwd && !promptIncludesPath(stdin.toolInput.prompt, artDir)) {
@@ -158,18 +158,16 @@ paceUtils.withStdinParsed((stdin) => {
       return;
     }
     if (!isFileMutationTool(toolName)) {
-      hardDeny(
+      return hardDeny(
         `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit/Agent，已阻止以避免绕过保护。`,
         'DENY_BAD_TOOL'
       );
-      return;
     }
     if (!rawFilePath) {
-      hardDeny(
+      return hardDeny(
         'PACE hook 缺少 tool_input.file_path，无法判断写入是否会修改 artifact。为避免绕过保护，本次写入已阻止；请重试工具调用。',
         'DENY_MISSING_FILE_PATH'
       );
-      return;
     }
   }
 
@@ -199,7 +197,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_REDIRECT | tool: ${toolName} | file: ${filePath}\n  artifact: ${cwdArtifactRel}\n  redirect: ${correctPath}\n`);
+      log(paceUtils.logEntry('PreToolUse', 'DENY_REDIRECT', { proj, tool: toolName, file: filePath, artifact: cwdArtifactRel, redirect: correctPath, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -216,7 +214,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_WRITE_ARTIFACT | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+      log(paceUtils.logEntry('PreToolUse', 'DENY_WRITE_ARTIFACT', { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -390,7 +388,7 @@ paceUtils.withStdinParsed((stdin) => {
     const reason = `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md / implementation_plan.md wikilink 索引。不要继续在 task.md / implementation_plan.md 手写 v5 详情、APPROVED 或 VERIFIED。`;
     const output = denyOrHint(reason);
     process.stdout.write(JSON.stringify(output));
-    log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_LEGACY_ACTIVE${teammateTag} | tool: ${toolName} | file: ${filePath}\n  reason→AI: ${reason}\n`);
+    log(paceUtils.logEntry('PreToolUse', `DENY_LEGACY_ACTIVE${teammateTag}`, { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
     return;
   }
 
@@ -406,7 +404,7 @@ paceUtils.withStdinParsed((stdin) => {
       const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start；完成后删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_NATIVE_PLAN${teammateTag} | plan: ${nativePlan}\n`);
+      log(paceUtils.logEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -450,7 +448,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: ${paceSignal} | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
+      log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
       return;
     }
 
@@ -464,7 +462,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve-and-start 后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);
+        log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
         return;
       }
     }
@@ -482,7 +480,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: SOFT_WARN | codeCount: ${displayCountForHint} | tool: ${toolName} | file: ${filePath}\n  output→AI: ${ctx}\n`);
+      log(paceUtils.logEntry('PreToolUse', 'SOFT_WARN', { proj, codeCount: displayCountForHint, tool: toolName, file: filePath, output: ctx, dur: Date.now() - t0 }));
       return;
     }
 
@@ -506,6 +504,6 @@ paceUtils.withStdinParsed((stdin) => {
     log(paceUtils.logEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-task-content', dur: Date.now() - t0 }));
   }
   } catch(e) {
-    try { log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+    try { log(paceUtils.logEntry('PreToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
   }
 });

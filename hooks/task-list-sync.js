@@ -90,7 +90,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(denyOutput));
-          log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: DENY | tool: ${toolName} | superpowers bridge required (no task.md)\n`);
+          log(paceUtils.logEntry('TaskSync', 'DENY', { proj, tool: toolName, reason: 'superpowers bridge required (no task.md)', dur: Date.now() - t0 }));
           return;
         }
         hints.push(`未检测到 v6 artifact。请先创建 changes/ 与 v6 索引，或用 .pace/disabled 标记此项目不使用 PACE。`);
@@ -114,11 +114,11 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: HINT | tool: ${toolName} | hints: ${hints.join('; ')}\n`);
+      log(paceUtils.logEntry('TaskSync', 'HINT', { proj, tool: toolName, hints: hints.join('; '), dur: Date.now() - t0 }));
     } else {
       log(paceUtils.logEntry('TaskSync', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
     }
   } catch(e) {
-    log(`[${ts()}] TaskSync    | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`);
+    log(paceUtils.logEntry('TaskSync', 'ERROR', { proj, error: e.message }));
   }
 });

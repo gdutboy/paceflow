@@ -114,7 +114,7 @@ changes/
 - `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 artifact writer 扫描 `changes/` 生成。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配，写入 `changes/<id>.md` 的 `## 任务清单`。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
-- `CORRECTION-YYYY-MM-DD-NN`：详情在 `changes/corrections/`。
+- `CORRECTION-YYYY-MM-DD-NN`：frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
 
 不要从 `implementation_plan.md` 的内嵌详情推导编号；v6 没有内嵌详情区。
 

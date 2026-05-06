@@ -40,6 +40,7 @@ Claude Code added enough hook and plugin surface after `2.1.75` that PaceFlow sh
 10. Skill / agent frontmatter extensions: `effort`, `maxTurns`, `disallowedTools`, `permissionMode`, `initialPrompt`, hooks, paths list, and color.
 11. Headless / SDK / production-test improvements: stream-json plugin errors, `--print` respecting agent tools, forked subagents in non-interactive sessions.
 12. Telemetry/resource fields: `duration_ms`, `tool_use_id`, OTel skill/tool events, status-line effort.
+13. Native plan UX is less random than the 2.1.75-era behavior: accepted plans now auto-name sessions from plan content, `/plan` / `/plan open` reuse the existing plan correctly, and forked conversations no longer share one plan file. PaceFlow should bridge plans by explicit file path/content and recency, not by assuming opaque random names.
 
 ## Already Applied During v6 Work
 
@@ -49,6 +50,7 @@ Claude Code added enough hook and plugin surface after `2.1.75` that PaceFlow sh
 | Agent frontmatter supports `effort` and `color` | Applied in `6.0.7`: `effort: max`, `color: orange` |
 | Agent frontmatter supports `maxTurns` | Applied in `6.0.15`: `maxTurns: 32` for `artifact-writer` after merged baseline showed legitimate close operations below this bound |
 | Worktree behavior changed and native `EnterWorktree` exists | Applied in `6.0.8`: `worktrees/<name>` maps to host project artifact directory |
+| Native plan handling changed after 2.1.75 | Current bridge already keys off explicit paths, content, and recent mtime; do not design logic that depends on random plan filenames |
 | Plugin validation catches hook/frontmatter schema issues | Partially applied: local tests cover plugin shape; add `claude plugin validate` to release gate |
 | Production tests can rely on agent frontmatter tools in `--print` | Partially applied: production prompt gate exists; should explicitly test installed plugin/agent |
 
@@ -537,6 +539,7 @@ This section records the relevant items found in changelog versions after `2.1.7
 - PreToolUse `"allow"` no longer bypasses deny permission rules.
 - Write line ending conversion fixed.
 - `claude plugin validate` checks skill/agent/command frontmatter and `hooks/hooks.json`.
+- Sessions are auto-named from accepted plan content; VS Code plan preview titles use the plan heading.
 - Agent tool `resume` removed; use `SendMessage`.
 - `/fork` renamed to `/branch`.
 
@@ -561,6 +564,7 @@ This section records the relevant items found in changelog versions after `2.1.7
 | P1 | Add PostToolBatch hook as read-only consistency observer | Reduces duplicate reminders under parallel tool calls |
 | P1 | Evaluate PreToolUse `updatedInput` vault redirection | Can remove deny/retry loops for wrong artifact path |
 | P1 | Add plugin userConfig design for `vaultPath` and project override | Reduces env-var fragility |
+| P1 | Add production test for native plan bridge using current Claude Code plan naming | Verifies PaceFlow no longer assumes random plan filenames or stale fork-shared plan files |
 | P1 | Add production baseline checks for stream-json plugin load errors | Catches install/runtime mismatch earlier |
 | P2 | Evaluate component-scoped hooks in `artifact-writer` | Can shrink global hook complexity |
 | P2 | Evaluate `updatedToolOutput` for redaction/trimming | Useful but risky if it hides needed details |

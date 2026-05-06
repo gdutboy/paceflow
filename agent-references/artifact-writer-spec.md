@@ -92,6 +92,8 @@ project-scope: null                  # "project-only" 或 null
 schema-version: "6.0"
 ```
 
+`correction-id` 是稳定 ID；详情文件名和 wikilink 必须追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
+
 **输入字段归一规则**（agent 内部转换）：
 
 用户简化输入与 frontmatter 双字段的转换：

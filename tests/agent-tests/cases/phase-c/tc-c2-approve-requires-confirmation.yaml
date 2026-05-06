@@ -1,0 +1,81 @@
+id: TC-C2
+phase: C
+indication: approve-and-start-requires-confirmation
+description: C 阶段 approve-and-start 必须由主 session 明确传入 approval-confirmed=true；缺少确认时 agent 应拒绝写入。
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: planned
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: null
+        verified-date: null
+        archived-date: null
+        ---
+
+        # TC-C2 测试 approve confirmation guard
+
+        ## 任务清单
+
+        - [ ] T-901 启动任务一
+
+        ## 实施详情
+
+        **背景（Why）**：测试 C 阶段确认门禁
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [ ] [[chg-{date}-01]] TC-C2 测试 approve confirmation guard #change [tasks:: T-901]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        - [ ] [[chg-{date}-01]] TC-C2 测试 approve confirmation guard #change [tasks:: T-901]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: update-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    action: approve-and-start
+    task-id: T-901
+
+expected:
+  status: FAILED
+  files_created: []
+  files_modified: []
+  failure_reason_pattern: "approval-confirmed|confirmation|format-violation"
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true

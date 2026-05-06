@@ -1,6 +1,6 @@
 # artifact-writer 测试框架
 
-> v6.0.0 Phase A-D 测试套件。Phase A 已就绪。
+> v6.0.0 Phase A-D 测试套件。Phase A/B/C/D 均有 baseline 用例。
 
 ## 目录结构
 
@@ -9,7 +9,10 @@ tests/agent-tests/
 ├── README.md                # 本文件
 ├── run-tests.js             # 主运行器（CLI: node run-tests.js [phase]）
 ├── cases/                   # 测试用例（YAML）
-│   └── phase-a/             # 核心指令 happy path
+│   ├── phase-a/             # 核心指令 happy path
+│   ├── phase-b/             # 负例与拒绝路径
+│   ├── phase-c/             # C 阶段批准与确认门禁
+│   └── phase-d/             # 边界与大输入
 ├── fixtures/                # vault 状态快照（cp -r 到临时目录后跑测试）
 │   └── empty-v6/            # 空 v6 项目（5 索引模板 + 空 changes/）
 ├── helpers/                 # 框架基础设施
@@ -32,7 +35,7 @@ cd paceflow/tests/agent-tests
 node run-tests.js dummy        # 跑 mock 用例验证框架基础设施
 ```
 
-### 跑 Phase A（v6.0.0 重测）
+### 跑单个 Phase（v6.0.0 重测）
 
 由于 Claude Code Agent tool 必须在主 session 内调用，**Phase 1 半自动模式**：
 
@@ -50,7 +53,7 @@ node run-tests.js dummy        # 跑 mock 用例验证框架基础设施
 
 2. 命令行批量（Phase 2，需研究 `claude --agent` CLI 子命令）：
    ```bash
-   node run-tests.js A    # 自动迭代 phase-a/*.yaml
+   node run-tests.js list phase-c
    ```
 
 ## 用例 YAML 格式

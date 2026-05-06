@@ -138,8 +138,10 @@ Stop hook 连续阻止 3 次后自动降级为放行，防止 AI 陷入死循环
 paceflow/
 ├── .claude-plugin/plugin.json        # Plugin 元数据
 ├── agents/                           # Artifact writer agent
-│   ├── artifact-writer.md
-│   └── references/
+│   └── artifact-writer.md
+├── agent-references/                 # Agent 运行规范与 instruction contracts
+│   ├── artifact-writer-spec.md
+│   └── instructions/
 ├── hooks/                            # 8 个 Hook 脚本 + 公共工具
 │   ├── hooks.json                    #   自动注册配置
 │   ├── pace-utils.js                 #   公共工具库
@@ -157,7 +159,7 @@ paceflow/
 │   ├── pace-bridge/                  #   Superpowers 桥接
 │   ├── artifact-management/          #   Artifact + 变更管理规则
 │   ├── pace-knowledge/               #   Obsidian 知识库管理
-│   └── audit/               #   5-Agent 并行审查
+│   └── audit/                        #   5-Agent 并行审查
 └── tests/                            # Hook + agent contract 测试
 ```
 

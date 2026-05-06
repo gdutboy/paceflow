@@ -109,7 +109,7 @@ try {
   fs.mkdirSync(PACE_RUNTIME, { recursive: true });
   fs.writeFileSync(path.join(PACE_RUNTIME, 'pre-compact-state.json'), JSON.stringify(snapshot, null, 2), 'utf8');
 
-  log(`[${ts()}] PreCompact  | cwd: ${cwd}\n  action: SNAPSHOT | tasks: ${taskActive ? 'yes' : 'no'} | plan: ${planActive ? 'yes' : 'no'}\n`);
+  log(paceUtils.logEntry('PreCompact', 'SNAPSHOT', { proj, tasks: taskActive ? 'yes' : 'no', plan: planActive ? 'yes' : 'no' }));
 } catch(e) {
-  try { log(`[${ts()}] PreCompact  | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+  try { log(paceUtils.logEntry('PreCompact', 'ERROR', { proj, error: e.message })); } catch(e2) {}
 }

@@ -33,5 +33,5 @@ try {
     dur: Date.now() - t0
   }));
 } catch(e) {
-  try { log(`[${ts()}] StopFailure | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+  try { log(logEntry('StopFailure', 'ERROR', { proj, error: e.message })); } catch(e2) {}
 }

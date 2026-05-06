@@ -122,9 +122,9 @@ paceUtils.withStdinParsed((stdin) => {
     warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。PostToolUse 不再校验或修复 v5 活跃详情格式。`);
   } else {
     // task.md 不存在时：v4.3 多信号检测
-    const paceSignal = isPaceProject(cwd);
-    if (paceSignal === 'superpowers' || paceSignal === 'manual') {
-      warnings.push(`检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
+    const fallbackSignal = isPaceProject(cwd);
+    if (fallbackSignal === 'superpowers' || fallbackSignal === 'manual') {
+      warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
     } else {
       const codeCount = countCodeFiles(cwd);
       if (codeCount >= 3) {
@@ -172,11 +172,11 @@ paceUtils.withStdinParsed((stdin) => {
       }
     };
     process.stdout.write(JSON.stringify(output));
-    log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: WARN | tool: ${toolName} | file: ${filePath || '-'} | checks: ${warnings.length} 项\n  output→AI: ${ctx}\n`);
+    log(paceUtils.logEntry('PostToolUse', 'WARN', { proj, tool: toolName, file: filePath || '-', checks: warnings.length, output: ctx, dur: Date.now() - t0 }));
   } else {
     log(paceUtils.logEntry('PostToolUse', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
   }
   } catch(e) {
-    try { log(`[${ts()}] PostToolUse | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+    try { log(paceUtils.logEntry('PostToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
   }
 });

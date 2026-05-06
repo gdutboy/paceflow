@@ -1,21 +1,21 @@
-# 23-case Agent Baseline Commands
+# 25-case Agent Baseline Commands
 
 自动化入口：
 
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow
-MODE=harness OUTDIR=/tmp/paceflow-agent-baseline tests/agent-tests/run-agent-cli-suite.sh 23
+MODE=harness OUTDIR=/tmp/paceflow-agent-baseline tests/agent-tests/run-agent-cli-suite.sh 25
 ```
 
 下面是手工分步命令，主要用于单 case 调试。
 
-> 用途：PACEflow v6 agent fixture 全量 baseline（Phase A 10 个 + Phase B 9 个 + Phase D 4 个）。
+> 用途：PACEflow v6 agent fixture 全量 baseline（Phase A 10 个 + Phase B 9 个 + Phase C 2 个 + Phase D 4 个）。
 > 本文使用默认 `harness` prompt。真实主 session 派发路径见
 > `tests/agent-tests/production-prompt-smoke-commands.md`。
-> `23` 全量 baseline 包含 TC-D2 长正文内容保真用例；它适合作为 harness / model benchmark，
+> `25` 全量 baseline 包含 TC-D2 长正文内容保真用例；它适合作为 harness / model benchmark，
 > 不作为 production release gate。发布阻断请跑：
 > `MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate`。
-> `21` 仍作为历史兼容 alias 保留，当前等价于 `23`。
+> `21` / `23` 仍作为历史兼容 alias 保留，当前等价于 `25`。
 >
 > 每个 case 的流程固定为：
 > 1. `prepare` 输出 agent prompt
@@ -114,6 +114,18 @@ node tests/agent-tests/run-tests.js teardown cases/phase-b/tc-b8-unknown-operati
 node tests/agent-tests/run-tests.js prepare cases/phase-b/tc-b9-not-pace-project.yaml
 node tests/agent-tests/run-tests.js verify cases/phase-b/tc-b9-not-pace-project.yaml /tmp/paceflow-agent-baseline/tc-b9-report.json
 node tests/agent-tests/run-tests.js teardown cases/phase-b/tc-b9-not-pace-project.yaml
+```
+
+## Phase C
+
+```bash
+node tests/agent-tests/run-tests.js prepare cases/phase-c/tc-c1-approve-and-start.yaml
+node tests/agent-tests/run-tests.js verify cases/phase-c/tc-c1-approve-and-start.yaml /tmp/paceflow-agent-baseline/tc-c1-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-c/tc-c1-approve-and-start.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-c/tc-c2-approve-requires-confirmation.yaml
+node tests/agent-tests/run-tests.js verify cases/phase-c/tc-c2-approve-requires-confirmation.yaml /tmp/paceflow-agent-baseline/tc-c2-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-c/tc-c2-approve-requires-confirmation.yaml
 ```
 
 ## Phase D

@@ -106,10 +106,12 @@ git diff --check                  # PASS
 当前本机 Claude Code：
 
 ```text
-2.1.128 (Claude Code)
+2.1.131 (Claude Code)
 ```
 
 官方 changelog 已检查到 `2.1.131`；`2.1.131` 暂未发现推翻上述决策的 PaceFlow task/hook 变更。
+
+Native plan 备注（2026-05-07 复核）：官方 changelog 没有单独声明“plan 文件名不再随机”，但 2.1.77 已将接受计划后的 session 命名改为按 plan 内容生成，并改进 VS Code plan preview 标题；2.1.119 修复 `/plan` / `/plan open` 不作用于既有 plan；2.1.71 修复 fork/branch 共享同一个 plan 文件。PaceFlow 后续 bridge 测试应按明确路径、内容和最近修改时间判断 plan，不依赖随机文件名假设。
 
 ---
 

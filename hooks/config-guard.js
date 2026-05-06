@@ -42,7 +42,7 @@ paceUtils.withStdinParsed((stdin, rawInput) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: WARN | reason: disableAllHooks=true\n`);
+      log(paceUtils.logEntry('ConfigGuard', 'WARN', { proj, reason: 'disableAllHooks=true', dur: Date.now() - t0 }));
       return;
     }
 
@@ -58,11 +58,11 @@ paceUtils.withStdinParsed((stdin, rawInput) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: WARN | reason: PACE hook 可能被删除\n`);
+      log(paceUtils.logEntry('ConfigGuard', 'WARN', { proj, reason: 'PACE hook 可能被删除', dur: Date.now() - t0 }));
       return;
     }
     log(paceUtils.logEntry('ConfigGuard', 'PASS', { proj, dur: Date.now() - t0 }));
   } catch(e) {
-    try { log(`[${ts()}] ConfigGuard | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+    try { log(paceUtils.logEntry('ConfigGuard', 'ERROR', { proj, error: e.message })); } catch(e2) {}
   }
 });

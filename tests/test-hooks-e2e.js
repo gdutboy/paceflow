@@ -254,12 +254,14 @@ test('3. compact 恢复显示 activeChanges', () => {
 });
 
 test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
+  const currentFindingsAgeFlag = `findings-age-${today()}`;
   const dir = makeV6Project('ss-session-flags', {
     paceRuntime: {
       'archive-reminded-chg-20260504-01': '1',
       'cli-refresh-done': '1',
       'task-list-used': '1',
-      'findings-age-2026-05-06': '1',
+      'findings-age-2000-01-01': '1',
+      [currentFindingsAgeFlag]: '1',
     },
   });
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
@@ -267,7 +269,8 @@ test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'archive-reminded-chg-20260504-01')));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'cli-refresh-done')));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
-  assert.ok(fs.existsSync(path.join(dir, '.pace', 'findings-age-2026-05-06')), '每日 findings 去重 flag 不应按 session 清理');
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'findings-age-2000-01-01')), '历史 findings 去重 flag 应按日期清理');
+  assert.ok(fs.existsSync(path.join(dir, '.pace', currentFindingsAgeFlag)), '当日 findings 去重 flag 不应按 session 清理');
 });
 
 console.log('\n--- pre-tool-use.js ---');

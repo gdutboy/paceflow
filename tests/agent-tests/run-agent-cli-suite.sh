@@ -8,7 +8,7 @@
 #   MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
 #
 # Full harness baseline:
-#   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 23
+#   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 25
 #
 # Useful env:
 #   MODEL=sonnet|opus|...       Pass --model to claude
@@ -164,6 +164,8 @@ ALL_CASES=(
   "cases/phase-b/tc-b7-out-of-scope.yaml TC-B7"
   "cases/phase-b/tc-b8-unknown-operation.yaml TC-B8"
   "cases/phase-b/tc-b9-not-pace-project.yaml TC-B9"
+  "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
+  "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
   "cases/phase-d/tc-d1-corrections-md-missing.yaml TC-D1"
   "cases/phase-d/tc-d2-large-body.yaml TC-D2"
   "cases/phase-d/tc-d3-archive-marker-missing.yaml TC-D3"
@@ -190,6 +192,8 @@ PRODUCTION_GATE_CASES=(
   "cases/phase-b/tc-b7-out-of-scope.yaml TC-B7"
   "cases/phase-b/tc-b8-unknown-operation.yaml TC-B8"
   "cases/phase-b/tc-b9-not-pace-project.yaml TC-B9"
+  "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
+  "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
   "cases/phase-d/tc-d1-corrections-md-missing.yaml TC-D1"
   "cases/phase-d/tc-d3-archive-marker-missing.yaml TC-D3"
   "cases/phase-d/tc-d5-broken-wikilink.yaml TC-D5"
@@ -200,6 +204,8 @@ PRODUCTION_SMOKE_CASES=(
   "cases/phase-a/tc-a8-update-chg-verify.yaml TC-A8"
   "cases/phase-a/tc-a9-close-chg.yaml TC-A9"
   "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
+  "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
+  "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
   "cases/phase-b/tc-b1-missing-title.yaml TC-B1"
   "cases/phase-b/tc-b7-out-of-scope.yaml TC-B7"
   "cases/phase-b/tc-b8-unknown-operation.yaml TC-B8"
@@ -214,10 +220,12 @@ OPTIONAL_CONTENT_CASES=(
 MERGED_OPERATION_CASES=(
   "cases/phase-a/tc-a9-close-chg.yaml TC-A9"
   "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
+  "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
+  "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
 )
 
 case "$SUITE" in
-  21|23|all)
+  21|23|25|all)
     if [[ "$MODE" == "production" ]]; then
       echo "NOTE: suite '$SUITE' includes optional content fidelity case TC-D2; use production-gate for release blocking." >&2
     fi
@@ -237,7 +245,7 @@ case "$SUITE" in
     ;;
   *)
     echo "Unknown suite: $SUITE" >&2
-    echo "Available: production-gate, production-smoke, content, merged, 23, 21" >&2
+    echo "Available: production-gate, production-smoke, content, merged, 25, 23, 21" >&2
     exit 2
     ;;
 esac

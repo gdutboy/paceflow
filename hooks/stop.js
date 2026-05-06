@@ -60,7 +60,7 @@ if (paceSignal === 'artifact') {
   let totalPending = 0;
   let requiresWalkthrough = false;
   for (const change of classifiedEntries) {
-    if (['backlog', 'ready', 'archived', 'cancelled'].includes(change.category)) continue;
+    if (['backlog', 'ready'].includes(change.category)) continue;
 
     if (change.category === 'inconsistent') {
       if (change.reason === 'index-missing') {
@@ -155,7 +155,7 @@ if (paceSignal === 'artifact') {
   const paceSignal = isPaceProject(cwd);
   if (paceSignal === 'superpowers' || paceSignal === 'manual') {
     // T-078 D2 修复：无 artifact 时仅记录日志，不加入 warnings
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: SOFT_WARN | signal: ${paceSignal} | 无 artifact\n`);
+    log(paceUtils.logEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'no artifact' }));
   } else {
     const codeCount = countCodeFiles(cwd);
     if (codeCount >= 3) {
@@ -170,7 +170,7 @@ const taskListFlags = [path.join(PACE_RUNTIME, 'task-list-used'), path.join(PACE
 if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
   if (pending === 0 && done === 0) {
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TASK_LIST_CLEANUP | task-list flag 清理（无活跃任务）\n`);
+    log(paceUtils.logEntry('Stop', 'TASK_LIST_CLEANUP', { proj, reason: 'no active task' }));
     for (const flag of taskListFlags) {
       try { fs.unlinkSync(flag); } catch(e) {}
     }
@@ -178,16 +178,10 @@ if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && ta
 }
 
 // T-424: 交叉验证移出 warnings.length===0 守卫，确保已有 warning 时仍检测虚假完成声明
-if (paceSignal !== 'artifact' && lastMessage && !taskActive) {
-  // I-13: 交叉验证中文短语使用 pace-utils 常量
-  if (COMPLETION_PHRASES.test(lastMessage)) {
-    // I-3: 复用上方已读取的 taskActive，避免重复 readActive
-    if (taskActive) {
-      const { pending } = countByStatus(taskActive, { topLevelOnly: true });
-      if (pending > 0) {
-        warnings.push(`AI 声称完成，但 task.md 还有 ${pending} 个活跃任务。请先完成或标记 [-] 跳过，再归档到 ARCHIVE 下方。标记 [-] 时需在同行或 findings 中记录跳过理由。${FORMAT_SNIPPETS.archiveOp}`);
-      }
-    }
+if (paceSignal !== 'artifact' && lastMessage && taskActive && COMPLETION_PHRASES.test(lastMessage)) {
+  const { pending } = countByStatus(taskActive, { topLevelOnly: true });
+  if (pending > 0) {
+    warnings.push(`AI 声称完成，但 task.md 还有 ${pending} 个活跃任务。请先完成或标记 [-] 跳过，再归档到 ARCHIVE 下方。标记 [-] 时需在同行或 findings 中记录跳过理由。${FORMAT_SNIPPETS.archiveOp}`);
   }
 }
 
@@ -195,8 +189,8 @@ if (warnings.length > 0) {
   // v4.7: teammate 降级 — 不阻止，仅输出 additionalContext 提醒
   if (isTeammate()) {
     // I-6: Stop hook 不支持 additionalContext，teammate 直接 exit 0 放行
-    log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: TEAMMATE_PASS | team: ${process.env.CLAUDE_CODE_TEAM_NAME}\n  checks: ${warnings.join('; ')}\n`);
-    // exit 0 放行
+    log(paceUtils.logEntry('Stop', 'TEAMMATE_PASS', { proj, team: process.env.CLAUDE_CODE_TEAM_NAME, checks: warnings.join('; ') }));
+    process.exit(0);
   } else {
     // W-7: 修正缩进（与 if 分支对齐）
     const blockCount = getBlockCount();
@@ -207,8 +201,8 @@ if (warnings.length > 0) {
       try { fs.writeFileSync(path.join(PACE_RUNTIME, 'degraded'), `降级时间: ${ts()}\n未通过检查:\n${checksDetail}\n`, 'utf8'); } catch(e) {}
       // T-424: 降级后重置计数器，避免下次会话冻结在 MAX_BLOCKS
       setBlockCount(0);
-      log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: DOWNGRADE (${blockCount}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  note: 已写入 .pace/degraded\n`);
-      // exit 0：不阻止，仅记录
+      log(paceUtils.logEntry('Stop', 'DOWNGRADE', { proj, blockCount, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), note: '.pace/degraded written' }));
+      process.exit(0);
     } else {
       // v4：exit 2 阻止 Claude 停止，stderr 反馈给 Claude
       setBlockCount(blockCount + 1);
@@ -229,7 +223,7 @@ if (warnings.length > 0) {
       }
       const stderrMsg = `${prefix}\n${stderrLines.join('\n')}`;
       process.stderr.write(stderrMsg + '\n');
-      log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: BLOCK (${blockCount + 1}/${MAX_BLOCKS})\n  checks:\n${checksDetail}\n  stderr→AI: ${stderrMsg}\n`);
+      log(paceUtils.logEntry('Stop', 'BLOCK', { proj, blockCount: blockCount + 1, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), stderr: stderrMsg }));
       process.exit(2);
     }
   } // 关闭 isTeammate else
@@ -239,7 +233,9 @@ if (warnings.length > 0) {
   const degradedFile = path.join(PACE_RUNTIME, 'degraded');
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
   log(paceUtils.logEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));
+  process.exit(0);
 }
 } catch(e) {
-  try { log(`[${ts()}] Stop        | cwd: ${cwd}\n  action: ERROR | ${e.message}\n`); } catch(e2) {}
+  try { log(paceUtils.logEntry('Stop', 'ERROR', { proj, error: e.message })); } catch(e2) {}
+  process.exit(0);
 }
