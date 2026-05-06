@@ -74,7 +74,7 @@ if (paceSignal === 'artifact') {
       } else if (change.reason === 'index-completed-status-mismatch') {
         warnings.push(`${change.id} 索引已是 [x]，但详情 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
       } else if (change.reason === 'active-archived') {
-        warnings.push(`${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
+        warnings.push(`${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer close-chg 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。${FORMAT_SNIPPETS.closeOp}`);
       } else if (change.reason === 'active-cancelled') {
         warnings.push(`${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
       } else if (change.reason === 'task-list-empty') {
@@ -95,7 +95,7 @@ if (paceSignal === 'artifact') {
 
     if (change.category === 'running') {
       if (!change.approved) {
-        warnings.push(`${change.id} 正在执行但未批准。请用 AskUserQuestion 询问用户是否批准，批准后派 update-chg action=approve。${FORMAT_SNIPPETS.approved}`);
+        warnings.push(`${change.id} 正在执行但未批准。请用 AskUserQuestion 询问用户是否批准；批准并准备开始时派 update-chg action=approve-and-start（需 approval-confirmed: true + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`);
         continue;
       }
       if (change.tasks.pending > 0) {
@@ -103,16 +103,16 @@ if (paceSignal === 'artifact') {
         continue;
       }
       if (change.tasks.total > 0) {
-        warnings.push(`${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 推到 completed。`);
+        warnings.push(`${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。若尚未验证，请先派 update-chg action=update-status 推到 completed 并运行验证；验证通过后派 close-chg 收尾归档。`);
       }
       continue;
     }
 
     if (change.category === 'closing-required') {
       if (!change.verified) {
-        warnings.push(`${change.id} 已 completed 但未验证。请派 artifact-writer update-chg action=verify 写入 verified-date 与 <!-- VERIFIED -->。`);
+        warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg（verification-confirmed: true）写入 VERIFIED 并归档。若暂不归档，才派 update-chg action=verify。${FORMAT_SNIPPETS.closeOp}`);
       } else {
-        warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
+        warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。${FORMAT_SNIPPETS.closeOp}`);
       }
     }
   }

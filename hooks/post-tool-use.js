@@ -87,7 +87,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = /^verified-date:\s*(?!null\b).+/m.test(mutationText) &&
         !/^verified-date:\s*(?!null\b).+/m.test(oldString || '');
       if (addedApproved || addedVerified || setVerifiedDate) {
-        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的 update-chg action=${addedApproved ? 'approve' : 'verify'}。`);
+        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的 ${addedApproved ? 'update-chg action=approve 或 approve-and-start' : 'update-chg action=verify 或 close-chg'}。`);
       }
     }
 
@@ -105,10 +105,10 @@ paceUtils.withStdinParsed((stdin) => {
         warnings.push(`${entry.id} 索引 [x] 与详情 status=${status || 'missing'} 不一致，请派 update-chg action=update-status 修复。`);
       }
       if (status === 'completed' && !isChangeVerified(entry.detail)) {
-        warnings.push(`${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->，请派 update-chg action=verify。`);
+        warnings.push(`${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->。请先运行验证并阅读结果；确认通过后派 close-chg，或暂不归档时派 update-chg action=verify。`);
       }
       if (status === 'completed' && isChangeVerified(entry.detail)) {
-        warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请派 archive-chg 归档。${FORMAT_SNIPPETS.archiveOp}`);
+        warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请派 close-chg 或 archive-chg 归档。${FORMAT_SNIPPETS.closeOp}`);
       }
       if (tasks.blocked > 0) {
         warnings.push(`${entry.id} 有 ${tasks.blocked} 个阻塞任务，请用 AskUserQuestion 询问用户如何处理。`);

@@ -50,10 +50,12 @@ projects/<project>/
 |------|------|
 | `create-chg` | 创建 `changes/<id>.md`，同步 `task.md` / `implementation_plan.md` 索引 |
 | `update-chg action=approve` | C 阶段批准，写 `<!-- APPROVED -->` |
+| `update-chg action=approve-and-start` | 用户已批准后插入 `APPROVED`、标记首个 T-NNN `[/]`、推 `in-progress` |
 | `update-chg action=update-status` | 更新 T-NNN 状态，联动 frontmatter 与根索引 |
 | `update-chg action=append/replace` | 更新实施详情、工作记录、关联调研 |
 | `update-chg action=verify` | V 阶段验证，写 `verified-date` + `<!-- VERIFIED -->` |
 | `archive-chg` | 归档已 verified CHG/HOTFIX |
+| `close-chg` | 验证确认后合并完成、验证、归档与 walkthrough |
 | `record-finding` | 写 `changes/findings/<id>.md` + `findings.md` 摘要索引 |
 | `record-correction` | 写 `changes/corrections/<id>.md` + `corrections.md` 摘要索引 |
 
@@ -68,7 +70,7 @@ projects/<project>/
 | `planned` | null | 缺 | 活跃区 `[ ]` |
 | `in-progress` | null | 缺 | 活跃区 `[/]` |
 | `completed` | null | 缺 | 活跃区 `[x]`，Stop 阻止退出 |
-| `completed` | 非 null | 有 | 活跃区 `[x]`，待 `archive-chg` |
+| `completed` | 非 null | 有 | 活跃区 `[x]`，待 `close-chg` / `archive-chg` |
 | `archived` | 非 null | 有 | ARCHIVE 下方 `[x]` |
 | `cancelled` | null | 缺 | ARCHIVE 下方 `[-]` |
 
@@ -135,7 +137,7 @@ for f in hooks/*.js; do node -c "$f" || exit 1; done
 ## 8. 发布检查
 
 - `PACE_VERSION` 为 `v6.0.0`
-- `.claude-plugin/plugin.json` 为 `6.0.11`（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
+- `.claude-plugin/plugin.json` 为当前发布版本（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
 - `hooks/templates/` 有 `corrections.md`
 - `hooks/hooks.json` 注册 `StopFailure`
 - `agents/artifact-writer.md` 与 `agents/references/**` 存在

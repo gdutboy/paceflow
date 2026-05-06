@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-06，v6.0.11）
+### 0.1 当前执行视图（2026-05-06，v6.0.15）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -25,12 +25,12 @@
 - `docs/claude-code-2.1.76-2.1.129-paceflow-evaluation.md`
 - `docs/claude-code-2.1.76-2.1.131-validation-report.md`
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
-- v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/todowrite-sync.js`
+- v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/task-list-sync.js`
 
-执行状态（v6.0.11）：
+执行状态（v6.0.15）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
-- P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04：已完成。
+- P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
 - P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
 #### 0.1.1 P0 — 当前已实现代码中的阻断级修复
@@ -53,6 +53,7 @@
 | P1-20260506-02 | ✅ v6.0.11 | worktree 项目名识别收紧 | 仅凭路径中有 `worktrees/` 就归一到父目录，普通项目也可能误判 | `hooks/pace-utils.js`、`tests/test-pace-utils.js` | 只有 `.claude/worktrees/*` 或 `.git -> .git/worktrees/*` 等真实 worktree 信号才归一 |
 | P1-20260506-03 | ✅ v6.0.11 | marker 相关日志记录 `agent_id` / `agent_type` | GitHub 上游仍有 agent identity 稳定性讨论；生产排障需要完整日志 | `hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js` | `DENY_V6_MARKER` / `PASS_V6_MARKER_AGENT` 日志含 agent identity |
 | P1-20260506-04 | ✅ v6.0.11 | 消除 `claude plugin validate .` marketplace description warning | validate 通过但有 warning，release gate 不够干净 | `.claude-plugin/marketplace.json` | `claude plugin validate .` clean pass |
+| P1-20260506-05 | ✅ v6.0.15 | 合并高频 agent 收尾操作 | approve→start、completed→verify→archive 连续派 agent 成本高，且 Stop 提示会让主 session做 2-3 次机械派遣 | `agents/**`、`hooks/**`、`skills/**`、`CLAUDE.md`、`README.md`、`REFERENCE.md`、`tests/test-hooks-e2e.js` | 新增 `update-chg action=approve-and-start` 与 `close-chg`；hook 提示要求 `approval-confirmed: true` / `verification-confirmed: true`，不跳过用户确认或验证 |
 
 #### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
 

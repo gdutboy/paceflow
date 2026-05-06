@@ -1,7 +1,7 @@
 id: TC-B8
 phase: B
 indication: error-illegal-update-chg-action
-description: update-chg action=bulk-rename 非合法 action 枚举值（合法集合：append/replace/update-status/approve/verify），期望 format-violation
+description: update-chg action=bulk-rename 非合法 action 枚举值（合法集合：append/replace/update-status/approve/approve-and-start/verify），期望 format-violation
 
 setup:
   fixture: empty-v6

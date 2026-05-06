@@ -282,7 +282,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
         !hasNonNullVerifiedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate) && !isArtifactWriterAgent(stdin)) {
-        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve' : 'update-chg action=verify'}。`;
+        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve 或 approve-and-start' : 'update-chg action=verify 或 close-chg'}。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
@@ -315,7 +315,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (actionableEntries.length === 0) {
         const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
         const reason = doneEntries.length > 0
-          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer archive-chg 归档，或 create-chg 创建新的变更后再写代码。${FORMAT_SNIPPETS.archiveOp}`
+          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg / archive-chg 收尾归档，或 create-chg 创建新的变更后再写代码。${FORMAT_SNIPPETS.closeOp}`
           : `v6 项目没有活跃 CHG/HOTFIX。请派 artifact-writer create-chg 创建 changes/<id>.md，并同步 task.md / implementation_plan.md 索引后再写代码。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
@@ -346,7 +346,7 @@ paceUtils.withStdinParsed((stdin) => {
       const approvedEntries = actionableEntries.filter(e => isChangeApproved(e.detail));
       if (approvedEntries.length === 0) {
         const ids = actionableEntries.map(e => e.id).join(', ');
-        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请询问用户批准后派 artifact-writer update-chg action=approve。${FORMAT_SNIPPETS.approved}`;
+        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请询问用户是否批准；批准并准备开始时，派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -359,7 +359,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。请派 artifact-writer update-chg action=update-status，将当前任务标为 [/] 并联动 frontmatter status。`;
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准，请派 artifact-writer update-chg action=approve-and-start；若已批准只需开始任务，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -403,7 +403,7 @@ paceUtils.withStdinParsed((stdin) => {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
       }
       const createdMsg = createdFiles.length > 0 ? `已自动创建 v6 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认，再派 update-chg action=approve；完成后删除 .pace/current-native-plan。`;
+      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start；完成后删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY_NATIVE_PLAN${teammateTag} | plan: ${nativePlan}\n`);
@@ -438,7 +438,7 @@ paceUtils.withStdinParsed((stdin) => {
         // W-flow-1: 区分"全部完成待归档"和"无任务"
         const hasDoneItems = /- \[[x\-]\]/.test(taskActiveContent);
         if (hasDoneItems) {
-          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先归档已完成任务，再定义新任务后写代码。\n归档方法：${FORMAT_SNIPPETS.archiveOp}`;
+          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先收尾归档已完成任务，再定义新任务后写代码。\n收尾方法：${FORMAT_SNIPPETS.closeOp}`;
         } else {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
@@ -461,7 +461,7 @@ paceUtils.withStdinParsed((stdin) => {
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve 后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve-and-start 后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(`[${ts()}] PreToolUse  | cwd: ${cwd}\n  action: DENY${teammateTag} | signal: code-count-lookahead(${futureCount}) | tool: ${toolName} | file: ${filePath}${createdFiles.length > 0 ? '\n  created: ' + createdFiles.join(', ') : ''}\n  reason→AI: ${reason}\n`);

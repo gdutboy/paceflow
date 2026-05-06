@@ -65,15 +65,17 @@ technical-decision: <关键设计决策和取舍>
 
 ### Step 4：auto-APPROVED（可选）
 
-如果用户已在上游计划流程中参与并确认设计，继续派：
+如果用户已在上游计划流程中参与并确认设计，且准备开始首个任务，继续派：
 
 ```text
 operation: update-chg
 target: <CHG-ID>
-action: approve
+action: approve-and-start
+task-id: <首个 T-NNN>
+approval-confirmed: true
 ```
 
-批准标记写在 `changes/<id>.md`；`task.md` 只保留索引。
+批准标记写在 `changes/<id>.md`，首个任务会同步为 `[/]`；`task.md` 只保留索引。
 
 ### Step 5：标记已同步
 
@@ -99,6 +101,6 @@ action: approve
 源计划: <plan path>
 变更 ID: CHG-YYYYMMDD-NN
 任务范围: T-NNN ~ T-NNN（共 N 个）
-批准状态: pending / auto-approved
+批准状态: pending / auto-approved-started
 执行方式推荐: subagent-driven-development / executing-plans / dispatching-parallel-agents / direct
 ```

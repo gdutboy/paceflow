@@ -102,8 +102,8 @@ if (eventType === 'compact') {
           '',
           '=== G-9 完成检查（每个 CHG/HOTFIX 最后一个任务标 [x] 后立即执行）===',
           `1. changes/<id>.md — 所有 T-NNN 标 [x]/[-] 后由 update-status 推 status=completed`,
-          `2. update-chg action=verify — 写 verified-date + <!-- VERIFIED -->`,
-          `3. archive-chg — 详情 status=archived，task/impl 索引移到 ARCHIVE 下方`,
+          `2. 运行验证并阅读结果；通过后派 close-chg — 写 verified-date + <!-- VERIFIED -->，归档索引并写 walkthrough`,
+          `3. 如只记录验证暂不归档，才用 update-chg action=verify；已验证单独归档可用 archive-chg`,
           '4. spec.md — 同步技术栈变更（如有）',
           '',
         ];
@@ -388,7 +388,7 @@ if (taskFullCached) {
     if (detailPending > 0) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN，请为它们创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
     } else if (hasCompleted) {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 archive-chg，归档后再清空 Claude 任务列表。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 close-chg/archive-chg，归档后再清空 Claude 任务列表。\n\n`);
     } else if (hasIndexPending && paceSignal === 'artifact') {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；planned backlog 不需要按索引行创建任务列表项。\n\n`);
     } else {

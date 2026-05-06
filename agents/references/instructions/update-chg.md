@@ -6,15 +6,16 @@
 ## 输入字段
 
 - `target`（必填，CHG-ID）
-- `section`（action=approve / verify 时不必填；其他 action 必填，枚举：`tasks` | `implementation` | `work-record` | `research`）
-- `action`（必填，枚举：`append` | `replace` | `update-status` | `approve` | `verify`）
+- `section`（action=approve / approve-and-start / verify 时不必填；其他 action 必填，枚举：`tasks` | `implementation` | `work-record` | `research`）
+- `action`（必填，枚举：`append` | `replace` | `update-status` | `approve` | `approve-and-start` | `verify`）
 - `content`（视 action 而定）
 - `task-id` + `new-status`（action=update-status 时必填）
+- `task-id` + `approval-confirmed: true`（action=approve-and-start 时必填）
 - `verify-summary`（action=verify 时可选，写入 `## 工作记录` 单元格）
 
 ## 操作步骤
 
-> **报告标题强制**：所有 action（append / replace / update-status / approve / verify）完成后，报告标题字面使用 `## artifact-writer 报告`（见 `agents/artifact-writer.md` §报告格式与§你不要做的事 #9）。**禁止**改写为 `## 执行报告` / `## artifact-writer 执行报告` / `## 强制报告格式` / `## 操作摘要` 等变体，**禁止**加任何副标题如 `（批量 update-status + frontmatter 联动）`。
+> **报告标题强制**：所有 action（append / replace / update-status / approve / approve-and-start / verify）完成后，报告标题字面使用 `## artifact-writer 报告`（见 `agents/artifact-writer.md` §报告格式与§你不要做的事 #9）。**禁止**改写为 `## 执行报告` / `## artifact-writer 执行报告` / `## 强制报告格式` / `## 操作摘要` 等变体，**禁止**加任何副标题如 `（批量 update-status + frontmatter 联动）`。
 > **全局对话样式豁免**：最终报告不得继承主 session / CLAUDE.md 的时间戳、Insight 块、固定结尾语或任何前后缀。第一行必须直接是 `## artifact-writer 报告`。
 > **错误码层级**：`operation=update-chg` 已识别时，非法 `action` 是字段值非法，必须报告 `format-violation`；禁止报告 `out-of-scope`。`out-of-scope` 仅用于未知 operation（如 `delete-chg`）。
 
@@ -85,6 +86,35 @@ C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED --
 
 注：approve 仅插入标记。状态机推动由 update-status 自动联动，避免双重写入。
 
+### action=approve-and-start
+
+C 阶段用户已明确批准、并准备开始某个 T-NNN 时由主 session 调用。此 action 将 `approve` 与首次 `update-status` 合并，避免同一个 CHG 连续派两次 agent。
+
+**硬前置**：
+- `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。禁止由 agent 自行推断用户已批准。
+- `task-id` 必填，指明要标记为 `[/]` 的 T-NNN。
+
+子流程：
+1. Read `changes/chg-xxx.md`
+2. 前置校验：
+   - frontmatter `status` 只能是 `planned` 或 `in-progress`
+   - `task-id` 必须存在于 `## 任务清单`
+   - 该任务当前只能是 `[ ]` 或 `[/]`；若为 `[x]` / `[-]` / `[!]` → `format-violation: task not startable`
+3. APPROVED 幂等写入：
+   - 若缺 `<!-- APPROVED -->`，按 `action=approve` 的位置规则插入
+   - 若已存在，不重复插入
+4. 任务与状态联动：
+   - 将 `task-id` 标为 `[/]`；若已是 `[/]` 则不改
+   - 若 frontmatter `status: planned`，改为 `status: in-progress`
+   - Read + Edit `task.md` 和 `implementation_plan.md`，将对应索引 checkbox 改为 `[/]`
+5. 报告 `status: SUCCESS`，列出修改的详情文件和两个根索引文件；完全幂等时允许 `files_modified: []`
+
+边界：
+- 缺 `approval-confirmed` 或 `task-id` → `missing-fields`
+- `approval-confirmed` 非 true → `format-violation`
+- status 为 `completed` / `archived` / `cancelled` → `format-violation`
+- `<!-- VERIFIED -->` 或 `verified-date` 已存在 → `format-violation`
+
 ### action=verify
 
 V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 V 阶段标志（详见 `${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md` §7）：
@@ -145,11 +175,13 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
 
 - target 不存在 → `target-not-found`
 - section 不在枚举内 → `format-violation`
-- action 不在 `append` / `replace` / `update-status` / `approve` / `verify` 枚举内 → `format-violation`（不是 `out-of-scope`）
+- action 不在 `append` / `replace` / `update-status` / `approve` / `approve-and-start` / `verify` 枚举内 → `format-violation`（不是 `out-of-scope`）
 - action=update-status 但 section ≠ tasks → `format-violation`
 - task-id 在 tasks 段中找不到 → `target-not-found`
 - action=approve 但 `<!-- APPROVED -->` 已存在 → SUCCESS 幂等（reason: `already approved, no change`）
 - action=approve 但 `## 任务清单` 段缺失 → `format-violation`
+- action=approve-and-start 但 `approval-confirmed` 缺失或非 true → `missing-fields` / `format-violation`
+- action=approve-and-start 但 task-id 当前为 `[x]` / `[-]` / `[!]` → `format-violation`
 - target 文件存在但 frontmatter `chg-id` 与文件名不匹配 → `id-mismatch`
 - action=verify 但 frontmatter `status` ≠ `completed` → `format-violation`
 - action=verify 但缺 `<!-- APPROVED -->` → `format-violation`

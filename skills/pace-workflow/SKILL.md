@@ -54,7 +54,7 @@ P 阶段产物：
 - `task.md` wikilink 索引
 - `implementation_plan.md` wikilink 索引
 
-Superpowers/native plan 中用户已参与设计时，bridge 可在创建后继续派 `update-chg action=approve`，形成 auto-APPROVED。
+Superpowers/native plan 中用户已参与设计且确认开始时，bridge 可在创建后继续派 `update-chg action=approve-and-start`，形成 auto-APPROVED + 首个任务开始。
 
 ### 无 plan 文件
 
@@ -79,15 +79,17 @@ A 阶段完成标志：`task.md` 与 `implementation_plan.md` 有同一个活跃
 
 未批准前禁止修改代码。
 
-需要用户确认时，先停止执行并询问是否批准当前 CHG。用户批准后派：
+需要用户确认时，先停止执行并询问是否批准当前 CHG。用户批准且准备开始时派：
 
 ```text
 operation: update-chg
 target: CHG-YYYYMMDD-NN
-action: approve
+action: approve-and-start
+task-id: T-001
+approval-confirmed: true
 ```
 
-C 阶段批准标记只写入 `changes/<id>.md`；`task.md` 只保留索引，不承载批准标记。
+若只是先批准、暂不执行，则派 `update-chg action=approve`。C 阶段批准标记只写入 `changes/<id>.md`；`task.md` 只保留索引，不承载批准标记。
 
 PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 都存在，详情文件存在，已 APPROVED，且状态/checkbox 已进入可执行状态。
 
@@ -116,31 +118,34 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 
 执行验证前不要声称完成。验证遵循 `superpowers:verification-before-completion` 的 IDENTIFY → RUN → READ → VERIFY → CLAIM；无测试框架时用可复现的手动命令或浏览器验证。
 
-验证通过后派：
+验证通过后优先派：
 
 ```text
-operation: update-chg
+operation: close-chg
 target: CHG-YYYYMMDD-NN
-action: verify
+verification-confirmed: true
 verify-summary: <测试/手动验证摘要>
+walkthrough-summary: <完成摘要>
 ```
 
 artifact writer 会同时写：
 - frontmatter `verified-date: YYYY-MM-DDTHH:mm:ss+08:00`
 - `changes/<id>.md` 中紧邻 `<!-- APPROVED -->` 下一行的 `<!-- VERIFIED -->`
 - `## 工作记录` 验证摘要
+- `task.md` / `implementation_plan.md` 归档索引与 `walkthrough.md` 完成索引
 
-Stop hook 会阻止 `completed` 但未 verified 的 CHG 结束会话。
+若只记录验证、暂不归档，才派 `update-chg action=verify`。Stop hook 会阻止 `completed` 但未 verified 的 CHG 结束会话。
 
 ---
 
 ## 归档
 
-verified 后立即派：
+已 verified 且只需单独归档时派：
 
 ```text
 operation: archive-chg
 target: CHG-YYYYMMDD-NN
+walkthrough-summary: <完成摘要>
 ```
 
 归档不是移动详情内容，也不是主 session 上移 `<!-- ARCHIVE -->`。v6 归档由 artifact writer 完成：

@@ -27,6 +27,7 @@ const ALLOWED_OPERATIONS = new Set([
   'create-chg',
   'update-chg',
   'archive-chg',
+  'close-chg',
   'record-finding',
   'record-correction',
 ]);
@@ -105,7 +106,7 @@ create-chg 资源路径要求：
     ? ''
     : `
 未知 operation 硬约束：
-- 允许集合：create-chg / update-chg / archive-chg / record-finding / record-correction
+- 允许集合：create-chg / update-chg / archive-chg / close-chg / record-finding / record-correction
 - 当前 operation \`${op}\` 不在允许集合内；不要搜索或读取不存在的 \`instructions/${op}.md\`
 - 不要检查 target 文件是否存在；未知 operation 的错误码固定为 \`out-of-scope\`
 - 立即报告 \`status: FAILED\` / \`error_code: out-of-scope\`

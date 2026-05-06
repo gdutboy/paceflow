@@ -1,7 +1,7 @@
 id: TC-B7
 phase: B
 indication: error-out-of-scope
-description: 主 session 派遣未在 5 类指令枚举内的 operation（delete-chg），期望 out-of-scope
+description: 主 session 派遣未在 6 类指令枚举内的 operation（delete-chg），期望 out-of-scope
 
 setup:
   fixture: empty-v6

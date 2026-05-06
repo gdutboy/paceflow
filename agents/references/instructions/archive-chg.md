@@ -21,7 +21,7 @@
 5. **v6 V 阶段强制验证**（详见 `${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
    - frontmatter `verified-date` 必须不为 null
    - 正文必须含 `<!-- VERIFIED -->` 标记
-   - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 派 `update-chg action=verify`
+   - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 在验证通过后派 `close-chg`，或先派 `update-chg action=verify`
    - 两者仅一者存在（不一致）→ 报告 `format-violation: verification state inconsistent`，提示派 `update-chg action=verify` 修复
 
 ## 操作步骤
@@ -97,7 +97,7 @@
 - 任务未全部完成（含 [/] 或 [ ]）→ `format-violation: tasks not done`
 - frontmatter status 不是 completed → `format-violation: status not completed`
 - frontmatter status 已是 archived → `format-violation: already archived`
-- frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示派 `update-chg action=verify`）
+- frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示验证通过后派 `close-chg`，或先派 `update-chg action=verify`）
 - frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）
 - 详情文件不存在 → `target-not-found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`

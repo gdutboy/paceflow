@@ -9,7 +9,7 @@ tests/agent-tests/
 ├── README.md                # 本文件
 ├── run-tests.js             # 主运行器（CLI: node run-tests.js [phase]）
 ├── cases/                   # 测试用例（YAML）
-│   └── phase-a/             # 5 类指令各一个 happy path
+│   └── phase-a/             # 核心指令 happy path
 ├── fixtures/                # vault 状态快照（cp -r 到临时目录后跑测试）
 │   └── empty-v6/            # 空 v6 项目（5 索引模板 + 空 changes/）
 ├── helpers/                 # 框架基础设施

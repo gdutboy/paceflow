@@ -202,8 +202,8 @@ paceflow/
 
 ## C/V 阶段检查
 
-- **C 阶段**：详情文件有 `<!-- APPROVED -->` 且状态可执行 → 放行。无批准 → deny
-- **V 阶段**：`status: completed` 但无 `verified-date` + `<!-- VERIFIED -->` → Stop block。已验证未归档 → Stop block
+- **C 阶段**：详情文件有 `<!-- APPROVED -->` 且状态可执行 → 放行。无批准 → deny，并提示用户批准后用 `approve-and-start`
+- **V 阶段**：`status: completed` 但无 `verified-date` + `<!-- VERIFIED -->` → Stop block，提示验证确认后用 `close-chg`。已验证未归档 → Stop block
 
 ## Subagent / Agent Teams 兼容性
 
@@ -228,6 +228,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.15 | 2026-05-06 | 新增 `update-chg action=approve-and-start` 与 `close-chg`，合并批准+开始、验证+归档收尾链路；hook/skill/guidebook 同步推荐合并操作 |
 | v6.0.14 | 2026-05-06 | `todowrite-sync.js` 更名为 `task-list-sync.js`，公开文档统一为 Claude 任务列表同步；Stop 对活跃区残留 `archived/cancelled/[-]` 增加阻断修复 |
 | v6.0.13 | 2026-05-06 | Stop / SessionStart / Claude 任务列表同步改用统一 CHG 分类器，planned backlog 不再阻断 Stop 或计入当前任务列表 |
 | v6.0.11 | 2026-05-06 | 修复 worktree 本地 `changes/` 详情 artifact 分裂风险；PACE 项目写入 hook 解析失败 fail-closed；显式覆盖 MultiEdit；SessionStart 任务列表提示改看详情 T-NNN；worktree 识别收紧；marker 日志补 agent 身份；plugin validate clean pass |
@@ -253,4 +254,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.11 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.15 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

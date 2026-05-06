@@ -51,10 +51,12 @@ changes/
 |------|------|
 | 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
 | 批准 C 阶段 | operation=`update-chg`，action=`approve` |
+| 批准并开始首个任务 | operation=`update-chg`，action=`approve-and-start`，需要 `approval-confirmed: true` |
 | 更新任务状态 | operation=`update-chg`，section=`tasks`，action=`update-status` |
 | 追加工作记录/实施说明 | operation=`update-chg`，section=`work-record` / `implementation`，action=`append` |
 | 验证 V 阶段 | operation=`update-chg`，action=`verify` |
 | 归档 CHG/HOTFIX | operation=`archive-chg` |
+| 验证后完成并归档 | operation=`close-chg`，需要 `verification-confirmed: true` |
 | 记录 finding | operation=`record-finding` |
 | 记录 correction | operation=`record-correction` |
 
@@ -142,6 +144,17 @@ target: CHG-YYYYMMDD-NN
 action: approve
 ```
 
+批准并开始：
+
+```text
+派 artifact-writer:
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve-and-start
+task-id: T-001
+approval-confirmed: true
+```
+
 验证：
 
 ```text
@@ -158,6 +171,18 @@ verify-summary: <验证通过摘要>
 派 artifact-writer:
 operation: archive-chg
 target: CHG-YYYYMMDD-NN
+walkthrough-summary: <完成摘要>
+```
+
+验证后收尾并归档：
+
+```text
+派 artifact-writer:
+operation: close-chg
+target: CHG-YYYYMMDD-NN
+verification-confirmed: true
+verify-summary: <已运行并阅读的验证结果>
+walkthrough-summary: <完成摘要>
 ```
 
 ---

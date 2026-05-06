@@ -92,5 +92,5 @@
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 
 PACE 流程后续：
-- C 阶段批准 → 主 session 调用 `update-chg action=approve` 添加 `<!-- APPROVED -->`
+- C 阶段批准 → 主 session 调用 `update-chg action=approve` 添加 `<!-- APPROVED -->`；若马上开始首个任务，调用 `update-chg action=approve-and-start`
 - 实施推进 → `update-chg action=update-status` 推动状态机（详见 update-chg 规范）
