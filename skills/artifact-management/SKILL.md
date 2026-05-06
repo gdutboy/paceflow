@@ -13,8 +13,8 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 权威规范：
 - Agent prompt：`agents/artifact-writer.md`
-- Schema / 索引模板：`agents/references/artifact-writer-spec.md`
-- 操作步骤：`agents/references/instructions/*.md`
+- Schema / 索引模板：`agent-references/artifact-writer-spec.md`
+- 操作步骤：`agent-references/instructions/*.md`
 
 ---
 
@@ -126,6 +126,7 @@ changes/
 
 ```text
 派 artifact-writer:
+artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: create-chg
 title: <标题>
 tasks:
@@ -139,6 +140,7 @@ technical-decision: <How>
 
 ```text
 派 artifact-writer:
+artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: approve
@@ -148,6 +150,7 @@ action: approve
 
 ```text
 派 artifact-writer:
+artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: approve-and-start
@@ -159,6 +162,7 @@ approval-confirmed: true
 
 ```text
 派 artifact-writer:
+artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: verify
@@ -169,6 +173,7 @@ verify-summary: <验证通过摘要>
 
 ```text
 派 artifact-writer:
+artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: archive-chg
 target: CHG-YYYYMMDD-NN
 walkthrough-summary: <完成摘要>
@@ -178,6 +183,7 @@ walkthrough-summary: <完成摘要>
 
 ```text
 派 artifact-writer:
+artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: close-chg
 target: CHG-YYYYMMDD-NN
 verification-confirmed: true

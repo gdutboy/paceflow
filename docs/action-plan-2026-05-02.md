@@ -22,7 +22,7 @@
 
 当前依据：
 
-- `docs/claude-code-2.1.76-2.1.129-paceflow-evaluation.md`
+- `docs/claude-code-2.1.76-2.1.131-paceflow-evaluation.md`
 - `docs/claude-code-2.1.76-2.1.131-validation-report.md`
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/task-list-sync.js`

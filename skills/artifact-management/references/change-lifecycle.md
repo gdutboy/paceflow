@@ -1,6 +1,6 @@
 # 变更 ID 生命周期
 
-本文件是 PACEflow v6 的 CHG/HOTFIX 生命周期速查。完整操作步骤以 `agents/references/instructions/*.md` 为准。
+本文件是 PACEflow v6 的 CHG/HOTFIX 生命周期速查。完整操作步骤以 `agent-references/instructions/*.md` 为准。
 
 ---
 

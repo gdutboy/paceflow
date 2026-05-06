@@ -86,9 +86,9 @@ function buildAgentPrompt(testCase, ctx, options = {}) {
   const renderedFields = renderInputFields(testCase, ctx.variables);
 
   const fieldsJson = JSON.stringify(renderedFields, null, 2);
-  const specPath = path.join(REPO_ROOT, 'agents', 'references', 'artifact-writer-spec.md');
+  const specPath = path.join(REPO_ROOT, 'agent-references', 'artifact-writer-spec.md');
   const instructionPath = isAllowedOperation
-    ? path.join(REPO_ROOT, 'agents', 'references', 'instructions', `${op}.md`)
+    ? path.join(REPO_ROOT, 'agent-references', 'instructions', `${op}.md`)
     : null;
   const instructionLine = instructionPath
     ? `- 当前指令规范：${instructionPath}`

@@ -440,6 +440,18 @@ function verify(testCase, targetDir, variables, agentReport) {
     });
   }
 
+  if (expectedValidations.work_record_contains !== undefined) {
+    const expectedText = renderVariables(expectedValidations.work_record_contains, variables);
+    const ok = Boolean(targetDetail) && targetDetail.includes(expectedText);
+    validations.push({
+      name: 'work_record_contains',
+      ok,
+      actual: ok ? 'matched' : 'not matched',
+      expected: expectedText,
+      reason: targetDetail ? undefined : 'target detail missing',
+    });
+  }
+
   if (exp.body_completeness_check) {
     const expectedBody = normalizeNewlines(
       setupInputBody(testCase, variables),

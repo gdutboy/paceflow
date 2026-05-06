@@ -48,8 +48,8 @@ PACEflow 是基于 Claude Code Hooks + Skills + Agent 的工作流强制系统�
 | 3 | `docs/agent-design.md` § 附录 A | agent v1→v4 演进决策依据 | ★★ |
 | 4 | `docs/agent-testing-strategy.md` | Phase A-E 测试策略 | ★★ |
 | 5 | `agents/paceflow-artifact-writer.md` | **agent v4.0**（含 Tier 1-3 全部修复） | ★★★ |
-| 6 | `agents/references/artifact-writer-spec.md` | schema / 索引行模板 / ARCHIVE / hashtag 与 type 对齐 | ★★ |
-| 7 | `agents/references/instructions/*.md` | 5 类指令（含 record-finding §边界 lex specialis / update-chg id-mismatch） | ★★ |
+| 6 | `agent-references/artifact-writer-spec.md` | schema / 索引行模板 / ARCHIVE / hashtag 与 type 对齐 | ★★ |
+| 7 | `agent-references/instructions/*.md` | 5 类指令（含 record-finding §边界 lex specialis / update-chg id-mismatch） | ★★ |
 
 ---
 

@@ -1,6 +1,6 @@
 # Artifact 格式参考
 
-本文件是 `artifact-management` 的 v6 速查。完整 schema 以 `agents/references/artifact-writer-spec.md` 为准。
+本文件是 `artifact-management` 的 v6 速查。完整 schema 以 `agent-references/artifact-writer-spec.md` 为准。
 
 ---
 

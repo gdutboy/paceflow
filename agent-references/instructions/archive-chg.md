@@ -18,7 +18,7 @@
    - 若 `status=planned` / `in-progress` / `cancelled` → 报告 `format-violation: status not completed`
 4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
-5. **v6 V 阶段强制验证**（详见 `${CLAUDE_PLUGIN_ROOT}/agents/references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
+5. **v6 V 阶段强制验证**（详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
    - frontmatter `verified-date` 必须不为 null
    - 正文必须含 `<!-- VERIFIED -->` 标记
    - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 在验证通过后派 `close-chg`，或先派 `update-chg action=verify`

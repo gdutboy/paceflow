@@ -153,7 +153,7 @@ E. 代码质量
 
 A. 辅助 Hook — Bug/I/O 协议/功能正确性/teammate 降级逻辑
 B. Plugin 结构 — plugin.json/marketplace 版本一致性、hooks.json 事件覆盖完整性+matcher+command 路径
-C. Agent 发布资产 — `agents/artifact-writer.md` 与 `agents/references/**` 是否随 repo/plugin 可用
+C. Agent 发布资产 — `agents/artifact-writer.md` 与 `agent-references/**` 是否随 repo/plugin 可用
 D. v6 注册一致性 — hooks 输出是否都指向 agent-driven artifact workflow，禁止 v5 fallback 提示
 E. 本地验证脚本 — 如存在，只检查 smoke 覆盖，不把缺少安装功能报为发布阻塞
 ```

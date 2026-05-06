@@ -17,7 +17,7 @@ const path = require('path');
 
 const ARTIFACT_FILES = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 
-// v6 标准模板（来自 agents/references/artifact-writer-spec.md §5.6）
+// v6 标准模板（来自 agent-references/artifact-writer-spec.md §5.6）
 // 顶部为活跃区（空），紧跟 ARCHIVE 标记
 const V6_TEMPLATES = {
   'task.md':

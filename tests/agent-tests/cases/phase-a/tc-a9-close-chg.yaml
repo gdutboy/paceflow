@@ -88,6 +88,7 @@ expected:
     task_md_index_below_archive: true
     impl_plan_index_below_archive: true
     walkthrough_row_added: true
+    work_record_contains: "验证通过：TC-A9 验证通过"
   max_tokens: 70000
   max_duration_ms: 360000
   max_tool_uses: 24

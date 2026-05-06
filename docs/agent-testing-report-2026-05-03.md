@@ -362,7 +362,7 @@ node tests/agent-tests/run-tests.js list phase-b
 node tests/agent-tests/run-tests.js list phase-d
 
 # 优先做 #1：修 TC-D5 暴露的 spec 不一致
-# 编辑 agents/references/instructions/record-finding.md §边界
+# 编辑 agent-references/instructions/record-finding.md §边界
 # 加 related-changes 豁免条款（与 merges 同级）
 
 # 然后 #2：Phase B 补 4 个失败码

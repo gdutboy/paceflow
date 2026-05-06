@@ -1,8 +1,8 @@
-# Claude Code 2.1.76-2.1.129 PaceFlow Evaluation
+# Claude Code 2.1.76-2.1.131 PaceFlow Evaluation
 
 > Date: 2026-05-06
 > Baseline: PaceFlow was designed against Claude Code <= 2.1.75 behavior.
-> Current target: Claude Code 2.1.129.
+> Current target: Claude Code 2.1.131.
 > Local CLI observed during task-tool revalidation: Claude Code 2.1.128.
 
 ## Sources
@@ -10,6 +10,8 @@
 - Official Claude Code changelog: <https://code.claude.com/docs/en/changelog>
 - Official GitHub changelog source: <https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md>
 - Official hooks reference: <https://code.claude.com/docs/en/hooks>
+- Official plugins reference: <https://code.claude.com/docs/en/plugins-reference>
+- Official subagents reference: <https://code.claude.com/docs/en/sub-agents>
 - Official tools reference: <https://code.claude.com/docs/en/tools-reference>
 
 Collection command used locally:
@@ -20,7 +22,7 @@ gh api repos/anthropics/claude-code/contents/CHANGELOG.md --jq .content | base64
 
 Covered versions: `2.1.76`, `2.1.77`, `2.1.78`, `2.1.79`, `2.1.80`, `2.1.81`, `2.1.83`, `2.1.84`, `2.1.85`, `2.1.86`, `2.1.87`, `2.1.89`, `2.1.90`, `2.1.91`, `2.1.92`, `2.1.94`, `2.1.96`, `2.1.97`, `2.1.98`, `2.1.101`, `2.1.105`, `2.1.107`, `2.1.108`, `2.1.109`, `2.1.110`, `2.1.111`, `2.1.112`, `2.1.113`, `2.1.114`, `2.1.116`, `2.1.117`, `2.1.118`, `2.1.119`, `2.1.120`, `2.1.121`, `2.1.122`, `2.1.123`, `2.1.126`, `2.1.128`, `2.1.129`.
 
-Note: upstream GitHub already contains `2.1.131`. It was checked during the Task Tool Revalidation section and does not add PaceFlow-relevant task/hook changes; the main version-by-version evaluation intentionally stops at the user's target `2.1.129`.
+Note: upstream GitHub already contains `2.1.131`. It was checked during the Task Tool Revalidation section and does not add PaceFlow-relevant task/hook changes; plugin/subagent reference docs were also rechecked for the `agents/` directory behavior.
 
 ## Executive Findings
 
@@ -45,9 +47,27 @@ Claude Code added enough hook and plugin surface after `2.1.75` that PaceFlow sh
 |---|---|
 | Hook input has `agent_id` / `agent_type` inside subagents | Applied in `6.0.9`: `artifact-writer` may write `APPROVED` / `VERIFIED`, main session still denied |
 | Agent frontmatter supports `effort` and `color` | Applied in `6.0.7`: `effort: max`, `color: orange` |
+| Agent frontmatter supports `maxTurns` | Applied in `6.0.15`: `maxTurns: 32` for `artifact-writer` after merged baseline showed legitimate close operations below this bound |
 | Worktree behavior changed and native `EnterWorktree` exists | Applied in `6.0.8`: `worktrees/<name>` maps to host project artifact directory |
 | Plugin validation catches hook/frontmatter schema issues | Partially applied: local tests cover plugin shape; add `claude plugin validate` to release gate |
 | Production tests can rely on agent frontmatter tools in `--print` | Partially applied: production prompt gate exists; should explicitly test installed plugin/agent |
+
+## 2.1.131 Plugin Agent Directory Validation
+
+Official plugin docs define `agents/` as the default discovery location for plugin agents, and `plugin.json.agents` as a custom path list that replaces default agent directory scanning. Therefore, if reference Markdown files live under `agents/references/`, Claude Code is allowed to treat them as agent candidates. This is not currently classified as a Claude Code 2.1.131 bug; it is a PaceFlow packaging/layout mistake.
+
+Applied fix:
+
+- Move non-agent reference files from `agents/references/**` to `agent-references/**`.
+- Add `.claude-plugin/plugin.json` `agents: ["./agents/artifact-writer.md"]` so plugin agent discovery is explicit even if future support files are added.
+- Keep `${CLAUDE_PLUGIN_ROOT}/agent-references/**` as the runtime path used by the agent prompt and test harness.
+
+Related official-doc opportunities:
+
+- `SubagentStart` can inject context but cannot block subagent creation. This is a good future replacement for some `PreToolUse:Agent` retry friction: inject resolved `artifact_dir` into `artifact-writer` at start, while keeping the current deny rule as a fail-closed guard.
+- `SubagentStop` exposes `last_assistant_message` and subagent transcript path. This can become a bounded report-title/status verifier for `artifact-writer`, but must avoid infinite retry loops.
+- `TaskCreated` / `TaskUpdated` / `TaskCompleted` are now first-class task hooks. PaceFlow can eventually move Claude task-list sync away from broad `PreToolUse` matching.
+- `CwdChanged` can persist refreshed env through `CLAUDE_ENV_FILE`; useful for worktree/vault artifact route refresh, but each hook should still recompute critical paths to avoid stale env after resume/compact.
 
 ## P0 / P1 Candidate Improvements
 

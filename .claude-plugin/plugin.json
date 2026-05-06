@@ -8,5 +8,6 @@
   "homepage": "https://github.com/paceaitian/paceflow",
   "repository": "https://github.com/paceaitian/paceflow",
   "license": "MIT",
-  "keywords": ["workflow", "pace", "hooks", "planning", "artifacts"]
+  "keywords": ["workflow", "pace", "hooks", "planning", "artifacts"],
+  "agents": ["./agents/artifact-writer.md"]
 }
