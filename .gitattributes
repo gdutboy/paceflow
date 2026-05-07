@@ -1,0 +1,4 @@
+hooks/templates/*.md text eol=lf
+agent-references/**/*.md text eol=lf
+agents/*.md text eol=lf
+skills/**/*.md text eol=lf

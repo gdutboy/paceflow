@@ -44,6 +44,8 @@
 
 ## 操作步骤
 
+> **CRLF / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。
+
 ### 1. 完成状态联动
 
 - 若 status 为 `planned` / `in-progress` / `completed`：

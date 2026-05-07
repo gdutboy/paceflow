@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.21';
+const PACE_VERSION = 'v6.0.22';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -11,7 +11,11 @@ const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
-const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->$/m;
+const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
+
+function normalizeLineEndings(content) {
+  return String(content || '').replace(/\r\n?/g, '\n');
+}
 
 // 交叉验证：AI 声称完成时匹配的中文短语
 const COMPLETION_PHRASES = /(?:任务完成|已完成所有|全部完成|归档完毕)/;
@@ -522,7 +526,8 @@ function createTemplates(cwd) {
     const tmpl = path.join(TEMPLATES_DIR, file);
     if (!fs.existsSync(target) && fs.existsSync(tmpl)) {
       try {
-        fs.copyFileSync(tmpl, target);
+        const content = normalizeLineEndings(fs.readFileSync(tmpl, 'utf8'));
+        fs.writeFileSync(target, content, 'utf8');
         created.push(file);
       } catch(e) {}
     }
@@ -952,7 +957,7 @@ module.exports = {
   getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
   artifactRootChoiceNeeded, artifactRootChoiceMessage, ensureProjectInfra,
   // 文件读写
-  readActive, readFull, checkArchiveFormat, createTemplates,
+  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings,
   // 计划文件
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
   // 统计与检查

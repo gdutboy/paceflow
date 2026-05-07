@@ -855,6 +855,85 @@ test('9hd. 非 artifact-writer Agent 不受 artifact_dir 约束', () => {
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
+test('9he. Edit artifact 前自动把 CRLF 归一化为 LF', () => {
+  const dir = makeV6Project('ptu-crlf-normalize');
+  const fp = path.join(dir, 'walkthrough.md');
+  fs.writeFileSync(fp, [
+    '# 工作记录',
+    '',
+    '## 最近工作',
+    '',
+    '| 日期 | 完成内容 | 关联变更 |',
+    '| --- | --- | --- |',
+    '',
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\r\n'), 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '| --- | --- | --- |\n',
+        new_string: `| --- | --- | --- |\n| ${today()} | [[chg-20260504-01]] smoke | CHG-20260504-01 |\n`,
+      },
+      agent_id: 'agent-1',
+      agent_type: 'artifact-writer',
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  const after = fs.readFileSync(fp, 'utf8');
+  assert.ok(!after.includes('\r'), 'artifact 应被归一化为 LF');
+  assert.ok(after.includes('| --- | --- | --- |\n'), 'LF old_string 应能匹配归一化后的文件');
+});
+
+test('9hf. Bash 只读 artifact 放行', () => {
+  const dir = makeV6Project('ptu-bash-read-artifact');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: {
+        command: `cat -A ${path.join(dir, 'walkthrough.md')}`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('9hg. Bash 修改 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-write-artifact');
+  const fp = path.join(dir, 'walkthrough.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: {
+        command: `sed -i 's/\\r$//' ${fp}`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+});
+
+test('9hh. 懒创建模板写入 LF', () => {
+  const dir = makeTmpDir('ptu-template-lf');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.ok(r.stdout.includes('"deny"'));
+  for (const file of ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md']) {
+    const content = fs.readFileSync(path.join(dir, file), 'utf8');
+    assert.ok(!content.includes('\r'), `${file} 应为 LF`);
+  }
+});
+
 test('9i. PACE 项目 malformed stdin → fail-closed deny', () => {
   const dir = makeV6Project('ptu-bad-stdin');
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: 'not json {{{' });

@@ -893,7 +893,7 @@ test('extractOpenKeys — 全标题提取（无截断）', () => {
 });
 
 // ============================================================
-// 17. ARCHIVE_MARKER / ARCHIVE_PATTERN — 3 个测试
+// 17. ARCHIVE_MARKER / ARCHIVE_PATTERN — 4 个测试
 // ============================================================
 console.log('\n--- ARCHIVE_MARKER / ARCHIVE_PATTERN ---');
 
@@ -906,6 +906,13 @@ test('ARCHIVE_PATTERN 匹配独占行的 <!-- ARCHIVE -->', () => {
   const match = text.match(paceUtils.ARCHIVE_PATTERN);
   assert.ok(match, '应匹配');
   assert.strictEqual(match[0], '<!-- ARCHIVE -->');
+});
+
+test('ARCHIVE_PATTERN 匹配 CRLF 独占行的 <!-- ARCHIVE -->', () => {
+  const text = 'content\r\n<!-- ARCHIVE -->\r\nold stuff';
+  const match = text.match(paceUtils.ARCHIVE_PATTERN);
+  assert.ok(match, 'CRLF 应匹配');
+  assert.strictEqual(match[0], '<!-- ARCHIVE -->\r');
 });
 
 test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {

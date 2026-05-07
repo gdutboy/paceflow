@@ -32,8 +32,45 @@ function isFileMutationTool(toolName) {
   return ['Write', 'Edit', 'MultiEdit'].includes(toolName);
 }
 
+function isEditMutationTool(toolName) {
+  return ['Edit', 'MultiEdit'].includes(toolName);
+}
+
 function isAgentTool(toolName) {
   return toolName === 'Agent';
+}
+
+function isBashTool(toolName) {
+  return toolName === 'Bash';
+}
+
+function bashCommandLooksMutating(command) {
+  const c = String(command || '');
+  return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
+    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c) ||
+    /(^|[^<>])>>?\s*[^>&]/.test(c);
+}
+
+function bashCommandReferencesArtifact(command, cwd, artDir) {
+  const c = String(command || '').replace(/\\/g, '/');
+  const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
+  for (const root of roots) {
+    for (const file of ARTIFACT_FILES) {
+      if (c.includes(`${root}/${file}`)) return true;
+    }
+    if (c.includes(`${root}/changes/`)) return true;
+  }
+  return /(^|[\s"'`=])(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)(?=$|[\s"'`;|&<>])/.test(c) ||
+    /(^|[\s"'`=])(?:\.\/)?changes\//.test(c);
+}
+
+function bashArtifactDenyReason(command) {
+  return [
+    '禁止使用 Bash 修改 artifact 文件。artifact 只能通过 artifact-writer 的 Write/Edit 路径修改，以便 hook 能检查格式和索引一致性。',
+    '允许用 Bash 读取 artifact（test/grep/cat/wc 等），但禁止 sed -i、重定向、rm/mv/cp/touch/mkdir、脚本写文件等会改变 artifact 的命令。',
+    '如果是 CRLF 导致 Edit 匹配失败，请直接重试 Edit；hook 会在 Edit/MultiEdit 前把 artifact 换行机械归一化为 LF。',
+    `被拦截的命令：${String(command || '').slice(0, 500)}`
+  ].join('\n');
 }
 
 function isArtifactWriterAgentTool(stdin) {
@@ -86,6 +123,7 @@ paceUtils.withStdinParsed((stdin) => {
   const editList = Array.isArray(stdin.toolInput.edits) ? stdin.toolInput.edits : [];
   const oldString = stdin.oldString || editList.map(e => e.old_string || '').join('\n');
   const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
+  const bashCommand = stdin.toolInput.command || '';
   const rawFilePath = stdin.filePath || '';
   const filePath = paceUtils.resolveToolFilePath(cwd, rawFilePath);
   log(paceUtils.logEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
@@ -122,6 +160,9 @@ paceUtils.withStdinParsed((stdin) => {
     const missingBefore = [];
     const changesDir = path.join(artDir, 'changes');
     if (!fs.existsSync(changesDir)) missingBefore.push('changes/');
+    for (const sub of ['changes/findings', 'changes/corrections']) {
+      if (!fs.existsSync(path.join(artDir, sub))) missingBefore.push(`${sub}/`);
+    }
     for (const file of ARTIFACT_FILES) {
       if (!fs.existsSync(path.join(artDir, file))) missingBefore.push(file);
     }
@@ -136,6 +177,9 @@ paceUtils.withStdinParsed((stdin) => {
     }
     const missingAfter = [];
     if (!fs.existsSync(changesDir)) missingAfter.push('changes/');
+    for (const sub of ['changes/findings', 'changes/corrections']) {
+      if (!fs.existsSync(path.join(artDir, sub))) missingAfter.push(`${sub}/`);
+    }
     for (const file of ARTIFACT_FILES) {
       if (!fs.existsSync(path.join(artDir, file))) missingAfter.push(file);
     }
@@ -217,6 +261,8 @@ paceUtils.withStdinParsed((stdin) => {
         const created = [...new Set([
           ...ensured.createdFiles,
           ...(ensured.missingBefore.includes('changes/') ? ['changes/'] : []),
+          ...(ensured.missingBefore.includes('changes/findings/') ? ['changes/findings/'] : []),
+          ...(ensured.missingBefore.includes('changes/corrections/') ? ['changes/corrections/'] : []),
         ])];
         const createdMsg = created.length > 0 ? `；已自动创建 Artifact 基础模板：${created.join(', ')}` : '';
         const output = {
@@ -238,9 +284,24 @@ paceUtils.withStdinParsed((stdin) => {
       log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT', { proj, tool: toolName, dur: Date.now() - t0 }));
       return;
     }
+    if (isBashTool(toolName)) {
+      if (bashCommandLooksMutating(bashCommand) && bashCommandReferencesArtifact(bashCommand, cwd, artDir)) {
+        const reason = bashArtifactDenyReason(bashCommand);
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT${teammateTag}`, {
+          proj,
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      log(paceUtils.logEntry('PreToolUse', 'PASS_BASH', { proj, dur: Date.now() - t0 }));
+      return;
+    }
     if (!isFileMutationTool(toolName)) {
       return hardDeny(
-        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit/Agent，已阻止以避免绕过保护。`,
+        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit/Agent/Bash，已阻止以避免绕过保护。`,
         'DENY_BAD_TOOL'
       );
     }
@@ -283,6 +344,34 @@ paceUtils.withStdinParsed((stdin) => {
     }
   }
 
+  if (isEditMutationTool(toolName) && isInsideProject && paceSignal) {
+    const artifactRel = paceUtils.artifactRelativePathForFile(artDir, filePath);
+    if (artifactRel && fs.existsSync(filePath)) {
+      try {
+        const current = fs.readFileSync(filePath, 'utf8');
+        const normalized = paceUtils.normalizeLineEndings(current);
+        if (normalized !== current) {
+          fs.writeFileSync(filePath, normalized, 'utf8');
+          log(paceUtils.logEntry('PreToolUse', 'NORMALIZE_CRLF_ARTIFACT', {
+            proj,
+            tool: toolName,
+            file: filePath,
+            artifact: artifactRel,
+            dur: Date.now() - t0,
+          }));
+        }
+      } catch(e) {
+        log(paceUtils.logEntry('PreToolUse', 'NORMALIZE_CRLF_ARTIFACT_FAILED', {
+          proj,
+          tool: toolName,
+          file: filePath,
+          error: e.message,
+          dur: Date.now() - t0,
+        }));
+      }
+    }
+  }
+
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && paceSignal) {
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
@@ -307,7 +396,7 @@ paceUtils.withStdinParsed((stdin) => {
       const tmpl = path.join(TEMPLATES_DIR, fileName);
       if (fs.existsSync(tmpl)) {
         try {
-          const tmplContent = fs.readFileSync(tmpl, 'utf8');
+          const tmplContent = paceUtils.normalizeLineEndings(fs.readFileSync(tmpl, 'utf8'));
           const ctx = `新建 ${fileName}：请严格按照以下官方模板格式，保留双区结构（${ARCHIVE_MARKER} 分隔符）和注释说明：\n\n${tmplContent}`;
           const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: ctx } };
           process.stdout.write(JSON.stringify(output));
