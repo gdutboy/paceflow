@@ -79,6 +79,11 @@ function isTeammate() {
   return !!process.env.CLAUDE_CODE_TEAM_NAME;
 }
 
+function isArtifactWriterAgentType(agentType) {
+  const type = String(agentType || '').toLowerCase();
+  return type === 'artifact-writer' || type === 'paceflow:artifact-writer' || type.endsWith(':artifact-writer');
+}
+
 /**
  * 获取项目根目录，优先使用 CLAUDE_PROJECT_DIR 环境变量（Claude Code hook 进程自动设置）
  * fallback 到 process.cwd()（非 hook 环境或环境变量缺失时）
@@ -974,7 +979,7 @@ module.exports = {
   resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
-  isPaceProject, isTeammate, getArtifactDir, getProjectStateDir,
+  isPaceProject, isTeammate, isArtifactWriterAgentType, getArtifactDir, getProjectStateDir,
   getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
   artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
   // 文件读写

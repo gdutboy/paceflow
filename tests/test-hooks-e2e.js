@@ -1390,6 +1390,47 @@ test('15. v6 schema 缺 verified-date → warning', () => {
   assert.ok(r.stdout.includes('verified-date'));
 });
 
+test('15a. PostToolUse 对 artifact-writer 合法 C/V 标志写入不报直接写入', () => {
+  const dir = makeV6Project('post-marker-agent');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-post-marker',
+      agent_type: 'paceaitian-paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->\nverified-date: 2026-05-06T12:00:00+08:00',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('C/V 阶段标志被直接写入'));
+});
+
+test('15b. PostToolUse 对非 artifact-writer C/V 标志写入仍提醒', () => {
+  const dir = makeV6Project('post-marker-direct');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-post-other',
+      agent_type: 'code-reviewer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('C/V 阶段标志被直接写入'));
+  assert.ok(r.stdout.includes('artifact-writer'));
+});
+
 test('16. correction 详情变更 → knowledge 提醒', () => {
   const dir = makeV6Project('post-correction');
   const fp = path.join(dir, 'changes', 'corrections', 'correction-20260504-test.md');

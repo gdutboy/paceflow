@@ -25,7 +25,7 @@ function hasNonNullVerifiedDate(text) {
 }
 
 function isArtifactWriterAgent(stdin) {
-  return ['artifact-writer', 'paceflow:artifact-writer'].includes(stdin.agentType || '');
+  return paceUtils.isArtifactWriterAgentType(stdin.agentType);
 }
 
 function isFileMutationTool(toolName) {
@@ -134,8 +134,7 @@ function bashArtifactDenyReason(command) {
 }
 
 function isArtifactWriterAgentTool(stdin) {
-  const agentType = String(stdin.toolInput.subagent_type || stdin.toolInput.subagentType || '').toLowerCase();
-  return agentType === 'artifact-writer' || agentType === 'paceflow:artifact-writer' || agentType.endsWith(':artifact-writer');
+  return paceUtils.isArtifactWriterAgentType(stdin.toolInput.subagent_type || stdin.toolInput.subagentType);
 }
 
 function displayDir(dir) {

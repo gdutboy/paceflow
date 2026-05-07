@@ -878,6 +878,14 @@ test('parseHookStdin — source 优先于 type（两者都存在时）', () => {
   assert.strictEqual(r.type, 'compact', 'source 应优先于 type');
 });
 
+test('isArtifactWriterAgentType — 识别本地与命名空间 agent 类型', () => {
+  assert.strictEqual(paceUtils.isArtifactWriterAgentType('artifact-writer'), true);
+  assert.strictEqual(paceUtils.isArtifactWriterAgentType('paceflow:artifact-writer'), true);
+  assert.strictEqual(paceUtils.isArtifactWriterAgentType('paceaitian-paceflow:artifact-writer'), true);
+  assert.strictEqual(paceUtils.isArtifactWriterAgentType('code-reviewer'), false);
+  assert.strictEqual(paceUtils.isArtifactWriterAgentType(''), false);
+});
+
 // ============================================================
 // 16. extractOpenKeys() — 4 个测试
 // ============================================================
