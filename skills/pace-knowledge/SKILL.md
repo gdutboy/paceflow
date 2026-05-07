@@ -32,8 +32,8 @@ status: discussing
 projects: [项目名]
 tags: [标签1, 标签2]
 summary: "一句话摘要，Home.md 仪表盘显示用"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
+created: YYYY-MM-DDTHH:mm:ss+08:00
+updated: YYYY-MM-DDTHH:mm:ss+08:00
 ---
 
 # 标题
@@ -62,7 +62,7 @@ updated: YYYY-MM-DD
 
 - `summary` 必填，不超过 80 字
 - `projects` 至少关联一个项目名（对应 `projects/` 下的目录名）
-- 更新内容时同步更新 `updated` 日期
+- 更新内容时同步更新 `updated` 时间戳
 - Home.md 仪表盘查询 `status = "discussing"` 的笔记
 
 ---
@@ -79,8 +79,8 @@ status: concluded
 projects: [来源项目1, 来源项目2]
 tags: [标签1, 标签2]
 summary: "一句话摘要，Home.md 仪表盘显示用"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
+created: YYYY-MM-DDTHH:mm:ss+08:00
+updated: YYYY-MM-DDTHH:mm:ss+08:00
 sources:
   - 来源项目/findings
 ---

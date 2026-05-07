@@ -1,6 +1,6 @@
-# PACEflow v6.0.27 参考手册
+# PACEflow v6.0.28 参考手册
 
-> 最后更新：2026-05-07
+> 最后更新：2026-05-08
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify)
 > v6 决策：不兼容 v5 活跃流程；v5 内容只作为 ARCHIVE 历史。
 
@@ -85,10 +85,11 @@ projects/<project>/
 | `session-start.js` | 创建/注入索引模板，输出活跃 CHG 摘要 |
 | `pre-tool-use.js` | 写代码前检查活跃 CHG、详情文件、APPROVED、可执行状态 |
 | `post-tool-use.js` | schema/wikilink/直接 C-V 写入/correction knowledge 提醒 |
+| `post-tool-use-failure.js` | 写入/验证工具失败后提醒不要误判完成 |
+| `subagent-stop.js` | 观察 `artifact-writer` 报告标题/状态并记录 transcript |
 | `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致 |
 | `task-list-sync.js` | 用 `changes/<id>.md` 任务清单校验 Claude 任务列表（TaskCreate/TaskUpdate/TodoWrite） |
 | `pre-compact.js` | 快照活跃 CHG、pending、approved、verified 状态 |
-| `config-guard.js` | 防止 hook 配置被误删 |
 | `stop-failure.js` | API 错误中断日志 |
 
 ---

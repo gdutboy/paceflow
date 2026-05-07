@@ -624,13 +624,13 @@ v6 目标：
 2. snapshot 记录 open/investigating/blocked finding 统计。
 3. snapshot 记录 broken wikilink / schema violation 摘要。
 
-### 6.8 `hooks/config-guard.js`
+### 6.8 `hooks/config-guard.js`（已移除）
 
-基本可保留。需要补充检测 agent/hook 配置删除：
+v6.0.28 复核后移除 `ConfigChange` / `config-guard.js`：
 
-- `artifact-writer.md`
-- `agent-references/**`
-- `StopFailure` 在 `hooks/hooks.json` 中必须保留。
+- PaceFlow 正式安装路径使用 Claude Code plugin，hook 注册权威是 plugin 包内的 `hooks/hooks.json`。
+- `ConfigChange` 只能观察 project/local settings 变更，不能保护 plugin manifest 注册的 hooks。
+- 继续发布会制造“hook 配置已被保护”的错误安全感，因此不进入 marketplace 发布面。
 
 ### 6.9 `hooks/hooks.json` / `config/settings-hooks-excerpt.json`
 
@@ -641,7 +641,7 @@ v6 正式安装路径是 Claude Code Plugin marketplace：
 /plugin install paceflow@paceaitian-paceflow
 ```
 
-`hooks/hooks.json` 是 hook 注册权威，当前已有 `StopFailure`。`config/settings-hooks-excerpt.json`、`install.js`、`verify.js` 只作为本地验证/手动调试工具，不作为 v6 发布安装链路的权威，不应进入发布面设计。
+`hooks/hooks.json` 是 hook 注册权威；当前发布面包含 8 类 hook 事件。`config/settings-hooks-excerpt.json` 仅服务 `install.js` 手动安装/本地验证，v6 正式发布安装仍以 marketplace plugin 为准，不把 `install.js` / `verify.js` 作为发布面权威。
 
 Hook 注册机制可保持不变；发布前重点确认 plugin 安装后 `hooks/`、`skills/`、`agents/` 都随 marketplace 包可用。
 
@@ -925,7 +925,7 @@ Docs：
 | P1 | `README.md` / `REFERENCE.md` | v5 公共文档，需重写 |
 | P1 | `docs/v6.0.0-design.md` | 仍有双轨兼容章节，与 v6-only 决策冲突 |
 | P1 | `.claude-plugin/plugin.json` / `marketplace.json` | 版本仍是 5.1.4；需确认 `agents/` 插件加载与发布元数据 |
-| P1 | `config/settings-hooks-excerpt.json` | 缺 StopFailure，和 hooks.json 不一致 |
+| P1 | `ConfigChange` / `config-guard.js` | 历史缺口：曾尝试保护 settings 中的 hook 配置；v6.0.28 确认对 plugin hook 注册无保护价值，已从发布面移除 |
 | P2 | `docs/agent-design.md` | 早期设计仍含 v5/v6 双轨、unknown-operation 等旧描述 |
 | P2 | `docs/agent-testing-strategy.md` | 测试矩阵仍含 v5/mixed-v5-v6 思路 |
 | P2 | 流程图文档 | 仍是 v5.1.1 hook 决策链 |

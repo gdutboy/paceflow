@@ -108,75 +108,80 @@ if (eventType === 'compact') {
   try {
     if (fs.existsSync(snapFile)) {
       const snap = JSON.parse(fs.readFileSync(snapFile, 'utf8'));
-      const lines = [`=== Compact 恢复（快照 ${snap.timestamp}）===`];
-      if (snap.artifacts?.['task.md']?.inProgress?.length > 0) {
-        lines.push('进行中任务:');
-        snap.artifacts['task.md'].inProgress.forEach(t => lines.push(`  ${t}`));
-      }
-      if (snap.artifacts?.['task.md']?.pending > 0) {
-        lines.push(`待办任务: ${snap.artifacts['task.md'].pending} 个`);
-      }
-      if (snap.activeChanges && snap.activeChanges.length > 0) {
-        lines.push('活跃 CHG:');
-        snap.activeChanges.forEach(c => lines.push(`  ${c.id} status=${c.status} pending=${c.pending} approved=${c.approved} verified=${c.verified}`));
-      }
-      if (snap.runtime?.degraded) {
-        lines.push('⚠️ Stop hook 之前已降级（本次已重置计数）');
-      }
-      // v5.0.1: compact 后 native plan 恢复提示
-      if (snap.nativePlans && snap.nativePlans.length > 0) {
-        lines.push('');
-        lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
-        snap.nativePlans.forEach(p => lines.push(`  ${p}`));
-        lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
-      }
-      // AI 主动记录的 native plan 路径（优先于扫描结果）
-      const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
-      try {
-        if (fs.existsSync(nativePlanFile)) {
-          const planPath = fs.readFileSync(nativePlanFile, 'utf8').trim();
-          if (planPath) {
-            lines.push('');
-            lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-            lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
-          }
+      if (!snap || typeof snap !== 'object') {
+        log(paceUtils.logEntry('SessionStart', 'COMPACT_SNAPSHOT_SKIP', { cwd, reason: 'invalid-snapshot' }));
+        try { fs.unlinkSync(snapFile); } catch(e) {}
+      } else {
+        const lines = [`=== Compact 恢复（快照 ${snap.timestamp}）===`];
+        if (snap.artifacts?.['task.md']?.inProgress?.length > 0) {
+          lines.push('进行中任务:');
+          snap.artifacts['task.md'].inProgress.forEach(t => lines.push(`  ${t}`));
         }
-      } catch(e) {}
-      process.stdout.write(lines.join('\n') + '\n\n');
-      // v5.0.2: compact 恢复后注入格式快速参考
-      if (paceSignal) {
-        // I-10: 合并 9 次 stdout.write 为单次 I/O
-        const formatLines = [
-          '',
-          '=== 格式快速参考 ===',
-          `CHG 索引格式：${FORMAT_SNIPPETS.taskEntry}`,
-          `实施索引格式：${FORMAT_SNIPPETS.implIndex}`,
-          `任务状态：${FORMAT_SNIPPETS.statusHelp}`,
-          `详情位置：changes/<id>.md`,
-          `findings 格式：${FORMAT_SNIPPETS.findingsFormat}`,
-          `walkthrough 索引：${FORMAT_SNIPPETS.walkthroughDetail}`,
-          `批准标记：${FORMAT_SNIPPETS.approved}`,
-          `验证标记：${FORMAT_SNIPPETS.verified}`,
-          `impl_plan 规则：${FORMAT_SNIPPETS.implDetail}`,
-          '',
-          '=== G-9 完成检查（每个 CHG/HOTFIX 最后任务代码写完后立即执行）===',
-          `1. 先运行验证并阅读结果；未读取结果前不要派 verify/close-chg`,
-          `2. 通过后派 close-chg complete-open-tasks: true — 收口最后任务、写 VERIFIED、归档索引并写 walkthrough`,
-          `3. 中间任务完成才用 update-status [x]；只记录验证暂不归档才用 update-chg action=verify`,
-          '4. spec.md — 同步技术栈变更（如有）',
-          '',
-        ];
-        process.stdout.write(formatLines.join('\n') + '\n');
+        if (snap.artifacts?.['task.md']?.pending > 0) {
+          lines.push(`待办任务: ${snap.artifacts['task.md'].pending} 个`);
+        }
+        if (snap.activeChanges && snap.activeChanges.length > 0) {
+          lines.push('活跃 CHG:');
+          snap.activeChanges.forEach(c => lines.push(`  ${c.id} status=${c.status} pending=${c.pending} approved=${c.approved} verified=${c.verified}`));
+        }
+        if (snap.runtime?.degraded) {
+          lines.push('⚠️ Stop hook 之前已降级（本次已重置计数）');
+        }
+        // v5.0.1: compact 后 native plan 恢复提示
+        if (snap.nativePlans && snap.nativePlans.length > 0) {
+          lines.push('');
+          lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
+          snap.nativePlans.forEach(p => lines.push(`  ${p}`));
+          lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
+        }
+        // AI 主动记录的 native plan 路径（优先于扫描结果）
+        const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
+        try {
+          if (fs.existsSync(nativePlanFile)) {
+            const planPath = fs.readFileSync(nativePlanFile, 'utf8').trim();
+            if (planPath) {
+              lines.push('');
+              lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
+              lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
+            }
+          }
+        } catch(e) {}
+        process.stdout.write(lines.join('\n') + '\n\n');
+        // v5.0.2: compact 恢复后注入格式快速参考
+        if (paceSignal) {
+          // I-10: 合并 9 次 stdout.write 为单次 I/O
+          const formatLines = [
+            '',
+            '=== 格式快速参考 ===',
+            `CHG 索引格式：${FORMAT_SNIPPETS.taskEntry}`,
+            `实施索引格式：${FORMAT_SNIPPETS.implIndex}`,
+            `任务状态：${FORMAT_SNIPPETS.statusHelp}`,
+            `详情位置：changes/<id>.md`,
+            `findings 格式：${FORMAT_SNIPPETS.findingsFormat}`,
+            `walkthrough 索引：${FORMAT_SNIPPETS.walkthroughDetail}`,
+            `批准标记：${FORMAT_SNIPPETS.approved}`,
+            `验证标记：${FORMAT_SNIPPETS.verified}`,
+            `impl_plan 规则：${FORMAT_SNIPPETS.implDetail}`,
+            '',
+            '=== G-9 完成检查（每个 CHG/HOTFIX 最后任务代码写完后立即执行）===',
+            `1. 先运行验证并阅读结果；未读取结果前不要派 verify/close-chg`,
+            `2. 通过后派 close-chg complete-open-tasks: true — 收口最后任务、写 VERIFIED、归档索引并写 walkthrough`,
+            `3. 中间任务完成才用 update-status [x]；只记录验证暂不归档才用 update-chg action=verify`,
+            '4. spec.md — 同步技术栈变更（如有）',
+            '',
+          ];
+          process.stdout.write(formatLines.join('\n') + '\n');
+        }
+        // v5.0.2: compact 恢复 snapshot.findings/walkthrough
+        if (snap.findings) {
+          process.stdout.write(`findings 状态：${snap.findings.openCount} 个开放项\n`);
+        }
+        if (snap.walkthrough && !snap.walkthrough.hasTodayEntry) {
+          process.stdout.write(`⚠️ compact 前 walkthrough 无今日记录，请在完成任务后更新。${FORMAT_SNIPPETS.walkthroughDetail}\n`);
+        }
+        // W-11: 独立 try-catch 防止删除失败影响后续逻辑
+        try { fs.unlinkSync(snapFile); } catch(e) {}
       }
-      // v5.0.2: compact 恢复 snapshot.findings/walkthrough
-      if (snap.findings) {
-        process.stdout.write(`findings 状态：${snap.findings.openCount} 个开放项\n`);
-      }
-      if (snap.walkthrough && !snap.walkthrough.hasTodayEntry) {
-        process.stdout.write(`⚠️ compact 前 walkthrough 无今日记录，请在完成任务后更新。${FORMAT_SNIPPETS.walkthroughDetail}\n`);
-      }
-      // W-11: 独立 try-catch 防止删除失败影响后续逻辑
-      try { fs.unlinkSync(snapFile); } catch(e) {}
     }
   } catch(e) {}
 }
@@ -322,8 +327,8 @@ for (const file of ARTIFACT_FILES) {
       for (const l of lines) {
         const dm = l.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/);
         if (dm) {
-          // 正向匹配：匹配 open 索引 → 保留，否则跳过（避免共享前缀误跳开放项）
-          skip = !openKeys.some(p => dm[1].includes(p));
+          // 正向精确匹配：只保留 open 索引对应详情，避免共享前缀误保留/误跳过。
+          skip = !openKeys.includes(paceUtils.normalizeFindingKey(dm[1]));
           if (skip) { cnt++; continue; }
         } else if (skip) {
           if (/^#{2,3} /.test(l)) skip = false;

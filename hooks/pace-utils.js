@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.27';
+const PACE_VERSION = 'v6.0.28';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -15,6 +15,13 @@ const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
 
 function normalizeLineEndings(content) {
   return String(content || '').replace(/\r\n?/g, '\n');
+}
+
+function hasNonNullVerifiedDate(text) {
+  const match = normalizeLineEndings(text).match(/^verified-date:[ \t]*(.*)$/m);
+  if (!match) return false;
+  const value = match[1].trim().replace(/^["']|["']$/g, '');
+  return value !== '' && value.toLowerCase() !== 'null';
 }
 
 // 交叉验证：AI 声称完成时匹配的中文短语
@@ -719,9 +726,16 @@ function formatBridgeHint(cwd, artDir) {
 function extractOpenKeys(text) {
   const keys = [];
   (text.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
-    keys.push(line.replace(/^- \[ \] /, '').trim());
+    keys.push(normalizeFindingKey(line.replace(/^- \[ \] /, '').trim()));
   });
   return keys;
+}
+
+function normalizeFindingKey(value) {
+  let text = String(value || '').trim();
+  const wikilink = text.match(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/);
+  if (wikilink) text = (wikilink[2] || wikilink[1]).trim();
+  return text.replace(/\s+/g, ' ').toLowerCase();
 }
 
 /** W-5: 检测 impl_plan 活跃区的旧格式（emoji 状态标记或纯表格格式） */
@@ -987,11 +1001,11 @@ module.exports = {
   getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
   artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
   // 文件读写
-  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings,
+  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
   // 计划文件
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
   // 统计与检查
-  countByStatus, extractOpenKeys, detectLegacyImplFormat,
+  countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
   parseFrontmatter, detailPathForId, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成

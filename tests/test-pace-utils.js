@@ -902,7 +902,7 @@ test('isArtifactWriterAgentType — 识别本地与命名空间 agent 类型', (
 });
 
 // ============================================================
-// 16. extractOpenKeys() — 4 个测试
+// 16. extractOpenKeys() / normalizeFindingKey() — 5 个测试
 // ============================================================
 console.log('\n--- extractOpenKeys ---');
 
@@ -927,7 +927,14 @@ test('extractOpenKeys — 全标题提取（无截断）', () => {
   const text = '- [ ] PACEflow 非常长的标题应该被截断 — 结论';
   const keys = paceUtils.extractOpenKeys(text);
   assert.strictEqual(keys.length, 1);
-  assert.strictEqual(keys[0], 'PACEflow 非常长的标题应该被截断');
+  assert.strictEqual(keys[0], 'paceflow 非常长的标题应该被截断');
+});
+
+test('extractOpenKeys — wikilink alias 归一化为精确标题 key', () => {
+  const text = '- [ ] [[finding-2026-05-07-login|登录优化]] — 结论';
+  const keys = paceUtils.extractOpenKeys(text);
+  assert.deepStrictEqual(keys, ['登录优化']);
+  assert.strictEqual(paceUtils.normalizeFindingKey('登录优化二期'), '登录优化二期');
 });
 
 // ============================================================

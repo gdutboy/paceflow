@@ -1075,6 +1075,31 @@ test('9hc3. close-chg 缺验证摘要字段 → DENY', () => {
   assert.ok(r.stdout.includes('walkthrough-summary'));
 });
 
+test('9hc3a. close-chg 缺 complete-open-tasks → DENY', () => {
+  const dir = makeV6Project('agent-close-missing-complete-open');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Close CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'verify-summary: node hello.js PASS',
+          'walkthrough-summary: 创建 hello.js 并验证通过',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('complete-open-tasks: true'));
+});
+
 test('9hc4. close-chg 完整收尾 prompt → 放行', () => {
   const dir = makeV6Project('agent-close-complete');
   const r = runHook('pre-tool-use.js', {
@@ -1496,7 +1521,7 @@ test('17b. legacy v5 PostToolUse 只提示迁移或桥接', () => {
   assert.ok(r.stdout.includes('不再校验或修复 v5'));
 });
 
-console.log('\n--- task-list / pre-compact / config ---');
+console.log('\n--- task-list / pre-compact / lifecycle observers ---');
 
 test('18. TodoWrite 按详情未完成任务数提示', () => {
   const dir = makeV6Project('tw-v6');
@@ -1565,14 +1590,6 @@ test('19. PreCompact 写 activeChanges 快照', () => {
   assert.strictEqual(snap.runtime.blockCount, 2);
   assert.strictEqual(snap.findings.openCount, 1);
   assert.strictEqual(snap.walkthrough.hasTodayEntry, true);
-});
-
-test('20. ConfigGuard PACE 项目 disableAllHooks 警告', () => {
-  const dir = makeV6Project('cg-v6');
-  const r = runHook('config-guard.js', { cwd: dir, stdin: { tool_input: { disableAllHooks: true } } });
-  assert.strictEqual(r.code, 0);
-  const out = JSON.parse(r.stdout);
-  assert.ok(out.hookSpecificOutput.additionalContext.includes('严重警告'));
 });
 
 test('21. StopFailure PACE 项目记录日志', () => {

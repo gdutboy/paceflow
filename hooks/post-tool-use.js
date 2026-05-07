@@ -84,8 +84,8 @@ paceUtils.withStdinParsed((stdin) => {
     if (isChangeDetailEdit && mutationText) {
       const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');
       const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
-      const setVerifiedDate = /^verified-date:\s*(?!null\b).+/m.test(mutationText) &&
-        !/^verified-date:\s*(?!null\b).+/m.test(oldString || '');
+      const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
+        !paceUtils.hasNonNullVerifiedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate) && !paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
         warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的 ${addedApproved ? 'update-chg action=approve 或 approve-and-start（均需 approval-confirmed/source/evidence）' : 'update-chg action=verify 或 close-chg'}。`);
       }

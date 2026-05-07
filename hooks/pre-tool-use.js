@@ -17,13 +17,6 @@ const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
 
-function hasNonNullVerifiedDate(text) {
-  const match = String(text || '').match(/^verified-date:[ \t]*(.*)$/m);
-  if (!match) return false;
-  const value = match[1].trim();
-  return value !== '' && value !== 'null';
-}
-
 function isArtifactWriterAgent(stdin) {
   return paceUtils.isArtifactWriterAgentType(stdin.agentType);
 }
@@ -264,6 +257,7 @@ function agentLifecyclePromptDenyReason(prompt) {
   if (mentionsCloseChg) {
     const missing = [];
     if (!promptHasTrueField(text, 'verification-confirmed')) missing.push('verification-confirmed: true');
+    if (!promptHasTrueField(text, 'complete-open-tasks')) missing.push('complete-open-tasks: true');
     if (!promptHasNonEmptyField(text, 'verify-summary')) missing.push('verify-summary');
     if (!promptHasNonEmptyField(text, 'walkthrough-summary')) missing.push('walkthrough-summary');
     if (missing.length > 0) {
@@ -643,8 +637,8 @@ paceUtils.withStdinParsed((stdin) => {
     if (isFileMutationTool(toolName) && isInsideProject && isChangeDetail && mutationText) {
       const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');
       const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
-      const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
-        !hasNonNullVerifiedDate(oldString || '');
+      const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
+        !paceUtils.hasNonNullVerifiedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate) && !isArtifactWriterAgent(stdin)) {
         const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve 或 approve-and-start（均需 approval-confirmed/source/evidence）' : 'update-chg action=verify 或 close-chg'}。`;
         const output = denyOrHint(reason);
