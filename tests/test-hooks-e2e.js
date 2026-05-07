@@ -863,7 +863,7 @@ test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
   assert.ok(r.stdout.includes('approval-confirmed: true'));
 });
 
-test('9hc1a. approve-and-start 带 approval-confirmed → 放行', () => {
+test('9hc1a. approve-and-start 带确认字段 → 放行', () => {
   const dir = makeV6Project('agent-approve-confirm-ok');
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
@@ -879,6 +879,85 @@ test('9hc1a. approve-and-start 带 approval-confirmed → 放行', () => {
           'action: approve-and-start',
           'task-id: T-001',
           'approval-confirmed: true',
+          'approval-source: user-directive',
+          'approval-evidence: 用户说“开始执行这个方案”',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc1b. approve 缺 approval-confirmed/source/evidence → DENY', () => {
+  const dir = makeV6Project('agent-approve-confirm-missing');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve only',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('approval-source'));
+  assert.ok(r.stdout.includes('approval-evidence'));
+});
+
+test('9hc1c. approve 带开始语义 → DENY 要求 approve-and-start', () => {
+  const dir = makeV6Project('agent-approve-start-intent');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve but start',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve',
+          'approval-confirmed: true',
+          'approval-source: user-directive',
+          'approval-evidence: 用户说“开始执行”',
+          '写入 APPROVED，并将 status 改为 in-progress。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('approve-and-start'));
+});
+
+test('9hc1d. approve 纯批准且带确认证据 → 放行', () => {
+  const dir = makeV6Project('agent-approve-confirm-ok');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve only',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve',
+          'approval-confirmed: true',
+          'approval-source: accepted-plan',
+          'approval-evidence: 用户已确认方案，但要求稍后再开始。',
         ].join('\n'),
       },
     },

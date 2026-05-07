@@ -54,7 +54,7 @@ P 阶段产物：
 - `task.md` wikilink 索引
 - `implementation_plan.md` wikilink 索引
 
-Superpowers/native plan 中用户已参与设计且确认开始时，bridge 可在创建后继续派 `update-chg action=approve-and-start`，形成 auto-APPROVED + 首个任务开始。
+Superpowers/native plan 中用户已参与设计且确认开始时，bridge 可在创建后继续派 `update-chg action=approve-and-start`，并带 `approval-confirmed/source/evidence/task-id`，形成 auto-APPROVED + 首个任务开始。
 
 ### 无 plan 文件
 
@@ -89,9 +89,11 @@ target: CHG-YYYYMMDD-NN
 action: approve-and-start
 task-id: T-001
 approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
 ```
 
-若只是先批准、暂不执行，则派 `update-chg action=approve`。C 阶段批准标记只写入 `changes/<id>.md`；`task.md` 只保留索引，不承载批准标记。
+若只是先批准、暂不执行，则派 `update-chg action=approve`，同样必须带 `approval-confirmed: true`、`approval-source`、`approval-evidence`。C 阶段批准标记只写入 `changes/<id>.md`；`task.md` 只保留索引，不承载批准标记。
 
 PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 都存在，详情文件存在，已 APPROVED，且状态/checkbox 已进入可执行状态。
 

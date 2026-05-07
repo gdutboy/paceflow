@@ -1,7 +1,7 @@
 id: TC-C2
 phase: C
 indication: approve-and-start-requires-confirmation
-description: C 阶段 approve-and-start 必须由主 session 明确传入 approval-confirmed=true；缺少确认时 agent 应拒绝写入。
+description: C 阶段 approve-and-start 必须由主 session 明确传入 approval-confirmed=true、approval-source、approval-evidence；缺少确认时 agent 应拒绝写入。
 
 setup:
   fixture: empty-v6
@@ -71,7 +71,7 @@ expected:
   status: FAILED
   files_created: []
   files_modified: []
-  failure_reason_pattern: "approval-confirmed|confirmation|format-violation"
+  failure_reason_pattern: "approval-confirmed|approval-source|approval-evidence|confirmation|format-violation"
   max_tokens: 40000
   max_duration_ms: 180000
   max_tool_uses: 12

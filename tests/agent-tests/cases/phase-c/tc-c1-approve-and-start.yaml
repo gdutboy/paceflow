@@ -70,6 +70,8 @@ input:
     action: approve-and-start
     task-id: T-901
     approval-confirmed: true
+    approval-source: ask-user-question
+    approval-evidence: "用户在测试夹具中确认开始 TC-C1"
 
 expected:
   status: SUCCESS

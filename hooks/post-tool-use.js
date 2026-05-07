@@ -87,7 +87,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = /^verified-date:\s*(?!null\b).+/m.test(mutationText) &&
         !/^verified-date:\s*(?!null\b).+/m.test(oldString || '');
       if (addedApproved || addedVerified || setVerifiedDate) {
-        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的 ${addedApproved ? 'update-chg action=approve 或 approve-and-start' : 'update-chg action=verify 或 close-chg'}。`);
+        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的 ${addedApproved ? 'update-chg action=approve 或 approve-and-start（均需 approval-confirmed/source/evidence）' : 'update-chg action=verify 或 close-chg'}。`);
       }
     }
 

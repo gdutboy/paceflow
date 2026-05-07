@@ -50,8 +50,8 @@ changes/
 | 目标 | 操作 |
 |------|------|
 | 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
-| 批准 C 阶段 | operation=`update-chg`，action=`approve` |
-| 批准并开始首个任务 | operation=`update-chg`，action=`approve-and-start`，需要 `approval-confirmed: true` |
+| 仅批准 C 阶段，暂不开始 | operation=`update-chg`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
+| 批准并开始首个任务 | operation=`update-chg`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
 | 更新中间任务状态 | operation=`update-chg`，section=`tasks`，action=`update-status` |
 | 追加工作记录/实施说明 | operation=`update-chg`，section=`work-record` / `implementation`，action=`append` |
 | 只记录 V 阶段暂不归档 | operation=`update-chg`，action=`verify` |
@@ -144,6 +144,9 @@ artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: approve
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
 ```
 
 批准并开始：
@@ -156,6 +159,8 @@ target: CHG-YYYYMMDD-NN
 action: approve-and-start
 task-id: T-001
 approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
 ```
 
 只记录验证、暂不归档：

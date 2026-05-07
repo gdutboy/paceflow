@@ -74,6 +74,8 @@ target: <CHG-ID>
 action: approve-and-start
 task-id: <首个 T-NNN>
 approval-confirmed: true
+approval-source: prior-approved-plan
+approval-evidence: <上游计划流程中用户确认的方案摘要>
 ```
 
 批准标记写在 `changes/<id>.md`，首个任务会同步为 `[/]`；`task.md` 只保留索引。

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.24';
+const PACE_VERSION = 'v6.0.25';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -38,7 +38,7 @@ const FORMAT_SNIPPETS = {
   taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
   implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
   implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
-  approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；写入路径是 update-chg action=approve，或 approval-confirmed 后用 approve-and-start',
+  approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；approve/approve-and-start 都必须带 approval-confirmed、approval-source、approval-evidence',
   verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；主路径是验证结果已读取后 close-chg，暂不归档时才用 update-chg action=verify',
   // checkbox 状态说明
   statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 阻塞 | [-] 跳过',
@@ -47,7 +47,7 @@ const FORMAT_SNIPPETS = {
   // 格式要求（E 阶段 DENY 核心信息）
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
   // 归档操作（T-441: 移动标记而非内容）
-  approveAndStartOp: '批准并开始 = 派 artifact-writer update-chg action=approve-and-start：需 approval-confirmed: true 与 task-id',
+  approveAndStartOp: '批准并开始 = 派 artifact-writer update-chg action=approve-and-start：需 approval-confirmed: true、approval-source、approval-evidence 与 task-id',
   closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg：需 verification-confirmed: true、complete-open-tasks: true、verify-summary、walkthrough-summary',
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
@@ -681,7 +681,7 @@ function formatBridgeHint(cwd, artDir) {
   if (planFiles.length === 0) return null;
   const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
   const artPath = (artDir || cwd).replace(/\\/g, '/');
-  const bridgeSteps = `Read plan → 派 artifact-writer create-chg 创建 ${artPath}/changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若 plan 已获用户确认并准备开始，再派 update-chg action=approve-and-start。详见 /pace-bridge skill。`;
+  const bridgeSteps = `Read plan → 派 artifact-writer create-chg 创建 ${artPath}/changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若 plan 已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）。详见 /pace-bridge skill。`;
   return { fileList, bridgeSteps };
 }
 

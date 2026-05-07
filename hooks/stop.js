@@ -95,7 +95,7 @@ if (paceSignal === 'artifact') {
 
     if (change.category === 'running') {
       if (!change.approved) {
-        warnings.push(`${change.id} 正在执行但未批准。请用 AskUserQuestion 询问用户是否批准；批准并准备开始时派 update-chg action=approve-and-start（需 approval-confirmed: true + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`);
+        warnings.push(`${change.id} 正在执行但未批准。请确认用户是否已批准；若用户明确要求执行、已接受方案或通过 AskUserQuestion 批准，派 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`);
         continue;
       }
       if (change.tasks.pending > 0) {

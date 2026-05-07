@@ -193,18 +193,61 @@ function promptMentionsVerifyAction(prompt) {
     /\bverify\s+操作/i.test(text);
 }
 
+function promptMentionsApproveAndStart(prompt) {
+  return /\bapprove-and-start\b/i.test(String(prompt || ''));
+}
+
+function promptMentionsApproveOnly(prompt) {
+  const text = String(prompt || '');
+  return /(?:^|[\s\n])action\s*[:=]\s*approve\b(?!-and-start)/i.test(text) ||
+    /\bupdate-chg\s+action=approve\b(?!-and-start)/i.test(text) ||
+    /执行\s*approve\s*操作/i.test(text) ||
+    /action=approve(?!-and-start)/i.test(text);
+}
+
+function promptApproveContainsStartIntent(prompt) {
+  const text = String(prompt || '');
+  return /(?:status|状态)[^\n]{0,24}(?:in-progress|进行中)/i.test(text) ||
+    /(?:改为|设为|推到|进入)[^\n]{0,24}(?:in-progress|进行中)/i.test(text) ||
+    /(?:开始实施|开始执行|立即开始|启动任务|标记为\s*\[\/\]|标记.*进行中)/i.test(text);
+}
+
 function agentLifecyclePromptDenyReason(prompt) {
   const text = String(prompt || '');
-  const mentionsApproveAndStart = /\bapprove-and-start\b/i.test(text);
+  const mentionsApproveAndStart = promptMentionsApproveAndStart(text);
+  const mentionsApproveOnly = promptMentionsApproveOnly(text);
+  const mentionsApprovalAction = mentionsApproveAndStart || mentionsApproveOnly;
   const mentionsCloseChg = /\bclose-chg\b/i.test(text);
   const mentionsUpdateStatus = /\bupdate-status\b/i.test(text);
 
-  if (mentionsApproveAndStart && !promptHasTrueField(text, 'approval-confirmed')) {
+  if (mentionsApprovalAction) {
+    const missing = [];
+    if (!promptHasTrueField(text, 'approval-confirmed')) missing.push('approval-confirmed: true');
+    if (!promptHasNonEmptyField(text, 'approval-source')) missing.push('approval-source');
+    if (!promptHasNonEmptyField(text, 'approval-evidence')) missing.push('approval-evidence');
+    if (mentionsApproveAndStart && !promptHasNonEmptyField(text, 'task-id')) missing.push('task-id');
+    if (missing.length > 0) {
+      return [
+        `派 artifact-writer 执行 C 阶段批准时缺少必填字段：${missing.join(', ')}。`,
+        'C 阶段批准是确认边界：主 session 可以基于用户明确执行指令、已接受方案或 AskUserQuestion 设置 approval-confirmed: true，但必须写明确认来源与证据。',
+        '示例：',
+        'approval-confirmed: true',
+        'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
+        'approval-evidence: <用户原话或已确认方案摘要>',
+        mentionsApproveAndStart ? 'task-id: T-NNN' : '若批准后立即开始，请改用 action=approve-and-start 并提供 task-id。'
+      ].join('\n');
+    }
+  }
+
+  if (mentionsApproveOnly && promptApproveContainsStartIntent(text)) {
     return [
-      '派 artifact-writer 执行 approve-and-start 时缺少 approval-confirmed: true。',
-      'approve-and-start 只能在用户已明确批准、且准备开始某个 T-NNN 后调用；agent 不得自行推断批准。',
-      '请先用 AskUserQuestion 获取批准；批准后重派，并在 prompt 中写明：',
+      '不要用 action=approve 同时表达开始执行或 in-progress 状态。',
+      'action=approve 只插入 APPROVED，适用于“先批准但暂不执行”。',
+      '若用户已明确批准并准备开始，请改派 approve-and-start：',
+      'action: approve-and-start',
       'approval-confirmed: true',
+      'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
+      'approval-evidence: <用户原话或已确认方案摘要>',
       'task-id: T-NNN'
     ].join('\n');
   }
@@ -595,7 +638,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = hasNonNullVerifiedDate(mutationText) &&
         !hasNonNullVerifiedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate) && !isArtifactWriterAgent(stdin)) {
-        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve 或 approve-and-start' : 'update-chg action=verify 或 close-chg'}。`;
+        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve 或 approve-and-start（均需 approval-confirmed/source/evidence）' : 'update-chg action=verify 或 close-chg'}。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
@@ -659,7 +702,7 @@ paceUtils.withStdinParsed((stdin) => {
       const approvedEntries = actionableEntries.filter(e => isChangeApproved(e.detail));
       if (approvedEntries.length === 0) {
         const ids = actionableEntries.map(e => e.id).join(', ');
-        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请询问用户是否批准；批准并准备开始时，派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`;
+        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若用户明确要求执行、已接受方案或通过 AskUserQuestion 批准，派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -672,7 +715,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准，请派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + task-id）；若已批准只需开始任务，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。`;
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准并准备开始，请派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）；若此前已批准只需开始任务，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -722,7 +765,7 @@ paceUtils.withStdinParsed((stdin) => {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
       }
       const createdMsg = createdFiles.length > 0 ? `已自动创建 v6 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start；完成后删除 .pace/current-native-plan。`;
+      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）；完成后删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(paceUtils.logEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
@@ -792,7 +835,7 @@ paceUtils.withStdinParsed((stdin) => {
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + task-id）后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，确认用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
