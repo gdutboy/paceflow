@@ -25,9 +25,10 @@ try {
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
 const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
+const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
 
-// v4: PACE 项目才创建/重置运行态 .pace 文件；避免普通目录被 SessionStart 污染。
-if (paceSignal) {
+// v4: PACE 项目才创建/重置运行态 .pace 文件；首次 root 选择前保持 SessionStart 零写入。
+if (paceSignal && !rootChoicePending) {
   try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
   try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
   // W-code-4: 使用 SESSION_SCOPED_FLAGS 常量（与 pace-utils 保持同步）
@@ -146,13 +147,13 @@ if (eventType !== 'compact') {
 }
 
 // T-204: 基础设施幂等确保（junction + .gitignore），不依赖模板是否创建
-if (paceSignal) {
+if (paceSignal && !rootChoicePending) {
   try { ensureProjectInfra(cwd); } catch(e) {}
 }
 
 // 首次启用且 vault/local 都无 artifact 时，SessionStart 只记录，不打扰闲聊。
 // 真正写代码或派 artifact-writer 时由 PreToolUse 强制询问并阻断。
-if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md')) && artifactRootChoiceNeeded(cwd)) {
+if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
   log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE_PENDING', { cwd, signal: paceSignal }));
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
 } else if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {

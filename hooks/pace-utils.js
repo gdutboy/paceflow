@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.19';
+const PACE_VERSION = 'v6.0.20';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -475,7 +475,7 @@ function checkArchiveFormat(cwd, filename) {
 /**
  * 确保 PACE 项目基础设施就绪（幂等）
  * - .pace/.gitignore（运行时文件不入库）
- * - vault 项目目录存在（artifact 存储位置）
+ * - 仅在 vault 已被选择或已有 vault artifact 时确保 vault 项目目录存在
  * @param {string} cwd - 当前工作目录
  */
 function ensureProjectInfra(cwd) {
@@ -488,11 +488,17 @@ function ensureProjectInfra(cwd) {
       fs.writeFileSync(gitignorePath, '*\n', 'utf8');
     }
   } catch(e) {}
-  // vault 项目目录（T-422: 无 VAULT_PATH 时跳过）
+  // vault 项目目录：首次启用未选择 root 时不能在 Obsidian 创建空项目目录。
   if (VAULT_PATH) {
     try {
-      const vaultDir = path.join(VAULT_PATH, 'projects', getProjectName(cwd));
-      fs.mkdirSync(vaultDir, { recursive: true });
+      const vaultDirs = getProjectNameCandidates(cwd).map(projectName => path.join(VAULT_PATH, 'projects', projectName));
+      const configuredDir = getConfiguredArtifactDir(cwd);
+      const configuredVaultDir = configuredDir
+        ? vaultDirs.find(dir => normalizePath(dir) === normalizePath(configuredDir))
+        : null;
+      const existingVaultDir = vaultDirs.find(dir => fs.existsSync(path.join(dir, 'changes')));
+      const target = configuredVaultDir || existingVaultDir;
+      if (target) fs.mkdirSync(target, { recursive: true });
     } catch(e) {}
   }
 }
