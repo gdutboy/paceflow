@@ -15,6 +15,55 @@ const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
 const PACE_RUNTIME = path.join(cwd, '.pace');
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
+const SESSION_OUTPUT_HARD_LIMIT_BYTES = 50000;
+const SESSION_OUTPUT_BUDGET_BYTES = 46000;
+let sessionOutputBytes = 0;
+let sessionOutputTruncated = false;
+const realStdoutWrite = process.stdout.write.bind(process.stdout);
+
+function sliceUtf8ToBytes(str, maxBytes) {
+  if (maxBytes <= 0) return '';
+  let lo = 0;
+  let hi = str.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (Buffer.byteLength(str.slice(0, mid), 'utf8') <= maxBytes) lo = mid;
+    else hi = mid - 1;
+  }
+  return str.slice(0, lo);
+}
+
+function installSessionOutputGuard() {
+  process.stdout.write = (chunk, encoding, callback) => {
+    const cb = typeof encoding === 'function' ? encoding : callback;
+    const enc = typeof encoding === 'string' ? encoding : undefined;
+    const text = Buffer.isBuffer(chunk) ? chunk.toString(enc || 'utf8') : String(chunk);
+    if (sessionOutputTruncated) {
+      if (typeof cb === 'function') process.nextTick(cb);
+      return true;
+    }
+
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (sessionOutputBytes + bytes <= SESSION_OUTPUT_BUDGET_BYTES) {
+      sessionOutputBytes += bytes;
+      return realStdoutWrite(chunk, encoding, callback);
+    }
+
+    const remaining = Math.max(0, SESSION_OUTPUT_BUDGET_BYTES - sessionOutputBytes);
+    const prefix = sliceUtf8ToBytes(text, remaining);
+    if (prefix) {
+      sessionOutputBytes += Buffer.byteLength(prefix, 'utf8');
+      realStdoutWrite(prefix);
+    }
+    const notice = `\n\n=== SessionStart 输出截断 ===\n注入内容超过 ${SESSION_OUTPUT_BUDGET_BYTES} bytes，已停止继续注入以避免 Claude Code 将 hook 输出落盘。请按需 Read artifact 文件；硬上限 ${SESSION_OUTPUT_HARD_LIMIT_BYTES} bytes。\n`;
+    sessionOutputBytes += Buffer.byteLength(notice, 'utf8');
+    realStdoutWrite(notice);
+    sessionOutputTruncated = true;
+    if (typeof cb === 'function') process.nextTick(cb);
+    return true;
+  };
+}
+installSessionOutputGuard();
 
 // S-1: 统一 stdin 解析
 const eventType = paceUtils.parseStdinSync().type || 'startup';
@@ -176,6 +225,17 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
   }
 }
 
+function writeArtifactDirSection() {
+  const mode = artDir === cwd ? '本地项目根目录' : 'Obsidian vault project';
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n请使用此路径读写 artifact 文件；.pace/ 只保存配置/运行状态，不存 task.md / changes/**。\n\n`);
+}
+
+let artifactDirInjected = false;
+if (paceSignal && fs.existsSync(path.join(artDir, 'task.md'))) {
+  writeArtifactDirSection();
+  artifactDirInjected = true;
+}
+
 // 提取活跃区注入上下文（缓存 task.md 全文供后续复用）
 const found = [];
 let taskFullCached = null;
@@ -328,9 +388,9 @@ if (paceSignal === 'artifact') {
 }
 
 // v4.8/v6.0.26: 注入 artifact 根目录；local 模式也显式说明，避免把 .pace/ 误当 artifact 目录。
-if (found.length > 0) {
-  const mode = artDir === cwd ? '本地项目根目录' : 'Obsidian vault project';
-  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n请使用此路径读写 artifact 文件；.pace/ 只保存配置/运行状态，不存 task.md / changes/**。\n\n`);
+// v6.0.27: 放在大文件内容前，防止 SessionStart 输出截断时丢失最关键的写入路径。
+if (found.length > 0 && !artifactDirInjected) {
+  writeArtifactDirSection();
 }
 
 // T-333: 格式合规检查（注入活跃区后执行，不阻塞，仅引导）
@@ -488,6 +548,8 @@ log(paceUtils.logEntry('SessionStart', 'INJECT', {
   artifact_dir: paceUtils.displayDir(artDir),
   choice: artifactRootChoice,
   files: found.length ? found.join(', ') : '无 Artifact 文件',
+  output_bytes: sessionOutputBytes,
+  truncated: sessionOutputTruncated ? 'yes' : 'no',
   version: PACE_VERSION,
 }));
 

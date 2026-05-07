@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.26';
+const PACE_VERSION = 'v6.0.27';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -926,7 +926,7 @@ function summarizeActiveChanges(cwd) {
 /**
  * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
  * @param {string} rawInput - stdin 原始文本
- * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, raw: object }}
+ * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, agentTranscriptPath: string, error: string, isInterrupt: boolean, durationMs: number, raw: object }}
  */
 function parseHookStdin(rawInput) {
   let parsed = {};
@@ -942,9 +942,13 @@ function parseHookStdin(rawInput) {
     toolInput: parsed.tool_input || {},
     // HOTFIX-20260315-05: CC SessionStart stdin 用 `source` 字段（非 `type`）传递事件类型
     type: parsed.source || parsed.type || '',
-    agentId: parsed.agent_id || '',
-    agentType: parsed.agent_type || '',
-    lastMessage: parsed.last_assistant_message || '',
+    agentId: parsed.agent_id || parsed.subagent_id || '',
+    agentType: parsed.agent_type || parsed.subagent_type || parsed.tool_input?.subagent_type || '',
+    lastMessage: parsed.last_assistant_message || parsed.last_message || parsed.message || '',
+    agentTranscriptPath: parsed.agent_transcript_path || parsed.transcript_path || '',
+    error: parsed.error || parsed.error_type || parsed.message || '',
+    isInterrupt: parsed.is_interrupt === true || parsed.is_interrupt === 'true' || parsed.isInterrupt === true,
+    durationMs: Number(parsed.duration_ms || parsed.durationMs || 0) || 0,
     raw: parsed
   };
 }
@@ -962,7 +966,7 @@ function withStdinParsed(callback) {
 
 /**
  * 同步 stdin 解析 — 替代 session-start/stop 的 readFileSync(0) 模板
- * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, raw: object }}
+ * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, agentTranscriptPath: string, error: string, isInterrupt: boolean, durationMs: number, raw: object }}
  */
 function parseStdinSync() {
   try { return parseHookStdin(fs.readFileSync(0, 'utf8')); }
