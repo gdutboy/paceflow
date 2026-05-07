@@ -6,6 +6,7 @@
 
 # Hook 日志
 hooks/pace-hooks.log
+hooks/pace-hooks.log.lock
 
 # Skill 评估数据（本地开发用）
 skills-eval/
