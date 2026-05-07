@@ -465,7 +465,8 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
   });
 
   const after = fs.readFileSync(logFile, 'utf8');
-  const delta = after.slice(before.length);
+  const projectLogLines = after.split('\n').filter(line => line.includes(path.basename(dir))).join('\n');
+  const delta = projectLogLines || after.slice(before.length);
   assert.ok(delta.includes('act=DENY_V6_MARKER'));
   assert.ok(delta.includes('agent_id=agent-log-deny'));
   assert.ok(delta.includes('agent_type=code-reviewer'));
@@ -896,7 +897,22 @@ test('9hf. Bash 只读 artifact 放行', () => {
     stdin: {
       tool_name: 'Bash',
       tool_input: {
-        command: `cat -A ${path.join(dir, 'walkthrough.md')}`,
+        command: `grep -c "^<!-- ARCHIVE -->$" ${path.join(dir, 'walkthrough.md')}`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('9hfa. Bash 读取 artifact 并重定向到非 artifact 放行', () => {
+  const dir = makeV6Project('ptu-bash-read-artifact-redirect');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: {
+        command: `grep -c "ARCHIVE" ${path.join(dir, 'walkthrough.md')} > /tmp/paceflow-grep-count.txt`,
       },
     },
   });
@@ -913,6 +929,22 @@ test('9hg. Bash 修改 artifact 被拒绝', () => {
       tool_name: 'Bash',
       tool_input: {
         command: `sed -i 's/\\r$//' ${fp}`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+});
+
+test('9hga. Bash 重定向写 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-redirect-artifact');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: {
+        command: 'echo "# overwritten" > task.md',
       },
     },
   });

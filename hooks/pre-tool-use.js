@@ -47,8 +47,68 @@ function isBashTool(toolName) {
 function bashCommandLooksMutating(command) {
   const c = String(command || '');
   return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
-    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c) ||
-    /(^|[^<>])>>?\s*[^>&]/.test(c);
+    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+}
+
+function bashOutputRedirectTargets(command) {
+  const c = String(command || '');
+  const targets = [];
+  let quote = null;
+  let escaped = false;
+  for (let i = 0; i < c.length; i++) {
+    const ch = c[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      continue;
+    }
+    if (ch !== '>') continue;
+
+    let j = i + 1;
+    if (c[j] === '>') j++;
+    if (c[j] === '|') j++;
+    while (/\s/.test(c[j] || '')) j++;
+    if (!c[j]) continue;
+
+    let target = '';
+    if (c[j] === '"' || c[j] === "'") {
+      const endQuote = c[j++];
+      while (j < c.length && c[j] !== endQuote) target += c[j++];
+    } else {
+      while (j < c.length && !/[\s;&|<>]/.test(c[j])) target += c[j++];
+    }
+    if (target) targets.push(target);
+  }
+  return targets;
+}
+
+function bashPathLooksArtifact(target, cwd, artDir) {
+  const t = String(target || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!t || /^&\d+$/.test(t)) return false;
+  const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
+  for (const root of roots) {
+    for (const file of ARTIFACT_FILES) {
+      if (t === `${root}/${file}`) return true;
+    }
+    if (t.startsWith(`${root}/changes/`)) return true;
+  }
+  return /^(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)$/.test(t) ||
+    /^(?:\.\/)?changes\//.test(t);
+}
+
+function bashCommandRedirectsToArtifact(command, cwd, artDir) {
+  return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifact(target, cwd, artDir));
 }
 
 function bashCommandReferencesArtifact(command, cwd, artDir) {
@@ -285,7 +345,9 @@ paceUtils.withStdinParsed((stdin) => {
       return;
     }
     if (isBashTool(toolName)) {
-      if (bashCommandLooksMutating(bashCommand) && bashCommandReferencesArtifact(bashCommand, cwd, artDir)) {
+      const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
+        (bashCommandLooksMutating(bashCommand) && bashCommandReferencesArtifact(bashCommand, cwd, artDir));
+      if (mutatesArtifact) {
         const reason = bashArtifactDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));

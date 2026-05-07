@@ -161,6 +161,8 @@ fields:
 
 当工作目录与 Obsidian vault artifact 目录分离时，`artifact_dir` 不再只是建议字段，而是派 `paceflow:artifact-writer` 的必填字段。`PreToolUse:Agent` 会在 prompt 未包含 hook 解析出的 artifact 路径时 deny 本次派遣，要求主 session 重派。`.pace-enabled` 只表示代码项目启用 PaceFlow，不表示 cwd 就是 artifact 根目录；运行态 `.pace/` 目录本身不是启用信号，`.pace/disabled` 是显式豁免。
 
+本地 artifact 存放位置的默认语义是“项目根目录”，即在 cwd/root 下懒创建 `task.md`、`implementation_plan.md`、`findings.md`、`corrections.md`、`changes/`。不要默认把 artifact 放进 `.pace/` 或隐藏目录：`.pace/` 只存运行态信号，artifact 是需要被主 session、用户、git diff 和外部编辑器直接看到的工作台。若项目需要专用子目录，可通过 `.pace/artifact-root` 或 `PACE_ARTIFACT_ROOT` 写入相对/绝对路径，例如 `./paceflow-artifacts`；这是高级配置，不是首次选择的默认 UI。
+
 ### 3.3 Agent 的硬性输出
 
 agent 每次报告第一个 H2 必须字面等于：
