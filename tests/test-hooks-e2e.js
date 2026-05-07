@@ -668,6 +668,61 @@ test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', (
   assert.ok(r.stdout.includes('artifact-root'));
 });
 
+test('9hab. artifact-root=local 后首次 artifact-writer Agent 放行前创建本地模板', () => {
+  const dir = makeTmpDir('agent-artifact-root-local');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: `artifact_dir: ${dir.replace(/\\/g, '/')}\n使用 create-chg 流程创建一个新的变更记录。`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+  assert.ok(r.stdout.includes('Artifact 基础模板'));
+  assert.ok(fs.existsSync(path.join(dir, 'changes')), 'local agent 放行前应创建 changes/');
+  assert.ok(fs.existsSync(path.join(dir, 'task.md')), 'local agent 放行前应创建 task.md');
+  assert.ok(fs.existsSync(path.join(dir, 'implementation_plan.md')), 'local agent 放行前应创建 implementation_plan.md');
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), 'local 选择不应在 vault 创建 changes/');
+});
+
+test('9hac. artifact-root=vault 后首次 artifact-writer Agent 带 artifact_dir 会在 vault 创建模板', () => {
+  const dir = makeTmpDir('agent-artifact-root-vault');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
+  const prompt = `artifact_dir: ${vaultDir.replace(/\\/g, '/')}/\n使用 create-chg 流程创建一个新的变更记录。`;
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+  assert.ok(r.stdout.includes('Artifact 基础模板'));
+  assert.ok(fs.existsSync(path.join(vaultDir, 'changes')), 'vault agent 放行前应创建 changes/');
+  assert.ok(fs.existsSync(path.join(vaultDir, 'task.md')), 'vault agent 放行前应创建 task.md');
+  assert.ok(fs.existsSync(path.join(vaultDir, 'implementation_plan.md')), 'vault agent 放行前应创建 implementation_plan.md');
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'vault 选择不应在本地项目创建 changes/');
+});
+
 test('9hb. artifact-writer Agent 未带 vault artifact_dir → DENY 重派', () => {
   const { worktree, vaultDir } = makeVaultBackedWorktree('agent-artdir-deny');
   const r = runHook('pre-tool-use.js', {

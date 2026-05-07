@@ -1,4 +1,4 @@
-# PACEflow v6.0.0 参考手册
+# PACEflow v6.0.19 参考手册
 
 > 最后更新：2026-05-04
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify)
@@ -136,8 +136,8 @@ for f in hooks/*.js; do node -c "$f" || exit 1; done
 
 ## 8. 发布检查
 
-- `PACE_VERSION` 为 `v6.0.0`
-- `.claude-plugin/plugin.json` 为当前发布版本（插件包版本）；`PACE_VERSION` / artifact schema 仍为 `v6.0.0`
+- `PACE_VERSION` 与 `.claude-plugin/plugin.json` 均为当前发布版本
+- artifact frontmatter `schema-version` 仍为 `"6.0"`；不要随插件 patch 版本滚动
 - `hooks/templates/` 有 `corrections.md`
 - `hooks/hooks.json` 注册 `StopFailure`
 - `agents/artifact-writer.md` 与 `agent-references/**` 存在

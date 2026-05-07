@@ -102,6 +102,29 @@ paceUtils.withStdinParsed((stdin) => {
   const artifactRootChoiceReason = needsArtifactRootChoice ? artifactRootChoiceMessage(cwd) : '';
   const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
+  function ensureArtifactWriterBase() {
+    const missingBefore = [];
+    const changesDir = path.join(artDir, 'changes');
+    if (!fs.existsSync(changesDir)) missingBefore.push('changes/');
+    for (const file of ARTIFACT_FILES) {
+      if (!fs.existsSync(path.join(artDir, file))) missingBefore.push(file);
+    }
+    let createdFiles = [];
+    let error = '';
+    if (missingBefore.length > 0) {
+      try {
+        createdFiles = createTemplates(cwd);
+      } catch(e) {
+        error = e.message || String(e);
+      }
+    }
+    const missingAfter = [];
+    if (!fs.existsSync(changesDir)) missingAfter.push('changes/');
+    for (const file of ARTIFACT_FILES) {
+      if (!fs.existsSync(path.join(artDir, file))) missingAfter.push(file);
+    }
+    return { missingBefore, missingAfter, createdFiles, error };
+  }
 
   // W-2: 使用 readActive 替换手动读取（内部自动解析 vault 路径）
   let taskActiveContent = readActive(cwd, 'task.md') || '';
@@ -150,18 +173,46 @@ paceUtils.withStdinParsed((stdin) => {
         }));
         return;
       }
-      if (isArtifactWriterAgentTool(stdin) && artDir !== cwd) {
+      if (isArtifactWriterAgentTool(stdin)) {
+        const ensured = ensureArtifactWriterBase();
+        if (ensured.missingAfter.length > 0) {
+          const errorLine = ensured.error ? `\n底层错误：${ensured.error}` : '';
+          const reason = `PACE hook 无法在 artifact_dir 创建完整 v6 Artifact 基础结构：${displayDir(artDir)}\n仍缺失：${ensured.missingAfter.join(', ')}${errorLine}\n请检查路径/权限后重试；禁止让 artifact-writer 自行创建 base changes/ 或根索引模板。`;
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_BASE', {
+            proj,
+            agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+            artifact_dir: displayDir(artDir),
+            missing: ensured.missingAfter.join(', '),
+            error: ensured.error,
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
+        const created = [...new Set([
+          ...ensured.createdFiles,
+          ...(ensured.missingBefore.includes('changes/') ? ['changes/'] : []),
+        ])];
+        const createdMsg = created.length > 0 ? `；已自动创建 Artifact 基础模板：${created.join(', ')}` : '';
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT_ARTIFACT_DIR', {
+        log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT_ARTIFACT_BASE', {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
+          created: created.join(', '),
           dur: Date.now() - t0,
         }));
         return;
