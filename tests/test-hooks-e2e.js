@@ -530,14 +530,14 @@ test('9c2. artifact-root=local 后首次 DENY 会在本地懒创建模板', () =
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), 'local 选择不应在 vault 创建 changes/');
 });
 
-test('9c3. SessionStart 首次启用只提示选择，不自动创建模板', () => {
+test('9c3. SessionStart 首次启用不输出选择提示、不自动创建模板', () => {
   const dir = makeTmpDir('ss-artifact-root-choice');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
   const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
   const r = runHookDetailed('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('Artifact 目录选择'));
-  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(!r.stdout.includes('Artifact 目录选择'), 'SessionStart 不应在闲聊前主动打扰');
+  assert.ok(!r.stdout.includes('AskUserQuestion'), '选择应推迟到 PreToolUse 阶段');
   assert.strictEqual(r.stderr, '', '非 git 项目不应泄漏 git fatal stderr');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '选择前不应在 vault 懒创建 changes/');

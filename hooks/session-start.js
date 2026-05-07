@@ -150,11 +150,10 @@ if (paceSignal) {
   try { ensureProjectInfra(cwd); } catch(e) {}
 }
 
-// 首次启用且 vault/local 都无 artifact 时，先让主 session 询问用户存放位置。
+// 首次启用且 vault/local 都无 artifact 时，SessionStart 只记录，不打扰闲聊。
+// 真正写代码或派 artifact-writer 时由 PreToolUse 强制询问并阻断。
 if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md')) && artifactRootChoiceNeeded(cwd)) {
-  const msg = artifactRootChoiceMessage(cwd);
-  process.stdout.write(`\n=== Artifact 目录选择 ===\n${msg}\n\n`);
-  log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE', { cwd, signal: paceSignal }));
+  log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE_PENDING', { cwd, signal: paceSignal }));
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
 } else if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
