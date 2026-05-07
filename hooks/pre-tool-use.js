@@ -45,20 +45,36 @@ function displayDir(dir) {
   return String(dir || '').replace(/\\/g, '/').replace(/\/?$/, '/');
 }
 
-function promptIncludesPath(prompt, dir) {
-  const text = String(prompt || '').replace(/\\/g, '/');
-  const withoutSlash = displayDir(dir).replace(/\/$/, '');
-  return text.includes(withoutSlash);
+function normalizeArtifactDirValue(value) {
+  let raw = String(value || '').trim();
+  if (!raw) return '';
+  const first = raw[0];
+  const last = raw[raw.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'") || (first === '`' && last === '`')) {
+    raw = raw.slice(1, -1).trim();
+  }
+  return raw.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
-function agentArtifactDirDenyReason(artDir) {
+function extractPromptArtifactDir(prompt) {
+  const match = String(prompt || '').match(/^\s*artifact_dir\s*:\s*(.+?)\s*$/mi);
+  return match ? normalizeArtifactDirValue(match[1]) : '';
+}
+
+function promptHasExactArtifactDir(prompt, dir) {
+  const declared = extractPromptArtifactDir(prompt);
+  return declared && declared === normalizeArtifactDirValue(dir);
+}
+
+function agentArtifactDirDenyReason(artDir, declared = '') {
   const dir = displayDir(artDir);
+  const declaredLine = declared ? `\n当前 prompt 中的 artifact_dir 是：${displayDir(declared)}` : '';
   return [
-    `派 paceflow:artifact-writer 时缺少当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}`,
+    `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
     '请重派同一个 agent，并在 prompt 顶部加入：',
     `artifact_dir: ${dir}`,
     '所有 task.md / implementation_plan.md / changes/** 读写都必须使用该目录。',
-    '不要让 artifact-writer fallback 到 cwd；cwd 可能只是代码工作目录，不是 artifact 根目录。'
+    '不要让 artifact-writer fallback 到 cwd，也不要写到 docs/ 等子目录；cwd 可能只是代码工作目录，不是 artifact 根目录。'
   ].join('\n');
 }
 
@@ -155,8 +171,9 @@ paceUtils.withStdinParsed((stdin) => {
         }));
         return;
       }
-      if (isArtifactWriterAgentTool(stdin) && artDir !== cwd && !promptIncludesPath(stdin.toolInput.prompt, artDir)) {
-        const reason = agentArtifactDirDenyReason(artDir);
+      if (isArtifactWriterAgentTool(stdin) && !promptHasExactArtifactDir(stdin.toolInput.prompt, artDir)) {
+        const declaredArtifactDir = extractPromptArtifactDir(stdin.toolInput.prompt);
+        const reason = agentArtifactDirDenyReason(artDir, declaredArtifactDir);
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
@@ -169,6 +186,7 @@ paceUtils.withStdinParsed((stdin) => {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
+          declared_artifact_dir: declaredArtifactDir ? displayDir(declaredArtifactDir) : '',
           dur: Date.now() - t0,
         }));
         return;
