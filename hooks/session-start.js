@@ -26,6 +26,7 @@ try {
 const paceSignal = isPaceProject(cwd);
 const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
 const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
+const artifactRootChoice = paceUtils.readArtifactRootChoice(cwd) || 'auto';
 
 // v4: PACE 项目才创建/重置运行态 .pace 文件；首次 root 选择前保持 SessionStart 零写入。
 if (paceSignal && !rootChoicePending) {
@@ -154,12 +155,24 @@ if (paceSignal && !rootChoicePending) {
 // 首次启用且 vault/local 都无 artifact 时，SessionStart 只记录，不打扰闲聊。
 // 真正写代码或派 artifact-writer 时由 PreToolUse 强制询问并阻断。
 if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
-  log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE_PENDING', { cwd, signal: paceSignal }));
+  log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE_PENDING', {
+    cwd,
+    signal: paceSignal,
+    choice_path: paceUtils.getArtifactRootChoicePath(cwd),
+    local_artifact_dir: paceUtils.displayDir(paceUtils.getProjectStateDir(cwd)),
+    vault_artifact_dir: paceUtils.VAULT_PATH ? paceUtils.displayDir(path.join(paceUtils.VAULT_PATH, 'projects', getProjectName(cwd))) : '',
+  }));
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
 } else if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
   if (created.length > 0) {
-    log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', { cwd, signal: paceSignal, files: created.join(', ') }));
+    log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', {
+      cwd,
+      signal: paceSignal,
+      artifact_dir: paceUtils.displayDir(artDir),
+      choice: artifactRootChoice,
+      files: created.join(', '),
+    }));
   }
 }
 
@@ -314,9 +327,10 @@ if (paceSignal === 'artifact') {
   }
 }
 
-// v4.8: artifact 存储在 vault 时，注入目录路径指引 AI 读写
-if (artDir !== cwd && found.length > 0) {
-  process.stdout.write(`=== Artifact 目录 ===\n路径: ${artDir.replace(/\\/g, '/')}/\n请使用此路径读写 artifact 文件。\n\n`);
+// v4.8/v6.0.26: 注入 artifact 根目录；local 模式也显式说明，避免把 .pace/ 误当 artifact 目录。
+if (found.length > 0) {
+  const mode = artDir === cwd ? '本地项目根目录' : 'Obsidian vault project';
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n请使用此路径读写 artifact 文件；.pace/ 只保存配置/运行状态，不存 task.md / changes/**。\n\n`);
 }
 
 // T-333: 格式合规检查（注入活跃区后执行，不阻塞，仅引导）
@@ -466,7 +480,16 @@ try {
   }
 } catch(e) {} // Vault 不可用静默跳过
 
-log(paceUtils.logEntry('SessionStart', 'INJECT', { cwd, proj, event: eventType, files: found.length ? found.join(', ') : '无 Artifact 文件', version: PACE_VERSION }));
+log(paceUtils.logEntry('SessionStart', 'INJECT', {
+  cwd,
+  proj,
+  event: eventType,
+  signal: paceSignal || 'none',
+  artifact_dir: paceUtils.displayDir(artDir),
+  choice: artifactRootChoice,
+  files: found.length ? found.join(', ') : '无 Artifact 文件',
+  version: PACE_VERSION,
+}));
 
 } catch(e) {
   // H-3: 顶层异常捕获，静默放行

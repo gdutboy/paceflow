@@ -11,6 +11,8 @@ description: >
 
 PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
 
+`artifact_dir` 必须指向 hook 解析出的 artifact 根目录。选择“本地项目目录”时，这个目录是项目根目录本身；`.pace/` 只保存配置/运行态信号，不存 `task.md` / `implementation_plan.md` / `changes/**`。
+
 权威规范：
 - Agent prompt：`agents/artifact-writer.md`
 - Schema / 索引模板：`agent-references/artifact-writer-spec.md`

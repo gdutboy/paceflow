@@ -31,6 +31,8 @@ flowchart TD
 
 启用后遵循 P-A-C-E-V。禁止用主 session 直接 Edit/Write artifact 来绕过 agent。
 
+Artifact 根目录以 hook 注入或 PreToolUse 提示为准。选择“本地项目目录”时，artifact 根目录就是项目根目录本身；`.pace/` 只保存 `artifact-root`、计数器等运行态配置，不存 `task.md` / `changes/**`，也不能作为 `artifact_dir`。
+
 ---
 
 ## P (Plan)

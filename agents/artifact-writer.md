@@ -148,6 +148,8 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 
 `$ARTIFACT_DIR` 由主 session / hooks 解析后传入。解析规则：优先 vault 路径 `${VAULT_PATH}/projects/<project>/`；`worktrees/<name>` 路径归一到宿主 `<project>`；可用 `PACE_PROJECT_NAME` 显式指定；fallback 当前 cwd。
 
+如果用户选择“本地项目目录”，`$ARTIFACT_DIR` 是项目根目录本身，不是 `.pace/`。`.pace/` 只保存 `artifact-root`、计数器、提醒 flag 等运行态文件，不能作为 artifact 读写位置。
+
 如果 cwd 有 `.pace-enabled` 等 PaceFlow 激活信号，但 `$ARTIFACT_DIR/changes` 不存在，不要声称“项目未启用 PACE”。注意运行态 `.pace/` 目录本身不是启用信号；`.pace/disabled` 反而是显式豁免。这类失败通常表示本次选择的 artifact_dir 不正确或主 session 未传入 hook 解析出的 vault 路径。仍使用 `not-pace-project` 作为失败码，但详细信息必须写成“当前 artifact_dir 无 changes marker，请主 session 重派并显式传入 artifact_dir: <path>”。
 
 ## 6 类指令

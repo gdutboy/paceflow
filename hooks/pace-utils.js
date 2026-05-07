@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.25';
+const PACE_VERSION = 'v6.0.26';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -106,6 +106,10 @@ const isWin = process.platform === 'win32';
 function normalizePath(p) {
   const n = p.replace(/\\/g, '/');
   return isWin ? n.toLowerCase() : n;
+}
+
+function displayDir(dir) {
+  return String(dir || '').replace(/\\/g, '/').replace(/\/?$/, '/');
 }
 
 function isPortableAbsolutePath(p) {
@@ -284,12 +288,22 @@ function artifactRootChoiceMessage(cwd) {
   const choicePath = getArtifactRootChoicePath(cwd);
   return [
     'PACEflow 首次启用需要选择 artifact 存放位置。',
-    `Obsidian vault: ${vaultDir}`,
-    `本地项目目录: ${stateDir}`,
+    `Obsidian vault artifact 根目录: ${displayDir(vaultDir)}`,
+    `本地项目 artifact 根目录: ${displayDir(stateDir)}`,
     '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"。',
-    `用户选择后，写入 ${choicePath}：选择 vault 时写入纯文本 vault；选择本地时写入纯文本 local；不要包含引号。`,
-    '写入后重试本次操作，hook 会在所选位置懒创建 task.md / implementation_plan.md / changes/**。'
+    `用户选择后，只把选择结果写入配置文件 ${choicePath}：选择 vault 时写入纯文本 vault；选择本地时写入纯文本 local；不要包含引号。`,
+    `注意：${displayDir(path.join(stateDir, '.pace'))} 只是 PaceFlow 配置/运行态目录，不是 artifact 根目录；不要把 task.md / implementation_plan.md / changes/** 写进 .pace/。`,
+    `若选择本地项目目录，后续 artifact_dir 必须是 ${displayDir(stateDir)}；若选择 Obsidian vault，后续 artifact_dir 必须是 ${displayDir(vaultDir)}。`,
+    '写入配置文件后重试本次操作，hook 会在所选 artifact 根目录懒创建 task.md / implementation_plan.md / changes/**。'
   ].join('\n');
+}
+
+function artifactDirRuntimeHint(cwd) {
+  const artDir = getArtifactDir(cwd);
+  const stateDir = getProjectStateDir(cwd);
+  const choice = readArtifactRootChoice(cwd) || 'auto';
+  const choicePath = getArtifactRootChoicePath(cwd);
+  return `Artifact 根目录：${displayDir(artDir)}（选择=${choice}；配置文件=${choicePath}；.pace/ 只保存配置/运行状态，不存 task.md / changes/**）`;
 }
 
 // T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
@@ -664,7 +678,14 @@ function createLogger(logPath) {
 function logEntry(hook, action, fields = {}) {
   const parts = [`[${ts()}] ${hook.padEnd(11)} | act=${action}`];
   for (const [k, v] of Object.entries(fields)) {
-    if (v !== undefined && v !== null && v !== '') parts.push(`${k}=${v}`);
+    if (v === undefined || v === null || v === '') continue;
+    let value = String(v)
+      .replace(/\r/g, '\\r')
+      .replace(/\n/g, '\\n')
+      .replace(/\t/g, ' ')
+      .replace(/\|/g, '/');
+    if (value.length > 1000) value = value.slice(0, 997) + '...';
+    parts.push(`${k}=${value}`);
   }
   return parts.join(' | ') + '\n';
 }
@@ -950,12 +971,12 @@ module.exports = {
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
-  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath,
+  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
   isPaceProject, isTeammate, getArtifactDir, getProjectStateDir,
   getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
-  artifactRootChoiceNeeded, artifactRootChoiceMessage, ensureProjectInfra,
+  artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings,
   // 计划文件

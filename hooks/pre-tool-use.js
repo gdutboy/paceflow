@@ -171,7 +171,8 @@ function agentArtifactDirDenyReason(artDir, declared = '') {
     '请重派同一个 agent，并在 prompt 顶部加入：',
     `artifact_dir: ${dir}`,
     '所有 task.md / implementation_plan.md / changes/** 读写都必须使用该目录。',
-    '不要让 artifact-writer fallback 到 cwd，也不要写到 docs/ 等子目录；cwd 可能只是代码工作目录，不是 artifact 根目录。'
+    '不要让 artifact-writer fallback 到 cwd，也不要写到 docs/ 等子目录；cwd 可能只是代码工作目录，不是 artifact 根目录。',
+    '如果用户选择的是“本地项目目录”，artifact_dir 是项目根目录本身，不是 .pace/。.pace/ 只保存配置与运行态信号。'
   ].join('\n');
 }
 
@@ -322,6 +323,14 @@ paceUtils.withStdinParsed((stdin) => {
   const artDir = getArtifactDir(cwd);
   const needsArtifactRootChoice = artifactRootChoiceNeeded(cwd);
   const artifactRootChoiceReason = needsArtifactRootChoice ? artifactRootChoiceMessage(cwd) : '';
+  const artifactRootHint = paceUtils.artifactDirRuntimeHint(cwd);
+  log(paceUtils.logEntry('PreToolUse', 'ROUTE', {
+    proj,
+    signal: paceSignal || 'none',
+    artifact_dir: displayDir(artDir),
+    choice: paceUtils.readArtifactRootChoice(cwd) || 'auto',
+    choice_pending: needsArtifactRootChoice,
+  }));
   const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
   function ensureArtifactWriterBase() {
@@ -454,7 +463,7 @@ paceUtils.withStdinParsed((stdin) => {
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}${createdMsg}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}（.pace/ 只保存配置/运行状态，不存 artifact）${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));
@@ -764,7 +773,9 @@ paceUtils.withStdinParsed((stdin) => {
       if (!taskFileExists) {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
       }
-      const createdMsg = createdFiles.length > 0 ? `已自动创建 v6 Artifact 模板（${createdFiles.join(', ')}）。` : '';
+      const createdMsg = createdFiles.length > 0
+        ? `已自动创建 v6 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
+        : `${artifactRootHint}。`;
       const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）；完成后删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
@@ -792,7 +803,9 @@ paceUtils.withStdinParsed((stdin) => {
       if (!taskFileExists) {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
       }
-      const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
+      const createdMsg = createdFiles.length > 0
+        ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
+        : `${artifactRootHint}。`;
 
       // T-076: 场景化 DENY 消息
       let reason;
@@ -834,7 +847,9 @@ paceUtils.withStdinParsed((stdin) => {
         }
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
-        const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
+        const createdMsg = createdFiles.length > 0
+          ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
+          : `${artifactRootHint}。`;
         const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，确认用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));

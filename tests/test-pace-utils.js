@@ -293,6 +293,9 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
   const msg = artifactRootChoiceMessage(dir);
   assert.ok(msg.includes('AskUserQuestion'));
   assert.ok(msg.includes(getArtifactRootChoicePath(dir)));
+  assert.ok(msg.includes('配置文件'), '应明确 artifact-root 是配置文件');
+  assert.ok(msg.includes('不是 artifact 根目录'), '应明确 .pace 不是 artifact 根目录');
+  assert.ok(msg.includes('不要把 task.md'), '应阻止主 session 把 artifact 写进 .pace/');
 });
 
 test('已有 changes 或已有选择 → 不需要 artifact root 选择', () => {
@@ -756,6 +759,18 @@ test('createLogger — 轮转后对齐到换行符', () => {
   // 第一个字符应该是 'l'（line- 开头），不应是截断的中间内容
   assert.ok(content.startsWith('line-'), `轮转后应从完整行开始，实际: ${content.slice(0, 20)}`);
   assert.ok(content.includes('after-rotate'), '应包含轮转后写入的内容');
+});
+
+test('logEntry — 字段单行化并截断长值', () => {
+  const entry = paceUtils.logEntry('PreToolUse', 'DENY', {
+    reason: 'line1\nline2|pipe',
+    long: 'x'.repeat(1020),
+  });
+  const lines = entry.trimEnd().split('\n');
+  assert.strictEqual(lines.length, 1, '日志字段中的换行不应打断结构化日志');
+  assert.ok(entry.includes('reason=line1\\nline2/pipe'));
+  assert.ok(entry.includes('long='));
+  assert.ok(entry.includes('...'), '长字段应截断');
 });
 
 // ============================================================
