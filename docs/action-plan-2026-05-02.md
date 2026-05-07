@@ -66,13 +66,15 @@
 | ID | 任务 | 当前结论 | 执行口径 |
 |---|---|---|---|
 | P1-POC-01 | ✅ v6.0.27 `SubagentStop` 报告标题/状态观察 | 已作为非阻断观察器落地；暂不 block | 只针对 `artifact-writer`；缺标题/缺状态给 additionalContext；合法时间戳前缀仅日志 warning；如未来改成 block 必须加 bounded retry |
-| P1-POC-02 | `CwdChanged` 项目/Artifact 路由重算 | 有价值，但 `/resume` env cache stale issue 存在 | 可用作提示/刷新，不让 env-file 成为唯一权威 |
+| P1-POC-02 | `CwdChanged` 项目/Artifact 路由重算 | 稳定性收益有限；当前每个 hook 已重算关键 artifact 路由，且 `/resume` env cache stale issue 存在 | 暂缓实现；如做，只能记录/提示/刷新非权威 env，不让 env-file 成为 artifact 路由权威 |
 | P1-POC-03 | ✅ v6.0.27 `PostToolUseFailure` 恢复提示 | 已落地 | Write/Edit/MultiEdit/Bash 失败给 additionalContext；用户中断只记日志；不做硬门禁 |
-| P1-POC-04 | `PostToolBatch` 只读一致性观察 | 可减少并行工具重复提醒 | 首版只读，不写 `.pace/`，避免并发竞态 |
-| P2-POC-01 | `updatedInput` vault 路径重写 | GitHub 有多 hook / Agent tool 下失效报告 | 只做隔离 PoC，不用于核心 artifact redirect |
-| P2-POC-02 | `updatedToolOutput` 裁剪/脱敏/标注 | 官方已支持全工具，但不应静默修改 artifact | 禁止 silent fix；仅限输出降噪或敏感信息遮蔽 |
-| P2-POC-03 | `FileChanged` 监控 vault 外路径 | GitHub 有 watcher/security/perf 风险 | 只监控小型配置文件，不监控大型 artifact 内容 |
-| P2-POC-04 | `${CLAUDE_EFFORT}` skill body 自适应 | 官方支持；当前 skills 未用 | 仅优化 `pace-workflow` / `audit` 的分支提示 |
+| P1-POC-04 | `PostToolBatch` 只读一致性观察 | 稳定性收益低到中等，主要降低重复提醒；不修正核心 artifact 状态 | 暂缓实现；除非真实日志显示并行 PostToolUse 噪声影响主 session 执行 |
+| P2-POC-01 | `updatedInput` vault 路径重写 | 稳定性收益不确定且风险较高；会把 deny/retry 变成静默改写，和 PaceFlow 结构兜底理念冲突 | 不进入核心链路；只允许隔离 PoC，不用于 artifact redirect |
+| P2-POC-02 | `updatedToolOutput` 裁剪/脱敏/标注 | 对 PaceFlow 稳定性收益小；可以降噪，但不能让模型“必定遵守” | 禁止 silent fix；仅保留为未来大输出脱敏/裁剪选项 |
+| P2-POC-03 | `FileChanged` 监控 vault 外路径 | 稳定性收益有限；watcher/security/perf 风险高，监控 artifact 内容会放大噪声 | 暂缓；如做，只监控 `.pace/artifact-root`、`.env` 这类小配置，不监控大型 artifact |
+| P2-POC-04 | `${CLAUDE_EFFORT}` skill body 自适应 | 对核心稳定性收益很小；artifact-writer 已直接 `effort: max` | 仅作为文案优化，不作为 v6 稳定性工作 |
+| P2-POC-05 | `PostCompact` side-effect 记录 compact summary | Claude Code 支持 PostCompact，但无 `additionalContext` / decision 输出；不能替代 SessionStart compact 恢复 | 暂缓；可选只把 `compact_summary` 写入 `.pace/post-compact-summary.json` 供排障，稳定性收益低 |
+| P2-POC-06 | `${CLAUDE_PLUGIN_DATA}` 插件级持久化 | 对项目级流程稳定性收益有限；插件级目录不天然绑定 repo/vault/worktree | 不迁移 `.pace/artifact-root` / `pre-compact-state` 等项目权威状态；只可用于非权威诊断缓存或版本/smoke 结果 |
 | P1-POC-05 | ✅ v6.0.16-v6.0.18 首次懒创建 artifact 目录选择 | 当前 `PACE_VAULT_PATH` 存在时新项目默认写入 Obsidian vault；用户希望可选择写入 vault project 还是本地项目目录 | 首次写代码或派 `artifact-writer`，且 vault/local 均无 `changes/` 时询问并持久化到 `.pace/artifact-root`；SessionStart 只记录 pending，不主动打扰闲聊；自动化/headless 可用 `PACE_ARTIFACT_ROOT=local|vault|/abs/path` 跳过询问；v6.0.17 补充带引号/大小写容错并静默非 git stderr |
 
 #### 0.1.4 暂缓或明确不采用
@@ -139,6 +141,19 @@ Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vau
 | Subagent hook 继承 PaceFlow 保护 | subagent 写 artifact 仍触发 PreToolUse/PostToolUse；SubagentStop 新增报告观察但不依赖它作为唯一保护 | `test-hooks-e2e.js` 15a/15b/23/23a/23b |
 
 当前原则：hook 只做机械结构和流程兜底，不判断 evidence 真伪或 artifact 内容质量；内容质量仍由模型能力、用户确认和验证命令负责。
+
+#### 0.1.8 P2 稳定性收益复核（2026-05-07）
+
+基于 v6.0.27 现状，剩余 Claude Code 新能力大多不会显著提升 PaceFlow 核心稳定性：
+
+- `PostCompact`：官方事件存在，但输出控制为 `None`，不能注入 `additionalContext`，因此不能替代现有“PreCompact 写快照 → SessionStart compact 恢复注入”链路。最多记录 compact summary 供排障。
+- `${CLAUDE_PLUGIN_DATA}`：适合插件级非权威缓存，不适合保存项目级 artifact root 或 compact 快照。`.pace/` 仍是项目级权威状态目录。
+- `CwdChanged/FileChanged`：每个 hook 已在执行时重算 artifact 路由；额外 watcher 主要是提示/日志收益，不能解决 `/resume` env stale，也不应成为权威。
+- `PostToolBatch`：只会减少并行工具后的重复提醒，对 artifact 状态正确性帮助有限。
+- `updatedInput` / `updatedToolOutput`：可能降低一次 deny/retry，但会引入静默改写风险；不符合 PaceFlow “hook 机械兜底、模型负责内容、用户确认语义”的边界。
+- `${CLAUDE_EFFORT}`：artifact-writer 已固定 `effort: max`，skill body 自适应只属于体验文案，不是稳定性前置。
+
+结论：P2 暂不推进核心实现；仅在真实生产日志暴露明确痛点后，再按单项 PoC 引入。
 
 ---
 
