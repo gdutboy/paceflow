@@ -88,6 +88,7 @@
 | `--bare` 用于 PaceFlow 验证 | 禁止 | `--bare` 跳过 hooks/plugins/skills，不能验证 PaceFlow |
 | Windows PowerShell/cmd destructive cleanup 指令 | 禁止作为文档建议 | GitHub 有 PowerShell/cmd quoting 导致灾难性删除报告 |
 | Production prompt 的 `report_title_prefix_warning` 作为 release blocker | 不采用 | 用户级 `UserPromptSubmit` date hook + 全局 `CLAUDE.md` 时间戳回复样式可能在 `artifact-writer` 报告前加时间戳；这不影响 artifact 写入、hook 判定、状态/schema/wikilink，只影响测试报告首行机械检查。harness 继续严格，production gate 仅记录 warning；未来 `SubagentStop` verifier 可允许一个合法时间戳前缀或解析第一个协议标题行 |
+| `audit` skill 作为 marketplace 发布组件 | 建议移除 | 该 skill 只用于 PaceFlow 自身开发审计，不是用户项目工作流能力；发布后显示为通用 `audit` 容易误导用户，也增加组件列表认知负担。后续 v6.0.28 可从 `SKILL_DIRS` / README / REFERENCE / tests 发布面移除，并保留到 `internal/` 或 `docs/internal/` 供本仓开发使用 |
 
 #### 0.1.5 上游 GitHub 风险登记
 
@@ -154,6 +155,21 @@ Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vau
 - `${CLAUDE_EFFORT}`：artifact-writer 已固定 `effort: max`，skill body 自适应只属于体验文案，不是稳定性前置。
 
 结论：P2 暂不推进核心实现；仅在真实生产日志暴露明确痛点后，再按单项 PoC 引入。
+
+#### 0.1.9 发布面清理候选：移除 `audit` skill
+
+当前 `skills/audit/` 的设计目标是审计 PaceFlow 自身 hook/skill/agent 链路，不是面向用户项目的通用审计能力。继续随 marketplace 发布会带来三个问题：
+
+- 用户插件列表会出现 `audit`，但它的真实语境是 PaceFlow 内部审计，容易误触发或误解。
+- 它不参与核心 PACE 链路；`SessionStart`、`PreToolUse`、`PostToolUse`、`Stop`、`artifact-writer` 都不依赖它。
+- 发布组件越多，用户学习成本和测试面越大。
+
+建议后续单独做 v6.0.28 发布面清理：
+
+1. 从 `hooks/pace-utils.js` 的 `SKILL_DIRS` 移除 `audit`。
+2. 更新 `README.md`、`REFERENCE.md`、`tests/test-install.js` 的技能数量和目录说明。
+3. 清理用户面文档里 `paceflow:audit` 引用；如仍需开发审计流程，移动到 `internal/skills/audit/` 或 `docs/internal/audit/`。
+4. 保留面向用户的 `artifact-management`、`pace-workflow`、`pace-bridge`、`pace-knowledge`。
 
 ---
 
