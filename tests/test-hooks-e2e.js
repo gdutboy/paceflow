@@ -236,7 +236,7 @@ test('2b. SessionStart 仅索引活跃但详情无 pending 时不夸大任务列
   });
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('待 close-chg/archive-chg'));
+  assert.ok(r.stdout.includes('待 close-chg'));
   assert.ok(!r.stdout.includes('请为当前活跃 CHG 的未完成 T-NNN'));
 });
 
@@ -839,6 +839,132 @@ test('9hc. artifact-writer Agent 带 vault artifact_dir → 放行', () => {
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
 });
 
+test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
+  const dir = makeV6Project('agent-approve-confirm-missing');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve and start',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve-and-start',
+          'task-id: T-001',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('approval-confirmed: true'));
+});
+
+test('9hc1a. approve-and-start 带 approval-confirmed → 放行', () => {
+  const dir = makeV6Project('agent-approve-confirm-ok');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve and start',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve-and-start',
+          'task-id: T-001',
+          'approval-confirmed: true',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc2. update-status 与 verify 串联 → DENY', () => {
+  const dir = makeV6Project('agent-update-status-verify-chain');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Complete and verify',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: update-status',
+          'task-id: T-001',
+          'new-status: x',
+          '然后执行 verify 操作',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('不要把 update-status'));
+  assert.ok(r.stdout.includes('close-chg complete-open-tasks: true'));
+});
+
+test('9hc3. close-chg 缺验证摘要字段 → DENY', () => {
+  const dir = makeV6Project('agent-close-missing-fields');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Close CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'verify-summary: node hello.js PASS',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('walkthrough-summary'));
+});
+
+test('9hc4. close-chg 完整收尾 prompt → 放行', () => {
+  const dir = makeV6Project('agent-close-complete');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Close CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'complete-open-tasks: true',
+          'verify-summary: node hello.js 输出 Hello World，PASS',
+          'walkthrough-summary: 创建 hello.js 并验证通过',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
 test('9hd. 非 artifact-writer Agent 不受 artifact_dir 约束', () => {
   const { worktree } = makeVaultBackedWorktree('agent-other-pass');
   const r = runHook('pre-tool-use.js', {
@@ -1029,7 +1155,7 @@ test('11. v6 completed 但未 verified → exit 2', () => {
   assert.ok(r.stderr.includes('close-chg'));
 });
 
-test('12. v6 completed + verified 仍活跃 → close-chg/archive-chg 阻止', () => {
+test('12. v6 completed + verified 仍活跃 → close-chg 优先阻止', () => {
   const dir = makeV6Project('stop-archive', {
     indexMark: '[x]',
     detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true }),

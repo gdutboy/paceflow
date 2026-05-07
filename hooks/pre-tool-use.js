@@ -175,6 +175,71 @@ function agentArtifactDirDenyReason(artDir, declared = '') {
   ].join('\n');
 }
 
+function promptHasTrueField(prompt, field) {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[\\n\\s])${escaped}\\s*[:=]\\s*true\\b`, 'i').test(String(prompt || ''));
+}
+
+function promptHasNonEmptyField(prompt, field) {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*${escaped}\\s*:\\s*\\S+`, 'mi').test(String(prompt || ''));
+}
+
+function promptMentionsVerifyAction(prompt) {
+  const text = String(prompt || '');
+  return /(?:^|[\s\n])action\s*[:=]\s*verify\b/i.test(text) ||
+    /\bupdate-chg\s+action=verify\b/i.test(text) ||
+    /执行\s*verify\s*操作/i.test(text) ||
+    /\bverify\s+操作/i.test(text);
+}
+
+function agentLifecyclePromptDenyReason(prompt) {
+  const text = String(prompt || '');
+  const mentionsApproveAndStart = /\bapprove-and-start\b/i.test(text);
+  const mentionsCloseChg = /\bclose-chg\b/i.test(text);
+  const mentionsUpdateStatus = /\bupdate-status\b/i.test(text);
+
+  if (mentionsApproveAndStart && !promptHasTrueField(text, 'approval-confirmed')) {
+    return [
+      '派 artifact-writer 执行 approve-and-start 时缺少 approval-confirmed: true。',
+      'approve-and-start 只能在用户已明确批准、且准备开始某个 T-NNN 后调用；agent 不得自行推断批准。',
+      '请先用 AskUserQuestion 获取批准；批准后重派，并在 prompt 中写明：',
+      'approval-confirmed: true',
+      'task-id: T-NNN'
+    ].join('\n');
+  }
+
+  if (mentionsUpdateStatus && promptMentionsVerifyAction(text) && !mentionsCloseChg) {
+    return [
+      '不要把 update-status 与 update-chg action=verify 串在同一次 agent 派遣中。',
+      '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
+      '如果只是中间任务完成：只派 update-chg action=update-status。',
+      '如果这是最后任务且验证已通过：直接派 close-chg complete-open-tasks: true，合并完成状态、VERIFIED、归档和 walkthrough。'
+    ].join('\n');
+  }
+
+  if (mentionsCloseChg) {
+    const missing = [];
+    if (!promptHasTrueField(text, 'verification-confirmed')) missing.push('verification-confirmed: true');
+    if (!promptHasNonEmptyField(text, 'verify-summary')) missing.push('verify-summary');
+    if (!promptHasNonEmptyField(text, 'walkthrough-summary')) missing.push('walkthrough-summary');
+    if (missing.length > 0) {
+      return [
+        `派 artifact-writer 执行 close-chg 时缺少必填字段：${missing.join(', ')}。`,
+        'close-chg 只能在主 session 已运行并读取验证结果、确认通过后调用；agent 不得自行判断验证是否通过。',
+        '最后任务收尾主路径：',
+        'operation: close-chg',
+        'verification-confirmed: true',
+        'complete-open-tasks: true',
+        'verify-summary: <已运行并读取的验证结果>',
+        'walkthrough-summary: <完成摘要>'
+      ].join('\n');
+    }
+  }
+
+  return '';
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
@@ -296,6 +361,24 @@ paceUtils.withStdinParsed((stdin) => {
         return;
       }
       if (isArtifactWriterAgentTool(stdin)) {
+        const lifecycleReason = agentLifecyclePromptDenyReason(stdin.toolInput.prompt);
+        if (lifecycleReason) {
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: lifecycleReason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_LIFECYCLE_PROMPT', {
+            proj,
+            agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+            reason: lifecycleReason.split('\n')[0],
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
         const ensured = ensureArtifactWriterBase();
         if (ensured.missingAfter.length > 0) {
           const errorLine = ensured.error ? `\n底层错误：${ensured.error}` : '';
@@ -545,7 +628,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (actionableEntries.length === 0) {
         const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
         const reason = doneEntries.length > 0
-          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg / archive-chg 收尾归档，或 create-chg 创建新的变更后再写代码。${FORMAT_SNIPPETS.closeOp}`
+          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
           : `v6 项目没有活跃 CHG/HOTFIX。请派 artifact-writer create-chg 创建 changes/<id>.md，并同步 task.md / implementation_plan.md 索引后再写代码。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
@@ -589,7 +672,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准，请派 artifact-writer update-chg action=approve-and-start；若已批准只需开始任务，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。`;
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准，请派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + task-id）；若已批准只需开始任务，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -680,7 +763,7 @@ paceUtils.withStdinParsed((stdin) => {
         // W-flow-1: 区分"全部完成待归档"和"无任务"
         const hasDoneItems = /- \[[x\-]\]/.test(taskActiveContent);
         if (hasDoneItems) {
-          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先收尾归档已完成任务，再定义新任务后写代码。\n收尾方法：${FORMAT_SNIPPETS.closeOp}`;
+          reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无进行中的活跃任务（全部已完成/跳过）。请先用 close-chg 收尾归档已完成任务，再定义新任务后写代码。\n收尾方法：${FORMAT_SNIPPETS.closeOp}`;
         } else {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
@@ -709,7 +792,7 @@ paceUtils.withStdinParsed((stdin) => {
         let createdFiles = [];
         try { createdFiles = createTemplates(cwd); } catch(e) {}
         const createdMsg = createdFiles.length > 0 ? `已自动创建 Artifact 模板（${createdFiles.join(', ')}）。` : '';
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve-and-start 后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，获取用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + task-id）后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));

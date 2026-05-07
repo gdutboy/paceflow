@@ -99,18 +99,18 @@ if (paceSignal === 'artifact') {
         continue;
       }
       if (change.tasks.pending > 0) {
-        warnings.push(`${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。请继续执行，并用 update-chg action=update-status 维护 T-NNN 状态。`);
+        warnings.push(`${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。请继续执行；中间任务完成时用 update-chg action=update-status 维护 T-NNN 状态。`);
         continue;
       }
       if (change.tasks.total > 0) {
-        warnings.push(`${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。若尚未验证，请先派 update-chg action=update-status 推到 completed 并运行验证；验证通过后派 close-chg 收尾归档。`);
+        warnings.push(`${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。若验证已通过，请直接派 close-chg complete-open-tasks: true 收尾归档；若暂不验证，才派 update-chg action=update-status 修复 completed 状态。`);
       }
       continue;
     }
 
     if (change.category === 'closing-required') {
       if (!change.verified) {
-        warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg（verification-confirmed: true）写入 VERIFIED 并归档。若暂不归档，才派 update-chg action=verify。${FORMAT_SNIPPETS.closeOp}`);
+        warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。${FORMAT_SNIPPETS.closeOp}`);
       } else {
         warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。${FORMAT_SNIPPETS.closeOp}`);
       }
@@ -141,7 +141,7 @@ if (paceSignal === 'artifact') {
   } catch(e) {}
 
   if (lastMessage && COMPLETION_PHRASES.test(lastMessage) && totalPending > 0) {
-    warnings.push(`AI 声称完成，但 v6 详情文件中仍有 ${totalPending} 个未完成任务。请继续执行或用 update-chg action=update-status 标记 [-] 跳过。`);
+    warnings.push(`AI 声称完成，但 v6 详情文件中仍有 ${totalPending} 个未完成任务。请继续执行或用 update-chg action=update-status 标记 [-] 跳过；若验证已通过并准备收尾，可派 close-chg complete-open-tasks: true。`);
   }
 
 } else if (taskActive) {

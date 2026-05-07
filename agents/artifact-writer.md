@@ -176,10 +176,10 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 6 个子操作：
 - `action=append` — 追加 section 内容
 - `action=replace` — 替换 section 内容
-- `action=update-status` — 变更任务状态 + frontmatter status + 索引 checkbox 联动
+- `action=update-status` — 变更任务状态 + frontmatter status + 索引 checkbox 联动（中间任务或暂不验证时使用）
 - `action=approve` — 插入 `<!-- APPROVED -->`（C 阶段元操作，幂等）
 - `action=approve-and-start` — 用户已批准后一次性插入 `<!-- APPROVED -->`、标记首个任务 `[/]`、推 `status: in-progress`（幂等）
-- `action=verify` — 写 `verified-date` + 插入 `<!-- VERIFIED -->` + 追加工作记录（V 阶段元操作，幂等）
+- `action=verify` — 写 `verified-date` + 插入 `<!-- VERIFIED -->` + 追加工作记录（只记录 V 阶段、暂不归档时使用，幂等）
 
 **必填**：`target` / `action`
 **条件必填**：`section`（action=append/replace/update-status 时）；`task-id` + `new-status`（action=update-status 时）；`task-id` + `approval-confirmed: true`（action=approve-and-start 时）
@@ -193,7 +193,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 
 ### 4. close-chg
 **必填**：`target` / `verification-confirmed: true` / `verify-summary` / `walkthrough-summary`
-**可选**：`complete-open-tasks: true`（允许把 `[ ]` / `[/]` T-NNN 收口为 `[x]`）
+**推荐**：最后任务验证通过后带 `complete-open-tasks: true`，一次收口 `[ ]` / `[/]` T-NNN、写 VERIFIED、归档索引并写 walkthrough。
 
 ### 5. record-finding
 **必填**：`title` / `summary`（≤200）/ `type` / `impact` / `body`

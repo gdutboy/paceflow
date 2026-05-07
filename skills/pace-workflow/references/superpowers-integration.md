@@ -76,7 +76,7 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 | **建议测试** | 自动化或手动 | 业务逻辑函数、工具函数 |
 | **可选测试** | 手动验证即可 | UI 组件、一次性脚本 |
 
-验证替代：无测试框架时通过 Terminal/Browser 手动验证。通过后优先派 `artifact-writer close-chg verification-confirmed=true` 记录验证摘要并归档；若暂不归档，才派 `update-chg action=verify`。
+验证替代：无测试框架时通过 Terminal/Browser 手动验证。通过后优先派 `artifact-writer close-chg verification-confirmed=true complete-open-tasks=true` 记录验证摘要并归档；若暂不归档，才派 `update-chg action=verify`。
 
 ---
 
@@ -89,4 +89,4 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 | C | PreToolUse | task.md 与 implementation_plan.md 活跃索引不一致 → **deny** |
 | E | PreToolUse | 项目外文件豁免 PACE 检查 |
 | V | Stop | `status: completed` 但缺 `verified-date` / `<!-- VERIFIED -->` → **block** |
-| V | Stop | 已 verified 但仍在活跃索引中 → **block**，要求 `close-chg` 或 `archive-chg` |
+| V | Stop | 已 verified 但仍在活跃索引中 → **block**，优先要求 `close-chg`；`archive-chg` 仅用于已 verified 的单独归档修复 |

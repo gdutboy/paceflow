@@ -122,7 +122,7 @@ archived-date: null
 ## 关联调研
 ```
 
-创建时不含 `APPROVED` / `VERIFIED`。批准和验证只能由 `artifact-writer update-chg` 或 `close-chg` 写入。
+创建时不含 `APPROVED` / `VERIFIED`。批准只能由 `artifact-writer update-chg action=approve/approve-and-start` 写入；验证主路径由 `close-chg` 写入，`update-chg action=verify` 只用于暂不归档。
 
 ---
 
@@ -132,7 +132,7 @@ archived-date: null
 |------|------|----------|
 | `<!-- ARCHIVE -->` | 索引文件分隔活跃区/归档区 | `archive-chg` 移动索引行 |
 | `<!-- APPROVED -->` | `changes/<id>.md` 任务清单后 | `update-chg action=approve` 或 `approve-and-start` |
-| `<!-- VERIFIED -->` | 紧邻 APPROVED 下一行 | `update-chg action=verify` 或 `close-chg` |
+| `<!-- VERIFIED -->` | 紧邻 APPROVED 下一行 | 主路径 `close-chg`；暂不归档时 `update-chg action=verify` |
 
 `verified-date` 与 `<!-- VERIFIED -->` 必须同时存在或同时不存在。
 
@@ -145,7 +145,7 @@ archived-date: null
 | `task.md` 内写 CHG 三级标题详情 | 派 agent 写 `changes/<id>.md` |
 | `implementation_plan.md` 内写旧式活跃详情区 | 只保留 wikilink 索引 |
 | 主 session 直接写 `<!-- APPROVED -->` | 派 `update-chg action=approve` 或 `approve-and-start` |
-| 主 session 直接写 `<!-- VERIFIED -->` / `verified-date` | 验证通过后派 `close-chg`，或派 `update-chg action=verify` |
+| 主 session 直接写 `<!-- VERIFIED -->` / `verified-date` | 验证通过后派 `close-chg complete-open-tasks:true`；暂不归档时才派 `update-chg action=verify` |
 | `findings.md` 写长详情 | 派 `record-finding` 写 `changes/findings/<id>.md` |
 | `findings.md` 内的旧 correction 区 | v6 使用 `corrections.md` + `changes/corrections/` |
 | 归档时上移 `<!-- ARCHIVE -->` 包住详情 | 派 `close-chg` 或 `archive-chg` 移动索引行并更新详情 frontmatter |

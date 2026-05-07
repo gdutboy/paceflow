@@ -104,13 +104,14 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 | 场景 | agent 操作 |
 |------|------------|
 | 任务开始 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[/]` |
-| 任务完成 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[x]` |
+| 中间任务完成 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[x]` |
+| 最后任务完成且验证已通过 | `close-chg verification-confirmed=true complete-open-tasks=true` |
 | 任务跳过 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[-]` |
 | 任务阻塞 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[!]` |
 | 补充实施说明 | `update-chg section=implementation action=append` |
 | 记录执行过程 | `update-chg section=work-record action=append` |
 
-当所有任务为 `[x]` 或 `[-]` 时，agent 会把 frontmatter `status` 推到 `completed`，并同步根索引为 `[x]`。
+中间任务完成可以单独 `update-status [x]`。最后一个任务代码写完后不要先派 `update-status` 再验证；先运行验证并读取结果，验证通过后用 `close-chg complete-open-tasks=true` 一次收口。若暂时不准备验证，才用 `update-status [x]` 把进度停在 completed 待验证状态。
 
 方案根本性错误时：将当前任务标 `[!]`，停止写代码，重新说明偏差并回到 A/C；更新方案和重新批准也必须通过 artifact writer。
 
@@ -120,18 +121,20 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 
 执行验证前不要声称完成。验证遵循 `superpowers:verification-before-completion` 的 IDENTIFY → RUN → READ → VERIFY → CLAIM；无测试框架时用可复现的手动命令或浏览器验证。
 
-验证通过后优先派：
+验证通过后优先派一次收尾合并操作：
 
 ```text
 artifact_dir: <SessionStart hook 提供的 artifact 目录>
 operation: close-chg
 target: CHG-YYYYMMDD-NN
 verification-confirmed: true
+complete-open-tasks: true
 verify-summary: <测试/手动验证摘要>
 walkthrough-summary: <完成摘要>
 ```
 
 artifact writer 会同时写：
+- 必要时把当前 CHG 的 `[ ]` / `[/]` 任务收口为 `[x]`，推 frontmatter `status: completed`
 - frontmatter `verified-date: YYYY-MM-DDTHH:mm:ss+08:00`
 - `changes/<id>.md` 中紧邻 `<!-- APPROVED -->` 下一行的 `<!-- VERIFIED -->`
 - `## 工作记录` 验证摘要

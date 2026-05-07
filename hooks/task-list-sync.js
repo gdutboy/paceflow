@@ -63,7 +63,7 @@ paceUtils.withStdinParsed((stdin) => {
       } else if (isWriteOp && activeTaskCount > 0) {
         hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前执行中的 CHG 有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 Claude 任务列表项。`);
       } else if (isWriteOp && activeTaskCount === 0 && completedActiveChanges > 0) {
-        hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 close-chg/archive-chg。归档后再清空 Claude 任务列表。${FORMAT_SNIPPETS.closeOp}`);
+        hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 close-chg。确认验证通过并归档后再清空 Claude 任务列表；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
       }
 
       if (toolName === 'TodoWrite') {

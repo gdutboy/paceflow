@@ -105,10 +105,10 @@ paceUtils.withStdinParsed((stdin) => {
         warnings.push(`${entry.id} 索引 [x] 与详情 status=${status || 'missing'} 不一致，请派 update-chg action=update-status 修复。`);
       }
       if (status === 'completed' && !isChangeVerified(entry.detail)) {
-        warnings.push(`${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->。请先运行验证并阅读结果；确认通过后派 close-chg，或暂不归档时派 update-chg action=verify。`);
+        warnings.push(`${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->。请先运行验证并阅读结果；确认通过后派 close-chg complete-open-tasks: true，或只记录验证暂不归档时派 update-chg action=verify。`);
       }
       if (status === 'completed' && isChangeVerified(entry.detail)) {
-        warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请派 close-chg 或 archive-chg 归档。${FORMAT_SNIPPETS.closeOp}`);
+        warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请优先派 close-chg 归档；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
       }
       if (tasks.blocked > 0) {
         warnings.push(`${entry.id} 有 ${tasks.blocked} 个阻塞任务，请用 AskUserQuestion 询问用户如何处理。`);
