@@ -1,4 +1,4 @@
-# PACEflow v6.0.34 参考手册
+# PACEflow v6.0.35 参考手册
 
 > 最后更新：2026-05-08
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify)
@@ -10,13 +10,14 @@
 
 | 范围 | 权威文件 |
 |------|----------|
-| 用户安装 | `.claude-plugin/plugin.json` + `hooks/hooks.json`，通过 Claude Code `/plugin install` |
-| Artifact 写入 | `agents/artifact-writer.md` |
-| Artifact schema | `agent-references/artifact-writer-spec.md` |
-| Agent 操作步骤 | `agent-references/instructions/*.md` |
-| Hook 运行逻辑 | `hooks/*.js` + `hooks/pace-utils.js` |
+| Marketplace 入口 | `.claude-plugin/marketplace.json`，`source` 指向 `./plugin` |
+| 用户安装 | `plugin/.claude-plugin/plugin.json` + `plugin/hooks/hooks.json`，通过 Claude Code `/plugin install` |
+| Artifact 写入 | `plugin/agents/artifact-writer.md` |
+| Artifact schema | `plugin/agent-references/artifact-writer-spec.md` |
+| Agent 操作步骤 | `plugin/agent-references/instructions/*.md` |
+| Hook 运行逻辑 | `plugin/hooks/*.js` + `plugin/hooks/pace-utils.js` |
 | 主 session 规则 | `CLAUDE.md` |
-| 用户 Skill 规则 | `skills/*/SKILL.md` |
+| 用户 Skill 规则 | `plugin/skills/*/SKILL.md` |
 | 内部审计资料 | `internal/skills/audit/` |
 | v6 迁移 guidebook | `docs/paceflow-v6-guidebook.md` |
 
@@ -111,6 +112,8 @@ projects/<project>/
 - `.claude-plugin/plugin.json`
 - `hooks/hooks.json`
 
+源码仓库中这些运行时资产位于 `plugin/`；安装到 Claude Code cache 后，`plugin/` 目录本身不会作为额外前缀出现。
+
 ---
 
 ## 7. 验证入口
@@ -131,17 +134,18 @@ node tests/agent-tests/run-tests.js dummy
 语法：
 
 ```bash
-for f in hooks/*.js; do node -c "$f" || exit 1; done
+for f in plugin/hooks/*.js; do node -c "$f" || exit 1; done
 ```
 
 ---
 
 ## 8. 发布检查
 
-- `PACE_VERSION` 与 `.claude-plugin/plugin.json` 均为当前发布版本
+- `PACE_VERSION` 与 `plugin/.claude-plugin/plugin.json` 均为当前发布版本
 - artifact frontmatter `schema-version` 仍为 `"6.0"`；不要随插件 patch 版本滚动
-- `hooks/templates/` 有 `corrections.md`
-- `hooks/hooks.json` 注册 `StopFailure`
-- `agents/artifact-writer.md` 与 `agent-references/**` 存在
+- `.claude-plugin/marketplace.json` 的 `source` 指向 `./plugin`
+- `plugin/hooks/templates/` 有 `corrections.md`
+- `plugin/hooks/hooks.json` 注册 `StopFailure`
+- `plugin/agents/artifact-writer.md` 与 `plugin/agent-references/**` 存在
 - README/CLAUDE/skills 不再要求主 session 直接 Edit artifact
 - README/CLAUDE/skills/hooks 模板不再出现 v5 活跃详情区、task 承载 C/V 标记、task 任务权威、findings 内 correction 区等旧口径

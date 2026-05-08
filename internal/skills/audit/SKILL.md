@@ -25,16 +25,16 @@ description: >
 
 证据优先级：
 
-1. 当前代码与配置：`hooks/**`、`agents/**`、`agent-references/**`、`skills/**`、`.claude-plugin/**`
+1. 当前代码与配置：`plugin/hooks/**`、`plugin/agents/**`、`plugin/agent-references/**`、`plugin/skills/**`、`plugin/.claude-plugin/**`、`.claude-plugin/**`
 2. 当前测试与 fixture：`tests/**`、`tests/agent-tests/**`
-3. 真实运行证据：`hooks/pace-hooks.log`、Claude Code session JSONL、production smoke 产物
+3. 真实运行证据：`plugin/hooks/pace-hooks.log`、Claude Code session JSONL、production smoke 产物
 4. 用户面/内部文档：`README.md`、`REFERENCE.md`、`CLAUDE.md`、`docs/**`
 
 文档只能用于发现候选矛盾或设计意图，不能单独作为 bug 证据。任何 C/H 级问题都必须从代码路径、配置注册、测试缺口或真实日志中独立证明。
 
 当前 v6 审计基线：
 
-- marketplace 发布面是 4 个用户 skill + `artifact-writer` agent；`internal/skills/audit/` 不随 marketplace 发布
+- marketplace `source` 指向 `./plugin`；发布面是 4 个用户 skill + `artifact-writer` agent + hooks/agent-references/migrate；`internal/skills/audit/`、docs、tests、tickets 不随 marketplace 发布
 - v6-only `changes/**` 详情模型；v5 活跃流程只允许迁移/桥接，不继续兼容
 - artifact root 可为 local/vault/custom，真实 git worktree 沿用宿主项目 `.pace/artifact-root`
 - `artifact-writer` 是唯一 artifact 写入者；主 session 不得直写 C/V 标记
@@ -48,14 +48,14 @@ description: >
 
 | 类别 | Glob 模式 |
 |------|-----------|
-| Hook 脚本 | `hooks/*.js` |
-| Hook 配置 | `hooks/hooks.json` |
-| Hook 模板 | `hooks/templates/*.md` |
-| 用户 Skill | `skills/*/SKILL.md` + `skills/*/references/*.md` + `skills/*/templates/*.md` |
+| Hook 脚本 | `plugin/hooks/*.js` |
+| Hook 配置 | `plugin/hooks/hooks.json` |
+| Hook 模板 | `plugin/hooks/templates/*.md` |
+| 用户 Skill | `plugin/skills/*/SKILL.md` + `plugin/skills/*/references/*.md` + `plugin/skills/*/templates/*.md` |
 | 内部 Skill | `internal/skills/**/*.md` |
-| Agent | `agents/**/*.md` + `agent-references/**/*.md` |
-| Plugin 元数据 | `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` |
-| 迁移工具 | `migrate/**/*.js` |
+| Agent | `plugin/agents/**/*.md` + `plugin/agent-references/**/*.md` |
+| Plugin 元数据 | `plugin/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` |
+| 迁移工具 | `plugin/migrate/**/*.js` |
 | 本地工具 | `install.js` + `verify.js`（仅本地验证，不是正式安装路径） |
 | 测试 | `tests/**/*.js` + `tests/agent-tests/**/*.yaml` |
 | 文档（被审计对象） | `CLAUDE.md` + `README.md` + `REFERENCE.md` + `docs/**/*.md` |

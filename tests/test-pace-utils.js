@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const paceUtils = require('../hooks/pace-utils');
+const paceUtils = require('../plugin/hooks/pace-utils');
 const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
@@ -456,8 +456,8 @@ test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {
   fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
   const originalVaultPath = process.env.PACE_VAULT_PATH;
   process.env.PACE_VAULT_PATH = '';
-  delete require.cache[require.resolve('../hooks/pace-utils')];
-  const fresh = require('../hooks/pace-utils');
+  delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+  const fresh = require('../plugin/hooks/pace-utils');
   try {
     const err = fresh.artifactRootConfigError(dir);
     assert.ok(err);
@@ -466,8 +466,8 @@ test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {
   } finally {
     if (originalVaultPath === undefined) delete process.env.PACE_VAULT_PATH;
     else process.env.PACE_VAULT_PATH = originalVaultPath;
-    delete require.cache[require.resolve('../hooks/pace-utils')];
-    require('../hooks/pace-utils');
+    delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+    require('../plugin/hooks/pace-utils');
   }
 });
 

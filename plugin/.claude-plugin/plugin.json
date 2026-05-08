@@ -1,7 +1,7 @@
 {
   "name": "paceflow",
   "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify protocol with hooks",
-  "version": "6.0.34",
+  "version": "6.0.35",
   "author": {
     "name": "paceaitian"
   },

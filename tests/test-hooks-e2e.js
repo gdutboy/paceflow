@@ -7,8 +7,8 @@ const path = require('path');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 
-const HOOKS_DIR = path.join(__dirname, '..', 'hooks');
-const MIGRATE_SCRIPT = path.join(__dirname, '..', 'migrate', 'batch-archive-v5.js');
+const HOOKS_DIR = path.join(__dirname, '..', 'plugin', 'hooks');
+const MIGRATE_SCRIPT = path.join(__dirname, '..', 'plugin', 'migrate', 'batch-archive-v5.js');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;

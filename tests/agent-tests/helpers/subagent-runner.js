@@ -22,6 +22,7 @@ const verifyHelper = require('./verify-output');
 
 const ROOT = path.join(__dirname, '..');
 const REPO_ROOT = path.join(ROOT, '..', '..');
+const PLUGIN_ROOT = path.join(REPO_ROOT, 'plugin');
 const RESULTS_ROOT = path.join(ROOT, 'results');
 const ALLOWED_OPERATIONS = new Set([
   'create-chg',
@@ -86,9 +87,9 @@ function buildAgentPrompt(testCase, ctx, options = {}) {
   const renderedFields = renderInputFields(testCase, ctx.variables);
 
   const fieldsJson = JSON.stringify(renderedFields, null, 2);
-  const specPath = path.join(REPO_ROOT, 'agent-references', 'artifact-writer-spec.md');
+  const specPath = path.join(PLUGIN_ROOT, 'agent-references', 'artifact-writer-spec.md');
   const instructionPath = isAllowedOperation
-    ? path.join(REPO_ROOT, 'agent-references', 'instructions', `${op}.md`)
+    ? path.join(PLUGIN_ROOT, 'agent-references', 'instructions', `${op}.md`)
     : null;
   const instructionLine = instructionPath
     ? `- 当前指令规范：${instructionPath}`

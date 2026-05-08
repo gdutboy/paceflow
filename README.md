@@ -67,7 +67,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.34"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.35"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -176,30 +176,33 @@ Stop hook 连续阻止 3 次后自动降级为放行，防止 AI 陷入死循环
 
 ```
 paceflow/
-├── .claude-plugin/plugin.json        # Plugin 元数据
-├── agents/                           # Artifact writer agent
-│   └── artifact-writer.md
-├── agent-references/                 # Agent 运行规范与 instruction contracts
-│   ├── artifact-writer-spec.md
-│   └── instructions/
-├── hooks/                            # 9 个 Hook 脚本 + 公共工具
-│   ├── hooks.json                    #   自动注册配置
-│   ├── pace-utils.js                 #   公共工具库
-│   ├── pre-tool-use.js               #   写代码前：任务检查 + 审批检查
-│   ├── post-tool-use.js              #   写代码后：归档提醒 + 格式检查
-│   ├── post-tool-use-failure.js      #   工具失败后：恢复提示
-│   ├── session-start.js              #   会话启动：上下文注入
-│   ├── subagent-stop.js              #   artifact-writer 报告观察
-│   ├── stop.js                       #   会话结束：完成度检查
-│   ├── stop-failure.js               #   API 错误中断：事件日志
-│   ├── task-list-sync.js             #   任务列表：一致性校验
-│   ├── pre-compact.js                #   Compact 前快照
-│   └── templates/                    #   6 个 artifact 模板 + 1 个 knowledge 模板
-├── skills/                           # 4 个用户 Skill
-│   ├── pace-workflow/                #   PACE 核心流程
-│   ├── pace-bridge/                  #   Superpowers 桥接
-│   ├── artifact-management/          #   Artifact + 变更管理规则
-│   └── pace-knowledge/               #   Obsidian 知识库管理
+├── .claude-plugin/marketplace.json   # Marketplace 入口；source 指向 ./plugin
+├── plugin/                           # 发布运行时根目录
+│   ├── .claude-plugin/plugin.json    #   Plugin 元数据
+│   ├── agents/                       #   Artifact writer agent
+│   │   └── artifact-writer.md
+│   ├── agent-references/             #   Agent 运行规范与 instruction contracts
+│   │   ├── artifact-writer-spec.md
+│   │   └── instructions/
+│   ├── hooks/                        #   9 个 Hook 脚本 + 公共工具
+│   │   ├── hooks.json                #     自动注册配置
+│   │   ├── pace-utils.js             #     公共工具库
+│   │   ├── pre-tool-use.js           #     写代码前：任务检查 + 审批检查
+│   │   ├── post-tool-use.js          #     写代码后：归档提醒 + 格式检查
+│   │   ├── post-tool-use-failure.js  #     工具失败后：恢复提示
+│   │   ├── session-start.js          #     会话启动：上下文注入
+│   │   ├── subagent-stop.js          #     artifact-writer 报告观察
+│   │   ├── stop.js                   #     会话结束：完成度检查
+│   │   ├── stop-failure.js           #     API 错误中断：事件日志
+│   │   ├── task-list-sync.js         #     任务列表：一致性校验
+│   │   ├── pre-compact.js            #     Compact 前快照
+│   │   └── templates/                #     6 个 artifact 模板 + 1 个 knowledge 模板
+│   ├── skills/                       #   4 个用户 Skill
+│   │   ├── pace-workflow/            #     PACE 核心流程
+│   │   ├── pace-bridge/              #     Superpowers 桥接
+│   │   ├── artifact-management/      #     Artifact + 变更管理规则
+│   │   └── pace-knowledge/           #     Obsidian 知识库管理
+│   └── migrate/                      #   v5 → v6 半自动迁移脚本
 ├── internal/                          # 内部开发资料，不随 marketplace 发布
 │   └── skills/audit/                 #   PaceFlow 自身审计流程
 └── tests/                            # Hook + agent contract 测试
@@ -267,7 +270,7 @@ paceflow/
 
 ## 日志
 
-共享日志写在当前安装的插件 hooks 目录中，例如 `~/.claude/plugins/cache/paceaitian-paceflow/paceflow/<version>/hooks/pace-hooks.log`；本仓库本地测试会写 `hooks/pace-hooks.log`。
+共享日志写在当前安装的插件 hooks 目录中，例如 `~/.claude/plugins/cache/paceaitian-paceflow/paceflow/<version>/hooks/pace-hooks.log`；本仓库本地测试会写 `plugin/hooks/pace-hooks.log`。
 
 </details>
 
@@ -276,6 +279,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.35 | 2026-05-08 | 拆分 plugin runtime root：marketplace `source` 改为 `./plugin`，发布包只包含 hooks / skills / agent / agent-references / migrate 等运行时资产，仓库根目录继续保留 docs / tests / internal / tickets 作为开发资料 |
 | v6.0.34 | 2026-05-08 | 修复全面审计确认项：Bash artifact/lock 写保护改为解析等价路径；worktree 运行态 `.pace` 统一到宿主项目；`artifact-root=vault` 缺 `PACE_VAULT_PATH` 时 fail-closed；Stop 防循环计数在 `.pace` 缺失时仍可降级但 idle PASS 不落盘；C/V 与 PostToolUse artifact 判定统一到 artifact root；同步 `close-chg`、`pace-bridge`、correction/knowledge 文档契约 |
 | v6.0.33 | 2026-05-08 | 修复 production Smoke0-5 暴露的问题：Bash 不再允许删除/改写 `.pace/artifact-writer.lock`；锁 payload 不再暴露 hook `pid`；并发锁拒绝文案改为等待/重试；idle code-count Stop 不再打扰首次闲聊；runtime config 写入不再触发无任务提醒；artifact-writer 顺序写索引时抑制瞬时不一致噪声；worktree local 模式显示修正；lifecycle prompt 字段支持 `field=value` 与中文逗号分隔 |
 | v6.0.32 | 2026-05-08 | 修复 artifact-writer Agent 失败恢复链路：`PostToolUseFailure` matcher 覆盖 `Agent`，Agent 工具失败时会立即释放项目级 artifact 写锁，不必等待 TTL |
@@ -321,4 +325,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.34 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.35 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

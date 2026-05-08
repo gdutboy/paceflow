@@ -133,4 +133,4 @@ Phase 2 验证结果: X 确认 / Y 部分正确 / Z 误报
 ### 5. 文档驱动误判
 
 **症状**：把 guidebook/action-plan 的历史缺口当成当前 bug，或把 README 的数量描述当成发布面事实。
-**防御**：先用 Glob/rg 发现当前文件，再读 `.claude-plugin/**`、`hooks/hooks.json`、`hooks/pace-utils.js`、测试和真实日志。文档与代码不一致时，优先报告“文档过时”或“需要代码证据补充”。
+**防御**：先用 Glob/rg 发现当前文件，再读 `.claude-plugin/**`、`plugin/.claude-plugin/**`、`plugin/hooks/hooks.json`、`plugin/hooks/pace-utils.js`、测试和真实日志。文档与代码不一致时，优先报告“文档过时”或“需要代码证据补充”。
