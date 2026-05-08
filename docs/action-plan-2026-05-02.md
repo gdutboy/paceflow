@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.29（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.30（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-08，v6.0.29）
+### 0.1 当前执行视图（2026-05-08，v6.0.30）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,11 +27,11 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/task-list-sync.js`
 
-执行状态（v6.0.29）：
+执行状态（v6.0.30）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
-- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径。
+- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
 #### 0.1.1 P0 — 当前已实现代码中的阻断级修复
@@ -62,6 +62,7 @@
 | P1-20260507-05 | ✅ v6.0.27 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` 兼容性回归 | Claude Code 可清理子进程 env；PaceFlow 不应只依赖 vault env 恢复本地项目 artifact 路由 | `tests/test-hooks-e2e.js` | scrub 场景下，即使 `PACE_VAULT_PATH` 不可用，项目级 `.pace/artifact-root=local` 仍可让 SessionStart 恢复本地 artifact 路由并懒创建模板 |
 | P1-20260508-01 | ✅ v6.0.28 | 修复 v6.0.27 audit 确认缺口 | `close-chg` prompt 门控未强制 `complete-open-tasks:true`；verified-date 逻辑分叉；compact snapshot null、knowledge 时间戳示例、hook 数量文档存在小缺口；`ConfigChange` 对 plugin 安装链路无保护价值 | `hooks/**`、`skills/pace-knowledge/SKILL.md`、`README.md`、`REFERENCE.md`、`tests/**` | close-chg 缺 `complete-open-tasks:true` 被 deny；verified-date 使用共享 helper；`ConfigChange` / `config-guard` 从发布面移除 |
 | P1-20260508-02 | ✅ v6.0.29 | 清理 `audit` 发布面与 ticket02 文档口径 | `audit` 是 PaceFlow 内部审计流程，不是用户项目 skill；README PreCompact I/O、artifact-writer spec ARCHIVE 范围、action-plan/guidebook 历史状态描述与当前实现不一致 | `hooks/pace-utils.js`、`skills/pace-knowledge/SKILL.md`、`internal/skills/audit/**`、`README.md`、`REFERENCE.md`、`agent-references/artifact-writer-spec.md`、`docs/**` | marketplace 发布 skill 减为 4；内部审计资料保留在 `internal/skills/audit`；文档与实际 hook/template 对齐 |
+| P1-20260508-03 | ✅ v6.0.30 | v5→v6 半自动迁移保护 | v5 用户升级后旧 vault 只有根 artifact 文件、没有 `changes/`；若直接懒创建 v6 基础结构，会把旧 v5 活跃内容与新 v6 详情模型混在一起 | `hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`migrate/batch-archive-v5.js`、`README.md`、`tests/**` | 检测 legacy v5 artifact 时先要求 AskUserQuestion + dry-run；用户确认前不创建 `changes/`；迁移脚本默认拒绝重复迁移或覆盖 `.v5-backup` |
 
 #### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
 
@@ -107,14 +108,14 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.29）：
+最近一次验证结果（v6.0.30）：
 
 ```bash
-node tests/test-hooks-e2e.js      # 93/93 PASS
-node tests/test-pace-utils.js     # 92/92 PASS
+node tests/test-hooks-e2e.js      # 97/97 PASS
+node tests/test-pace-utils.js     # 96/96 PASS
 node tests/test-install.js        # 24/24 PASS
 claude plugin validate .          # PASS，无 warning
-node --check hooks/*.js install.js verify.js tests/*.js  # PASS
+node --check hooks/*.js migrate/*.js install.js verify.js tests/*.js  # PASS
 git diff --check                  # PASS
 ```
 

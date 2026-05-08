@@ -50,10 +50,26 @@ function transformV5Body(content) {
     .replace(/^<!-- ARCHIVE -->$/m, '<!-- v5 历史 active/archive 边界 -->');
 }
 
-function archiveV5(projectPath, dryRun) {
+function archiveV5(projectPath, dryRun, force) {
   console.log(`项目路径：${projectPath}`);
   console.log(`模式：${dryRun ? 'DRY-RUN（不写入）' : '执行'}`);
   console.log('');
+
+  const changesDir = path.join(projectPath, 'changes');
+  if (fs.existsSync(changesDir) && !force) {
+    console.error('[ERROR] 检测到 changes/ 已存在，目标看起来已经是 v6 或曾经迁移过。');
+    console.error('        为避免重复迁移或混合 v5/v6 artifact，本次中止。确认要重跑时请显式加 --force。');
+    process.exit(1);
+  }
+
+  const backupConflicts = ARTIFACT_FILES
+    .filter(file => fs.existsSync(path.join(projectPath, file)))
+    .filter(file => fs.existsSync(path.join(projectPath, `${file}.v5-backup`)));
+  if (backupConflicts.length > 0 && !force) {
+    console.error(`[ERROR] 检测到已有 .v5-backup：${backupConflicts.map(f => `${f}.v5-backup`).join(', ')}`);
+    console.error('        为避免覆盖备份，本次中止。确认要重跑时请显式加 --force。');
+    process.exit(1);
+  }
 
   // 确保 v6 子目录结构（agent 项目检测依赖 changes/ 目录存在）
   const subDirs = ['changes', 'changes/findings', 'changes/corrections'];
@@ -137,9 +153,10 @@ function archiveV5(projectPath, dryRun) {
 // CLI
 const projectPath = process.argv[2];
 const dryRun = process.argv.includes('--dry-run');
+const force = process.argv.includes('--force');
 
 if (!projectPath) {
-  console.error('用法：node batch-archive-v5.js <project-vault-path> [--dry-run]');
+  console.error('用法：node batch-archive-v5.js <project-vault-path> [--dry-run] [--force]');
   process.exit(1);
 }
 
@@ -148,4 +165,4 @@ if (!fs.existsSync(projectPath)) {
   process.exit(1);
 }
 
-archiveV5(projectPath, dryRun);
+archiveV5(projectPath, dryRun, force);

@@ -8,6 +8,7 @@ const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 
 const HOOKS_DIR = path.join(__dirname, '..', 'hooks');
+const MIGRATE_SCRIPT = path.join(__dirname, '..', 'migrate', 'batch-archive-v5.js');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;
@@ -660,10 +661,28 @@ test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
   const dir = makeLegacyProject('ptu-legacy');
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
   assert.ok(r.stdout.includes('deny'));
-  assert.ok(r.stdout.includes('legacy task.md'));
+  assert.ok(r.stdout.includes('v5 PACE artifact'));
   assert.ok(r.stdout.includes('migrate/batch-archive-v5.js'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(r.stdout.includes('--dry-run'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
   assert.ok(!r.stdout.includes('补齐实施详情'));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'legacy v5 阶段不应懒创建 changes/');
+});
+
+test('9d1. vault 中 legacy v5 artifact 优先进入迁移提示，不先询问 artifact root', () => {
+  const dir = makeTmpDir('ptu-legacy-vault');
+  const projectName = projectNameForDir(dir);
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectName);
+  fs.mkdirSync(vaultDir, { recursive: true });
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# Task\n\n- [ ] Legacy vault task\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
+  assert.ok(r.stdout.includes('v5 PACE artifact'));
+  assert.ok(r.stdout.includes('--dry-run'));
+  assert.ok(!r.stdout.includes('PACEflow 首次启用需要选择 artifact 存放位置'));
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '迁移确认前不应在 vault 创建 changes/');
 });
 
 test('9e. worktree 本地 CHG 详情写入 → DENY 并重定向到 vault', () => {
@@ -751,6 +770,27 @@ test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', (
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('AskUserQuestion'));
   assert.ok(r.stdout.includes('artifact-root'));
+});
+
+test('9haa1. legacy v5 存在时 artifact-writer 不得触发 v6 懒创建', () => {
+  const dir = makeLegacyProject('agent-legacy-v5');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: `artifact_dir: ${dir.replace(/\\/g, '/')}\n使用 create-chg 流程创建一个新的变更记录。`,
+      },
+    },
+    env: { PACE_VAULT_PATH: '' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('v5 PACE artifact'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'legacy v5 上不得由 Agent path 懒创建 changes/');
 });
 
 test('9hab. artifact-root=local 后首次 artifact-writer Agent 放行前创建本地模板', () => {
@@ -1519,6 +1559,29 @@ test('17b. legacy v5 PostToolUse 只提示迁移或桥接', () => {
   assert.ok(r.stdout.includes('legacy task.md'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
   assert.ok(r.stdout.includes('不再校验或修复 v5'));
+});
+
+console.log('\n--- v5 migration helper ---');
+
+test('17c. migrate dry-run 不创建 changes，正式执行创建备份和 v6 子目录', () => {
+  const dir = makeLegacyProject('migrate-v5-dry-run');
+  const dry = execFileSync('node', [MIGRATE_SCRIPT, dir, '--dry-run'], { encoding: 'utf8' });
+  assert.ok(dry.includes('[DRY-RUN] 子目录 changes：将创建'));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'dry-run 不应创建 changes/');
+
+  const out = execFileSync('node', [MIGRATE_SCRIPT, dir], { encoding: 'utf8' });
+  assert.ok(out.includes('[DONE] 子目录 changes：已创建'));
+  assert.ok(fs.existsSync(path.join(dir, 'changes', 'findings')));
+  assert.ok(fs.existsSync(path.join(dir, 'task.md.v5-backup')));
+});
+
+test('17d. migrate 默认拒绝重复执行', () => {
+  const dir = makeLegacyProject('migrate-v5-repeat');
+  execFileSync('node', [MIGRATE_SCRIPT, dir], { encoding: 'utf8' });
+  assert.throws(
+    () => execFileSync('node', [MIGRATE_SCRIPT, dir], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }),
+    /changes\/ 已存在|Command failed/
+  );
 });
 
 console.log('\n--- task-list / pre-compact / lifecycle observers ---');

@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -316,6 +316,8 @@ paceUtils.withStdinParsed((stdin) => {
   const artDir = getArtifactDir(cwd);
   const needsArtifactRootChoice = artifactRootChoiceNeeded(cwd);
   const artifactRootChoiceReason = needsArtifactRootChoice ? artifactRootChoiceMessage(cwd) : '';
+  const v5MigrationInfo = getV5MigrationInfo(cwd);
+  const v5MigrationReason = v5MigrationInfo.needsPrompt ? v5MigrationPromptMessage(cwd) : '';
   const artifactRootHint = paceUtils.artifactDirRuntimeHint(cwd);
   log(paceUtils.logEntry('PreToolUse', 'ROUTE', {
     proj,
@@ -323,6 +325,8 @@ paceUtils.withStdinParsed((stdin) => {
     artifact_dir: displayDir(artDir),
     choice: paceUtils.readArtifactRootChoice(cwd) || 'auto',
     choice_pending: needsArtifactRootChoice,
+    legacy_v5: v5MigrationInfo.detected,
+    migration_state: v5MigrationInfo.state || '',
   }));
   const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
@@ -381,6 +385,18 @@ paceUtils.withStdinParsed((stdin) => {
         log(paceUtils.logEntry('PreToolUse', `DENY_AGENT_ARTIFACT_ROOT_CHOICE${teammateTag}`, {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      if (isArtifactWriterAgentTool(stdin) && v5MigrationInfo.needsPrompt) {
+        const output = denyOrHint(v5MigrationReason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_AGENT_V5_MIGRATION${teammateTag}`, {
+          proj,
+          agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+          artifact_dir: displayDir(v5MigrationInfo.dir),
+          state_path: v5MigrationInfo.statePath,
           dur: Date.now() - t0,
         }));
         return;
@@ -744,8 +760,10 @@ paceUtils.withStdinParsed((stdin) => {
   }
 
   // v6-only：有 legacy task.md 但没有 changes/ 时，不再给 v5 自修提示。
-  if (paceSignal && taskFileExists && taskActiveContent.trim() && isInsideProject && (isCodeFile || ARTIFACT_FILES.includes(fileName))) {
-    const reason = `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md / implementation_plan.md wikilink 索引。不要继续在 task.md / implementation_plan.md 手写 v5 详情、APPROVED 或 VERIFIED。`;
+  if (paceSignal && v5MigrationInfo.detected && taskFileExists && taskActiveContent.trim() && isInsideProject && (isCodeFile || ARTIFACT_FILES.includes(fileName))) {
+    const reason = v5MigrationInfo.needsPrompt
+      ? v5MigrationReason
+      : `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md / implementation_plan.md wikilink 索引。不要继续在 task.md / implementation_plan.md 手写 v5 详情、APPROVED 或 VERIFIED。`;
     const output = denyOrHint(reason);
     process.stdout.write(JSON.stringify(output));
     log(paceUtils.logEntry('PreToolUse', `DENY_LEGACY_ACTIVE${teammateTag}`, { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
@@ -785,6 +803,20 @@ paceUtils.withStdinParsed((stdin) => {
     // 第一级：强信号 DENY（superpowers/manual/artifact/code-count）
     // I-06: isPaceProject() 返回 false 或字符串，truthy 检查等价于四重比较
     if (paceSignal) {
+      if (v5MigrationInfo.needsPrompt) {
+        const output = denyOrHint(v5MigrationReason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V5_MIGRATION${teammateTag}`, {
+          proj,
+          signal: paceSignal,
+          tool: toolName,
+          file: filePath,
+          artifact_dir: displayDir(v5MigrationInfo.dir),
+          state_path: v5MigrationInfo.statePath,
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
       if (needsArtifactRootChoice) {
         const output = denyOrHint(artifactRootChoiceReason);
         process.stdout.write(JSON.stringify(output));

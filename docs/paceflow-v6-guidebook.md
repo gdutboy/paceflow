@@ -13,6 +13,7 @@
 > 执行状态更新（2026-05-07，v6.0.24）：收尾语义收紧为“确认边界不合并，确认后的机械动作合并”。`approve-and-start` 缺 `approval-confirmed: true`、`close-chg` 缺验证确认/摘要、或同一 agent prompt 串联 `update-status` + `verify` 会被 PreToolUse 拒绝。最后任务主路径是先运行并读取验证结果，再派 `close-chg complete-open-tasks: true`。
 > 执行状态更新（2026-05-07，v6.0.25）：C 阶段确认语义扩展到 `approve` 与 `approve-and-start`：二者都必须带 `approval-confirmed: true`、`approval-source`、`approval-evidence`。hook 只做字段存在与操作组合检查，不判断 evidence 真伪；`approve` 只表示“先批准但暂不开始”，批准并开始必须用 `approve-and-start`。
 > 执行状态更新（2026-05-08，v6.0.29）：`audit` skill 已移至 `internal/skills/audit/`，不再随 marketplace 发布；README/REFERENCE/spec/action-plan 中 PreCompact I/O、ARCHIVE 范围和历史状态口径已按当前实现修正。
+> 执行状态更新（2026-05-08，v6.0.30）：v5 用户升级路径改为 hook 引导的半自动迁移。检测到旧 v5 artifact 且没有 `changes/` 时，PreToolUse 先要求用户确认 dry-run/迁移；确认前禁止懒创建 v6 `changes/` 或派 `artifact-writer create-chg` 混入旧根文件。
 
 ---
 

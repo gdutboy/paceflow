@@ -3,11 +3,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.29';
+const PACE_VERSION = 'v6.0.30';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
+const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
@@ -243,6 +244,10 @@ function getArtifactRootChoicePath(cwd) {
   return path.join(getProjectStateDir(cwd), '.pace', ARTIFACT_ROOT_CHOICE_FILE);
 }
 
+function getV5MigrationStatePath(cwd) {
+  return path.join(getProjectStateDir(cwd), '.pace', V5_MIGRATION_STATE_FILE);
+}
+
 function normalizeArtifactRootChoice(choice) {
   let raw = String(choice || '').trim();
   if (!raw) return '';
@@ -258,6 +263,10 @@ function readArtifactRootChoice(cwd) {
   const envChoice = process.env.PACE_ARTIFACT_ROOT || process.env.PACEFLOW_ARTIFACT_ROOT || '';
   if (String(envChoice).trim()) return normalizeArtifactRootChoice(envChoice);
   try { return normalizeArtifactRootChoice(fs.readFileSync(getArtifactRootChoicePath(cwd), 'utf8')); } catch(e) { return ''; }
+}
+
+function readV5MigrationState(cwd) {
+  try { return String(fs.readFileSync(getV5MigrationStatePath(cwd), 'utf8')).trim().toLowerCase(); } catch(e) { return ''; }
 }
 
 function artifactDirFromChoice(cwd, choice) {
@@ -282,9 +291,89 @@ function hasChangesDir(dir) {
   try { return !!dir && fs.existsSync(path.join(dir, 'changes')); } catch(e) { return false; }
 }
 
+function legacyV5FilesInDir(dir) {
+  if (!dir || hasChangesDir(dir)) return [];
+  const signatures = {
+    'task.md': /<!-- ARCHIVE -->|#\s*项目任务追踪|##\s*活跃任务|###\s*(?:CHG|HOTFIX)-/i,
+    'implementation_plan.md': /<!-- ARCHIVE -->|#\s*实施计划|##\s*变更索引|##\s*活跃变更详情|###\s*(?:CHG|HOTFIX)-/i,
+    'walkthrough.md': /<!-- ARCHIVE -->|#\s*工作记录|##\s*最近工作/i,
+    'findings.md': /<!-- ARCHIVE -->|#\s*调研记录|##\s*未解决问题|##\s*Corrections\s*记录/i,
+  };
+  return Object.entries(signatures).filter(([file, re]) => {
+    try {
+      const fp = path.join(dir, file);
+      if (!fs.existsSync(fp)) return false;
+      const head = fs.readFileSync(fp, 'utf8').slice(0, 20000);
+      return re.test(head);
+    } catch(e) {
+      return false;
+    }
+  }).map(([file]) => file);
+}
+
+function hasLegacyV5ArtifactsDir(dir) {
+  return legacyV5FilesInDir(dir).length > 0;
+}
+
+function getLegacyV5ArtifactDir(cwd) {
+  const configuredDir = getConfiguredArtifactDir(cwd);
+  if (configuredDir) return hasLegacyV5ArtifactsDir(configuredDir) ? configuredDir : null;
+
+  if (VAULT_PATH) {
+    for (const projectName of getProjectNameCandidates(cwd)) {
+      const vaultDir = path.join(VAULT_PATH, 'projects', projectName);
+      if (hasLegacyV5ArtifactsDir(vaultDir)) return vaultDir;
+    }
+  }
+
+  const stateDir = getProjectStateDir(cwd);
+  if (hasLegacyV5ArtifactsDir(stateDir)) return stateDir;
+  if (stateDir !== cwd && hasLegacyV5ArtifactsDir(cwd)) return cwd;
+  return null;
+}
+
+function getV5MigrationInfo(cwd) {
+  const dir = getLegacyV5ArtifactDir(cwd);
+  const state = readV5MigrationState(cwd);
+  const files = dir ? legacyV5FilesInDir(dir) : [];
+  const suppressed = ['ignored', 'declined', 'migrated'].includes(state);
+  return {
+    detected: !!dir,
+    needsPrompt: !!dir && !suppressed,
+    dir: dir || '',
+    files,
+    state,
+    statePath: getV5MigrationStatePath(cwd),
+    scriptPath: path.resolve(__dirname, '..', 'migrate', 'batch-archive-v5.js'),
+  };
+}
+
+function v5MigrationPromptMessage(cwd) {
+  const info = getV5MigrationInfo(cwd);
+  if (!info.detected) return '';
+  const script = info.scriptPath.replace(/\\/g, '/');
+  const artifactDir = info.dir.replace(/\\/g, '/');
+  return [
+    '检测到旧 v5 PACE artifact，但当前 artifact 根目录没有 changes/ v6 详情目录。',
+    `Legacy artifact 根目录: ${displayDir(info.dir)}`,
+    `检测到文件: ${info.files.join(', ')}`,
+    'PACEflow v6 不会自动改写旧 vault/本地 artifact。请先用 AskUserQuestion 询问用户如何处理：',
+    '1. 迁移旧 v5 artifact 到 v6（推荐）：先运行 dry-run，展示摘要后再次确认，再运行正式迁移。',
+    '2. 暂不迁移，改用其它 artifact root：写入 .pace/artifact-root 为 local / vault / 绝对路径，并写入 .pace/v5-migration-state 为 ignored。',
+    '3. 取消本次操作，保持旧内容不变。',
+    '迁移命令（必须先 dry-run）：',
+    `node "${script}" "${artifactDir}" --dry-run`,
+    '用户确认 dry-run 摘要后再运行：',
+    `node "${script}" "${artifactDir}"`,
+    `如果用户明确决定忽略这份旧 v5 artifact，请写入 ${getV5MigrationStatePath(cwd)}，内容为纯文本 ignored；要重新提示则删除该文件。`,
+    '禁止在用户确认前创建 changes/、懒创建 v6 模板或派 artifact-writer create-chg。',
+  ].join('\n');
+}
+
 function artifactRootChoiceNeeded(cwd) {
   if (!VAULT_PATH) return false;
   if (getConfiguredArtifactDir(cwd)) return false;
+  if (getLegacyV5ArtifactDir(cwd)) return false;
   if (hasChangesDir(getProjectStateDir(cwd))) return false;
   for (const projectName of getProjectNameCandidates(cwd)) {
     if (hasChangesDir(path.join(VAULT_PATH, 'projects', projectName))) return false;
@@ -353,6 +442,11 @@ function getArtifactDir(cwd) {
   if (fs.existsSync(path.join(cwd, 'changes'))) {
     _artifactDirCache = { cwd, dir: cwd };
     return cwd;
+  }
+  const legacyDir = getLegacyV5ArtifactDir(cwd);
+  if (legacyDir) {
+    _artifactDirCache = { cwd, dir: legacyDir };
+    return legacyDir;
   }
   // 新项目 → vault（有 VAULT_PATH 时）或 CWD（无 VAULT_PATH）
   result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectCandidates[0]) : cwd;
@@ -461,6 +555,7 @@ function isPaceProject(cwd) {
         }
       }
     }
+    if (getLegacyV5ArtifactDir(cwd)) return 'legacy';
     // 信号 2（强）：Superpowers plan 文件
     if (hasPlanFiles(cwd)) return 'superpowers';
     // 信号 3（强）：手动激活标记
@@ -989,7 +1084,7 @@ function parseStdinSync() {
 // I-04: 多行格式按功能分组，便于 diff 审阅
 module.exports = {
   // 常量
-  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE,
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
@@ -998,6 +1093,7 @@ module.exports = {
   // 项目检测与路径
   isPaceProject, isTeammate, isArtifactWriterAgentType, getArtifactDir, getProjectStateDir,
   getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
+  getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
   artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,

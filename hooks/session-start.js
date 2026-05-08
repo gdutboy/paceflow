@@ -74,6 +74,7 @@ try {
 // v4.3: 多信号 PACE 检测（替换原有 codeFileCount >= 3）
 const paceSignal = isPaceProject(cwd);
 const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
+const v5MigrationInfo = paceSignal ? paceUtils.getV5MigrationInfo(cwd) : { detected: false };
 const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
 const artifactRootChoice = paceUtils.readArtifactRootChoice(cwd) || 'auto';
 
@@ -217,7 +218,7 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
     vault_artifact_dir: paceUtils.VAULT_PATH ? paceUtils.displayDir(path.join(paceUtils.VAULT_PATH, 'projects', getProjectName(cwd))) : '',
   }));
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
-} else if (paceSignal && paceSignal !== 'artifact' && !fs.existsSync(path.join(artDir, 'task.md'))) {
+} else if (paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
   if (created.length > 0) {
     log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', {

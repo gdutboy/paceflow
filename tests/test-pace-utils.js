@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -28,6 +28,18 @@ test('有 changes/ → artifact', () => {
   const dir = makeTmpDir('artifact');
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
   assert.strictEqual(isPaceProject(dir), 'artifact');
+});
+
+test('旧 v5 artifact 根文件但无 changes/ → legacy', () => {
+  const dir = makeTmpDir('legacy-v5-signal');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n');
+  assert.strictEqual(isPaceProject(dir), 'legacy');
+});
+
+test('普通 task.md 无 PACE 签名 → 不误判 legacy', () => {
+  const dir = makeTmpDir('plain-task-md');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task list\n\n- buy milk\n');
+  assert.strictEqual(isPaceProject(dir), false);
 });
 
 test('有 .pace/disabled + task.md → false（豁免优先）', () => {
@@ -223,7 +235,7 @@ test('vault 有 artifact → 返回 vault', () => {
   const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
   const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   fs.mkdirSync(vaultDir, { recursive: true });
-  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# test\n');
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n');
   t.tmpDirs.push(vaultDir); // 清理
   assert.strictEqual(getArtifactDir(dir), vaultDir);
 });
@@ -234,7 +246,7 @@ test('vault 和 CWD 都有 → vault 优先', () => {
   const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
   const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
   fs.mkdirSync(vaultDir, { recursive: true });
-  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# vault\n');
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n');
   t.tmpDirs.push(vaultDir);
   assert.strictEqual(getArtifactDir(dir), vaultDir);
 });
@@ -296,6 +308,32 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
   assert.ok(msg.includes('配置文件'), '应明确 artifact-root 是配置文件');
   assert.ok(msg.includes('不是 artifact 根目录'), '应明确 .pace 不是 artifact 根目录');
   assert.ok(msg.includes('不要把 task.md'), '应阻止主 session 把 artifact 写进 .pace/');
+});
+
+test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移提示', () => {
+  const dir = makeTmpDir('gad-legacy-migration');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n');
+  assert.strictEqual(artifactRootChoiceNeeded(dir), false);
+  assert.strictEqual(getArtifactDir(dir), dir);
+  const info = getV5MigrationInfo(dir);
+  assert.strictEqual(info.detected, true);
+  assert.strictEqual(info.needsPrompt, true);
+  assert.deepStrictEqual(info.files, ['task.md']);
+  const msg = v5MigrationPromptMessage(dir);
+  assert.ok(msg.includes('AskUserQuestion'));
+  assert.ok(msg.includes('--dry-run'));
+  assert.ok(msg.includes('v5-migration-state'));
+});
+
+test('v5-migration-state=ignored → 检测 legacy 但不重复要求迁移选择', () => {
+  const dir = makeTmpDir('gad-legacy-ignored');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'v5-migration-state'), 'ignored\n', 'utf8');
+  const info = getV5MigrationInfo(dir);
+  assert.strictEqual(info.detected, true);
+  assert.strictEqual(info.needsPrompt, false);
+  assert.strictEqual(info.state, 'ignored');
 });
 
 test('已有 changes 或已有选择 → 不需要 artifact root 选择', () => {
