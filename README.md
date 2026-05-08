@@ -67,7 +67,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.30"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.31"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -127,6 +127,7 @@ brainstorming（需求探索 + 方案设计）
 
 - 首次启用可选择将 Artifact 存储到 `projects/<项目名>/` 或本地项目目录，选择写入 `.pace/artifact-root`
 - Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
+- `artifact-writer` 派遣前会获取项目级写锁，避免多个 worktree 同时创建同一个 CHG ID 或抢写索引
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
 - 兼容 Obsidian Tasks / Dataview 跨项目查询
@@ -235,6 +236,7 @@ paceflow/
 | `degraded` | 降级标记 |
 | `task-list-used` | 本会话是否用过 Claude 任务列表工具 |
 | `artifact-root` | artifact 存放位置选择：`local` / `vault` / 绝对路径 / 相对路径 |
+| `artifact-writer.lock` | artifact-writer 写锁，防止多 worktree / 多 session 并发抢写 CHG ID 与索引 |
 | `disabled` | 豁免标记（用户手动创建）|
 | `synced-plans` | 已桥接的 plan 文件列表 |
 
@@ -274,6 +276,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.31 | 2026-05-08 | 增加 session_id 日志串联与 artifact-writer 项目级写锁：多 worktree / 多 session 并发派 artifact-writer 时会串行化 artifact 写入，避免 CHG-ID、索引和归档竞争；明确 `T-NNN` 是 CHG 内局部编号 |
 | v6.0.30 | 2026-05-08 | 新增 v5 升级半自动迁移保护：hook 检测 legacy v5 artifact 时先要求用户确认迁移，不再让懒创建 `changes/` 混入旧 v5 根文件；迁移脚本增加 `changes/` / `.v5-backup` 防重复执行 guard |
 | v6.0.29 | 2026-05-08 | 清理发布面：`audit` skill 移至 `internal/skills/audit`，不再随 marketplace 发布；修正 PreCompact I/O、ARCHIVE 标记范围、guidebook/action-plan 历史状态等文档口径 |
 | v6.0.28 | 2026-05-08 | 修复 v6.0.27 审计确认项：`close-chg` 派遣强制 `complete-open-tasks:true`，统一 verified-date 检测，补 compact snapshot 边界、knowledge 时间戳示例与 hook 数量文档；移除对 plugin 安装链路无保护价值的 `ConfigChange` / `config-guard` |
@@ -315,4 +318,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.30 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.31 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

@@ -135,6 +135,22 @@ function makeV6Project(label, opts = {}) {
   return dir;
 }
 
+function seedArtifactWriterLock(dir, sessionId = 'sid-artifact-writer-test') {
+  const paceDir = path.join(dir, '.pace');
+  fs.mkdirSync(paceDir, { recursive: true });
+  fs.writeFileSync(path.join(paceDir, 'artifact-writer.lock'), JSON.stringify({
+    sessionId,
+    agentId: 'agent-test',
+    artifactDir: dir,
+    cwd: dir,
+    operation: 'test',
+    createdAt: new Date().toISOString(),
+    timestampMs: Date.now(),
+    pid: process.pid,
+  }, null, 2) + '\n', 'utf8');
+  return sessionId;
+}
+
 function makeVaultBackedWorktree(label) {
   const root = makeTmpDir(`${label}-root`);
   const projectName = `pace-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -393,9 +409,11 @@ test('9m. MultiEdit 直接写 VERIFIED → DENY verify action', () => {
 test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
   const dir = makeV6Project('ptu-marker-agent');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const sessionId = seedArtifactWriterLock(dir, 'sid-marker-agent');
   const approve = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
+      session_id: sessionId,
       agent_id: 'agent-test',
       agent_type: 'artifact-writer',
       tool_name: 'Edit',
@@ -412,6 +430,7 @@ test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
   const verify = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
+      session_id: sessionId,
       agent_id: 'agent-test',
       agent_type: 'paceflow:artifact-writer',
       tool_name: 'Edit',
@@ -456,6 +475,7 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
   runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
+      session_id: 'sid-marker-deny',
       agent_id: 'agent-log-deny',
       agent_type: 'code-reviewer',
       tool_name: 'Edit',
@@ -466,9 +486,11 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
       },
     },
   });
+  const sessionId = seedArtifactWriterLock(dir, 'sid-marker-log');
   runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
+      session_id: sessionId,
       agent_id: 'agent-log-pass',
       agent_type: 'artifact-writer',
       tool_name: 'Edit',
@@ -936,6 +958,191 @@ test('9hc. artifact-writer Agent 带 vault artifact_dir → 放行', () => {
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
 });
 
+test('9hc0. artifact-writer Agent 派遣会获取写锁并阻止第二会话并发派遣', () => {
+  const dir = makeV6Project('agent-artifact-lock');
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\n使用 create-chg 流程创建一个新的变更记录。`;
+  const first = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-lock-1',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(first.code, 0);
+  assert.ok(!first.stdout.includes('"deny"'));
+  assert.ok(first.stdout.includes('artifact 写锁已获取'));
+  const lockPath = path.join(dir, '.pace', 'artifact-writer.lock');
+  assert.ok(fs.existsSync(lockPath), '首次派遣应创建 artifact-writer.lock');
+  assert.strictEqual(JSON.parse(fs.readFileSync(lockPath, 'utf8')).sessionId, 'sid-lock-1');
+
+  const second = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-lock-2',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(second.code, 0);
+  assert.ok(second.stdout.includes('"deny"'));
+  assert.ok(second.stdout.includes('已有 artifact-writer 正在写入'));
+  assert.ok(second.stdout.includes('sid-lock-1'));
+});
+
+test('9hc0w. 真实 git worktree 共享宿主 artifact-writer 写锁', () => {
+  const { worktree, vaultDir } = makeVaultBackedWorktree('agent-artifact-lock-worktree');
+  const host = path.dirname(path.dirname(worktree));
+  const sibling = path.join(host, 'worktrees', 'smoke-2');
+  fs.mkdirSync(sibling, { recursive: true });
+  fs.writeFileSync(path.join(sibling, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke-2')}\n`, 'utf8');
+  const prompt = `artifact_dir: ${vaultDir.replace(/\\/g, '/')}/\noperation: create-chg\n使用 create-chg 流程创建一个新的变更记录。`;
+
+  const first = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      session_id: 'sid-wt-1',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(first.code, 0);
+  assert.ok(!first.stdout.includes('"deny"'));
+  assert.ok(fs.existsSync(path.join(host, '.pace', 'artifact-writer.lock')), 'worktree 锁应落在宿主 .pace');
+
+  const second = runHook('pre-tool-use.js', {
+    cwd: sibling,
+    stdin: {
+      session_id: 'sid-wt-2',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(second.code, 0);
+  assert.ok(second.stdout.includes('"deny"'));
+  assert.ok(second.stdout.includes('已有 artifact-writer 正在写入'));
+  assert.ok(second.stdout.includes('sid-wt-1'));
+});
+
+test('9hc0a. SubagentStop 释放 artifact-writer 写锁', () => {
+  const dir = makeV6Project('agent-artifact-lock-release');
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: update-chg\n使用 update-chg 流程更新状态。`;
+  const pre = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-release-1',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Update CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(pre.code, 0);
+  assert.ok(!pre.stdout.includes('"deny"'));
+  const lockPath = path.join(dir, '.pace', 'artifact-writer.lock');
+  assert.ok(fs.existsSync(lockPath));
+
+  const stop = runHook('subagent-stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-release-1',
+      agent_id: 'agent-release-1',
+      agent_type: 'paceflow:artifact-writer',
+      last_assistant_message: '## artifact-writer 报告\n\n**状态**：SUCCESS\n',
+    },
+  });
+  assert.strictEqual(stop.code, 0);
+  assert.strictEqual(stop.stdout, '');
+  assert.ok(!fs.existsSync(lockPath), 'SubagentStop 应释放同 session 的 artifact lock');
+});
+
+test('9hc0b. artifact-writer 修改 artifact 时必须持有当前 session 写锁', () => {
+  const dir = makeV6Project('agent-artifact-lock-write-deny');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-no-lock',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, 'changes', 'chg-20260508-02.md'),
+        content: '# new detail\n',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('没有持有 artifact 写锁'));
+});
+
+test('9hc0c. artifact-writer 持有写锁时可新建 changes 详情，已有详情仍禁止 Write 覆盖', () => {
+  const dir = makeV6Project('agent-artifact-lock-write-pass');
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\n使用 create-chg 流程创建一个新的变更记录。`;
+  const pre = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-write-pass',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(pre.code, 0);
+  assert.ok(!pre.stdout.includes('"deny"'));
+
+  const writeNew = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-write-pass',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, 'changes', 'chg-20260508-02.md'),
+        content: '# new detail\n',
+      },
+    },
+  });
+  assert.strictEqual(writeNew.code, 0);
+  assert.ok(!writeNew.stdout.includes('"deny"'));
+
+  const overwriteExisting = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-write-pass',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, 'changes', 'chg-20260504-01.md'),
+        content: '# overwrite\n',
+      },
+    },
+  });
+  assert.strictEqual(overwriteExisting.code, 0);
+  assert.ok(overwriteExisting.stdout.includes('"deny"'));
+  assert.ok(overwriteExisting.stdout.includes('禁止使用 Write 覆盖已有 artifact'));
+});
+
 test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
   const dir = makeV6Project('agent-approve-confirm-missing');
   const r = runHook('pre-tool-use.js', {
@@ -1186,6 +1393,7 @@ test('9hd. 非 artifact-writer Agent 不受 artifact_dir 约束', () => {
 test('9he. Edit artifact 前自动把 CRLF 归一化为 LF', () => {
   const dir = makeV6Project('ptu-crlf-normalize');
   const fp = path.join(dir, 'walkthrough.md');
+  const sessionId = seedArtifactWriterLock(dir, 'sid-crlf-normalize');
   fs.writeFileSync(fp, [
     '# 工作记录',
     '',
@@ -1200,6 +1408,7 @@ test('9he. Edit artifact 前自动把 CRLF 归一化为 LF', () => {
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
+      session_id: sessionId,
       tool_name: 'Edit',
       tool_input: {
         file_path: fp,

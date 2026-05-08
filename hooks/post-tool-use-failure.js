@@ -6,12 +6,12 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.exit(0);
 }
 
-const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry } = paceUtils;
+const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry, isArtifactWriterAgentType, releaseArtifactWriterLock } = paceUtils;
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
 const proj = getProjectName(cwd);
-const RECOVERY_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'Bash']);
+const RECOVERY_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'Bash', 'Agent']);
 
 paceUtils.withStdinParsed((stdin) => {
   const t0 = Date.now();
@@ -25,6 +25,20 @@ paceUtils.withStdinParsed((stdin) => {
     if (!RECOVERY_TOOLS.has(toolName)) {
       log(logEntry('PostToolUseFailure', 'SKIP', { proj, tool: toolName || '-', reason: 'tool-not-tracked', dur: Date.now() - t0 }));
       return;
+    }
+
+    const agentType = stdin.agentType || stdin.toolInput.subagent_type || stdin.toolInput.subagentType || '';
+    if (toolName === 'Agent' && isArtifactWriterAgentType(agentType)) {
+      const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+      log(logEntry('PostToolUseFailure', release.released ? 'RELEASE_ARTIFACT_LOCK' : 'RELEASE_ARTIFACT_LOCK_SKIP', {
+        proj,
+        tool: toolName,
+        agent_type: agentType,
+        agent_id: stdin.agentId,
+        reason: release.reason,
+        lock: release.lock && release.lock.path,
+        dur: Date.now() - t0,
+      }));
     }
 
     const err = String(stdin.error || stdin.raw.error_message || stdin.raw.stderr || '')

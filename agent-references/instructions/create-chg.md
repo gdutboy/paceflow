@@ -6,7 +6,7 @@
 ## 输入字段
 
 - `title`（必填）
-- `tasks`（必填，至少 1 个，格式 `["T-NNN: desc", ...]`）
+- `tasks`（必填，至少 1 个；推荐格式 `["任务描述", ...]`，artifact-writer 为当前 CHG/HOTFIX 分配 `T-001...`）
 - `type`（默认 change，可选 hotfix / research）
 - `related-finding`（可选，wikilink）
 - `background` / `scope` / `technical-decision`（可选）
@@ -22,11 +22,12 @@
 
 0. 前置检查：先校验必填字段；缺字段 → `missing-fields` 且不写文件。再用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
-2. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
-3. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
-4. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
-5. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
-6. 基于 payload + Edit 成功 + hook 反馈做低成本验证；除非 hook 报告本次目标问题，不要再 Read 刚写好的详情文件或两个索引文件
+2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，可保留该 CHG 内编号，但不得扫描全项目分配全局 T-ID。
+3. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
+4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
+5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
+6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
+7. 基于 payload + Edit 成功 + hook 反馈做低成本验证；除非 hook 报告本次目标问题，不要再 Read 刚写好的详情文件或两个索引文件
 
 资源约束：
 - 不读 `walkthrough.md` / `findings.md` / `corrections.md`
@@ -35,7 +36,7 @@
 
 ## CHG-ID 推算（含冲突检测）
 
-并发派多 agent 时可能撞 nn，需冲突检测（Claude Code Write 工具是覆盖语义，无 exclusive mode）：
+并发派多 agent 时可能撞 nn，需冲突检测（Claude Code Write 工具是覆盖语义，无 exclusive mode）。PreToolUse 会在派 `artifact-writer` 前获取项目级 artifact 写锁，避免 worktree 并发创建同一个 `CHG-YYYYMMDD-NN`；本段仍作为 agent 内部二次防御：
 
 1. `Bash: ls $ARTIFACT_DIR/changes/chg-YYYYMMDD-*.md $ARTIFACT_DIR/changes/hotfix-YYYYMMDD-*.md 2>/dev/null` 列出当日已有 ID
 2. 提取最大 nn → next_nn = max + 1（无文件则 01）
@@ -77,7 +78,9 @@
 - [[<related-finding>]] <关联说明>（如有）
 ```
 
-## 索引行
+## 任务 ID 与索引行
+
+`T-NNN` 是 **当前 CHG/HOTFIX 内的局部任务 ID**，不是全项目全局 ID。不同 CHG 都可以有 `T-001`，后续操作必须同时带 `target: CHG-...` 与 `task-id: T-...` 消除歧义。主 session 不需要为新 CHG 预分配 T-ID。
 
 ```
 - [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN]

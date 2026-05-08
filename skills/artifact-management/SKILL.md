@@ -114,7 +114,7 @@ changes/
 ## 编号规范
 
 - `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 artifact writer 扫描 `changes/` 生成。
-- `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配，写入 `changes/<id>.md` 的 `## 任务清单`。
+- `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
 

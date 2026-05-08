@@ -15,6 +15,7 @@ const {
   logEntry,
   isArtifactWriterAgentType,
   normalizeLineEndings,
+  releaseArtifactWriterLock,
 } = paceUtils;
 
 const EXPECTED_TITLE = '## artifact-writer 报告';
@@ -66,6 +67,16 @@ try {
       fs.writeFileSync(path.join(PACE_RUNTIME, 'last-artifact-writer-transcript'), stdin.agentTranscriptPath, 'utf8');
     } catch(e) {}
   }
+
+  const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+  log(logEntry('SubagentStop', release.released ? 'RELEASE_ARTIFACT_LOCK' : 'RELEASE_ARTIFACT_LOCK_SKIP', {
+    proj,
+    agent_type: agentType,
+    agent_id: stdin.agentId,
+    reason: release.reason,
+    lock: release.lock && release.lock.path,
+    dur: Date.now() - t0,
+  }));
 
   const lines = firstNonEmptyLines(stdin.lastMessage);
   const first = lines[0] || '';

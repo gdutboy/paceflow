@@ -277,6 +277,23 @@ function agentLifecyclePromptDenyReason(prompt) {
   return '';
 }
 
+function artifactWriterLockDenyReason(lock) {
+  return [
+    '已有 artifact-writer 正在写入当前项目 artifact，已阻止本次并发派遣以避免 CHG-ID / 索引 / 归档竞争。',
+    `当前锁：${paceUtils.formatArtifactWriterLock(lock)}`,
+    '请等待前一个 artifact-writer 结束后重试；若确认是崩溃残留，删除锁文件后重试。',
+    `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`
+  ].join('\n');
+}
+
+function artifactWriterMissingLockReason(check, artifactRel) {
+  return [
+    `artifact-writer 正在尝试修改 ${artifactRel}，但当前会话没有持有 artifact 写锁（${check.reason}）。`,
+    '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先获取写锁，再允许 agent 写 artifact。',
+    check.lock && check.lock.ok ? `当前锁：${paceUtils.formatArtifactWriterLock(check.lock)}` : `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`,
+  ].join('\n');
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
@@ -440,8 +457,34 @@ paceUtils.withStdinParsed((stdin) => {
           }));
           return;
         }
+        const lockAttempt = paceUtils.acquireArtifactWriterLock(cwd, {
+          sessionId: stdin.sessionId,
+          artifactDir: artDir,
+          operation: paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt),
+        });
+        if (!lockAttempt.acquired) {
+          const reason = artifactWriterLockDenyReason(lockAttempt.lock);
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_LOCK', {
+            proj,
+            agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+            artifact_dir: displayDir(artDir),
+            lock: lockAttempt.path,
+            owner: lockAttempt.lock && lockAttempt.lock.ok ? lockAttempt.lock.sessionId : '',
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
         const ensured = ensureArtifactWriterBase();
         if (ensured.missingAfter.length > 0) {
+          paceUtils.releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId });
           const errorLine = ensured.error ? `\n底层错误：${ensured.error}` : '';
           const reason = `PACE hook 无法在 artifact_dir 创建完整 v6 Artifact 基础结构：${displayDir(artDir)}\n仍缺失：${ensured.missingAfter.join(', ')}${errorLine}\n请检查路径/权限后重试；禁止让 artifact-writer 自行创建 base changes/ 或根索引模板。`;
           const output = {
@@ -472,7 +515,7 @@ paceUtils.withStdinParsed((stdin) => {
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}（.pace/ 只保存配置/运行状态，不存 artifact）${createdMsg}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}（.pace/ 只保存配置/运行状态，不存 artifact）；artifact 写锁已获取：${lockAttempt.path}${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));
@@ -480,6 +523,7 @@ paceUtils.withStdinParsed((stdin) => {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
+          lock: lockAttempt.path,
           created: created.join(', '),
           dur: Date.now() - t0,
         }));
@@ -531,6 +575,73 @@ paceUtils.withStdinParsed((stdin) => {
     isInsideProject = normalizedFile.startsWith(artDirWithSlash);
   }
 
+  const artifactRelForMutation = isFileMutationTool(toolName) && isInsideProject && paceSignal
+    ? paceUtils.artifactRelativePathForFile(artDir, filePath)
+    : null;
+  if (artifactRelForMutation) {
+    if (isArtifactWriterAgent(stdin)) {
+      const lockCheck = paceUtils.artifactWriterLockMatches(cwd, stdin.sessionId);
+      if (!lockCheck.ok) {
+        const reason = artifactWriterMissingLockReason(lockCheck, artifactRelForMutation);
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason
+          }
+        };
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_WRITER_NO_LOCK', {
+          proj,
+          tool: toolName,
+          file: filePath,
+          artifact: artifactRelForMutation,
+          agent_id: stdin.agentId,
+          agent_type: stdin.agentType,
+          reason: lockCheck.reason,
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      log(paceUtils.logEntry('PreToolUse', 'PASS_ARTIFACT_WRITER_LOCK', {
+        proj,
+        tool: toolName,
+        file: filePath,
+        artifact: artifactRelForMutation,
+        agent_id: stdin.agentId,
+        agent_type: stdin.agentType,
+        dur: Date.now() - t0,
+      }));
+    } else {
+      const existingLock = paceUtils.readArtifactWriterLock(cwd);
+      const lockCheck = existingLock.ok ? paceUtils.artifactWriterLockMatches(cwd, '__paceflow-non-agent__') : { ok: true };
+      if (existingLock.ok && !lockCheck.ok && lockCheck.reason !== 'stale-cleared') {
+        const reason = [
+          `当前 artifact 正由 artifact-writer 写入，禁止主 session/其他 agent 同时修改 ${artifactRelForMutation}。`,
+          `当前锁：${paceUtils.formatArtifactWriterLock(existingLock)}`,
+          '请等待 artifact-writer 结束后再重试。'
+        ].join('\n');
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason
+          }
+        };
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_CONCURRENT_WRITE', {
+          proj,
+          tool: toolName,
+          file: filePath,
+          artifact: artifactRelForMutation,
+          owner: existingLock.sessionId,
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+    }
+  }
+
   // v4.8: artifact 已迁移到 vault 时，拦截对 CWD 中 artifact 文件的 Write/Edit 并重定向
   if (isFileMutationTool(toolName) && artDir !== cwd && paceSignal) {
     const cwdArtifactRel = paceUtils.artifactRelativePathForFile(cwd, filePath);
@@ -580,6 +691,19 @@ paceUtils.withStdinParsed((stdin) => {
 
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && paceSignal) {
+    if (artifactRelForMutation && fs.existsSync(filePath)) {
+      const reason = `禁止使用 Write 覆盖已有 artifact：${artifactRelForMutation}。create-chg 若遇到同名文件必须重新分配 CHG-ID；更新已有 artifact 请使用 Edit。`;
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(paceUtils.logEntry('PreToolUse', 'DENY_WRITE_EXISTING_ARTIFACT', { proj, tool: toolName, file: filePath, artifact: artifactRelForMutation, dur: Date.now() - t0 }));
+      return;
+    }
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
       const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。${FORMAT_SNIPPETS.skillRef}`;
       const output = {

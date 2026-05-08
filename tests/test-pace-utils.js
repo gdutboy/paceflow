@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -216,6 +216,62 @@ test('artifactRelativePathForFile: 普通代码文件返回 null', () => {
   const dir = makeTmpDir('arff-code');
   assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src', 'task.md')), null);
   assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src.js')), null);
+});
+
+// ============================================================
+// 5c. session id + artifact writer lock
+// ============================================================
+console.log('\n--- session id + artifact writer lock ---');
+
+test('parseHookStdin 解析 session_id 且 logEntry 自动带 sid', () => {
+  const parsed = parseHookStdin(JSON.stringify({ session_id: 'session-test-1', tool_name: 'Bash' }));
+  assert.strictEqual(parsed.sessionId, 'session-test-1');
+  assert.ok(logEntry('UnitHook', 'TEST', { proj: 'demo' }).includes('sid=session-test-1'));
+});
+
+test('artifact-writer lock 原子获取、拒绝第二会话、同会话释放', () => {
+  const dir = makeTmpDir('awl-basic');
+  const first = acquireArtifactWriterLock(dir, {
+    sessionId: 'sid-1',
+    agentId: 'agent-1',
+    artifactDir: dir,
+    operation: 'create-chg',
+  });
+  assert.strictEqual(first.acquired, true);
+  assert.ok(fs.existsSync(getArtifactWriterLockPath(dir)));
+  assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-1');
+
+  const second = acquireArtifactWriterLock(dir, {
+    sessionId: 'sid-2',
+    agentId: 'agent-2',
+    artifactDir: dir,
+    operation: 'create-chg',
+  });
+  assert.strictEqual(second.acquired, false);
+  assert.strictEqual(second.lock.sessionId, 'sid-1');
+  assert.strictEqual(artifactWriterLockMatches(dir, 'sid-1').ok, true);
+  assert.strictEqual(artifactWriterLockMatches(dir, 'sid-2').ok, false);
+
+  const wrongRelease = releaseArtifactWriterLock(dir, { sessionId: 'sid-2' });
+  assert.strictEqual(wrongRelease.released, false);
+  assert.ok(fs.existsSync(getArtifactWriterLockPath(dir)));
+
+  const release = releaseArtifactWriterLock(dir, { sessionId: 'sid-1' });
+  assert.strictEqual(release.released, true);
+  assert.ok(!fs.existsSync(getArtifactWriterLockPath(dir)));
+});
+
+test('artifact-writer lock 遇到损坏锁文件会自愈重建', () => {
+  const dir = makeTmpDir('awl-corrupt');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(getArtifactWriterLockPath(dir), '{not json', 'utf8');
+  const acquired = acquireArtifactWriterLock(dir, {
+    sessionId: 'sid-corrupt',
+    artifactDir: dir,
+    operation: 'create-chg',
+  });
+  assert.strictEqual(acquired.acquired, true);
+  assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-corrupt');
 });
 
 // ============================================================

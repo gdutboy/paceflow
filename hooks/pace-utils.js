@@ -3,12 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.30';
+const PACE_VERSION = 'v6.0.31';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
+const ARTIFACT_WRITER_LOCK_FILE = 'artifact-writer.lock';
+const ARTIFACT_WRITER_LOCK_TTL_MS = Number(process.env.PACE_ARTIFACT_LOCK_TTL_MS || 30 * 60 * 1000);
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
@@ -89,6 +91,16 @@ function isTeammate() {
 function isArtifactWriterAgentType(agentType) {
   const type = String(agentType || '').toLowerCase();
   return type === 'artifact-writer' || type === 'paceflow:artifact-writer' || type.endsWith(':artifact-writer');
+}
+
+let _lastHookSessionId = '';
+
+function normalizeSessionId(sessionId) {
+  return String(sessionId || '').trim();
+}
+
+function currentSessionId() {
+  return normalizeSessionId(process.env.CLAUDE_CODE_SESSION_ID || _lastHookSessionId);
 }
 
 /**
@@ -246,6 +258,122 @@ function getArtifactRootChoicePath(cwd) {
 
 function getV5MigrationStatePath(cwd) {
   return path.join(getProjectStateDir(cwd), '.pace', V5_MIGRATION_STATE_FILE);
+}
+
+function getArtifactWriterLockPath(cwd) {
+  return path.join(getProjectStateDir(cwd), '.pace', ARTIFACT_WRITER_LOCK_FILE);
+}
+
+function readArtifactWriterLock(cwd) {
+  const lockPath = getArtifactWriterLockPath(cwd);
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      ok: true,
+      path: lockPath,
+      sessionId: normalizeSessionId(parsed.sessionId || parsed.session_id),
+      agentId: String(parsed.agentId || parsed.agent_id || '').trim(),
+      artifactDir: String(parsed.artifactDir || parsed.artifact_dir || ''),
+      cwd: String(parsed.cwd || ''),
+      operation: String(parsed.operation || ''),
+      createdAt: String(parsed.createdAt || parsed.created_at || ''),
+      pid: Number(parsed.pid || 0) || 0,
+      timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
+      raw: parsed,
+    };
+  } catch(e) {
+    return { ok: false, path: lockPath, error: e.message };
+  }
+}
+
+function isArtifactWriterLockStale(lock, now = Date.now()) {
+  if (!lock) return false;
+  if (!lock.ok) return true;
+  if (!lock.timestampMs) return true;
+  return now - lock.timestampMs > ARTIFACT_WRITER_LOCK_TTL_MS;
+}
+
+function formatArtifactWriterLock(lock) {
+  if (!lock || !lock.ok) return 'unknown lock';
+  const ageSec = lock.timestampMs ? Math.max(0, Math.round((Date.now() - lock.timestampMs) / 1000)) : '?';
+  return `session=${lock.sessionId || '-'} agent=${lock.agentId || '-'} artifact_dir=${displayDir(lock.artifactDir)} age=${ageSec}s lock=${lock.path}`;
+}
+
+function operationFromAgentPrompt(prompt) {
+  const text = String(prompt || '');
+  const byField = text.match(/^\s*(?:operation|指令)\s*[:=]\s*([a-z0-9-]+)/mi);
+  if (byField) return byField[1].toLowerCase();
+  const known = text.match(/\b(create-chg|update-chg|archive-chg|close-chg|record-finding|record-correction)\b/i);
+  return known ? known[1].toLowerCase() : '';
+}
+
+function acquireArtifactWriterLock(cwd, info = {}) {
+  const lockPath = getArtifactWriterLockPath(cwd);
+  const runtimeDir = path.dirname(lockPath);
+  const sessionId = normalizeSessionId(info.sessionId || currentSessionId());
+  const now = Date.now();
+  const payload = {
+    sessionId,
+    agentId: String(info.agentId || ''),
+    artifactDir: String(info.artifactDir || ''),
+    cwd: String(cwd || ''),
+    operation: String(info.operation || ''),
+    createdAt: new Date(now).toISOString(),
+    timestampMs: now,
+    pid: process.pid,
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.mkdirSync(runtimeDir, { recursive: true });
+      const fd = fs.openSync(lockPath, 'wx');
+      try { fs.writeFileSync(fd, `${JSON.stringify(payload, null, 2)}\n`, 'utf8'); }
+      finally { fs.closeSync(fd); }
+      return { acquired: true, path: lockPath, lock: { ok: true, path: lockPath, ...payload } };
+    } catch(e) {
+      if (e && e.code === 'EEXIST') {
+        const existing = readArtifactWriterLock(cwd);
+        if (isArtifactWriterLockStale(existing, now)) {
+          try { fs.unlinkSync(lockPath); continue; } catch(e2) {}
+        }
+        return { acquired: false, path: lockPath, lock: existing, reason: 'locked' };
+      }
+      return { acquired: false, path: lockPath, lock: null, reason: e.message || String(e) };
+    }
+  }
+  return { acquired: false, path: lockPath, lock: readArtifactWriterLock(cwd), reason: 'locked' };
+}
+
+function artifactWriterLockMatches(cwd, sessionId) {
+  const lock = readArtifactWriterLock(cwd);
+  if (!lock.ok) return { ok: false, lock, reason: 'missing' };
+  if (isArtifactWriterLockStale(lock)) {
+    try { fs.unlinkSync(lock.path); } catch(e) {}
+    return { ok: false, lock, reason: 'stale-cleared' };
+  }
+  const sid = normalizeSessionId(sessionId || currentSessionId());
+  if (!sid || !lock.sessionId || lock.sessionId !== sid) {
+    return { ok: false, lock, reason: 'owner-mismatch' };
+  }
+  return { ok: true, lock, reason: '' };
+}
+
+function releaseArtifactWriterLock(cwd, info = {}) {
+  const lock = readArtifactWriterLock(cwd);
+  if (!lock.ok) return { released: false, lock, reason: 'missing' };
+  const sessionId = normalizeSessionId(info.sessionId || currentSessionId());
+  const agentId = String(info.agentId || '').trim();
+  const sameSession = sessionId && lock.sessionId && sessionId === lock.sessionId;
+  const sameAgent = agentId && lock.agentId && agentId === lock.agentId;
+  if (!sameSession && !sameAgent && !isArtifactWriterLockStale(lock)) {
+    return { released: false, lock, reason: 'owner-mismatch' };
+  }
+  try {
+    fs.unlinkSync(lock.path);
+    return { released: true, lock, reason: '' };
+  } catch(e) {
+    return { released: false, lock, reason: e.message || String(e) };
+  }
 }
 
 function normalizeArtifactRootChoice(choice) {
@@ -783,7 +911,8 @@ function createLogger(logPath) {
  */
 function logEntry(hook, action, fields = {}) {
   const parts = [`[${ts()}] ${hook.padEnd(11)} | act=${action}`];
-  for (const [k, v] of Object.entries(fields)) {
+  const merged = { sid: currentSessionId(), ...fields };
+  for (const [k, v] of Object.entries(merged)) {
     if (v === undefined || v === null || v === '') continue;
     let value = String(v)
       .replace(/\r/g, '\\r')
@@ -1040,8 +1169,11 @@ function parseHookStdin(rawInput) {
   let parsed = {};
   let ok = false;
   try { parsed = JSON.parse(rawInput); ok = true; } catch(e) {}
+  const sessionId = normalizeSessionId(parsed.session_id || parsed.sessionId || process.env.CLAUDE_CODE_SESSION_ID || '');
+  if (sessionId) _lastHookSessionId = sessionId;
   return {
     ok,
+    sessionId,
     toolName: parsed.tool_name || '',
     filePath: (parsed.tool_input?.file_path || '').replace(/\\/g, '/'),
     oldString: parsed.tool_input?.old_string || '',
@@ -1085,15 +1217,19 @@ function parseStdinSync() {
 module.exports = {
   // 常量
   PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
+  ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
-  isPaceProject, isTeammate, isArtifactWriterAgentType, getArtifactDir, getProjectStateDir,
+  isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
+  getArtifactDir, getProjectStateDir,
   getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
+  getArtifactWriterLockPath, readArtifactWriterLock, acquireArtifactWriterLock,
+  artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock, operationFromAgentPrompt,
   artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
