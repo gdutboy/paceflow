@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.28';
+const PACE_VERSION = 'v6.0.29';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -36,7 +36,6 @@ const SKILL_DIRS = [
   'artifact-management',
   'pace-knowledge',
   'pace-bridge',
-  'audit',
 ];
 
 // v6 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O

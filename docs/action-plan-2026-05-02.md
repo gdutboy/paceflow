@@ -1,8 +1,8 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前版本**：PACEflow v5.1.4
-> **上游版本**：Claude Code v2.1.126（环境实测 v2.1.118）
+> **当前执行版本**：PACEflow v6.0.29（原始调研输入：PACEflow v5.1.4）
+> **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
 ---
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-08，v6.0.28）
+### 0.1 当前执行视图（2026-05-08，v6.0.29）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,11 +27,11 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/task-list-sync.js`
 
-执行状态（v6.0.18）：
+执行状态（v6.0.29）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
-- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口。
+- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
 #### 0.1.1 P0 — 当前已实现代码中的阻断级修复
@@ -61,6 +61,7 @@
 | P1-20260507-04 | ✅ v6.0.27 | 5.1.4 生命周期能力继承测试补齐 | v6 多次重构后必须明确验证 SessionStart、compact 后注入、PreCompact 快照、StopFailure 等 v5.1.4 功能仍在 | `tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | startup 注入 v6 artifact + artifact_dir；compact 消费快照并注入 G-9/close-chg；PreCompact 记录 activeChanges/runtime/findings/walkthrough；StopFailure 仍记录 API 中断；stdin parser 支持 subagent 字段 |
 | P1-20260507-05 | ✅ v6.0.27 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` 兼容性回归 | Claude Code 可清理子进程 env；PaceFlow 不应只依赖 vault env 恢复本地项目 artifact 路由 | `tests/test-hooks-e2e.js` | scrub 场景下，即使 `PACE_VAULT_PATH` 不可用，项目级 `.pace/artifact-root=local` 仍可让 SessionStart 恢复本地 artifact 路由并懒创建模板 |
 | P1-20260508-01 | ✅ v6.0.28 | 修复 v6.0.27 audit 确认缺口 | `close-chg` prompt 门控未强制 `complete-open-tasks:true`；verified-date 逻辑分叉；compact snapshot null、knowledge 时间戳示例、hook 数量文档存在小缺口；`ConfigChange` 对 plugin 安装链路无保护价值 | `hooks/**`、`skills/pace-knowledge/SKILL.md`、`README.md`、`REFERENCE.md`、`tests/**` | close-chg 缺 `complete-open-tasks:true` 被 deny；verified-date 使用共享 helper；`ConfigChange` / `config-guard` 从发布面移除 |
+| P1-20260508-02 | ✅ v6.0.29 | 清理 `audit` 发布面与 ticket02 文档口径 | `audit` 是 PaceFlow 内部审计流程，不是用户项目 skill；README PreCompact I/O、artifact-writer spec ARCHIVE 范围、action-plan/guidebook 历史状态描述与当前实现不一致 | `hooks/pace-utils.js`、`skills/pace-knowledge/SKILL.md`、`internal/skills/audit/**`、`README.md`、`REFERENCE.md`、`agent-references/artifact-writer-spec.md`、`docs/**` | marketplace 发布 skill 减为 4；内部审计资料保留在 `internal/skills/audit`；文档与实际 hook/template 对齐 |
 
 #### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
 
@@ -89,7 +90,7 @@
 | `--bare` 用于 PaceFlow 验证 | 禁止 | `--bare` 跳过 hooks/plugins/skills，不能验证 PaceFlow |
 | Windows PowerShell/cmd destructive cleanup 指令 | 禁止作为文档建议 | GitHub 有 PowerShell/cmd quoting 导致灾难性删除报告 |
 | Production prompt 的 `report_title_prefix_warning` 作为 release blocker | 不采用 | 用户级 `UserPromptSubmit` date hook + 全局 `CLAUDE.md` 时间戳回复样式可能在 `artifact-writer` 报告前加时间戳；这不影响 artifact 写入、hook 判定、状态/schema/wikilink，只影响测试报告首行机械检查。harness 继续严格，production gate 仅记录 warning；未来 `SubagentStop` verifier 可允许一个合法时间戳前缀或解析第一个协议标题行 |
-| `audit` skill 作为 marketplace 发布组件 | 建议移除 | 该 skill 只用于 PaceFlow 自身开发审计，不是用户项目工作流能力；发布后显示为通用 `audit` 容易误导用户，也增加组件列表认知负担。后续版本可从 `SKILL_DIRS` / README / REFERENCE / tests 发布面移除，并保留到 `internal/` 或 `docs/internal/` 供本仓开发使用 |
+| `audit` skill 作为 marketplace 发布组件 | 采用，v6.0.29 移除发布面 | 该 skill 只用于 PaceFlow 自身开发审计，不是用户项目工作流能力；发布后显示为通用 `audit` 容易误导用户，也增加组件列表认知负担。v6.0.29 已从 `SKILL_DIRS` / README / REFERENCE / tests 发布面移除，并保留到 `internal/skills/audit/` 供本仓开发使用 |
 | 移除 `ConfigChange` / `config-guard` | 采用，v6.0.28 移除 | 当前 PaceFlow 正式安装使用 plugin hook 注册，`ConfigChange` 只能观察 project/local settings 变更，不能保护 plugin manifest 中的 hook 注册；继续发布会制造“已保护配置”的错误安全感。手动安装/本地验证工具不作为 marketplace 发布面权威 |
 
 #### 0.1.5 上游 GitHub 风险登记
@@ -106,7 +107,7 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.28）：
+最近一次验证结果（v6.0.29）：
 
 ```bash
 node tests/test-hooks-e2e.js      # 93/93 PASS
@@ -158,19 +159,19 @@ Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vau
 
 结论：P2 暂不推进核心实现；仅在真实生产日志暴露明确痛点后，再按单项 PoC 引入。
 
-#### 0.1.9 发布面清理候选：移除 `audit` skill
+#### 0.1.9 发布面清理：`audit` skill 已移至 internal
 
-当前 `skills/audit/` 的设计目标是审计 PaceFlow 自身 hook/skill/agent 链路，不是面向用户项目的通用审计能力。继续随 marketplace 发布会带来三个问题：
+`skills/audit/` 的设计目标是审计 PaceFlow 自身 hook/skill/agent 链路，不是面向用户项目的通用审计能力。v6.0.29 已将它移动到 `internal/skills/audit/`，不再随 marketplace 发布，避免三个问题：
 
 - 用户插件列表会出现 `audit`，但它的真实语境是 PaceFlow 内部审计，容易误触发或误解。
 - 它不参与核心 PACE 链路；`SessionStart`、`PreToolUse`、`PostToolUse`、`Stop`、`artifact-writer` 都不依赖它。
 - 发布组件越多，用户学习成本和测试面越大。
 
-建议后续单独做发布面清理：
+已完成的发布面清理：
 
 1. 从 `hooks/pace-utils.js` 的 `SKILL_DIRS` 移除 `audit`。
 2. 更新 `README.md`、`REFERENCE.md`、`tests/test-install.js` 的技能数量和目录说明。
-3. 清理用户面文档里 `paceflow:audit` 引用；如仍需开发审计流程，移动到 `internal/skills/audit/` 或 `docs/internal/audit/`。
+3. 用户面文档不再引用 `paceflow:audit`；开发审计流程保留在 `internal/skills/audit/`。
 4. 保留面向用户的 `artifact-management`、`pace-workflow`、`pace-bridge`、`pace-knowledge`。
 
 ---
@@ -805,7 +806,7 @@ Phase 1：PoC（已完成 2026-05-02）
 Phase 2：v6.0.0 架构设计（~3 小时）
   ├── 6 个新模板设计（task / impl_plan / walkthrough / findings 索引模板 + chg-template + finding-template）
   ├── Hook 改造规范（8 个 hook 脚本的具体改动点）
-  ├── SKILL.md 改造规范（5 个 skill 的新格式引导）
+  ├── SKILL.md 改造规范（当前发布面为 4 个用户 skill；audit 保留 internal）
   └── 写入 docs/plans/v6.0.0-design.md
        ↓
 Phase 3：v6.0.0 实施（~15-20 小时）

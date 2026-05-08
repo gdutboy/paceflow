@@ -10,6 +10,8 @@ description: >
 
 # PACEflow 全面审查
 
+> 内部资料：该流程只用于 PaceFlow 仓库自身审计，不随 marketplace 插件发布，也不是用户项目工作流 skill。
+
 ## 触发场景
 
 - 用户说"完整分析"、"全面审查"、"全面检查"

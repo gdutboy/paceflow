@@ -1,4 +1,4 @@
-# PACEflow v6.0.28 参考手册
+# PACEflow v6.0.29 参考手册
 
 > 最后更新：2026-05-08
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify)
@@ -16,7 +16,8 @@
 | Agent 操作步骤 | `agent-references/instructions/*.md` |
 | Hook 运行逻辑 | `hooks/*.js` + `hooks/pace-utils.js` |
 | 主 session 规则 | `CLAUDE.md` |
-| Skill 规则 | `skills/*/SKILL.md` |
+| 用户 Skill 规则 | `skills/*/SKILL.md` |
+| 内部审计资料 | `internal/skills/audit/` |
 | v6 迁移 guidebook | `docs/paceflow-v6-guidebook.md` |
 
 `install.js` / `verify.js` 只允许作为本地 smoke/健康检查工具，不是 v6 正式安装路径。

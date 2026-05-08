@@ -149,7 +149,7 @@ sources:
 
 - **记录新 finding 时**（由 `artifact-writer record-finding` 触发）：recording finding → 评估通用性 → 通用则执行本 SOP
 - **Corrections 双写时**：`record-correction` → 评估通用性 → 通用则提取到 knowledge/
-- **审查发现时**（由 `paceflow:audit` Phase 3 触发）：P0/P1 发现 → 评估是否为通用模式
+- **审查发现时**（由本仓内部 `internal/skills/audit` 流程触发）：P0/P1 发现 → 评估是否为通用模式
 
 > artifact-management 的"finding/correction 联动检查"会指引 AI 在 agent 写入详情后主动评估并触发本 SOP。
 

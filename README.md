@@ -25,7 +25,7 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 | **E**xecute | 执行 | PostToolUse 归档提醒 |
 | **V**erify | 验证 | Stop 完成度检查 + `verified-date` / `<!-- VERIFIED -->` |
 
-### 6 个索引文件 + changes/详情 = 项目记忆
+### 5 个索引文件 + spec.md + changes/详情 = 项目记忆
 
 | 文件 | 用途 |
 |------|------|
@@ -49,7 +49,7 @@ PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建
 /plugin install paceflow@paceaitian-paceflow
 ```
 
-安装后 9 个 hook 脚本（8 类 hook 事件）+ 5 个 skill + `artifact-writer` agent 自动注册，零配置。重启 Claude Code 生效。
+安装后 9 个 hook 脚本（8 类 hook 事件）+ 4 个用户 skill + `artifact-writer` agent 自动注册，零配置。重启 Claude Code 生效。
 
 > **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault。新项目首次写代码或派 `artifact-writer` 时，PACEflow 会要求主 session 询问 artifact 存放在 `$PACE_VAULT_PATH/projects/<项目名>/` 还是本地项目目录，并把选择持久化到 `.pace/artifact-root`；`local` 表示本地项目根目录，不是 `.pace/`。已有 `changes/` 的项目沿用现有位置。真实 Git worktree 和 `.claude/worktrees/<name>` 会自动归一到宿主项目名；也可用 `PACE_PROJECT_NAME` 显式指定项目名。自动化/headless 环境可设置 `PACE_ARTIFACT_ROOT=local|vault|/abs/path` 跳过询问。
 
@@ -156,12 +156,13 @@ paceflow/
 │   ├── task-list-sync.js             #   任务列表：一致性校验
 │   ├── pre-compact.js                #   Compact 前快照
 │   └── templates/                    #   6 个 artifact 模板 + 1 个 knowledge 模板
-├── skills/                           # 5 个 Skill
+├── skills/                           # 4 个用户 Skill
 │   ├── pace-workflow/                #   PACE 核心流程
 │   ├── pace-bridge/                  #   Superpowers 桥接
 │   ├── artifact-management/          #   Artifact + 变更管理规则
-│   ├── pace-knowledge/               #   Obsidian 知识库管理
-│   └── audit/                        #   5-Agent 并行审查
+│   └── pace-knowledge/               #   Obsidian 知识库管理
+├── internal/                          # 内部开发资料，不随 marketplace 发布
+│   └── skills/audit/                 #   PaceFlow 自身审计流程
 └── tests/                            # Hook + agent contract 测试
 ```
 
@@ -178,7 +179,7 @@ paceflow/
 | PreToolUse | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext / permissionDecision）| `permissionDecision: "deny"` |
 | PostToolUse | stdin JSON（tool_name, tool_input）| stdout JSON（additionalContext）| N/A（仅提醒）|
 | Stop | stdin JSON（stop_hook_active）| stderr + exit 2 | `exit 2` |
-| PreCompact | stdin JSON | stdout JSON（additionalContext）| N/A |
+| PreCompact | stdin JSON | 无 stdout（写 `.pace/pre-compact-state.json` 快照）| N/A |
 | PostToolUseFailure | stdin JSON | stdout JSON（additionalContext）| N/A |
 | SubagentStop | stdin JSON | stdout JSON（additionalContext）| N/A |
 | StopFailure | stdin JSON | 无 stdout | 记录日志 |
@@ -235,6 +236,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.29 | 2026-05-08 | 清理发布面：`audit` skill 移至 `internal/skills/audit`，不再随 marketplace 发布；修正 PreCompact I/O、ARCHIVE 标记范围、guidebook/action-plan 历史状态等文档口径 |
 | v6.0.28 | 2026-05-08 | 修复 v6.0.27 审计确认项：`close-chg` 派遣强制 `complete-open-tasks:true`，统一 verified-date 检测，补 compact snapshot 边界、knowledge 时间戳示例与 hook 数量文档；移除对 plugin 安装链路无保护价值的 `ConfigChange` / `config-guard` |
 | v6.0.27 | 2026-05-07 | 吸收 Claude Code 2.1.76-2.1.131 调研中的低风险 P1：新增 `SubagentStop` artifact-writer 报告协议观察、`PostToolUseFailure` 工具失败恢复提示、SessionStart 50KB 输出保护，并补齐 startup/compact/PreCompact/StopFailure 继承测试 |
 | v6.0.26 | 2026-05-07 | 明确 artifact root 选择语义：`local` 是项目根目录而非 `.pace/`；PreToolUse / SessionStart / skill / agent 提示统一说明 `.pace/` 仅存配置与运行态；结构化 hook 日志新增 `ROUTE`、`artifact_dir`、`choice` 等字段并单行化多行 reason |
@@ -274,4 +276,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.28 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.29 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
