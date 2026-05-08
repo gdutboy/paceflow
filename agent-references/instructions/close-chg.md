@@ -7,9 +7,9 @@
 
 - `target`（必填，CHG-ID）
 - `verification-confirmed`（必填，必须为布尔 `true`）
+- `complete-open-tasks`（必填，必须为布尔 `true`；主 session 已确认验证通过时允许把 `[ ]` / `[/]` 的 T-NNN 收口为 `[x]`）
 - `verify-summary`（必填，一行验证结果摘要，写入 `## 工作记录`）
 - `walkthrough-summary`（必填，一行完成摘要，写入 `walkthrough.md`）
-- `complete-open-tasks`（可选，布尔 `true` 时允许把 `[ ]` / `[/]` 的 T-NNN 收口为 `[x]`）
 
 ## 语义
 
@@ -33,8 +33,9 @@
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。
 1. 解析 target → 详情文件路径；文件不存在 → `target-not-found`
 2. 校验必填字段：
-   - 缺 `verification-confirmed` / `verify-summary` / `walkthrough-summary` → `missing-fields`
+   - 缺 `verification-confirmed` / `complete-open-tasks` / `verify-summary` / `walkthrough-summary` → `missing-fields`
    - `verification-confirmed` 非布尔 `true` → `format-violation`
+   - `complete-open-tasks` 非布尔 `true` → `format-violation`
 3. Read 详情文件，校验：
    - `<!-- APPROVED -->` 必须存在
    - frontmatter `status` 不得是 `cancelled`
@@ -94,6 +95,7 @@
 
 - 缺必填字段 → `missing-fields`
 - `verification-confirmed` 非 true → `format-violation`
+- `complete-open-tasks` 非 true → `format-violation`
 - `<!-- APPROVED -->` 缺失 → `format-violation`
 - 任务存在 `[!]` → `format-violation: blocked tasks`
 - 任务存在 `[ ]` / `[/]` 且 `complete-open-tasks` 不是 true → `format-violation: tasks not done`

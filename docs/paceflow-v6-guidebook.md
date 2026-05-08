@@ -15,7 +15,8 @@
 > 执行状态更新（2026-05-08，v6.0.29）：`audit` skill 已移至 `internal/skills/audit/`，不再随 marketplace 发布；README/REFERENCE/spec/action-plan 中 PreCompact I/O、ARCHIVE 范围和历史状态口径已按当前实现修正。
 > 执行状态更新（2026-05-08，v6.0.30）：v5 用户升级路径改为 hook 引导的半自动迁移。检测到旧 v5 artifact 且没有 `changes/` 时，PreToolUse 先要求用户确认 dry-run/迁移；确认前禁止懒创建 v6 `changes/` 或派 `artifact-writer create-chg` 混入旧根文件。
 > 执行状态更新（2026-05-08，v6.0.31）：`artifact-writer` 派遣前获取项目级写锁，锁文件位于宿主项目 `.pace/artifact-writer.lock`；真实 git worktree 与主项目共享锁，避免并发创建 CHG-ID、抢写索引或重复归档。hook 日志使用 Claude Code `session_id` 串联，`T-NNN` 明确为 CHG/HOTFIX 局部编号。
-> 执行状态更新（2026-05-08，v6.0.32）：`PostToolUseFailure` matcher 覆盖 `Agent`，artifact-writer Agent 工具失败时会立即释放项目级写锁；不再依赖 30 分钟 TTL 自愈。当前代码层验证基线：hook E2E 104/104、pace-utils 99/99、install 24/24、`claude plugin validate .` PASS。
+> 执行状态更新（2026-05-08，v6.0.33）：`PostToolUseFailure` matcher 覆盖 `Agent`，artifact-writer Agent 工具失败时会立即释放项目级写锁；不再依赖 30 分钟 TTL 自愈。Smoke5 暴露的 Bash 删锁/伪锁竞态已修复：`.pace/artifact-writer.lock` 禁止 Bash 修改，锁 payload 不再暴露 hook `pid`，并发锁文案只允许等待/重试。当前代码层验证基线：hook E2E 111/111、pace-utils 99/99、install 24/24、`claude plugin validate .` PASS。
+> 执行状态更新（2026-05-08，v6.0.34）：全面审计确认项已修复：Bash artifact/lock 保护改为解析等价路径；worktree 运行态 `.pace` 统一到宿主项目；`artifact-root=vault` 缺 `PACE_VAULT_PATH` 时 fail-closed，不再静默落本地；Stop 防循环计数在 `.pace` 缺失时仍可降级但 idle PASS 不落盘；C/V 与 PostToolUse artifact 判定统一基于 artifact root。当前代码层验证基线：hook E2E 116/116、pace-utils 101/101、install 24/24。
 
 ---
 

@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, ts, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, countDetailTasks, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, displayDir, normalizeArtifactRootChoice, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -86,9 +86,26 @@ function bashOutputRedirectTargets(command) {
   return targets;
 }
 
+function bashCommandPathTokens(command) {
+  const tokens = [];
+  const re = /"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|<>]+)/g;
+  let match;
+  while ((match = re.exec(String(command || ''))) !== null) {
+    const token = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? '').trim();
+    if (!token || token.startsWith('-') || /^\w+=/.test(token)) continue;
+    tokens.push(token);
+  }
+  return tokens;
+}
+
 function bashPathLooksArtifact(target, cwd, artDir) {
   const t = String(target || '').replace(/\\/g, '/').replace(/\/+$/, '');
   if (!t || /^&\d+$/.test(t)) return false;
+  try {
+    const resolved = paceUtils.resolveToolFilePath(cwd, t);
+    if (paceUtils.artifactRelativePathForFile(artDir, resolved)) return true;
+    if (paceUtils.artifactRelativePathForFile(cwd, resolved)) return true;
+  } catch(e) {}
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
   for (const root of roots) {
     for (const file of ARTIFACT_FILES) {
@@ -104,8 +121,42 @@ function bashCommandRedirectsToArtifact(command, cwd, artDir) {
   return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifact(target, cwd, artDir));
 }
 
+function bashPathLooksArtifactWriterLock(target, cwd) {
+  const raw = String(target || '').trim().replace(/\\/g, '/').replace(/^['"]|['"]$/g, '');
+  if (!raw || /^&\d+$/.test(raw)) return false;
+  const lockPath = paceUtils.getArtifactWriterLockPath(cwd);
+  const normalizedLock = paceUtils.normalizePath(path.resolve(lockPath));
+  try {
+    const resolved = paceUtils.resolveToolFilePath(cwd, raw);
+    if (paceUtils.normalizePath(path.resolve(resolved)) === normalizedLock) return true;
+  } catch(e) {}
+  return /(?:^|\/)\.pace\/artifact-writer\.lock$/.test(raw) ||
+    raw === 'artifact-writer.lock';
+}
+
+function bashCommandRedirectsToArtifactWriterLock(command, cwd) {
+  return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifactWriterLock(target, cwd));
+}
+
+function bashCommandReferencesArtifactWriterLock(command, cwd) {
+  const c = String(command || '').replace(/\\/g, '/');
+  const lockPath = paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/');
+  const rel = path.relative(cwd, lockPath).replace(/\\/g, '/');
+  return c.includes(lockPath) ||
+    (rel && c.includes(rel)) ||
+    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
+    /(?:^|[\s"'`=;|&])artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
+    bashCommandPathTokens(command).some(target => bashPathLooksArtifactWriterLock(target, cwd));
+}
+
+function bashCommandMutatesArtifactWriterLock(command, cwd) {
+  return bashCommandRedirectsToArtifactWriterLock(command, cwd) ||
+    (bashCommandLooksMutating(command) && bashCommandReferencesArtifactWriterLock(command, cwd));
+}
+
 function bashCommandReferencesArtifact(command, cwd, artDir) {
   const c = String(command || '').replace(/\\/g, '/');
+  if (bashCommandPathTokens(command).some(target => bashPathLooksArtifact(target, cwd, artDir))) return true;
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
   for (const root of roots) {
     for (const file of ARTIFACT_FILES) {
@@ -115,6 +166,15 @@ function bashCommandReferencesArtifact(command, cwd, artDir) {
   }
   return /(^|[\s"'`=])(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)(?=$|[\s"'`;|&<>])/.test(c) ||
     /(^|[\s"'`=])(?:\.\/)?changes\//.test(c);
+}
+
+function bashArtifactWriterLockDenyReason(command) {
+  return [
+    '禁止使用 Bash 修改 artifact-writer 写锁。该锁是 PaceFlow 运行态互斥信号，只能由 hook 在 Agent 派遣、SubagentStop 或 Agent 失败恢复时创建/释放。',
+    '如果看到已有锁，请等待当前 artifact-writer 完成后重试；不要用 rm、重定向、touch、mv、cp、tee 或脚本写入删除/改写锁文件。',
+    `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`,
+    `被拦截的命令：${String(command || '').slice(0, 500)}`
+  ].join('\n');
 }
 
 function bashArtifactDenyReason(command) {
@@ -130,23 +190,14 @@ function isArtifactWriterAgentTool(stdin) {
   return paceUtils.isArtifactWriterAgentType(stdin.toolInput.subagent_type || stdin.toolInput.subagentType);
 }
 
-function displayDir(dir) {
-  return String(dir || '').replace(/\\/g, '/').replace(/\/?$/, '/');
-}
-
 function normalizeArtifactDirValue(value) {
-  let raw = String(value || '').trim();
+  const raw = normalizeArtifactRootChoice(value);
   if (!raw) return '';
-  const first = raw[0];
-  const last = raw[raw.length - 1];
-  if ((first === '"' && last === '"') || (first === "'" && last === "'") || (first === '`' && last === '`')) {
-    raw = raw.slice(1, -1).trim();
-  }
   return raw.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
 function extractPromptArtifactDir(prompt) {
-  const match = String(prompt || '').match(/^\s*artifact_dir\s*:\s*(.+?)\s*$/mi);
+  const match = String(prompt || '').match(/^\s*artifact_dir\s*[:=]\s*(.+?)\s*$/mi);
   return match ? normalizeArtifactDirValue(match[1]) : '';
 }
 
@@ -170,12 +221,12 @@ function agentArtifactDirDenyReason(artDir, declared = '') {
 
 function promptHasTrueField(prompt, field) {
   const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[\\n\\s])${escaped}\\s*[:=]\\s*true\\b`, 'i').test(String(prompt || ''));
+  return new RegExp(`(?:^|[\\n\\s,，;；])${escaped}\\s*[:=]\\s*true\\b`, 'i').test(String(prompt || ''));
 }
 
 function promptHasNonEmptyField(prompt, field) {
   const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^\\s*${escaped}\\s*:\\s*\\S+`, 'mi').test(String(prompt || ''));
+  return new RegExp(`(?:^|[\\n,，;；])\\s*${escaped}\\s*[:=]\\s*\\S+`, 'mi').test(String(prompt || ''));
 }
 
 function promptMentionsVerifyAction(prompt) {
@@ -281,7 +332,7 @@ function artifactWriterLockDenyReason(lock) {
   return [
     '已有 artifact-writer 正在写入当前项目 artifact，已阻止本次并发派遣以避免 CHG-ID / 索引 / 归档竞争。',
     `当前锁：${paceUtils.formatArtifactWriterLock(lock)}`,
-    '请等待前一个 artifact-writer 结束后重试；若确认是崩溃残留，删除锁文件后重试。',
+    '请等待前一个 artifact-writer 结束后重试；不要用 Bash 删除或改写锁文件。锁过期清理由 PaceFlow hook 按 TTL 自动处理。',
     `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`
   ].join('\n');
 }
@@ -331,6 +382,7 @@ paceUtils.withStdinParsed((stdin) => {
   // W-3: 缓存 isPaceProject 结果（避免多次调用）
   const paceSignal = isPaceProject(cwd);
   const artDir = getArtifactDir(cwd);
+  const rootConfigError = paceSignal ? paceUtils.artifactRootConfigError(cwd) : null;
   const needsArtifactRootChoice = artifactRootChoiceNeeded(cwd);
   const artifactRootChoiceReason = needsArtifactRootChoice ? artifactRootChoiceMessage(cwd) : '';
   const v5MigrationInfo = getV5MigrationInfo(cwd);
@@ -394,6 +446,12 @@ paceUtils.withStdinParsed((stdin) => {
         'DENY_BAD_STDIN',
         { stdin_ok: false }
       );
+    }
+    if (rootConfigError && (isAgentTool(toolName) || isFileMutationTool(toolName) || (isBashTool(toolName) && bashCommandLooksMutating(bashCommand)))) {
+      return hardDeny(rootConfigError.message, 'DENY_ARTIFACT_ROOT_CONFIG', {
+        code: rootConfigError.code,
+        choice_path: rootConfigError.choicePath,
+      });
     }
     if (isAgentTool(toolName)) {
       if (isArtifactWriterAgentTool(stdin) && needsArtifactRootChoice) {
@@ -533,6 +591,18 @@ paceUtils.withStdinParsed((stdin) => {
       return;
     }
     if (isBashTool(toolName)) {
+      if (bashCommandMutatesArtifactWriterLock(bashCommand, cwd)) {
+        const reason = bashArtifactWriterLockDenyReason(bashCommand);
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT_LOCK${teammateTag}`, {
+          proj,
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+          lock: paceUtils.getArtifactWriterLockPath(cwd),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
       const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
         (bashCommandLooksMutating(bashCommand) && bashCommandReferencesArtifact(bashCommand, cwd, artDir));
       if (mutatesArtifact) {
@@ -748,7 +818,7 @@ paceUtils.withStdinParsed((stdin) => {
     if (dirName && path.basename(filePath) !== 'README.md') {
       const ctx = dirName === 'knowledge'
         ? `写入 knowledge/ 笔记，必须包含以下格式：\n` +
-          `YAML frontmatter 示例：\n---\nstatus: discussing\nprojects: [项目名]\ntags: [标签1, 标签2]\nsummary: "≤80字关键结论"\ncreated: YYYY-MM-DDTHH:mm:ss+08:00\nupdated: YYYY-MM-DDTHH:mm:ss+08:00\nsources: [来源]\n---\n` +
+          `YAML frontmatter 示例：\n---\nstatus: concluded\nprojects: [项目名]\ntags: [标签1, 标签2]\nsummary: "≤80字关键结论"\ncreated: YYYY-MM-DDTHH:mm:ss+08:00\nupdated: YYYY-MM-DDTHH:mm:ss+08:00\nsources: [来源]\n---\n` +
           `正文结构：## 摘要（L1，300-500 tokens 关键结论列表）+ ## 详情（L2，完整内容含代码示例、对比表格、### 子章节）`
         : `写入 thoughts/ 笔记，请包含 YAML frontmatter（status/projects/tags/summary/created/updated）和 ## 摘要 + ## 详情 结构。`;
       const output = {
@@ -772,7 +842,8 @@ paceUtils.withStdinParsed((stdin) => {
     });
 
     // 阻止主 session 直接手写 C/V 阶段标志；应派 artifact writer。
-    const isChangeDetail = /\/changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(normalizedFile);
+    const isChangeDetail = !!artifactRelForMutation &&
+      /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation);
     const mutationText = newString || content || '';
     if (isFileMutationTool(toolName) && isInsideProject && isChangeDetail && mutationText) {
       const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');

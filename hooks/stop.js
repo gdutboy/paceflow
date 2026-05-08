@@ -14,7 +14,7 @@ const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
-const PACE_RUNTIME = path.join(cwd, '.pace');
+const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
 
@@ -33,8 +33,11 @@ function getBlockCount() {
     return parseInt(fs.readFileSync(COUNTER_FILE, 'utf8').trim(), 10) || 0;
   } catch(e) { return 0; }
 }
-function setBlockCount(n) {
-  try { fs.writeFileSync(COUNTER_FILE, String(n), 'utf8'); } catch(e) {}
+function setBlockCount(n, { ensure = false } = {}) {
+  try {
+    if (ensure) fs.mkdirSync(PACE_RUNTIME, { recursive: true });
+    fs.writeFileSync(COUNTER_FILE, String(n), 'utf8');
+  } catch(e) {}
 }
 
 try {
@@ -158,7 +161,7 @@ if (paceSignal === 'artifact') {
   } else {
     const codeCount = countCodeFiles(cwd);
     if (codeCount >= 3) {
-      warnings.push(`检测到 ${codeCount} 个代码文件但无 Artifact 文件，请用 AskUserQuestion 询问用户是否需要启用 PACE 流程`);
+      log(paceUtils.logEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, codeCount, reason: 'code-count-no-artifact' }));
     }
   }
 }
@@ -199,12 +202,12 @@ if (warnings.length > 0) {
       try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
       try { fs.writeFileSync(path.join(PACE_RUNTIME, 'degraded'), `降级时间: ${ts()}\n未通过检查:\n${checksDetail}\n`, 'utf8'); } catch(e) {}
       // T-424: 降级后重置计数器，避免下次会话冻结在 MAX_BLOCKS
-      setBlockCount(0);
+      setBlockCount(0, { ensure: true });
       log(paceUtils.logEntry('Stop', 'DOWNGRADE', { proj, blockCount, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), note: '.pace/degraded written' }));
       process.exit(0);
     } else {
       // v4：exit 2 阻止 Claude 停止，stderr 反馈给 Claude
-      setBlockCount(blockCount + 1);
+      setBlockCount(blockCount + 1, { ensure: true });
       // T-330: stderr 编号列表 + 降级递进式消息
       const stderrLines = warnings.map((w, i) => `[${i+1}] ${w}`);
       if (blockCount >= 1) stderrLines.push(`[提示] 这是第 ${blockCount + 1} 次阻止，请逐项处理上述问题后再结束会话。${FORMAT_SNIPPETS.skillRef}`);
@@ -228,7 +231,7 @@ if (warnings.length > 0) {
   } // 关闭 isTeammate else
 } else {
   // 检查全部通过，重置计数器 + 清除降级标记
-  setBlockCount(0);
+    if (fs.existsSync(PACE_RUNTIME)) setBlockCount(0);
   const degradedFile = path.join(PACE_RUNTIME, 'degraded');
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
   log(paceUtils.logEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));

@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, VAULT_PATH, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -14,7 +14,7 @@ const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
 
-const PACE_RUNTIME = path.join(cwd, '.pace');
+const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
@@ -31,6 +31,7 @@ paceUtils.withStdinParsed((stdin) => {
   const editList = Array.isArray(stdin.toolInput.edits) ? stdin.toolInput.edits : [];
   const oldString = stdin.oldString || editList.map(e => e.old_string || '').join('\n');
   const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
+  const bashCommand = stdin.toolInput.command || '';
 
   const warnings = [];
   // W-dry-4: 每会话首次提醒辅助函数（flag 检查+写入去重）
@@ -43,11 +44,32 @@ paceUtils.withStdinParsed((stdin) => {
     try { fs.writeFileSync(flagFile, '1', 'utf8'); } catch(e) {}
     return true;
   }
-  const fileName = filePath ? path.basename(filePath) : '';
-  const isArtifactEdit = ARTIFACT_FILES.includes(fileName);
-  const normalizedFile = paceUtils.normalizePath(filePath || '');
-  const isChangeDetailEdit = /\/changes\/.+\.md$/i.test(normalizedFile);
+  const resolvedFilePath = filePath ? paceUtils.resolveToolFilePath(cwd, filePath) : '';
+  const artDir = paceSignal === 'artifact' ? getArtifactDir(cwd) : cwd;
+  const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
+  const fileName = artifactRel ? path.basename(artifactRel) : (filePath ? path.basename(filePath) : '');
+  const isArtifactEdit = !!artifactRel && ARTIFACT_FILES.includes(artifactRel);
+  const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
+  const isChangeDetailEdit = !!artifactRel && /^changes\/.+\.md$/i.test(artifactRel);
   const isV6ArtifactEdit = isArtifactEdit || isChangeDetailEdit;
+  const runtimeConfigPaths = [
+    paceUtils.getArtifactRootChoicePath(cwd),
+    paceUtils.getV5MigrationStatePath(cwd),
+  ];
+  const isRuntimeConfigEdit = runtimeConfigPaths.some(fp => {
+    const normalizedConfig = paceUtils.normalizePath(fp);
+    if (normalizedFile && normalizedFile === normalizedConfig) return true;
+    const rel = path.relative(cwd, fp).replace(/\\/g, '/');
+    const command = String(bashCommand || '').replace(/\\/g, '/');
+    return toolName === 'Bash' && (
+      command.includes(fp.replace(/\\/g, '/')) ||
+      (rel && command.includes(rel))
+    );
+  });
+  if (isRuntimeConfigEdit) {
+    log(paceUtils.logEntry('PostToolUse', 'PASS_RUNTIME_CONFIG', { proj, tool: toolName, file: filePath || '-', dur: Date.now() - t0 }));
+    return;
+  }
 
   const taskActive = readActive(cwd, 'task.md');
 
@@ -68,12 +90,12 @@ paceUtils.withStdinParsed((stdin) => {
       if (archFmt) warnings.push(archFmt);
     }
 
-    if (isChangeDetailEdit && filePath && fs.existsSync(filePath)) {
+    if (isChangeDetailEdit && resolvedFilePath && fs.existsSync(resolvedFilePath)) {
       try {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = fs.readFileSync(resolvedFilePath, 'utf8');
         const fm = paceUtils.parseFrontmatter(content);
         if (!fm['schema-version']) warnings.push(`${filePath} 缺少 frontmatter schema-version。请派 artifact-writer 修复 schema。`);
-        if (/\/changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(normalizedFile)) {
+        if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRel || '')) {
           if (!fm.status) warnings.push(`${filePath} 缺少 frontmatter status。`);
           if (!('verified-date' in fm)) warnings.push(`${filePath} 缺少 frontmatter verified-date。`);
         }
@@ -92,7 +114,9 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     const entries = getActiveChangeEntries(cwd);
-    const mismatched = entries.filter(e => !e.task || !e.impl);
+    const mismatched = paceUtils.isArtifactWriterAgentType(stdin.agentType)
+      ? []
+      : entries.filter(e => !e.task || !e.impl);
     if (mismatched.length > 0) {
       warnings.push(`v6 索引不一致：${mismatched.map(e => e.id).join(', ')} 未同时存在于 task.md 和 implementation_plan.md。`);
     }
@@ -115,7 +139,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
     }
 
-    if (/\/changes\/corrections\/.+\.md$/i.test(normalizedFile) && newString) {
+    if (artifactRel && /^changes\/corrections\/.+\.md$/i.test(artifactRel) && newString) {
       warnings.push('检测到 correction 详情变更。请确认已同步写入 knowledge/ 或在 corrections.md 索引标注 [knowledge:: project-only]。');
     }
   } else if (taskActive) {
@@ -136,13 +160,13 @@ paceUtils.withStdinParsed((stdin) => {
   // H12: Obsidian 索引刷新 — artifact 写入后异步触发（每会话 1 次，fire-and-forget）
   // 无论 CLI 是否成功，每会话只触发一次（flag 在 spawn 后立即写入）
   const cliRefreshFile = path.join(PACE_RUNTIME, 'cli-refresh-done');
-  if (isV6ArtifactEdit && filePath && VAULT_PATH && !fs.existsSync(cliRefreshFile)) {
+  if (isV6ArtifactEdit && resolvedFilePath && VAULT_PATH && !fs.existsSync(cliRefreshFile)) {
     try {
       // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
-      const normFile = paceUtils.normalizePath(filePath);
+      const normFile = paceUtils.normalizePath(resolvedFilePath);
       const normVault = paceUtils.normalizePath(VAULT_PATH);
       if (normFile.startsWith(normVault + '/')) {
-        const relPath = path.relative(VAULT_PATH, filePath).replace(/\\/g, '/');
+        const relPath = path.relative(VAULT_PATH, resolvedFilePath).replace(/\\/g, '/');
         // 延迟加载：仅 vault 内文件编辑时才 require（避免非 Obsidian 环境报错）
         const { spawn } = require('child_process');
         // fire-and-forget：CLI 读取文件促进 Obsidian 感知外部变更

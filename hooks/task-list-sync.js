@@ -28,6 +28,18 @@ paceUtils.withStdinParsed((stdin) => {
       log(paceUtils.logEntry('TaskSync', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
       return;
     }
+    const rootConfigError = paceUtils.artifactRootConfigError(cwd);
+    if (rootConfigError) {
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          additionalContext: rootConfigError.message,
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(paceUtils.logEntry('TaskSync', 'HINT', { proj, reason: rootConfigError.code, dur: Date.now() - t0 }));
+      return;
+    }
 
     // v4.7: teammate 静默——避免 Agent Teams 共享任务的假阳性
     if (isTeammate()) {
@@ -100,7 +112,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     // 标记本会话使用过任务列表工具（供 Stop hook 检测残留）。
     if (isWriteOp) {
-      const PACE_RUNTIME = path.join(cwd, '.pace');
+      const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
       try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
       try { fs.writeFileSync(path.join(PACE_RUNTIME, 'task-list-used'), ts(), 'utf8'); } catch(e) {}
     }

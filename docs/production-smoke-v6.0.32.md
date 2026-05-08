@@ -2,6 +2,7 @@
 
 > Purpose: verify the installed marketplace plugin in a real Claude Code main session.
 > This is different from `tests/agent-tests/*` fixture baselines.
+> v6.0.32 smoke observations are kept here for traceability; fixes landed in v6.0.33 where noted below.
 
 ## Preconditions
 
@@ -290,6 +291,32 @@ tail -n 120 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'ARTIFACT_LOCK|DENY_ARTIFACT
 ```
 
 If both operations finish too quickly to overlap, this smoke still verifies routing. The lock-deny path is already covered by E2E; rerun with a longer finding body if you need a production overlap.
+
+## Observed Issues: 2026-05-08
+
+These observations came from installed-plugin production smoke runs against v6.0.32. They are not fixture-only failures; they were observed in real Claude Code sessions.
+
+| Smoke | Severity | Observation | Evidence | Follow-up |
+|---|---|---|---|---|
+| 0 | P1 | Idle chat can still receive a Stop-stage PACE reminder after `hi` when the project has code but no artifact root. This is noisy because no real edit has started. | Stop hook reminder asked the main session to use AskUserQuestion after an idle greeting. | Fixed in v6.0.33: code-count/no-artifact Stop is soft log only; PreToolUse still hard-blocks the first real write. |
+| 1/2/3 | P2 | PostToolUse can warn about transient index inconsistency while artifact-writer edits `task.md` and `implementation_plan.md` sequentially. Final state is correct. | `PACE 提醒：v6 索引不一致：CHG-... 未同时存在于 task.md 和 implementation_plan.md。` appears between the two successful Edit calls. | Fixed in v6.0.33: transient mismatch warning is suppressed for artifact-writer; non-agent mismatches still warn/block. |
+| 1/2/3 | P2 | SubagentStop frequently records `title-prefix` warnings when the agent writes explanatory text before `## artifact-writer 报告`. This does not damage artifacts but adds noise. | Hook log shows `issue=title-prefix` with natural-language first lines. | Keep as non-blocking warning; do not chase 100% report-title style with longer prompts. |
+| 1/2/3 | P2 | Main session sometimes dispatches separate lifecycle operations instead of using merged semantics. | Single-task flows may still do create -> approve -> update-status -> close rather than create -> approve-and-start -> close-chg. | Continue tightening skill wording around when operations must remain separate versus when merged operations are preferred. |
+| 3/4/5 | P1 | Lifecycle prompt parser accepts `field: value` but not all natural `field=value` / comma-separated Chinese forms. | Approval prompts with `task-id=T-001` or fields separated by Chinese commas were denied as missing required fields. | Fixed in v6.0.33: lifecycle field parser accepts `:` / `=`, newline, comma, Chinese comma, semicolon separators. |
+| 3 | P2 | Writing `.pace/artifact-root` can trigger unrelated no-task warnings. | Config write was treated as a project operation in PostToolUse. | Fixed in v6.0.33: `.pace/artifact-root` / `.pace/v5-migration-state` writes are treated as runtime config and skipped by PostToolUse workflow warnings. |
+| 4 | P2 | After the legacy v5 guard denies an operation, the model may try to invoke a small-change exemption. Hook still blocks correctly. | Smoke4 model attempted a G-8 style bypass after `DENY_LEGACY_ACTIVE`. | Clarify in CLAUDE/skill text that exemptions do not apply after PaceFlow or legacy-v5 detection has already denied. |
+| 4 | P2 | First `create-chg` prompt omitted `tasks`; artifact-writer correctly failed without writes. | Functional guard worked; this is main-session prompt quality. | No hook bug. Keep as production observation. |
+| 5 | P0 | Worktree artifact routing is correct, but concurrent artifact-writer lock can be manually deleted by another Claude session via Bash. This creates a real race. | Session B received `DENY_AGENT_ARTIFACT_LOCK` for a fresh lock owned by Session A, then ran `rm /mnt/k/AI/paceflowv6test/.pace/artifact-writer.lock`; the next Agent acquired the lock while Session A's agent was still running. | Fixed in v6.0.33: Bash mutations targeting `.pace/artifact-writer.lock` are denied before artifact writes. |
+| 5 | P0 | The lock JSON stores `pid: process.pid`, but that pid is the short-lived hook process, not the artifact-writer agent. Models can misread `kill -0 pid == DEAD` as a stale lock signal. | Subagents checked the lock pid, saw DEAD, then removed or rewrote the lock while another agent was still active. | Fixed in v6.0.33: lock payload no longer writes or parses `pid`; staleness is TTL/release-hook based. |
+| 5 | P0 | Bash write protection does not cover `.pace/artifact-writer.lock`, so subagents can self-write corrupted lock files. | A record-finding subagent wrote `echo "$$" > ...artifact-writer.lock` and later a heredoc JSON with literal `$(date ...)` into the lock path. | Fixed in v6.0.33: `rm`, redirection, `touch`, `mv`, `cp`, `tee`, and script writes targeting the lock are denied. |
+| 5 | P1 | Artifact-writer lock denial text currently tells the model “delete lock file after confirming stale,” which encourages the exact unsafe behavior. | Worktree session followed that advice automatically at lock age 8s and 20s. | Fixed in v6.0.33: denial text says wait/retry and explicitly forbids Bash lock deletion. |
+| 5 | P2 | Worktree SessionStart display text can describe the artifact mode incorrectly even when the resolved path is correct. | Hook log shows `choice=local` and `artifact_dir=/mnt/k/AI/paceflowv6test/`, but the worktree session injection text displayed `模式: Obsidian vault project` for the same local host path. | Fixed in v6.0.33: mode label derives from host project state dir and persisted artifact-root choice. |
+| 5 | P1 | The first Smoke5 run ended incomplete; a later rerun eventually completed only after lock deletion/retry loops. | Final artifacts became correct, but the path to success included unsafe lock deletion and transient partial states. | Rerun Smoke5 from a clean host/worktree pair after installing v6.0.33. |
+
+v6.0.33 regression coverage:
+
+- `node tests/test-hooks-e2e.js` includes lock Bash protection, worktree local mode display, idle Stop low-noise, runtime config skip, transient index warning suppression, and widened lifecycle field parsing.
+- `node tests/test-pace-utils.js` verifies artifact-writer lock payload does not expose `pid`.
 
 ## Pass Criteria
 

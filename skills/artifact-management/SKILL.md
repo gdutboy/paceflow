@@ -11,7 +11,7 @@ description: >
 
 PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
 
-`artifact_dir` 必须指向 hook 解析出的 artifact 根目录。选择“本地项目目录”时，这个目录是项目根目录本身；`.pace/` 只保存配置/运行态信号，不存 `task.md` / `implementation_plan.md` / `changes/**`。
+`artifact_dir` 必须指向 hook 解析出的 artifact 根目录。可为 Obsidian vault project、本地项目根目录，或 `.pace/artifact-root` 中的自定义绝对/相对路径。选择“本地项目目录”时，这个目录是项目根目录本身；真实 git worktree 会读取宿主项目 `.pace/artifact-root` 并共用宿主 artifact；`.pace/` 只保存配置/运行态信号，不存 `task.md` / `implementation_plan.md` / `changes/**`。
 
 权威规范：
 - Agent prompt：`agents/artifact-writer.md`
@@ -31,7 +31,7 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 | `implementation_plan.md` | CHG/HOTFIX 实施索引 | 同 task.md 的变更索引 |
 | `walkthrough.md` | 完成记录索引 | 日期表格行 |
 | `findings.md` | finding 摘要索引 | `[[finding-id|title]]` 行 |
-| `corrections.md` | correction 摘要索引 | `[[correction-id]]` 行 |
+| `corrections.md` | correction 摘要索引 | `[[correction-yyyy-mm-dd-nn-slug]]` 行 |
 
 详情文件：
 

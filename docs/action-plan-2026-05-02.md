@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.32（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.34（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-08，v6.0.32）
+### 0.1 当前执行视图（2026-05-08，v6.0.34）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,11 +27,12 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/task-list-sync.js`
 
-执行状态（v6.0.32）：
+执行状态（v6.0.34）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
-- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路。
+- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口。
+- 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
 #### 0.1.1 P0 — 当前已实现代码中的阻断级修复
@@ -40,6 +41,8 @@
 |---|---|---|---|---|---|
 | P0-20260506-01 | ✅ v6.0.11 | 修复 worktree/vault 下 `changes/**/*.md` 详情文件路由 | vault 重定向只覆盖根索引 artifact；worktree 中写 `changes/chg-*.md` 可能分裂出本地详情文件，违背“worktree 与主项目共用 artifacts”决策 | `hooks/pre-tool-use.js`、`hooks/pace-utils.js`、`tests/test-hooks-e2e.js` | worktree 本地 `changes/chg-*.md` / finding / correction 详情 Write/Edit/MultiEdit deny 并提示 vault 正确路径；vault 正确路径放行 |
 | P0-20260506-02 | ✅ v6.0.11 | PreToolUse enforcement 路径 stdin 解析失败 fail-closed | hook stdin/JSON 在某些环境可能异常；`stdin.ok=false` 时不能自然放行 | `hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js` | PACE 项目中 Write/Edit/MultiEdit stdin 非 JSON 或缺 `file_path` 时 deny；非 PACE 项目保持低干扰 |
+| P0-20260508-01 | ✅ v6.0.33 | 修复 artifact-writer worktree 并发锁竞态 | Smoke5 中 Session B 在收到 fresh lock deny 后用 Bash 删除 `.pace/artifact-writer.lock` 并抢占；subagent 还可用 Bash 写入伪锁；锁中 `pid` 是 hook 进程，不是 agent liveness，导致误判 stale | `hooks/pre-tool-use.js`、`hooks/pace-utils.js`、`tests/test-hooks-e2e.js`、`docs/production-smoke-v6.0.32.md` | Bash 对 `.pace/artifact-writer.lock` 的 rm/redirect/touch/mv/cp/script write 均 deny；lock deny 文案不再建议 Claude 删除锁；lock payload 不暴露误导性 `pid`；Smoke5 并发时第二 session 只能等待/重试，不得破坏第一 session 锁 |
+| P0-20260508-02 | ✅ v6.0.34 | 修复审计确认的路径与运行态分裂 | Bash 写保护可被 `.//task.md` / `.pace//artifact-writer.lock` 等价路径绕过；worktree runtime 仍写子 worktree `.pace`；`artifact-root=vault` 缺 env 时误落本地；Stop `.pace` 缺失时无法累计降级 | `hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/stop.js`、`hooks/pre-compact.js`、`hooks/post-tool-use.js`、`tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | Bash artifact/lock 等价路径 deny；worktree runtime 写宿主 `.pace`；vault env 缺失 fail-closed；Stop 连续阻止可降级且 idle PASS 不落盘；C/V 与 PostToolUse artifact 判定基于 artifact root |
 
 执行原则：
 
@@ -110,12 +113,12 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.32）：
+最近一次验证结果（v6.0.34）：
 
 ```bash
 node --check hooks/pace-utils.js hooks/pre-tool-use.js hooks/post-tool-use-failure.js hooks/subagent-stop.js tests/test-hooks-e2e.js  # PASS
-node tests/test-hooks-e2e.js      # 104/104 PASS
-node tests/test-pace-utils.js     # 99/99 PASS
+node tests/test-hooks-e2e.js      # 116/116 PASS
+node tests/test-pace-utils.js     # 101/101 PASS
 node tests/test-install.js        # 24/24 PASS
 claude plugin validate .          # PASS
 git diff --check                  # PASS
@@ -179,7 +182,7 @@ Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vau
 
 #### 0.1.10 当前剩余验证缺口
 
-v6.0.32 代码层未发现 P0 阻断缺口。剩余工作按验证价值排序：
+v6.0.34 代码层未发现 P0 阻断缺口。剩余工作按验证价值排序：
 
 | 优先级 | 缺口 | 当前状态 | 下一步 |
 |---|---|---|---|

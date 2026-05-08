@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.32';
+const PACE_VERSION = 'v6.0.34';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -191,6 +191,14 @@ function addProjectCandidate(candidates, name) {
   if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
 }
 
+function gitWorktreeMainCheckoutDir(gitDir) {
+  const marker = `${path.sep}.git${path.sep}worktrees${path.sep}`;
+  const idx = String(gitDir || '').indexOf(marker);
+  if (idx < 0) return null;
+  const mainGitDir = String(gitDir).slice(0, idx + `${path.sep}.git`.length);
+  return path.dirname(mainGitDir);
+}
+
 function getProjectNameCandidates(cwd) {
   const candidates = [];
   const safeCwd = cwd || '';
@@ -209,9 +217,8 @@ function getProjectNameCandidates(cwd) {
       const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
       if (match) {
         const gitDir = path.resolve(safeCwd, match[1].trim());
-        const marker = `${path.sep}.git${path.sep}worktrees${path.sep}`;
-        const idx = gitDir.indexOf(marker);
-        if (idx >= 0) addProjectCandidate(candidates, path.basename(path.dirname(gitDir.slice(0, idx + 5))));
+        const hostDir = gitWorktreeMainCheckoutDir(gitDir);
+        if (hostDir) addProjectCandidate(candidates, path.basename(hostDir));
       }
     }
   } catch(e) {}
@@ -238,10 +245,7 @@ function gitWorktreeHostDir(cwd) {
     const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
     if (!match) return null;
     const gitDir = path.resolve(safeCwd, match[1].trim());
-    const marker = `${path.sep}.git${path.sep}worktrees${path.sep}`;
-    const idx = gitDir.indexOf(marker);
-    if (idx < 0) return null;
-    return path.dirname(gitDir.slice(0, idx + 5));
+    return gitWorktreeMainCheckoutDir(gitDir);
   } catch(e) {
     return null;
   }
@@ -252,16 +256,20 @@ function getProjectStateDir(cwd) {
   return worktreeBaseDir(cwd) || gitWorktreeHostDir(cwd) || cwd;
 }
 
+function getProjectRuntimeDir(cwd) {
+  return path.join(getProjectStateDir(cwd), '.pace');
+}
+
 function getArtifactRootChoicePath(cwd) {
-  return path.join(getProjectStateDir(cwd), '.pace', ARTIFACT_ROOT_CHOICE_FILE);
+  return path.join(getProjectRuntimeDir(cwd), ARTIFACT_ROOT_CHOICE_FILE);
 }
 
 function getV5MigrationStatePath(cwd) {
-  return path.join(getProjectStateDir(cwd), '.pace', V5_MIGRATION_STATE_FILE);
+  return path.join(getProjectRuntimeDir(cwd), V5_MIGRATION_STATE_FILE);
 }
 
 function getArtifactWriterLockPath(cwd) {
-  return path.join(getProjectStateDir(cwd), '.pace', ARTIFACT_WRITER_LOCK_FILE);
+  return path.join(getProjectRuntimeDir(cwd), ARTIFACT_WRITER_LOCK_FILE);
 }
 
 function readArtifactWriterLock(cwd) {
@@ -278,7 +286,6 @@ function readArtifactWriterLock(cwd) {
       cwd: String(parsed.cwd || ''),
       operation: String(parsed.operation || ''),
       createdAt: String(parsed.createdAt || parsed.created_at || ''),
-      pid: Number(parsed.pid || 0) || 0,
       timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
       raw: parsed,
     };
@@ -321,7 +328,6 @@ function acquireArtifactWriterLock(cwd, info = {}) {
     operation: String(info.operation || ''),
     createdAt: new Date(now).toISOString(),
     timestampMs: now,
-    pid: process.pid,
   };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -413,6 +419,25 @@ function artifactDirFromChoice(cwd, choice) {
 
 function getConfiguredArtifactDir(cwd) {
   return artifactDirFromChoice(cwd, readArtifactRootChoice(cwd));
+}
+
+function artifactRootConfigError(cwd) {
+  const choice = readArtifactRootChoice(cwd).toLowerCase();
+  if (choice === 'vault' && !VAULT_PATH) {
+    const choicePath = getArtifactRootChoicePath(cwd);
+    return {
+      code: 'vault-env-missing',
+      choice,
+      choicePath,
+      message: [
+        'PACEflow artifact-root 配置为 vault，但当前 hook 进程没有 PACE_VAULT_PATH，无法解析 Obsidian vault artifact 根目录。',
+        `配置文件: ${choicePath}`,
+        '为避免把 artifact 静默写到本地项目目录，本次操作已停止。',
+        '请恢复 PACE_VAULT_PATH 后重试；或如果确实要改用本地 artifact，请将配置文件内容改为纯文本 local。'
+      ].join('\n')
+    };
+  }
+  return null;
 }
 
 function hasChangesDir(dir) {
@@ -647,7 +672,7 @@ function hasUnsyncedPlanFiles(cwd) {
 function listUnsyncedPlanFiles(cwd) {
   const plans = listPlanFiles(cwd);
   if (plans.length === 0) return [];
-  const syncedPath = path.join(cwd, '.pace', 'synced-plans');
+  const syncedPath = path.join(getProjectRuntimeDir(cwd), 'synced-plans');
   let synced = [];
   try { synced = fs.readFileSync(syncedPath, 'utf8').split('\n').filter(Boolean); } catch(e) {}
   // Superpowers 固定产出主文件 + -design.md 伴随文件，主文件已同步时伴随文件也视为已同步
@@ -666,7 +691,11 @@ function listUnsyncedPlanFiles(cwd) {
 function isPaceProject(cwd) {
   try {
     // T-080: 豁免信号（最高优先级）— 用户主动禁用 PACE（.pace/disabled）
-    if (fs.existsSync(path.join(cwd, '.pace', 'disabled'))) return false;
+    const disabledPaths = [
+      path.join(cwd, '.pace', 'disabled'),
+      path.join(getProjectRuntimeDir(cwd), 'disabled'),
+    ];
+    if (disabledPaths.some(fp => fs.existsSync(fp))) return false;
     const configuredDir = getConfiguredArtifactDir(cwd);
     if (configuredDir) {
       if (fs.existsSync(path.join(configuredDir, 'changes'))) return 'artifact';
@@ -733,7 +762,7 @@ function checkArchiveFormat(cwd, filename) {
 function ensureProjectInfra(cwd) {
   // .pace/.gitignore
   try {
-    const paceDir = path.join(cwd, '.pace');
+    const paceDir = getProjectRuntimeDir(cwd);
     const gitignorePath = path.join(paceDir, '.gitignore');
     if (!fs.existsSync(gitignorePath)) {
       fs.mkdirSync(paceDir, { recursive: true });
@@ -761,6 +790,8 @@ function ensureProjectInfra(cwd) {
  * @returns {string[]} 创建的文件名列表
  */
 function createTemplates(cwd) {
+  const configError = artifactRootConfigError(cwd);
+  if (configError) throw new Error(configError.message);
   const TEMPLATES_DIR = path.join(__dirname, 'templates');
   const artDir = getArtifactDir(cwd);
   // 确保目标目录存在（vault 模式下可能尚未创建）
@@ -808,7 +839,7 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
  * @returns {string|null} plan 文件路径或 null
  */
 function getNativePlanPath(cwd) {
-  const fp = path.join(cwd, '.pace', 'current-native-plan');
+  const fp = path.join(getProjectRuntimeDir(cwd), 'current-native-plan');
   try { return fs.readFileSync(fp, 'utf8').trim() || null; } catch(e) { return null; }
 }
 
@@ -1186,7 +1217,7 @@ function parseHookStdin(rawInput) {
     agentType: parsed.agent_type || parsed.subagent_type || parsed.tool_input?.subagent_type || '',
     lastMessage: parsed.last_assistant_message || parsed.last_message || parsed.message || '',
     agentTranscriptPath: parsed.agent_transcript_path || parsed.transcript_path || '',
-    error: parsed.error || parsed.error_type || parsed.message || '',
+    error: parsed.error || parsed.error_type || '',
     isInterrupt: parsed.is_interrupt === true || parsed.is_interrupt === 'true' || parsed.isInterrupt === true,
     durationMs: Number(parsed.duration_ms || parsed.durationMs || 0) || 0,
     raw: parsed
@@ -1225,12 +1256,12 @@ module.exports = {
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
   isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
-  getArtifactDir, getProjectStateDir,
-  getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir,
+  getArtifactDir, getProjectStateDir, getProjectRuntimeDir,
+  getArtifactRootChoicePath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
   getArtifactWriterLockPath, readArtifactWriterLock, acquireArtifactWriterLock,
   artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock, operationFromAgentPrompt,
-  artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
+  artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
   // 计划文件

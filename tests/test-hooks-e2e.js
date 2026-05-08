@@ -146,7 +146,6 @@ function seedArtifactWriterLock(dir, sessionId = 'sid-artifact-writer-test') {
     operation: 'test',
     createdAt: new Date().toISOString(),
     timestampMs: Date.now(),
-    pid: process.pid,
   }, null, 2) + '\n', 'utf8');
   return sessionId;
 }
@@ -406,6 +405,27 @@ test('9m. MultiEdit 直接写 VERIFIED → DENY verify action', () => {
   assert.ok(r.stdout.includes('action=verify'));
 });
 
+test('9m2. 非 artifact changes/ 路径写 C/V 字符串不触发 marker gate', () => {
+  const dir = makeV6Project('ptu-marker-non-artifact-changes');
+  const fp = path.join(dir, 'src', 'changes', 'chg-20260508-01.md');
+  fs.mkdirSync(path.dirname(fp), { recursive: true });
+  fs.writeFileSync(fp, 'note\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: 'note',
+        new_string: 'note\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('action=verify'));
+});
+
 test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
   const dir = makeV6Project('ptu-marker-agent');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
@@ -619,6 +639,32 @@ test('9c3b. code-count SessionStart 选择前不创建 .pace 或 Obsidian 空目
   assert.ok(!fs.existsSync(vaultDir), 'code-count 首次 SessionStart 不应创建 Obsidian 空项目目录');
 });
 
+test('9c3c. worktree 继承宿主 local artifact-root 时 SessionStart 显示本地模式', () => {
+  const root = makeTmpDir('ss-worktree-local-mode-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.mkdirSync(path.join(host, 'changes', 'findings'), { recursive: true });
+  fs.mkdirSync(path.join(host, 'changes', 'corrections'), { recursive: true });
+  fs.writeFileSync(path.join(host, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(host, 'implementation_plan.md'), '# 实施计划\n\n## 变更索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(host, 'walkthrough.md'), '# 工作记录\n\n## 最近工作\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(host, 'findings.md'), '# 调研记录\n\n## 摘要索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(host, 'corrections.md'), '# Corrections 记录\n\n## 索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+
+  const r = runHookDetailed('session-start.js', { cwd: worktree, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes(`路径: ${host.replace(/\\/g, '/')}/`));
+  assert.ok(r.stdout.includes('模式: 本地项目根目录'));
+  assert.ok(!r.stdout.includes('模式: Obsidian vault project'));
+  assert.ok(fs.existsSync(path.join(host, '.pace', 'stop-block-count')), 'SessionStart 运行态应写入宿主 .pace');
+  assert.ok(!fs.existsSync(path.join(worktree, '.pace')), 'worktree 不应创建独立 .pace 运行态目录');
+});
+
 test('9c3a. artifact-root=local 的 SessionStart 不创建 Obsidian 空项目目录', () => {
   const dir = makeTmpDir('ss-artifact-root-local-no-vault-dir');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
@@ -677,6 +723,33 @@ test('9c6. env scrub 场景仍可用项目级 artifact-root=local 恢复本地�
   assert.ok(r.stdout.includes('=== Artifact 目录 ==='));
   assert.ok(r.stdout.includes(`路径: ${dir.replace(/\\/g, '/')}/`));
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'scrub 环境下项目级 local 选择仍应创建本地 changes/');
+});
+
+test('9c7. artifact-root=vault 但 vault env 缺失时 fail-closed，不落本地模板', () => {
+  const dir = makeTmpDir('ptu-vault-choice-missing-env');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
+
+  const start = runHookDetailed('session-start.js', {
+    cwd: dir,
+    stdin: { type: 'startup' },
+    env: { PACE_VAULT_PATH: '' },
+  });
+  assert.strictEqual(start.code, 0);
+  assert.ok(start.stdout.includes('PACEflow 配置错误'));
+  assert.ok(!fs.existsSync(path.join(dir, 'task.md')), 'SessionStart 不应 fallback 到本地 artifact');
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'SessionStart 不应本地建 changes/');
+
+  const edit = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: codeEditStdin(dir),
+    env: { PACE_VAULT_PATH: '' },
+  });
+  assert.strictEqual(edit.code, 0);
+  assert.ok(edit.stdout.includes('"deny"'));
+  assert.ok(edit.stdout.includes('PACE_VAULT_PATH'));
+  assert.ok(!fs.existsSync(path.join(dir, 'task.md')), 'PreToolUse 不应 fallback 到本地 artifact');
 });
 
 test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
@@ -1132,6 +1205,33 @@ test('9hc0b. artifact-writer 修改 artifact 时必须持有当前 session 写�
   assert.ok(r.stdout.includes('没有持有 artifact 写锁'));
 });
 
+test('9hc0b2. Bash 不得删除或重定向写入 artifact-writer.lock', () => {
+  const dir = makeV6Project('agent-artifact-lock-bash-protect');
+  const lockPath = path.join(dir, '.pace', 'artifact-writer.lock');
+  seedArtifactWriterLock(dir, 'sid-lock-owner');
+
+  const commands = [
+    `rm -f "${lockPath}"`,
+    'rm .pace//artifact-writer.lock',
+    `echo "$$" > "${lockPath}"`,
+    `node -e "require('fs').writeFileSync('${lockPath.replace(/\\/g, '/')}', 'bad')"`,
+  ];
+  for (const command of commands) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        session_id: 'sid-other',
+        tool_name: 'Bash',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes('artifact-writer 写锁'), `应说明 lock 保护: ${command}`);
+    assert.strictEqual(JSON.parse(fs.readFileSync(lockPath, 'utf8')).sessionId, 'sid-lock-owner');
+  }
+});
+
 test('9hc0c. artifact-writer 持有写锁时可新建 changes 详情，已有详情仍禁止 Write 覆盖', () => {
   const dir = makeV6Project('agent-artifact-lock-write-pass');
   const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\n使用 create-chg 流程创建一个新的变更记录。`;
@@ -1224,6 +1324,30 @@ test('9hc1a. approve-and-start 带确认字段 → 放行', () => {
           'approval-confirmed: true',
           'approval-source: user-directive',
           'approval-evidence: 用户说“开始执行这个方案”',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc1a2. lifecycle prompt 字段支持等号与中文逗号分隔', () => {
+  const dir = makeV6Project('agent-approve-confirm-equals');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve and start',
+        prompt: [
+          `artifact_dir=${dir.replace(/\\/g, '/')}/`,
+          'operation=update-chg',
+          'target=CHG-20260504-01',
+          'action=approve-and-start，task-id=T-001',
+          'approval-confirmed=true，approval-source=user-directive，approval-evidence=用户说开始执行',
         ].join('\n'),
       },
     },
@@ -1528,6 +1652,27 @@ test('9hga. Bash 重定向写 artifact 被拒绝', () => {
   assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
 });
 
+test('9hgb. Bash 修改 artifact 的等价路径也被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-write-artifact-normalized-path');
+  const commands = [
+    'rm .//task.md',
+    'sed -i s/x/y/ .//task.md',
+    'rm ./changes/../task.md',
+  ];
+  for (const command of commands) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Bash',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+  }
+});
+
 test('9hh. 懒创建模板写入 LF', () => {
   const dir = makeTmpDir('ptu-template-lf');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
@@ -1636,6 +1781,28 @@ test('14b. legacy v5 Stop 只提示迁移或桥接', () => {
   assert.ok(r.stderr.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stderr.includes('artifact-writer create-chg'));
   assert.ok(!r.stderr.includes('补齐实施详情'));
+});
+
+test('14b2. code-count 项目 idle Stop 不阻止 artifact-root 选择', () => {
+  const dir = makeTmpDir('stop-code-count-idle');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'c.js'), 'c\n', 'utf8');
+  const r = runHook('stop.js', { cwd: dir, stdin: { stop_hook_active: false, last_assistant_message: '你好' } });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stderr, '');
+  assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'idle Stop 不应创建 .pace 运行态目录');
+});
+
+test('14b3. Stop 连续阻止时即使 .pace 缺失也能累计并降级', () => {
+  const dir = makeV6Project('stop-downgrade-without-runtime');
+  let last;
+  for (let i = 0; i < 4; i++) {
+    last = runHook('stop.js', { cwd: dir, stdin: { stop_hook_active: false, last_assistant_message: '任务完成' } });
+  }
+  assert.strictEqual(last.code, 0, '第 4 次应降级放行');
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'degraded')), '降级时应写 degraded 标记');
+  assert.strictEqual(fs.readFileSync(path.join(dir, '.pace', 'stop-block-count'), 'utf8'), '0');
 });
 
 test('14c. 多 CHG backlog 不阻止 Stop', () => {
@@ -1775,6 +1942,65 @@ test('15b. PostToolUse 对非 artifact-writer C/V 标志写入仍提醒', () => 
   assert.ok(r.stdout.includes('artifact-writer'));
 });
 
+test('15c. artifact-writer 顺序编辑索引时不提示瞬时不一致', () => {
+  const dir = makeV6Project('post-index-transient', { implIndex: '' });
+  const fp = path.join(dir, 'task.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-post-index',
+      agent_type: 'paceaitian-paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '## 活跃任务',
+        new_string: '## 活跃任务',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('索引不一致'));
+});
+
+test('15d. 非 artifact-writer 索引不一致仍提示', () => {
+  const dir = makeV6Project('post-index-mismatch-direct', { implIndex: '' });
+  const fp = path.join(dir, 'task.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-post-index-other',
+      agent_type: 'code-reviewer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '## 活跃任务',
+        new_string: '## 活跃任务',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('索引不一致'));
+});
+
+test('15e. 写入 .pace/artifact-root 不触发无任务流程提醒', () => {
+  const dir = makeTmpDir('post-runtime-config-artifact-root');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'c.js'), 'c\n', 'utf8');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, '.pace', 'artifact-root'),
+        content: 'local\n',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stdout, '');
+});
+
 test('16. correction 详情变更 → knowledge 提醒', () => {
   const dir = makeV6Project('post-correction');
   const fp = path.join(dir, 'changes', 'corrections', 'correction-20260504-test.md');
@@ -1901,6 +2127,16 @@ test('19. PreCompact 写 activeChanges 快照', () => {
   assert.strictEqual(snap.runtime.blockCount, 2);
   assert.strictEqual(snap.findings.openCount, 1);
   assert.strictEqual(snap.walkthrough.hasTodayEntry, true);
+});
+
+test('19a. PreCompact 在 root 选择前保持零写入', () => {
+  const dir = makeTmpDir('pc-root-choice-pending');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'c.js'), 'c\n', 'utf8');
+  const r = runHook('pre-compact.js', { cwd: dir });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'root 选择前 PreCompact 不应创建 .pace');
 });
 
 test('21. StopFailure PACE 项目记录日志', () => {

@@ -13,7 +13,7 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
-const PACE_RUNTIME = path.join(cwd, '.pace');
+const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const SESSION_OUTPUT_HARD_LIMIT_BYTES = 50000;
 const SESSION_OUTPUT_BUDGET_BYTES = 46000;
@@ -75,6 +75,16 @@ try {
 const paceSignal = isPaceProject(cwd);
 const artDir = paceSignal ? getArtifactDir(cwd) : cwd;
 const v5MigrationInfo = paceSignal ? paceUtils.getV5MigrationInfo(cwd) : { detected: false };
+const rootConfigError = paceSignal ? paceUtils.artifactRootConfigError(cwd) : null;
+if (rootConfigError) {
+  log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CONFIG_ERROR', {
+    proj,
+    code: rootConfigError.code,
+    choice_path: rootConfigError.choicePath,
+  }));
+  process.stdout.write(`=== PACEflow 配置错误 ===\n${rootConfigError.message}\n\n`);
+  process.exit(0);
+}
 const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
 const artifactRootChoice = paceUtils.readArtifactRootChoice(cwd) || 'auto';
 
@@ -232,7 +242,17 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
 }
 
 function writeArtifactDirSection() {
-  const mode = artDir === cwd ? '本地项目根目录' : 'Obsidian vault project';
+  const normalizedArtDir = paceUtils.normalizePath(path.resolve(artDir));
+  const stateDir = paceUtils.getProjectStateDir(cwd);
+  const normalizedStateDir = paceUtils.normalizePath(path.resolve(stateDir));
+  const choice = paceUtils.readArtifactRootChoice(cwd).toLowerCase();
+  let mode = normalizedArtDir === normalizedStateDir ? '本地项目根目录' : '自定义 artifact 根目录';
+  if (choice === 'vault') mode = 'Obsidian vault project';
+  else if (choice === 'local') mode = '本地项目根目录';
+  else if (paceUtils.VAULT_PATH) {
+    const vaultRoot = paceUtils.normalizePath(path.resolve(paceUtils.VAULT_PATH, 'projects'));
+    if (normalizedArtDir.startsWith(`${vaultRoot}/`)) mode = 'Obsidian vault project';
+  }
   process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n请使用此路径读写 artifact 文件；.pace/ 只保存配置/运行状态，不存 task.md / changes/**。\n\n`);
 }
 

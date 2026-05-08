@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
+const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -240,6 +240,7 @@ test('artifact-writer lock 原子获取、拒绝第二会话、同会话释放',
   assert.strictEqual(first.acquired, true);
   assert.ok(fs.existsSync(getArtifactWriterLockPath(dir)));
   assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-1');
+  assert.ok(!('pid' in readArtifactWriterLock(dir).raw), 'lock payload 不应暴露短生命周期 hook pid');
 
   const second = acquireArtifactWriterLock(dir, {
     sessionId: 'sid-2',
@@ -429,8 +430,45 @@ test('worktree 读取宿主 artifact-root=local → 返回宿主项目目录', (
   fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
 
   assert.strictEqual(getProjectStateDir(worktree), host);
+  assert.strictEqual(getProjectRuntimeDir(worktree), path.join(host, '.pace'));
   assert.strictEqual(getArtifactRootChoicePath(worktree), path.join(host, '.pace', 'artifact-root'));
   assert.strictEqual(getArtifactDir(worktree), host);
+});
+
+test('worktree 宿主 .pace/disabled 对 worktree 生效', () => {
+  const projectName = `pace-worktree-disabled-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const root = makeTmpDir('disabled-worktree-root');
+  const host = path.join(root, projectName);
+  const worktree = path.join(host, 'worktrees', 'smoke');
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(path.join(host, 'changes'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(host, '.pace', 'disabled'), '', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
+
+  assert.strictEqual(isPaceProject(worktree), false);
+});
+
+test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {
+  const dir = makeTmpDir('vault-choice-missing-env-utils');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
+  const originalVaultPath = process.env.PACE_VAULT_PATH;
+  process.env.PACE_VAULT_PATH = '';
+  delete require.cache[require.resolve('../hooks/pace-utils')];
+  const fresh = require('../hooks/pace-utils');
+  try {
+    const err = fresh.artifactRootConfigError(dir);
+    assert.ok(err);
+    assert.strictEqual(err.code, 'vault-env-missing');
+    assert.ok(err.message.includes('PACE_VAULT_PATH'));
+  } finally {
+    if (originalVaultPath === undefined) delete process.env.PACE_VAULT_PATH;
+    else process.env.PACE_VAULT_PATH = originalVaultPath;
+    delete require.cache[require.resolve('../hooks/pace-utils')];
+    require('../hooks/pace-utils');
+  }
 });
 
 test('worktree 无本地 artifact 但宿主 vault 有 changes → artifact', () => {

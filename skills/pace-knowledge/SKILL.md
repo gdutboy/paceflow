@@ -139,7 +139,7 @@ sources:
 2. **检查 knowledge/ 是否已有同主题笔记**：Grep `knowledge/` 目录中的标题和标签
 3. **已有** → Edit 追加新内容到 `## 详情` section，更新 `updated` 日期和 `sources`
 4. **未有** → Write 创建新笔记，使用 knowledge/ 模板，`status: concluded`
-5. **回写 finding**：创建 finding 时优先把 `[knowledge:: slug]` 纳入 `record-finding` 输入；既有 finding 需要补链时不要主 session 手写，记录为 artifact writer 后续更新需求
+5. **关联 finding**：`record-finding` 当前不维护 knowledge frontmatter 字段；通用知识的反向链接写在 knowledge 笔记正文或 finding 详情正文中。既有 finding 需要补链时不要主 session 手写，记录为 artifact writer 后续更新需求。
 
 > 提取的知识必须自包含——不依赖原 finding 的上下文就能理解。摘要是结论，详情是完整推理。
 
@@ -157,14 +157,13 @@ sources:
 
 ## Corrections 双写流程
 
-被用户纠正时（"不对"、"别这样"、"错了"等），CLAUDE.md G-3 要求通过 artifact writer 记录 correction，并评估 knowledge 双写：
+被用户纠正时（"不对"、"别这样"、"错了"等），CLAUDE.md G-3 要求先评估 knowledge 双写，再通过 artifact writer 记录 correction：
 
-1. **记录 correction**：派 `artifact-writer record-correction`，写入 `changes/corrections/<id>.md` 和 `corrections.md` 索引，包含错误行为 + 正确做法 + 触发场景 + 根本原因
-2. **评估通用性**：该纠正是否跨项目通用？
-   - **通用**（如 AI 验证习惯、决策偏差模式）→ 步骤 3
-   - **仅限本项目**（如特定 API 用法）→ agent 输入 `project-scope: project-only`，结束
-3. **写入 knowledge/**：追加到已有笔记或新建，标注来源项目
-4. **回写 correction 条目**：必要时派 artifact writer 更新 correction 的 `knowledge-link`
+1. **评估通用性**：该纠正是否跨项目通用？
+   - **通用**（如 AI 验证习惯、决策偏差模式）→ 步骤 2
+   - **仅限本项目**（如特定 API 用法）→ 步骤 3，agent 输入 `project-scope: project-only`
+2. **写入或选定 knowledge/**：追加到已有笔记或新建，标注来源项目，拿到 `[[note]]` wikilink
+3. **记录 correction**：派 `artifact-writer record-correction`，写入 `changes/corrections/<id>.md` 和 `corrections.md` 索引，必填 `trigger-quote`、`wrong-behavior`、`correct-behavior`、`trigger-scenario`、`root-cause`，并二选一提供 `knowledge-link: [[note]]` 或 `project-scope: project-only`
 
 > PostToolUse hook 检测 correction 详情/索引写入后会 HINT 提醒同步 knowledge/。
 

@@ -24,7 +24,7 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
 const proj = getProjectName(cwd);
-const PACE_RUNTIME = path.join(cwd, '.pace');
+const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 function firstNonEmptyLines(message) {
   return normalizeLineEndings(message)

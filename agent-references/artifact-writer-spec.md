@@ -270,7 +270,8 @@ schema-version: "6.0"
 
 ## 索引
 
-<!-- 格式：- [[correction-id]] <title> [date::] [knowledge:: [[note]] | project-only] -->
+<!-- 格式：- [[correction-yyyy-mm-dd-nn-slug]] <title> [date::] [knowledge:: [[note]] | project-only] -->
+<!-- frontmatter 稳定 ID 是 CORRECTION-YYYY-MM-DD-NN；wikilink 目标是带 slug 的详情文件名。 -->
 
 
 <!-- ARCHIVE -->

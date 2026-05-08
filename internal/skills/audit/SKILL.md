@@ -2,8 +2,9 @@
 name: audit
 effort: high
 description: >
-  PACEflow 系统全面审查框架。启动 5-agent 并行团队审查代码质量、流程完整性、
-  一致性、Skill模板同步和架构优化，产出去重分级的审查报告。当用户说"完整分析"、
+  PACEflow 内部系统全面审查框架。启动 5-agent 并行团队，基于代码、配置、
+  测试和真实日志独立审查质量、流程、一致性、Skill模板和架构，产出去重分级报告。
+  当用户说"完整分析"、
   "全面审查"、"全面检查"、"审计"、"代码审查"、"full audit"、"code review"、
   "comprehensive review"或调用 /audit 时触发。版本发布前的质量门控也应使用此 skill。
 ---
@@ -18,23 +19,46 @@ description: >
 - 用户调用 `/audit`
 - 版本发布前的质量门控
 
+## 审查原则
+
+> 本 skill 的核心价值是**独立发现问题**，不是照 guidebook/action-plan/README 打勾。
+
+证据优先级：
+
+1. 当前代码与配置：`hooks/**`、`agents/**`、`agent-references/**`、`skills/**`、`.claude-plugin/**`
+2. 当前测试与 fixture：`tests/**`、`tests/agent-tests/**`
+3. 真实运行证据：`hooks/pace-hooks.log`、Claude Code session JSONL、production smoke 产物
+4. 用户面/内部文档：`README.md`、`REFERENCE.md`、`CLAUDE.md`、`docs/**`
+
+文档只能用于发现候选矛盾或设计意图，不能单独作为 bug 证据。任何 C/H 级问题都必须从代码路径、配置注册、测试缺口或真实日志中独立证明。
+
+当前 v6 审计基线：
+
+- marketplace 发布面是 4 个用户 skill + `artifact-writer` agent；`internal/skills/audit/` 不随 marketplace 发布
+- v6-only `changes/**` 详情模型；v5 活跃流程只允许迁移/桥接，不继续兼容
+- artifact root 可为 local/vault/custom，真实 git worktree 沿用宿主项目 `.pace/artifact-root`
+- `artifact-writer` 是唯一 artifact 写入者；主 session 不得直写 C/V 标记
+- 项目级 `artifact-writer.lock` 串行化 shared artifact 写入；Bash 不得修改该锁
+- `approve-and-start` 与 `close-chg` 是主路径合并操作；验证证据由主 session 运行并读取
+- `SubagentStop` 报告标题问题是观察/恢复提示，不是 artifact 功能阻断
+
 ## 审查范围
 
 > Agent 必须**动态发现**文件，不依赖预设数量。使用 Glob 扫描。
 
 | 类别 | Glob 模式 |
 |------|-----------|
-| Hook 脚本 | `paceflow/hooks/*.js` |
-| Skill 定义 | `paceflow/skills/*/SKILL.md` |
-| Skill 引用 | `paceflow/skills/*/references/*.md` |
-| Hook 模板 | `paceflow/hooks/templates/*.md` |
-| Skill 模板 | `paceflow/skills/*/templates/*.md` |
-| Agent | `paceflow/agents/**/*.md` |
-| 配置 | `paceflow/hooks/hooks.json` |
-| Plugin 元数据 | `paceflow/.claude-plugin/plugin.json` + `paceflow/.claude-plugin/marketplace.json` |
-| 本地工具 | `paceflow/install.js` + `paceflow/verify.js`（仅本地验证，不是正式安装路径） |
-| 测试 | `paceflow/tests/**/*.js` + `paceflow/tests/agent-tests/**/*.yaml` |
-| 文档 | `CLAUDE.md` + `paceflow/README.md` + `paceflow/REFERENCE.md` |
+| Hook 脚本 | `hooks/*.js` |
+| Hook 配置 | `hooks/hooks.json` |
+| Hook 模板 | `hooks/templates/*.md` |
+| 用户 Skill | `skills/*/SKILL.md` + `skills/*/references/*.md` + `skills/*/templates/*.md` |
+| 内部 Skill | `internal/skills/**/*.md` |
+| Agent | `agents/**/*.md` + `agent-references/**/*.md` |
+| Plugin 元数据 | `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` |
+| 迁移工具 | `migrate/**/*.js` |
+| 本地工具 | `install.js` + `verify.js`（仅本地验证，不是正式安装路径） |
+| 测试 | `tests/**/*.js` + `tests/agent-tests/**/*.yaml` |
+| 文档（被审计对象） | `CLAUDE.md` + `README.md` + `REFERENCE.md` + `docs/**/*.md` |
 
 ---
 
@@ -60,7 +84,7 @@ description: >
 | 1. 代码质量 | 核心 Hook（公共模块 + Write/Edit hook） | Bug/正则/路径/异常/I/O 协议 |
 | 2. 流程完整性 | 生命周期 Hook（SessionStart/Stop/PreCompact） | stdin 解析/防循环/快照/降级 |
 | 3. 一致性 | 辅助 Hook + Plugin + Agent 发布资产 | hooks.json/plugin/agents 一致性 |
-| 4. Skill 模板 | 所有 Skill + 模板 | v6 口径/交叉引用/格式/正则兼容 |
+| 4. Skill 模板 | 用户 Skill + 内部 audit + 模板 | v6 口径/交叉引用/格式/正则兼容 |
 | 5. 架构优化 | 测试 + 文档 + 整体架构 | agent contract 覆盖度/文档准确性/流程缺口 |
 
 > 每个 agent 的完整 prompt 和共享审查纪律见 [references/agent-prompts.md](references/agent-prompts.md)。
@@ -79,6 +103,7 @@ description: >
 | 实际 diff | 不一致声称 — 逐行对比两个文件 |
 | 设计意图查证 | 可能有意设计 — 检查 CLAUDE.md + 注释 |
 | 最小复现 | 可构造触发条件 — E2E 测试验证 |
+| 真实证据复核 | production smoke / hook log / session JSONL — 确认是否真实发生 |
 
 结果三分类：✅ 确认 / ⚠️ 部分正确 / ❌ 误报
 
@@ -91,7 +116,7 @@ W/I 级快速扫描去重合并，不逐一验证。
 1. **去重**：同文件+同行号+同性质 → 合并
 2. **分级**：P0 必修（C+高影响H）→ P1 建议（W）→ P2 文档 → P3 延后（I → 派 `record-finding`）
 3. **建议后续变更**：每个 P0/P1 问题推荐对应 CHG-ID 或归入现有 CHG
-4. **审查输入版本记录**：记录本次审查读取的 artifact 文件最后修改时间戳
+4. **审查输入版本记录**：记录 git HEAD、工作区 diff 状态、动态发现的关键文件数量和可用日志/session 证据
 5. **生成 ticketNN.md**
 
 > 报告模板和误报防御策略见 [references/audit-procedures.md](references/audit-procedures.md)。

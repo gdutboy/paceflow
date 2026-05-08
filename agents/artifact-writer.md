@@ -194,8 +194,8 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 **必填**：`target` / `walkthrough-summary`
 
 ### 4. close-chg
-**必填**：`target` / `verification-confirmed: true` / `verify-summary` / `walkthrough-summary`
-**推荐**：最后任务验证通过后带 `complete-open-tasks: true`，一次收口 `[ ]` / `[/]` T-NNN、写 VERIFIED、归档索引并写 walkthrough。
+**必填**：`target` / `verification-confirmed: true` / `complete-open-tasks: true` / `verify-summary` / `walkthrough-summary`
+`complete-open-tasks: true` 是 hook 机械门禁要求；最后任务验证通过后用它一次收口 `[ ]` / `[/]` T-NNN、写 VERIFIED、归档索引并写 walkthrough。
 
 ### 5. record-finding
 **必填**：`title` / `summary`（≤200）/ `type` / `impact` / `body`

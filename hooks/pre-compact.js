@@ -13,12 +13,21 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
-const PACE_RUNTIME = path.join(cwd, '.pace');
+const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 try {
   const paceSignal = isPaceProject(cwd);
   if (!paceSignal) {
     log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: 'non-pace' }));
+    process.exit(0);
+  }
+  const rootConfigError = paceUtils.artifactRootConfigError(cwd);
+  if (rootConfigError) {
+    log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: rootConfigError.code }));
+    process.exit(0);
+  }
+  if (paceSignal !== 'artifact' && paceUtils.artifactRootChoiceNeeded(cwd)) {
+    log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: 'artifact-root-choice-pending' }));
     process.exit(0);
   }
 
