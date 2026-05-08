@@ -1074,6 +1074,45 @@ test('9hc0a. SubagentStop 释放 artifact-writer 写锁', () => {
   assert.ok(!fs.existsSync(lockPath), 'SubagentStop 应释放同 session 的 artifact lock');
 });
 
+test('9hc0a2. PostToolUseFailure:Agent 释放 artifact-writer 写锁', () => {
+  const dir = makeV6Project('agent-artifact-lock-agent-failure');
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\n使用 create-chg 流程创建一个新的变更记录。`;
+  const pre = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-failure',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(pre.code, 0);
+  const lockPath = path.join(dir, '.pace', 'artifact-writer.lock');
+  assert.ok(fs.existsSync(lockPath), 'Agent 派遣成功后应持有写锁');
+
+  const failure = runHook('post-tool-use-failure.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-failure',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt,
+      },
+      error: 'Agent tool failed before subagent stop',
+    },
+  });
+  assert.strictEqual(failure.code, 0);
+  const out = JSON.parse(failure.stdout);
+  assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolUseFailure');
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Agent 执行失败'));
+  assert.ok(!fs.existsSync(lockPath), 'Agent 工具失败时应立即释放写锁');
+});
+
 test('9hc0b. artifact-writer 修改 artifact 时必须持有当前 session 写锁', () => {
   const dir = makeV6Project('agent-artifact-lock-write-deny');
   const r = runHook('pre-tool-use.js', {
@@ -1903,6 +1942,15 @@ test('22a. PostToolUseFailure 用户中断只记录日志不注入恢复提示',
   });
   assert.strictEqual(r.code, 0);
   assert.strictEqual(r.stdout, '');
+});
+
+test('22b. hooks.json 为 PostToolUseFailure 注册 Agent matcher', () => {
+  const hooksConfig = JSON.parse(fs.readFileSync(path.join(HOOKS_DIR, 'hooks.json'), 'utf8'));
+  const entries = hooksConfig.hooks.PostToolUseFailure || [];
+  assert.ok(
+    entries.some(e => String(e.matcher || '').split('|').includes('Agent')),
+    'PostToolUseFailure matcher 必须包含 Agent，否则 Agent 失败不能触发锁释放'
+  );
 });
 
 test('23. SubagentStop artifact-writer 合规报告记录 transcript 且不注入提示', () => {
