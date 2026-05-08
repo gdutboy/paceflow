@@ -1,5 +1,9 @@
 # Production Prompt Test Commands
 
+> 本文件验证 agent fixture / CLI runner 的 production prompt。它不等同于已安装
+> marketplace plugin 后的真实交互 smoke。真实主 session smoke 见
+> `docs/production-smoke-v6.0.32.md`。
+>
 > 用途：验证真实主 session 派发路径。`prepare --mode production` 只输出
 > `ARTIFACT_DIR`、`operation`、`fields`，不注入 harness 里的详细规范、spec 绝对路径、
 > report title 约束或资源约束。

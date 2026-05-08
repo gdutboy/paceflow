@@ -14,6 +14,8 @@
 > 执行状态更新（2026-05-07，v6.0.25）：C 阶段确认语义扩展到 `approve` 与 `approve-and-start`：二者都必须带 `approval-confirmed: true`、`approval-source`、`approval-evidence`。hook 只做字段存在与操作组合检查，不判断 evidence 真伪；`approve` 只表示“先批准但暂不开始”，批准并开始必须用 `approve-and-start`。
 > 执行状态更新（2026-05-08，v6.0.29）：`audit` skill 已移至 `internal/skills/audit/`，不再随 marketplace 发布；README/REFERENCE/spec/action-plan 中 PreCompact I/O、ARCHIVE 范围和历史状态口径已按当前实现修正。
 > 执行状态更新（2026-05-08，v6.0.30）：v5 用户升级路径改为 hook 引导的半自动迁移。检测到旧 v5 artifact 且没有 `changes/` 时，PreToolUse 先要求用户确认 dry-run/迁移；确认前禁止懒创建 v6 `changes/` 或派 `artifact-writer create-chg` 混入旧根文件。
+> 执行状态更新（2026-05-08，v6.0.31）：`artifact-writer` 派遣前获取项目级写锁，锁文件位于宿主项目 `.pace/artifact-writer.lock`；真实 git worktree 与主项目共享锁，避免并发创建 CHG-ID、抢写索引或重复归档。hook 日志使用 Claude Code `session_id` 串联，`T-NNN` 明确为 CHG/HOTFIX 局部编号。
+> 执行状态更新（2026-05-08，v6.0.32）：`PostToolUseFailure` matcher 覆盖 `Agent`，artifact-writer Agent 工具失败时会立即释放项目级写锁；不再依赖 30 分钟 TTL 自愈。当前代码层验证基线：hook E2E 104/104、pace-utils 99/99、install 24/24、`claude plugin validate .` PASS。
 
 ---
 
@@ -25,9 +27,9 @@ PACEflow v6 的核心改变不是“换一种 artifact 格式”，而是把 art
 
 | 层 | 当前状态 | v6 判断 |
 |---|---|---|
-| Agent | `agents/artifact-writer.md` v4.0 是 v6-only；frontmatter `name: artifact-writer` + `color: orange` | 可作为 v6 artifact 操作权威执行器；发布前仍需保留干净 baseline 报告 |
-| Hook | 核心 hook 已按 `changes/` 详情 + wikilink 索引运行；legacy fallback 统一提示迁移/桥接，不再教 v5 自修 | 继续以 hook tests + production gate 防回归 |
-| Skill/Docs/CLAUDE | CLAUDE/README/REFERENCE/skills 已收敛到“主 session 派 agent”规则；长文档仍有历史内容 | 长文档和流程图仍需清理或标注 historical |
+| Agent | `agents/artifact-writer.md` v6-only；frontmatter `name: artifact-writer` + `color: orange` + `effort: max`；写入受项目级 lock 串行化 | 可作为 v6 artifact 操作权威执行器；继续用 production smoke 防回归 |
+| Hook | 核心 hook 已按 `changes/` 详情 + wikilink 索引运行；legacy fallback 统一提示迁移/桥接；worktree 路由和 artifact-writer lock 已覆盖 | 代码层验证已过；剩余重点是 installed-plugin 真实 smoke |
+| Skill/Docs/CLAUDE | CLAUDE/README/REFERENCE/skills 已收敛到“主 session 判断、artifact-writer 写 artifact”规则；`audit` 已移至 internal | 长文档仍需持续标注 historical，避免旧 ticket 误导当前判断 |
 
 历史快照（2026-05-04）：GitHub 远端只有 `master`，没有 `main` 分支；`origin/master` 当时仍是 v5.1.4 代码树，缺少本地 v6 agent、docs、tests 和 migrate 工作。本段仅记录 guidebook 初始审计时的分叉状态，不作为当前 git 状态权威；提交前仍以 `git status` 为准并精确 add。
 
