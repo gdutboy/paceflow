@@ -88,7 +88,6 @@ if (paceSignal === 'artifact') {
       continue;
     }
 
-    requiresWalkthrough = true;
     totalPending += change.tasks.pending;
 
     if (change.category === 'blocked') {
@@ -115,6 +114,7 @@ if (paceSignal === 'artifact') {
       if (!change.verified) {
         warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。${FORMAT_SNIPPETS.closeOp}`);
       } else {
+        requiresWalkthrough = true;
         warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。${FORMAT_SNIPPETS.closeOp}`);
       }
     }
@@ -131,13 +131,13 @@ if (paceSignal === 'artifact') {
 
   try {
     const findingsDir = path.join(artDir, 'changes', 'findings');
-    const now = Date.now();
     const aged = fs.existsSync(findingsDir)
       ? fs.readdirSync(findingsDir).filter(f => f.endsWith('.md')).filter(f => {
           const detail = fs.readFileSync(path.join(findingsDir, f), 'utf8');
           const fm = paceUtils.parseFrontmatter(detail);
           if ((fm.status || 'open') !== 'open' || !fm.date) return false;
-          return (now - new Date(fm.date).getTime()) / 86400000 >= 14;
+          const days = paceUtils.daysSinceISODate(fm.date);
+          return days !== null && days >= 14;
         }).length
       : 0;
     if (aged > 0) warnings.push(`changes/findings/ 有 ${aged} 个 open finding 超过 14 天未流转，请询问用户采纳、否定或保持开放。`);

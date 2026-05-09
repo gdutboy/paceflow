@@ -14,9 +14,9 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录。可为 Obsidian vault project、本地项目根目录，或 `.pace/artifact-root` 中的自定义绝对/相对路径。选择“本地项目目录”时，这个目录是项目根目录本身；真实 git worktree 会读取宿主项目 `.pace/artifact-root` 并共用宿主 artifact；`.pace/` 只保存配置/运行态信号，不存 `task.md` / `implementation_plan.md` / `changes/**`。
 
 权威规范：
-- Agent prompt：`agents/artifact-writer.md`
-- Schema / 索引模板：`agent-references/artifact-writer-spec.md`
-- 操作步骤：`agent-references/instructions/*.md`
+- Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
+- Schema / 索引模板：`${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md`
+- 操作步骤：`${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/*.md`
 
 ---
 

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
-const { isPaceProject, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -86,6 +86,15 @@ test('优先级：artifact 存在时忽略 code-count', () => {
   fs.writeFileSync(path.join(dir, 'b.js'), '');
   fs.writeFileSync(path.join(dir, 'c.js'), '');
   assert.strictEqual(isPaceProject(dir), 'artifact');
+});
+
+console.log('\n--- date helpers ---');
+
+test('daysSinceISODate 使用日历日差，避免 UTC 解析偏差', () => {
+  assert.strictEqual(daysSinceISODate('2026-04-25', '2026-05-09'), 14);
+  assert.strictEqual(daysSinceISODate('"2026-04-25"', '2026-05-09'), 14);
+  assert.strictEqual(daysSinceISODate('2026-04-25T23:30:00+08:00', '2026-05-09'), 14);
+  assert.strictEqual(daysSinceISODate('not-a-date', '2026-05-09'), null);
 });
 
 // ============================================================

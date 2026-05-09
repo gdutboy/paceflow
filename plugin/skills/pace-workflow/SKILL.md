@@ -138,7 +138,7 @@ walkthrough-summary: <完成摘要>
 ```
 
 artifact writer 会同时写：
-- 必要时把当前 CHG 的 `[ ]` / `[/]` 任务收口为 `[x]`，推 frontmatter `status: completed`
+- 必要时把当前 CHG 的 `[ ]` / `[/]` 任务收口为 `[x]`，先推 frontmatter `status: completed`，最终归档为 `status: archived`
 - frontmatter `verified-date: YYYY-MM-DDTHH:mm:ss+08:00`
 - `changes/<id>.md` 中紧邻 `<!-- APPROVED -->` 下一行的 `<!-- VERIFIED -->`
 - `## 工作记录` 验证摘要

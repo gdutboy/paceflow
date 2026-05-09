@@ -254,7 +254,7 @@ schema-version: "6.0"
 
 ## 摘要索引
 
-<!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->
+<!-- 格式：- [状态] [[finding-id|title]] — summary #finding [date::] [impact::] -->
 
 
 <!-- ARCHIVE -->

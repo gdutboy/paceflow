@@ -280,6 +280,22 @@ test('2d. SessionStart 超大注入会在 50KB 前截断并给路径化提示', 
   assert.ok(r.stdout.includes('请按需 Read artifact 文件'));
 });
 
+test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
+  const dir = makeV6Project('ss-walkthrough-recent', { walkToday: false });
+  const rows = Array.from({ length: 12 }, (_, i) => {
+    const day = String(i + 1).padStart(2, '0');
+    return `| 2026-05-${day} | smoke ${day} | CHG-20260504-01 |`;
+  }).join('\n');
+  fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n<!-- ARCHIVE -->\n`, 'utf8');
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('| 2026-05-12 | smoke 12 | CHG-20260504-01 |'));
+  assert.ok(r.stdout.includes('| 2026-05-03 | smoke 03 | CHG-20260504-01 |'));
+  assert.ok(!r.stdout.includes('| 2026-05-01 | smoke 01 | CHG-20260504-01 |'));
+  assert.ok(!r.stdout.includes('| 2026-05-02 | smoke 02 | CHG-20260504-01 |'));
+  assert.ok(r.stdout.indexOf('2026-05-12') < r.stdout.indexOf('2026-05-11'));
+});
+
 test('3. compact 恢复显示 activeChanges', () => {
   const dir = makeV6Project('ss-compact', {
     paceRuntime: {
@@ -1720,6 +1736,7 @@ test('10. v6 未完成详情任务 → exit 2', () => {
 
 test('10a. 多任务 CHG 部分完成 → 继续执行，不提示 verify/close/archive', () => {
   const dir = makeV6Project('stop-partial-multitask', {
+    walkToday: false,
     detail: chgDetail({
       status: 'in-progress',
       approved: true,
@@ -1736,6 +1753,7 @@ test('10a. 多任务 CHG 部分完成 → 继续执行，不提示 verify/close/
   assert.ok(!r.stderr.includes('update-chg action=verify'));
   assert.ok(!r.stderr.includes('close-chg'));
   assert.ok(!r.stderr.includes('archive-chg'));
+  assert.ok(!r.stderr.includes('walkthrough.md 缺少'), '执行中且仍有 pending task 时不应提前要求 walkthrough');
 });
 
 test('11. v6 completed 但未 verified → exit 2', () => {

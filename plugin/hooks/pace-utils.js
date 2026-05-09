@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.35';
+const PACE_VERSION = 'v6.0.36';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -122,6 +122,19 @@ function ts() {
 /** 返回今日 ISO 日期（YYYY-MM-DD），sv-SE locale 技巧避免手动拼接 */
 function todayISO() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+}
+
+function isoDateDayNumber(value) {
+  const m = String(value || '').trim().replace(/^["']|["']$/g, '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000);
+}
+
+function daysSinceISODate(value, todayValue = todayISO()) {
+  const start = isoDateDayNumber(value);
+  const end = isoDateDayNumber(todayValue);
+  if (start === null || end === null) return null;
+  return end - start;
 }
 
 // H-1: 跨平台路径规范化（Windows 大小写不敏感，Linux 大小写敏感）
@@ -564,7 +577,7 @@ let _artifactDirCache = { cwd: null, dir: null };
 
 /**
  * 获取 artifact 文件的实际存储目录
- * 优先级：vault 有 artifact → vault | CWD 有 artifact → CWD | 新项目 → vault（默认）| 无 vault → CWD
+ * 优先级：显式 artifact-root → vault 有 v6 → CWD 有 v6 → legacy v5 → 新项目默认 vault/CWD
  * @param {string} cwd - 当前工作目录
  * @returns {string} artifact 目录路径
  */
@@ -1252,7 +1265,7 @@ module.exports = {
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
-  resolveProjectCwd, ts, todayISO, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
+  resolveProjectCwd, ts, todayISO, daysSinceISODate, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
   // 项目检测与路径
   isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,

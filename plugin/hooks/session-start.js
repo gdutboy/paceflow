@@ -295,21 +295,33 @@ for (const file of ARTIFACT_FILES) {
 
   // T-386: walkthrough 智能截断 — 索引表最近 10 行 + 最近 3 条详情段落
   if (file === 'walkthrough.md') {
-    // 索引表截断：保留表头 + 最近 10 行数据行
+    // 索引表截断：保留表头 + 最近 10 行数据行。close-chg 追加记录，因此按日期/原始行号倒序挑选最近项。
     const dataRe = /^\| \d{4}-\d{2}-\d{2} \|/gm;
     const dataRows = [];
     let m;
     while ((m = dataRe.exec(output)) !== null) {
       const lineStart = output.lastIndexOf('\n', m.index) + 1;
-      dataRows.push(lineStart);
+      const lineEnd = output.indexOf('\n', lineStart);
+      const line = output.slice(lineStart, lineEnd >= 0 ? lineEnd : output.length);
+      const date = (line.match(/^\| (\d{4}-\d{2}-\d{2}) \|/) || [])[1] || '';
+      dataRows.push({ lineStart, lineEnd, line, date, index: dataRows.length });
     }
     if (dataRows.length > 10) {
       const omitted = dataRows.length - 10;
-      // 保留前 10 行（最新），省略后面的旧记录
-      const cutStart = dataRows[10];
-      const lastRowStart = dataRows[dataRows.length - 1];
-      const lastRowEnd = output.indexOf('\n', lastRowStart);
-      output = output.slice(0, cutStart)
+      const keep = new Set(dataRows
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index)
+        .slice(0, 10)
+        .map(row => row.index));
+      const firstRowStart = dataRows[0].lineStart;
+      const last = dataRows[dataRows.length - 1];
+      const lastRowEnd = last.lineEnd >= 0 ? last.lineEnd : output.length;
+      const keptLines = dataRows
+        .filter(row => keep.has(row.index))
+        .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index)
+        .map(row => row.line);
+      output = output.slice(0, firstRowStart)
+        + keptLines.join('\n') + '\n'
         + `| ... | （已省略 ${omitted} 条旧记录，需要时 Read walkthrough.md） | | | |\n`
         + output.slice(lastRowEnd >= 0 ? lastRowEnd + 1 : output.length);
     }
@@ -318,7 +330,19 @@ for (const file of ARTIFACT_FILES) {
     const re = /^## \d{4}-\d{2}-\d{2}/gm;
     while ((m = re.exec(output)) !== null) pos.push(m.index);
     if (pos.length > 3) {
-      output = output.slice(0, pos[3]) + `（已省略 ${pos.length - 3} 条旧详情，需要时 Read walkthrough.md）\n`;
+      const sections = pos.map((start, index) => {
+        const end = index + 1 < pos.length ? pos[index + 1] : output.length;
+        const headerEnd = output.indexOf('\n', start);
+        const header = output.slice(start, headerEnd >= 0 ? headerEnd : end);
+        const date = (header.match(/^## (\d{4}-\d{2}-\d{2})/) || [])[1] || '';
+        return { text: output.slice(start, end).trimEnd(), date, index };
+      });
+      const latest = sections
+        .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index)
+        .slice(0, 3);
+      output = output.slice(0, pos[0])
+        + latest.map(section => section.text).join('\n')
+        + `\n（已省略 ${pos.length - 3} 条旧详情，需要时 Read walkthrough.md）\n`;
     }
   }
 
@@ -344,18 +368,28 @@ for (const file of ARTIFACT_FILES) {
     if (totalDetails > 0 && totalDetails > openKeys.length) {
       const lines = output.split('\n');
       const result = [];
-      let skip = false, cnt = 0;
+      let skip = false, cnt = 0, kept = 0;
+      const skippedTitles = [];
       for (const l of lines) {
         const dm = l.match(/^### \[\d{4}-\d{2}-\d{2}\] (.+)/);
         if (dm) {
           // 正向精确匹配：只保留 open 索引对应详情，避免共享前缀误保留/误跳过。
-          skip = !openKeys.includes(paceUtils.normalizeFindingKey(dm[1]));
-          if (skip) { cnt++; continue; }
+          const key = paceUtils.normalizeFindingKey(dm[1]);
+          skip = !openKeys.includes(key);
+          if (skip) { cnt++; skippedTitles.push(dm[1]); continue; }
+          kept++;
         } else if (skip) {
           if (/^#{2,3} /.test(l)) skip = false;
           else continue;
         }
         result.push(l);
+      }
+      if (openKeys.length > 0 && kept === 0 && skippedTitles.length > 0) {
+        log(paceUtils.logEntry('SessionStart', 'FINDINGS_DETAIL_MATCH_MISS', {
+          proj,
+          open: openKeys.length,
+          skipped: skippedTitles.slice(0, 5).join('; '),
+        }));
       }
       if (cnt > 0) {
         output = result.join('\n');
@@ -514,7 +548,6 @@ if (paceSignal) {
 try {
   const findingsActive = paceUtils.readActive(cwd, 'findings.md');
   if (findingsActive) {
-    const today = new Date();
     // I-14: 日期字符串集中到 todayISO()
     const yyyy = todayISO();
     const ageFlag = path.join(PACE_RUNTIME, `findings-age-${yyyy}`);
@@ -524,8 +557,8 @@ try {
       for (const line of openLines) {
         const dm = line.match(/\[date:: (\d{4}-\d{2}-\d{2})\]/);
         if (!dm) continue;
-        const days = Math.floor((today - new Date(dm[1])) / 86400000);
-        if (days >= 14) {
+        const days = paceUtils.daysSinceISODate(dm[1], yyyy);
+        if (days !== null && days >= 14) {
           const title = (line.match(/^- \[ \] (.+?)(?:\s*[#\[]|$)/) || [])[1] || line.slice(6, 60);
           aged.push({ title, days });
         }

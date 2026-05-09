@@ -106,6 +106,7 @@ function bashPathLooksArtifact(target, cwd, artDir) {
     if (paceUtils.artifactRelativePathForFile(artDir, resolved)) return true;
     if (paceUtils.artifactRelativePathForFile(cwd, resolved)) return true;
   } catch(e) {}
+  // Fallback only catches simple CWD-relative artifact names that tokenization cannot resolve.
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
   for (const root of roots) {
     for (const file of ARTIFACT_FILES) {
@@ -193,7 +194,7 @@ function isArtifactWriterAgentTool(stdin) {
 function normalizeArtifactDirValue(value) {
   const raw = normalizeArtifactRootChoice(value);
   if (!raw) return '';
-  return raw.replace(/\\/g, '/').replace(/\/+$/, '');
+  return paceUtils.normalizePath(raw.replace(/\\/g, '/')).replace(/\/+$/, '');
 }
 
 function extractPromptArtifactDir(prompt) {
@@ -1018,7 +1019,7 @@ paceUtils.withStdinParsed((stdin) => {
         log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
         return;
       }
-      // T-076: DENY 前懒创建缺失的模板文件
+      // T-076: DENY 前懒创建缺失的模板文件；幂等同内容创建，不需要 artifact-writer 写锁。
       let createdFiles = [];
       if (!taskFileExists) {
         try { createdFiles = createTemplates(cwd); } catch(e) {}

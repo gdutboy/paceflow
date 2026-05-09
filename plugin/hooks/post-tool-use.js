@@ -31,7 +31,6 @@ paceUtils.withStdinParsed((stdin) => {
   const editList = Array.isArray(stdin.toolInput.edits) ? stdin.toolInput.edits : [];
   const oldString = stdin.oldString || editList.map(e => e.old_string || '').join('\n');
   const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
-  const bashCommand = stdin.toolInput.command || '';
 
   const warnings = [];
   // W-dry-4: 每会话首次提醒辅助函数（flag 检查+写入去重）
@@ -56,16 +55,7 @@ paceUtils.withStdinParsed((stdin) => {
     paceUtils.getArtifactRootChoicePath(cwd),
     paceUtils.getV5MigrationStatePath(cwd),
   ];
-  const isRuntimeConfigEdit = runtimeConfigPaths.some(fp => {
-    const normalizedConfig = paceUtils.normalizePath(fp);
-    if (normalizedFile && normalizedFile === normalizedConfig) return true;
-    const rel = path.relative(cwd, fp).replace(/\\/g, '/');
-    const command = String(bashCommand || '').replace(/\\/g, '/');
-    return toolName === 'Bash' && (
-      command.includes(fp.replace(/\\/g, '/')) ||
-      (rel && command.includes(rel))
-    );
-  });
+  const isRuntimeConfigEdit = runtimeConfigPaths.some(fp => normalizedFile === paceUtils.normalizePath(fp));
   if (isRuntimeConfigEdit) {
     log(paceUtils.logEntry('PostToolUse', 'PASS_RUNTIME_CONFIG', { proj, tool: toolName, file: filePath || '-', dur: Date.now() - t0 }));
     return;
