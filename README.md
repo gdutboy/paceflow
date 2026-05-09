@@ -67,7 +67,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.38"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.39"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -279,6 +279,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.39 | 2026-05-09 | 同步 Claude Code native build 工具面变化：主 session 可能没有独立 `Glob` / `Grep` 工具，skill / smoke 文档改为允许只读 Bash `find` / `rg` / `grep` fallback；不改变 hook 行为 |
 | v6.0.38 | 2026-05-09 | 代码质量收尾：PostToolUse 对同一 CHG 的状态类提醒改为每会话一次；SessionStart 清理对应 per-CHG flags；`PACE_ARTIFACT_ROOT` 超长输入截断；logger lock stale 阈值从 5s 提到 30s；提取 artifact mutation 判定 helper 并补回归测试 |
 | v6.0.37 | 2026-05-09 | 修复二轮审计确认项：PreCompact 只桥接匹配当前项目的 Claude native plan，避免 `~/.claude/plans` 跨项目串线；Bash artifact 写保护覆盖 `bash -c` 内层脚本、`npx --write/--fix` 与 package runner 等间接写入；Stop walkthrough 提示改为由 close-chg 自动补写；同步 artifact-root、pace-bridge 与模板说明 |
 | v6.0.36 | 2026-05-09 | 修复审计确认项：findings 过期提醒改用本地日历日差，避免 UTC 解析偏差；Stop 不再对仍有 pending task 的执行中 CHG 提前要求 walkthrough；SessionStart walkthrough 截断按日期保留最近记录；清理 PostToolUse 死代码并补齐 close-chg / finding / agent reference 文档一致性 |
@@ -328,4 +329,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.38 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.39 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

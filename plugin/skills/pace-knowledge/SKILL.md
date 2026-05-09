@@ -136,7 +136,7 @@ sources:
 当 `changes/findings/<id>.md` 中的调研结论被判定为跨项目通用经验时，执行以下步骤：
 
 1. **判定通用性**：该经验是否在其他项目中也可能遇到？（如 Hook I/O 协议、AI 验证纪律、路径处理）
-2. **检查 knowledge/ 是否已有同主题笔记**：Grep `knowledge/` 目录中的标题和标签
+2. **检查 knowledge/ 是否已有同主题笔记**：优先用 `Grep` 检索 `knowledge/` 目录中的标题和标签；如果当前 Claude Code native build 返回 `No such tool available: Grep`，改用只读 Bash fallback（如 `rg` / `grep` / `find`），不要把缺少 `Grep` 当作流程失败。
 3. **已有** → Edit 追加新内容到 `## 详情` section，更新 `updated` 日期和 `sources`
 4. **未有** → Write 创建新笔记，使用 knowledge/ 模板，`status: concluded`
 5. **关联 finding**：`record-finding` 当前不维护 knowledge frontmatter 字段，且当前没有 `modify-finding` 指令；不要虚构 `update-chg` 能修改 finding 详情。通用知识的反向链接优先写在 knowledge 笔记正文引用原 finding；若确实需要补充 artifact 记录，派 `artifact-writer record-finding` 新建一条补充 finding，说明与原 finding / knowledge 笔记的关系。
