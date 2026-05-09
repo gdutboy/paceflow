@@ -67,7 +67,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.44"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.45"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -279,6 +279,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.45 | 2026-05-09 | 修复 production dogfood 暴露的 native plan 桥接收尾遗漏：pace-bridge Step 5 改为硬收尾，明确将源 plan basename 幂等写入宿主项目运行态 `.pace/synced-plans`；PreToolUse / SessionStart 的桥接提醒同步给出实际 synced-plans 路径，worktree 场景不再依赖模型猜测路径 |
 | v6.0.44 | 2026-05-09 | 优化 v5→v6 归档式迁移可读性和重跑安全性：旧 v5 文件顶部 frontmatter 不再原样落在 `<!-- ARCHIVE -->` 下方，而是转换为“v5 原始 frontmatter”历史 YAML 代码块；归档区增加 v5 历史说明，旧 H1 继续降级；`--force` 遇到已有 `.v5-backup` 时使用备份作为迁移源且不覆盖备份 |
 | v6.0.43 | 2026-05-09 | 修复真实 `ccauth` worktree 暴露的迁移提示断点：PreToolUse / Stop / PostToolUse / PostToolUseFailure / TaskSync / SubagentStop 的 artifact 相关拦截和提醒统一带当前 Artifact 根目录；legacy v5 下 Bash 手动 `mkdir changes/` 会被拦截，避免把旧 vault 伪装成未迁移的 v6 |
 | v6.0.42 | 2026-05-09 | 加固 v5→v6 归档式迁移脚本：legacy 文件内多个 `<!-- ARCHIVE -->` 历史边界会全部降级为 v5 历史注释，迁移后仍只保留一个 v6 标准 ARCHIVE 标记；同时兼容 CRLF legacy 文件。已用真实 `ccauth` v5 vault 副本完成 dry-run 与正式迁移 rehearsal |
@@ -334,4 +335,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.44 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.45 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

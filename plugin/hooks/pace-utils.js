@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.44';
+const PACE_VERSION = 'v6.0.45';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -1025,7 +1025,8 @@ function formatBridgeHint(cwd, artDir) {
   if (planFiles.length === 0) return null;
   const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
   const artPath = (artDir || cwd).replace(/\\/g, '/');
-  const bridgeSteps = `Read plan → 派 artifact-writer create-chg 创建 ${artPath}/changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若 plan 已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）。详见 /pace-bridge skill。`;
+  const syncedPath = path.join(getProjectRuntimeDir(cwd), 'synced-plans').replace(/\\/g, '/');
+  const bridgeSteps = `Read plan → 派 artifact-writer create-chg 创建 ${artPath}/changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若 plan 已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）；最后必须把已桥接 plan 的 basename 幂等追加到 ${syncedPath}（worktree 也写宿主项目 .pace）。详见 /pace-bridge skill。`;
   return { fileList, bridgeSteps };
 }
 

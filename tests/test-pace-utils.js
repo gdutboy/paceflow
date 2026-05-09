@@ -875,6 +875,7 @@ test('formatBridgeHint — 有未同步计划文件返回提示', () => {
   assert.ok(result.fileList.includes('docs/plans/2026-03-09-feature.md'), 'fileList 应含完整路径');
   assert.ok(result.bridgeSteps.includes('task.md'), 'bridgeSteps 应提到 task.md');
   assert.ok(result.bridgeSteps.includes('artifact-writer create-chg'), 'bridgeSteps 应走 artifact writer');
+  assert.ok(result.bridgeSteps.includes(path.join(dir, '.pace', 'synced-plans').replace(/\\/g, '/')), 'bridgeSteps 应给出运行态 synced-plans 绝对路径');
   assert.ok(!result.bridgeSteps.includes('Edit '), 'bridgeSteps 不应引导主 session 直接 Edit artifact');
 });
 

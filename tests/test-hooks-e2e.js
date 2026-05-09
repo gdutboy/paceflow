@@ -585,6 +585,7 @@ test('9c. native plan 桥接提示走 artifact writer', () => {
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
   assert.ok(r.stdout.includes('deny'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
+  assert.ok(r.stdout.includes('synced-plans'));
   assert.ok(!r.stdout.includes('Edit task.md'));
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'native plan deny 前应创建 v6 changes/ 基础目录');
 });

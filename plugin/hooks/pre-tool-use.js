@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, formatBridgeHint, getNativePlanPath, getProjectName, displayDir, normalizeArtifactRootChoice, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, getProjectRuntimeDir, formatBridgeHint, getNativePlanPath, getProjectName, displayDir, normalizeArtifactRootChoice, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -1079,7 +1079,9 @@ paceUtils.withStdinParsed((stdin) => {
       const createdMsg = createdFiles.length > 0
         ? `已自动创建 v6 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
         : `${artifactRootHint}。`;
-      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）；完成后删除 .pace/current-native-plan。`;
+      const syncedPlansPath = path.join(getProjectRuntimeDir(cwd), 'synced-plans').replace(/\\/g, '/');
+      const nativePlanName = path.basename(nativePlan);
+      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）；最后必须把 ${nativePlanName} 幂等追加到 ${syncedPlansPath}（worktree 也写宿主项目 .pace/synced-plans），再删除 .pace/current-native-plan。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(paceUtils.logEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
