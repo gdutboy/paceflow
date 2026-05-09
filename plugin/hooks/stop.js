@@ -148,7 +148,7 @@ if (paceSignal === 'artifact') {
   }
 
 } else if (taskActive) {
-  warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。不要继续在 task.md/implementation_plan.md/findings.md 手写 v5 活跃详情或 C/V 标记。`);
+  warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。不要继续在 task.md/implementation_plan.md/findings.md 手写 v5 活跃详情或 C/V 标记。若前一个代码写入被 hook 阻止，迁移或桥接后必须重试原始工具调用；不要把迁移本身报告为代码任务完成。`);
 
 } else if (existing.length > 0) {
   // task.md 不存在，但有其他 artifact → 不完整

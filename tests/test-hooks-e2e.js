@@ -782,6 +782,8 @@ test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
   assert.ok(r.stdout.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stdout.includes('AskUserQuestion'));
   assert.ok(r.stdout.includes('--dry-run'));
+  assert.ok(r.stdout.includes('当前工具调用已被 hook 阻止'));
+  assert.ok(r.stdout.includes('重试被阻止的原始工具调用'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
   assert.ok(!r.stdout.includes('补齐实施详情'));
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'legacy v5 阶段不应懒创建 changes/');
@@ -798,6 +800,8 @@ test('9d1. vault 中 legacy v5 artifact 优先进入迁移提示，不先询问 
   assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
   assert.ok(r.stdout.includes('v5 PACE artifact'));
   assert.ok(r.stdout.includes('--dry-run'));
+  assert.ok(r.stdout.includes('当前工具调用已被 hook 阻止'));
+  assert.ok(r.stdout.includes('必须再次使用 AskUserQuestion'));
   assert.ok(!r.stdout.includes('PACEflow 首次启用需要选择 artifact 存放位置'));
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '迁移确认前不应在 vault 创建 changes/');
 });
@@ -907,6 +911,7 @@ test('9haa1. legacy v5 存在时 artifact-writer 不得触发 v6 懒创建', () 
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('v5 PACE artifact'));
   assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(r.stdout.includes('重试被阻止的原始工具调用'));
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'legacy v5 上不得由 Agent path 懒创建 changes/');
 });
 
@@ -1830,6 +1835,7 @@ test('14b. legacy v5 Stop 只提示迁移或桥接', () => {
   assert.ok(r.stderr.includes('legacy task.md'));
   assert.ok(r.stderr.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stderr.includes('artifact-writer create-chg'));
+  assert.ok(r.stderr.includes('重试原始工具调用'));
   assert.ok(!r.stderr.includes('补齐实施详情'));
 });
 
@@ -2106,6 +2112,7 @@ test('17b. legacy v5 PostToolUse 只提示迁移或桥接', () => {
   assert.ok(r.stdout.includes('legacy task.md'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
   assert.ok(r.stdout.includes('不再校验或修复 v5'));
+  assert.ok(r.stdout.includes('不要把迁移本身报告为代码任务完成'));
 });
 
 console.log('\n--- v5 migration helper ---');

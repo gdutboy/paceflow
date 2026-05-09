@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.39';
+const PACE_VERSION = 'v6.0.40';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -531,16 +531,19 @@ function v5MigrationPromptMessage(cwd) {
     '检测到旧 v5 PACE artifact，但当前 artifact 根目录没有 changes/ v6 详情目录。',
     `Legacy artifact 根目录: ${displayDir(info.dir)}`,
     `检测到文件: ${info.files.join(', ')}`,
+    '注意：触发本提示的当前工具调用已被 hook 阻止；目标代码/artifact 尚未被修改。不要声称本次写入已经完成。',
     'PACEflow v6 不会自动改写旧 vault/本地 artifact。请先用 AskUserQuestion 询问用户如何处理：',
     '1. 迁移旧 v5 artifact 到 v6（推荐）：先运行 dry-run，展示摘要后再次确认，再运行正式迁移。',
     '2. 暂不迁移，改用其它 artifact root：写入 .pace/artifact-root 为 local / vault / 绝对路径，并写入 .pace/v5-migration-state 为 ignored。',
     '3. 取消本次操作，保持旧内容不变。',
     '迁移命令（必须先 dry-run）：',
     `node "${script}" "${artifactDir}" --dry-run`,
+    'dry-run 完成后，必须再次使用 AskUserQuestion 展示摘要并取得用户确认；不得把第一次选择当作正式迁移授权。',
     '用户确认 dry-run 摘要后再运行：',
     `node "${script}" "${artifactDir}"`,
     `如果用户明确决定忽略这份旧 v5 artifact，请写入 ${getV5MigrationStatePath(cwd)}，内容为纯文本 ignored；要重新提示则删除该文件。`,
     '禁止在用户确认前创建 changes/、懒创建 v6 模板或派 artifact-writer create-chg。',
+    '迁移或忽略只处理 artifact 根目录状态，不完成原始代码任务；处理完成后必须按 P-A-C 创建/批准 v6 CHG，再重试被阻止的原始工具调用。'
   ].join('\n');
 }
 

@@ -88,7 +88,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (taskActive) {
       if (isWriteOp) {
-        hints.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。Claude 任务列表不再从 v5 task.md 同步；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。`);
+        hints.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。Claude 任务列表不再从 v5 task.md 同步；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。迁移或桥接后仍需重试被阻止的原始代码写入。`);
       }
     } else {
       // task.md 不存在但在创建 todo

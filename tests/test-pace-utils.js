@@ -400,6 +400,9 @@ test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移
   const msg = v5MigrationPromptMessage(dir);
   assert.ok(msg.includes('AskUserQuestion'));
   assert.ok(msg.includes('--dry-run'));
+  assert.ok(msg.includes('当前工具调用已被 hook 阻止'));
+  assert.ok(msg.includes('必须再次使用 AskUserQuestion'));
+  assert.ok(msg.includes('重试被阻止的原始工具调用'));
   assert.ok(msg.includes('v5-migration-state'));
 });
 

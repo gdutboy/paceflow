@@ -1,4 +1,4 @@
-# PACEflow v6.0.39 Production Smoke
+# PACEflow v6.0.40 Production Smoke
 
 > Purpose: verify the installed marketplace plugin in real Claude Code main sessions.
 > This is different from fixture baselines and hook unit tests.
@@ -13,7 +13,7 @@ Expected plugin:
 
 ```text
 paceflow @ paceaitian-paceflow
-Version: 6.0.39
+Version: 6.0.40
 Installed components:
   Agents: artifact-writer
   Skills: artifact-management, pace-bridge, pace-knowledge, pace-workflow
@@ -29,7 +29,7 @@ export PACE_VAULT_PATH="/mnt/c/Users/Xiao/OneDrive/Documents/Obsidian"
 Plugin log path:
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.39"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.40"
 test -d "$PLUGIN_DIR"
 tail -n 80 "$PLUGIN_DIR/hooks/pace-hooks.log"
 ```
@@ -37,7 +37,7 @@ tail -n 80 "$PLUGIN_DIR/hooks/pace-hooks.log"
 If the cache path differs, find it with:
 
 ```bash
-find "$HOME/.claude/plugins" -path '*paceaitian-paceflow*paceflow*6.0.39*' -type d | head
+find "$HOME/.claude/plugins" -path '*paceaitian-paceflow*paceflow*6.0.40*' -type d | head
 ```
 
 Useful evidence to capture after each smoke:
@@ -76,6 +76,10 @@ if (add(1, 2) !== 3) throw new Error('add failed');
 console.log('ok');
 EOF
 
+cat > smoke-helper.js <<'EOF'
+export const smokeHelper = true;
+EOF
+
 cat > package.json <<'EOF'
 {"type":"module","scripts":{"test":"node calc.test.js"}}
 EOF
@@ -95,6 +99,7 @@ Expected:
 - No local `task.md`, `implementation_plan.md`, or `changes/`.
 - No Obsidian `projects/paceflow-smoke-local` folder created just by SessionStart.
 - No `.pace/` created just by idle SessionStart.
+- The project intentionally has 3 JavaScript files so Smoke 1 triggers the artifact-root hard gate on the first code edit.
 
 Verify outside Claude Code:
 
@@ -179,6 +184,7 @@ mkdir -p /mnt/k/AI/paceflow-smoke-vault
 cd /mnt/k/AI/paceflow-smoke-vault
 printf 'console.log("vault smoke")\n' > index.js
 printf 'console.log("test ok")\n' > test.js
+printf 'export const helper = true\n' > helper.js
 printf 'notes\n' > README.md
 ```
 
@@ -251,16 +257,30 @@ Prompt:
 Expected:
 
 - Hook should not ask artifact-root first.
+- The first `Edit` should be denied before `a.js` is modified.
 - Hook should detect legacy v5 artifact and ask for migration/bridge decision.
-- Before user confirms migration, no `changes/` should be created.
+- Before user confirms migration, no `changes/` should be created and `a.js` should still contain `legacy a`.
 - `artifact-writer create-chg` must not be allowed to mix v6 details into legacy root files.
+- If you choose migration, the main session must run dry-run first, show the summary, ask you again before the real migration, then treat the original code change as still pending.
 
-Verify:
+Verify before confirming migration:
 
 ```bash
 cd /mnt/k/AI/paceflow-smoke-v5
 test ! -d changes
 rg 'Legacy v5 task' task.md
+rg 'legacy a' a.js
+```
+
+If you confirm migration after dry-run, verify the migration result:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-v5
+test -d changes/findings
+test -d changes/corrections
+test -f task.md.v5-backup
+rg 'v5 历史|Legacy v5 task' task.md
+rg 'legacy a' a.js
 ```
 
 ## Smoke 5: Worktree Routing + Artifact Writer Lock
