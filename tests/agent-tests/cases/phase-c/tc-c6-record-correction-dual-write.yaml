@@ -1,0 +1,42 @@
+id: TC-C6
+phase: C
+indication: record-correction-dual-write-contract
+description: record-correction 正向 contract，验证 correction 详情与 corrections.md 索引双写，以及 knowledge-link 输入归一。
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-correction
+  fields:
+    trigger-quote: "测试用例要求记录 correction 并关联知识笔记"
+    wrong-behavior: 主 session 在 close-chg 前没有读取验证输出就声称验证已通过，导致流程状态和真实执行证据脱节
+    correct-behavior: 正确做法是主 session 必须先运行并读取验证输出，再把验证摘要作为 close-chg 的 evidence 传给 artifact-writer
+    trigger-scenario: Phase C TC-C6 record-correction 双写正向路径
+    root-cause: 流程提示只强调状态更新，没有把验证证据读取作为 close-chg 前置条件显式表达
+    knowledge-link: "[[paceflow-review-gate]]"
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/corrections/correction-{ISO_DATE}-01-*.md"
+  files_modified:
+    - corrections.md
+  validations:
+    frontmatter_schema: pass
+    correction_id_pattern: "CORRECTION-{ISO_DATE}-01"
+    knowledge_link_value: "[[paceflow-review-gate]]"
+    project_scope_value: null
+    correction_index_contains: "paceflow-review-gate"
+    title_derived_from_wrong_behavior: true
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+  filename_match: lenient
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true

@@ -84,6 +84,20 @@ function parseFrontmatter(content) {
   return out;
 }
 
+function normalizeFrontmatterScalar(value) {
+  const s = String(value ?? '').trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function expectedScalar(value, variables) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return renderVariables(value, variables);
+  return String(value);
+}
+
 function checkFrontmatterSchema(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
   const fm = parseFrontmatter(content);
@@ -334,6 +348,12 @@ function verify(testCase, targetDir, variables, agentReport) {
     targetFrontmatter = parseFrontmatter(targetDetail);
   }
 
+  const createdDetailFiles = (exp.files_created || [])
+    .flatMap((rel) => resolveExpectedFiles(targetDir, rel, variables, exp).matches)
+    .filter((fp) => isDetailFile(fp));
+  const createdDetailByPrefix = (prefix) =>
+    createdDetailFiles.find((fp) => path.basename(fp).startsWith(prefix));
+
   if (expectedValidations.frontmatter_status) {
     const actual = targetFrontmatter && targetFrontmatter.status;
     validations.push({
@@ -369,6 +389,146 @@ function verify(testCase, targetDir, variables, agentReport) {
       ok,
       expected: expectedValidations.verified_marker_set,
       reason: targetDetail ? undefined : 'target detail missing',
+    });
+  }
+
+  if (expectedValidations.finding_id_pattern) {
+    const fp = createdDetailByPrefix('finding-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const expectedPattern = renderVariables(expectedValidations.finding_id_pattern, variables);
+    const actual = fm && normalizeFrontmatterScalar(fm['finding-id']);
+    validations.push({
+      name: 'finding_id_pattern',
+      ok: Boolean(actual) && actual.startsWith(expectedPattern),
+      actual,
+      expected: expectedPattern,
+      reason: fp ? undefined : 'finding detail missing',
+    });
+  }
+
+  if (expectedValidations.finding_status) {
+    const fp = createdDetailByPrefix('finding-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const actual = fm && normalizeFrontmatterScalar(fm.status);
+    validations.push({
+      name: 'finding_status',
+      ok: actual === expectedValidations.finding_status,
+      actual,
+      expected: expectedValidations.finding_status,
+      reason: fp ? undefined : 'finding detail missing',
+    });
+  }
+
+  if (expectedValidations.summary_length_le_200 !== undefined) {
+    const fp = createdDetailByPrefix('finding-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const actual = fm && normalizeFrontmatterScalar(fm.summary);
+    const ok = Boolean(actual) && actual.length <= 200;
+    validations.push({
+      name: 'summary_length_le_200',
+      ok: expectedValidations.summary_length_le_200 ? ok : !ok,
+      actual: actual ? actual.length : null,
+      expected: '<=200',
+      reason: fp ? undefined : 'finding detail missing',
+    });
+  }
+
+  if (expectedValidations.impact_in_index_row) {
+    const content = fileExists(path.join(targetDir, 'findings.md'))
+      ? fs.readFileSync(path.join(targetDir, 'findings.md'), 'utf8')
+      : '';
+    const expectedImpact = expectedScalar(expectedValidations.impact_in_index_row, variables);
+    validations.push({
+      name: 'impact_in_index_row',
+      ok: content.includes(`[impact:: ${expectedImpact}]`),
+      actual: content.includes('[impact::') ? 'impact metadata present' : 'missing impact metadata',
+      expected: expectedImpact,
+    });
+  }
+
+  if (expectedValidations.correction_id_pattern) {
+    const fp = createdDetailByPrefix('correction-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const expectedPattern = renderVariables(expectedValidations.correction_id_pattern, variables);
+    const actual = fm && normalizeFrontmatterScalar(fm['correction-id']);
+    validations.push({
+      name: 'correction_id_pattern',
+      ok: Boolean(actual) && actual.startsWith(expectedPattern),
+      actual,
+      expected: expectedPattern,
+      reason: fp ? undefined : 'correction detail missing',
+    });
+  }
+
+  if (expectedValidations.knowledge_link_null !== undefined) {
+    const fp = createdDetailByPrefix('correction-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const actual = fm && normalizeFrontmatterScalar(fm['knowledge-link']);
+    const ok = actual === 'null';
+    validations.push({
+      name: 'knowledge_link_null',
+      ok: expectedValidations.knowledge_link_null ? ok : !ok,
+      actual,
+      expected: 'null',
+      reason: fp ? undefined : 'correction detail missing',
+    });
+  }
+
+  if (expectedValidations.knowledge_link_value !== undefined) {
+    const fp = createdDetailByPrefix('correction-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const actual = fm && normalizeFrontmatterScalar(fm['knowledge-link']);
+    const expected = expectedScalar(expectedValidations.knowledge_link_value, variables);
+    validations.push({
+      name: 'knowledge_link_value',
+      ok: actual === expected,
+      actual,
+      expected,
+      reason: fp ? undefined : 'correction detail missing',
+    });
+  }
+
+  if (expectedValidations.project_scope_value !== undefined) {
+    const fp = createdDetailByPrefix('correction-');
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const actual = fm && normalizeFrontmatterScalar(fm['project-scope']);
+    const expected = expectedScalar(expectedValidations.project_scope_value, variables);
+    validations.push({
+      name: 'project_scope_value',
+      ok: actual === expected,
+      actual,
+      expected,
+      reason: fp ? undefined : 'correction detail missing',
+    });
+  }
+
+  if (expectedValidations.correction_index_contains) {
+    const content = fileExists(path.join(targetDir, 'corrections.md'))
+      ? fs.readFileSync(path.join(targetDir, 'corrections.md'), 'utf8')
+      : '';
+    const expectedText = expectedScalar(expectedValidations.correction_index_contains, variables);
+    validations.push({
+      name: 'correction_index_contains',
+      ok: content.includes(expectedText),
+      actual: content.includes(expectedText) ? 'matched' : 'not matched',
+      expected: expectedText,
+    });
+  }
+
+  if (expectedValidations.title_derived_from_wrong_behavior !== undefined) {
+    const fp = createdDetailByPrefix('correction-');
+    const content = fp ? fs.readFileSync(fp, 'utf8') : '';
+    const m = content.match(/^# Correction:\s*(.+)$/m);
+    const title = m ? m[1].trim() : '';
+    const wrongBehavior = testCase.input && testCase.input.fields && testCase.input.fields['wrong-behavior'];
+    const renderedWrong = typeof wrongBehavior === 'string' ? renderVariables(wrongBehavior, variables).trim() : '';
+    const ok = Boolean(title) && title.length <= 80 && title !== renderedWrong;
+    validations.push({
+      name: 'title_derived_from_wrong_behavior',
+      ok: expectedValidations.title_derived_from_wrong_behavior ? ok : !ok,
+      actual: title || '<missing>',
+      expected: 'derived title, not verbatim wrong-behavior',
+      reason: fp ? undefined : 'correction detail missing',
     });
   }
 

@@ -11,7 +11,7 @@ tests/agent-tests/
 ├── cases/                   # 测试用例（YAML）
 │   ├── phase-a/             # 核心指令 happy path
 │   ├── phase-b/             # 负例与拒绝路径
-│   ├── phase-c/             # C 阶段批准与确认门禁
+│   ├── phase-c/             # C/V 阶段合并操作与正向 contract
 │   └── phase-d/             # 边界与大输入
 ├── fixtures/                # vault 状态快照（cp -r 到临时目录后跑测试）
 │   └── empty-v6/            # 空 v6 项目（5 索引模板 + 空 changes/）

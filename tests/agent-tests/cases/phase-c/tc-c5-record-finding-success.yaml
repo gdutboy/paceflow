@@ -1,0 +1,54 @@
+id: TC-C5
+phase: C
+indication: record-finding-success-contract
+description: record-finding 正向 contract，验证详情文件、findings.md 索引、frontmatter 摘要与正文保真。
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+
+input:
+  operation: record-finding
+  fields:
+    title: TC-C5 Phase C 正向 Finding
+    summary: Phase C record-finding 正向用例，验证详情、索引、frontmatter 与正文保真
+    type: observation
+    impact: P2
+    body: |
+      # 背景
+
+      TC-C5 用来锁定 record-finding 的正向 contract。
+
+      # 发现
+
+      - Agent 必须创建 changes/findings/ 下的详情文件。
+      - Agent 必须在 findings.md 摘要索引写入 wikilink。
+      - 输入 body 是 opaque payload，不能摘要、截断或改写。
+
+      # 验收
+
+      详情文件应原样包含本段正文。
+
+expected:
+  status: SUCCESS
+  files_created:
+    - "changes/findings/finding-{ISO_DATE}-tc-c5-phase-c.md"
+  files_modified:
+    - findings.md
+  validations:
+    frontmatter_schema: pass
+    finding_id_pattern: "FINDING-{ISO_DATE}-"
+    summary_length_le_200: true
+    impact_in_index_row: P2
+    finding_status: open
+  body_completeness_check: true
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+  filename_match: lenient
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true

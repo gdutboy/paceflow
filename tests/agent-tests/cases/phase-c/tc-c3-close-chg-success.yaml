@@ -1,7 +1,7 @@
-id: TC-A9
-phase: A
-indication: smoke-test-close-chg
-description: 验证 close-chg 在 completed + 未 VERIFIED + 全部任务完成状态下一次完成 verify + archive + walkthrough 收尾
+id: TC-C3
+phase: C
+indication: close-chg-success-contract
+description: close-chg 在主 session 已确认验证通过后，一次完成未完成任务收口、VERIFIED、归档和 walkthrough。
 
 setup:
   fixture: empty-v6
@@ -13,7 +13,7 @@ setup:
       content: |
         ---
         chg-id: CHG-{DATE_UPPER}-01
-        status: completed
+        status: in-progress
         date: {ISO_DATE}
         type: change
         parent-tasks: ["[[task]]"]
@@ -22,35 +22,36 @@ setup:
         aliases: []
         tags: []
         schema-version: "6.0"
-        completed-date: {ISO_DATE}T03:00:00+08:00
+        completed-date: null
         verified-date: null
         archived-date: null
         ---
 
-        # TC-A9 测试 close-chg
+        # TC-C3 测试 close-chg success
 
         ## 任务清单
 
-        - [x] T-901 测试任务一
-        - [x] T-902 测试任务二
+        - [x] T-901 已完成任务
+        - [/] T-902 验证前仍在进行的任务
 
         <!-- APPROVED -->
 
         ## 实施详情
 
-        **背景（Why）**：测试 close-chg
+        **背景（Why）**：测试 close-chg 对 open task 的一次性收口。
 
         ## 工作记录
 
         | 日期 | 完成内容 |
         | --- | --- |
+        | {ISO_DATE} | T-901 已完成 |
     - path: task.md
       content: |
         # 项目任务追踪
 
         ## 活跃任务
 
-        - [x] [[chg-{date}-01]] TC-A9 测试 close-chg #change [tasks:: T-901~T-902]
+        - [/] [[chg-{date}-01]] TC-C3 测试 close-chg success #change [tasks:: T-901~T-902]
 
         <!-- ARCHIVE -->
     - path: implementation_plan.md
@@ -61,7 +62,7 @@ setup:
 
         <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
 
-        - [x] [[chg-{date}-01]] TC-A9 测试 close-chg #change [tasks:: T-901~T-902]
+        - [/] [[chg-{date}-01]] TC-C3 测试 close-chg success #change [tasks:: T-901~T-902]
 
         <!-- ARCHIVE -->
 
@@ -71,8 +72,8 @@ input:
     target: "CHG-{DATE_UPPER}-01"
     verification-confirmed: true
     complete-open-tasks: true
-    verify-summary: "TC-A9 验证通过"
-    walkthrough-summary: "TC-A9 close-chg 收尾完成"
+    verify-summary: "TC-C3 主 session 已运行并读取验证结果"
+    walkthrough-summary: "TC-C3 close-chg 合并收尾成功"
 
 expected:
   status: SUCCESS
@@ -83,13 +84,17 @@ expected:
     - walkthrough.md
   validations:
     frontmatter_status: archived
+    completed_date_set: true
     verified_date_set: true
     verified_marker_set: true
     archived_date_set: true
+    detail_task_status:
+      T-901: "x"
+      T-902: "x"
     task_md_index_below_archive: true
     impl_plan_index_below_archive: true
     walkthrough_row_added: true
-    work_record_contains: "验证通过：TC-A9 验证通过"
+    work_record_contains: "验证通过：TC-C3 主 session 已运行并读取验证结果"
   max_tokens: 70000
   max_duration_ms: 360000
   max_tool_uses: 24

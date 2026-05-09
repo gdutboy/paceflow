@@ -1,7 +1,7 @@
-id: TC-A9
-phase: A
-indication: smoke-test-close-chg
-description: 验证 close-chg 在 completed + 未 VERIFIED + 全部任务完成状态下一次完成 verify + archive + walkthrough 收尾
+id: TC-C4
+phase: C
+indication: archive-chg-success-contract
+description: archive-chg 在 completed + VERIFIED + 全任务完成状态下只做归档与 walkthrough，不负责验证判断。
 
 setup:
   fixture: empty-v6
@@ -23,34 +23,36 @@ setup:
         tags: []
         schema-version: "6.0"
         completed-date: {ISO_DATE}T03:00:00+08:00
-        verified-date: null
+        verified-date: {ISO_DATE}T03:30:00+08:00
         archived-date: null
         ---
 
-        # TC-A9 测试 close-chg
+        # TC-C4 测试 archive-chg success
 
         ## 任务清单
 
-        - [x] T-901 测试任务一
-        - [x] T-902 测试任务二
+        - [x] T-901 已完成任务
+        - [x] T-902 已完成任务
 
         <!-- APPROVED -->
+        <!-- VERIFIED -->
 
         ## 实施详情
 
-        **背景（Why）**：测试 close-chg
+        **背景（Why）**：测试 archive-chg 纯归档路径。
 
         ## 工作记录
 
         | 日期 | 完成内容 |
         | --- | --- |
+        | {ISO_DATE} | 验证已完成 |
     - path: task.md
       content: |
         # 项目任务追踪
 
         ## 活跃任务
 
-        - [x] [[chg-{date}-01]] TC-A9 测试 close-chg #change [tasks:: T-901~T-902]
+        - [x] [[chg-{date}-01]] TC-C4 测试 archive-chg success #change [tasks:: T-901~T-902]
 
         <!-- ARCHIVE -->
     - path: implementation_plan.md
@@ -61,18 +63,15 @@ setup:
 
         <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
 
-        - [x] [[chg-{date}-01]] TC-A9 测试 close-chg #change [tasks:: T-901~T-902]
+        - [x] [[chg-{date}-01]] TC-C4 测试 archive-chg success #change [tasks:: T-901~T-902]
 
         <!-- ARCHIVE -->
 
 input:
-  operation: close-chg
+  operation: archive-chg
   fields:
     target: "CHG-{DATE_UPPER}-01"
-    verification-confirmed: true
-    complete-open-tasks: true
-    verify-summary: "TC-A9 验证通过"
-    walkthrough-summary: "TC-A9 close-chg 收尾完成"
+    walkthrough-summary: "TC-C4 archive-chg 纯归档成功"
 
 expected:
   status: SUCCESS
@@ -89,10 +88,9 @@ expected:
     task_md_index_below_archive: true
     impl_plan_index_below_archive: true
     walkthrough_row_added: true
-    work_record_contains: "验证通过：TC-A9 验证通过"
-  max_tokens: 70000
-  max_duration_ms: 360000
-  max_tool_uses: 24
+  max_tokens: 50000
+  max_duration_ms: 240000
+  max_tool_uses: 18
   report_title_prefix_allowed: true
 
 teardown:

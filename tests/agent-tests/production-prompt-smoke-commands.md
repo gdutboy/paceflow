@@ -23,7 +23,7 @@ mkdir -p /tmp/paceflow-agent-baseline-production
 
 ## Production Release Gate
 
-22 个结构性用例，不含 TC-D2。发布前优先跑这个。
+28 个结构性用例，不含 TC-D2。发布前优先跑这个。
 
 ```bash
 cd /mnt/k/AI/paceflow-hooks/paceflow
@@ -87,6 +87,22 @@ node tests/agent-tests/run-tests.js teardown cases/phase-a/tc-a9-close-chg.yaml
 node tests/agent-tests/run-tests.js prepare cases/phase-a/tc-a10-approve-and-start.yaml --mode production
 node tests/agent-tests/run-tests.js verify cases/phase-a/tc-a10-approve-and-start.yaml /tmp/paceflow-agent-baseline-production/tc-a10-report.json
 node tests/agent-tests/run-tests.js teardown cases/phase-a/tc-a10-approve-and-start.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-c/tc-c3-close-chg-success.yaml --mode production
+node tests/agent-tests/run-tests.js verify cases/phase-c/tc-c3-close-chg-success.yaml /tmp/paceflow-agent-baseline-production/tc-c3-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-c/tc-c3-close-chg-success.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-c/tc-c4-archive-chg-success.yaml --mode production
+node tests/agent-tests/run-tests.js verify cases/phase-c/tc-c4-archive-chg-success.yaml /tmp/paceflow-agent-baseline-production/tc-c4-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-c/tc-c4-archive-chg-success.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-c/tc-c5-record-finding-success.yaml --mode production
+node tests/agent-tests/run-tests.js verify cases/phase-c/tc-c5-record-finding-success.yaml /tmp/paceflow-agent-baseline-production/tc-c5-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-c/tc-c5-record-finding-success.yaml
+
+node tests/agent-tests/run-tests.js prepare cases/phase-c/tc-c6-record-correction-dual-write.yaml --mode production
+node tests/agent-tests/run-tests.js verify cases/phase-c/tc-c6-record-correction-dual-write.yaml /tmp/paceflow-agent-baseline-production/tc-c6-report.json
+node tests/agent-tests/run-tests.js teardown cases/phase-c/tc-c6-record-correction-dual-write.yaml
 
 node tests/agent-tests/run-tests.js prepare cases/phase-b/tc-b1-missing-title.yaml --mode production
 node tests/agent-tests/run-tests.js verify cases/phase-b/tc-b1-missing-title.yaml /tmp/paceflow-agent-baseline-production/tc-b1-report.json

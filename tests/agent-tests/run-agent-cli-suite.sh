@@ -8,7 +8,7 @@
 #   MODE=production tests/agent-tests/run-agent-cli-suite.sh production-gate
 #
 # Full harness baseline:
-#   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 25
+#   MODE=harness tests/agent-tests/run-agent-cli-suite.sh 29
 #
 # Useful env:
 #   MODEL=sonnet|opus|...       Pass --model to claude
@@ -166,6 +166,10 @@ ALL_CASES=(
   "cases/phase-b/tc-b9-not-pace-project.yaml TC-B9"
   "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
   "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
+  "cases/phase-c/tc-c3-close-chg-success.yaml TC-C3"
+  "cases/phase-c/tc-c4-archive-chg-success.yaml TC-C4"
+  "cases/phase-c/tc-c5-record-finding-success.yaml TC-C5"
+  "cases/phase-c/tc-c6-record-correction-dual-write.yaml TC-C6"
   "cases/phase-d/tc-d1-corrections-md-missing.yaml TC-D1"
   "cases/phase-d/tc-d2-large-body.yaml TC-D2"
   "cases/phase-d/tc-d3-archive-marker-missing.yaml TC-D3"
@@ -194,6 +198,10 @@ PRODUCTION_GATE_CASES=(
   "cases/phase-b/tc-b9-not-pace-project.yaml TC-B9"
   "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
   "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
+  "cases/phase-c/tc-c3-close-chg-success.yaml TC-C3"
+  "cases/phase-c/tc-c4-archive-chg-success.yaml TC-C4"
+  "cases/phase-c/tc-c5-record-finding-success.yaml TC-C5"
+  "cases/phase-c/tc-c6-record-correction-dual-write.yaml TC-C6"
   "cases/phase-d/tc-d1-corrections-md-missing.yaml TC-D1"
   "cases/phase-d/tc-d3-archive-marker-missing.yaml TC-D3"
   "cases/phase-d/tc-d5-broken-wikilink.yaml TC-D5"
@@ -206,6 +214,10 @@ PRODUCTION_SMOKE_CASES=(
   "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
   "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
   "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
+  "cases/phase-c/tc-c3-close-chg-success.yaml TC-C3"
+  "cases/phase-c/tc-c4-archive-chg-success.yaml TC-C4"
+  "cases/phase-c/tc-c5-record-finding-success.yaml TC-C5"
+  "cases/phase-c/tc-c6-record-correction-dual-write.yaml TC-C6"
   "cases/phase-b/tc-b1-missing-title.yaml TC-B1"
   "cases/phase-b/tc-b7-out-of-scope.yaml TC-B7"
   "cases/phase-b/tc-b8-unknown-operation.yaml TC-B8"
@@ -222,10 +234,11 @@ MERGED_OPERATION_CASES=(
   "cases/phase-a/tc-a10-approve-and-start.yaml TC-A10"
   "cases/phase-c/tc-c1-approve-and-start.yaml TC-C1"
   "cases/phase-c/tc-c2-approve-requires-confirmation.yaml TC-C2"
+  "cases/phase-c/tc-c3-close-chg-success.yaml TC-C3"
 )
 
 case "$SUITE" in
-  21|23|25|all)
+  21|23|25|29|all)
     if [[ "$MODE" == "production" ]]; then
       echo "NOTE: suite '$SUITE' includes optional content fidelity case TC-D2; use production-gate for release blocking." >&2
     fi
@@ -245,7 +258,7 @@ case "$SUITE" in
     ;;
   *)
     echo "Unknown suite: $SUITE" >&2
-    echo "Available: production-gate, production-smoke, content, merged, 25, 23, 21" >&2
+    echo "Available: production-gate, production-smoke, content, merged, 29, 25, 23, 21" >&2
     exit 2
     ;;
 esac

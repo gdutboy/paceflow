@@ -1139,6 +1139,53 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
+// 18. release sanity — 2 个测试
+// ============================================================
+console.log('\n--- release sanity ---');
+
+test('plugin manifest 与 marketplace version 一致', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const pluginManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+  const marketplace = JSON.parse(fs.readFileSync(path.join(repoRoot, '.claude-plugin', 'marketplace.json'), 'utf8'));
+  assert.strictEqual(
+    pluginManifest.version,
+    marketplace.plugins[0].version,
+    'plugin manifest 和 marketplace version 必须一致'
+  );
+});
+
+test('plugin runtime root 不包含开发资料', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const pluginRoot = path.join(repoRoot, 'plugin');
+  const allowedTopLevel = new Set(['.claude-plugin', 'agent-references', 'agents', 'hooks', 'migrate', 'skills']);
+  for (const name of fs.readdirSync(pluginRoot)) {
+    assert.ok(allowedTopLevel.has(name), `plugin runtime 顶层不应包含 ${name}`);
+  }
+
+  const disallowed = [];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(pluginRoot, full).split(path.sep).join('/');
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (
+        rel.startsWith('docs/') ||
+        rel.startsWith('tests/') ||
+        rel.startsWith('internal/') ||
+        rel.startsWith('config/') ||
+        /^ticket.*\.md$/.test(path.basename(rel)) ||
+        /(^|\/)(HOOKS-TEST|MEMORY|migrate-artifacts\.js)$/.test(rel)
+      ) {
+        disallowed.push(rel);
+      }
+    }
+  }
+  walk(pluginRoot);
+  assert.deepStrictEqual(disallowed.sort(), [], `plugin runtime 不应包含开发资料: ${disallowed.join(', ')}`);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 t.cleanup();
