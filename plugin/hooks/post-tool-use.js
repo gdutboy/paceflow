@@ -178,7 +178,7 @@ paceUtils.withStdinParsed((stdin) => {
 
   // I-8: warnings 通过 additionalContext 输出给 AI（单条拼接，非逐条输出）
   if (warnings.length > 0) {
-    const ctx = `PACE 提醒：${warnings.join('；')}`;
+    const ctx = `PACE 提醒：${warnings.join('；')}\n${paceUtils.artifactDirRuntimeHint(cwd)}`;
     const output = {
       hookSpecificOutput: {
         hookEventName: "PostToolUse",

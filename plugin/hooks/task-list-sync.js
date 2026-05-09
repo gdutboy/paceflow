@@ -61,6 +61,7 @@ paceUtils.withStdinParsed((stdin) => {
     const taskActive = readActive(cwd, 'task.md');
     // W-dry-2: 预计算桥接提示（供两处 Superpowers DENY 复用）
     const artDir = getArtifactDir(cwd);
+    const artifactHint = paceUtils.artifactDirRuntimeHint(cwd);
     const bridgeHint = formatBridgeHint(cwd, artDir);
     const hints = [];
 
@@ -98,7 +99,7 @@ paceUtils.withStdinParsed((stdin) => {
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
               permissionDecision: "deny",
-              permissionDecisionReason: `检测到 Superpowers 计划文件（${bridgeHint.fileList}）但 task.md 不存在。请先执行桥接：${bridgeHint.bridgeSteps}`
+              permissionDecisionReason: `检测到 Superpowers 计划文件（${bridgeHint.fileList}）但 task.md 不存在。请先执行桥接：${bridgeHint.bridgeSteps}\n${artifactHint}`
             }
           };
           process.stdout.write(JSON.stringify(denyOutput));
@@ -118,7 +119,7 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     if (hints.length > 0) {
-      const ctx = `Claude 任务列表同步校验：${hints.join(' ')}`;
+      const ctx = `Claude 任务列表同步校验：${hints.join(' ')}\n${artifactHint}`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",

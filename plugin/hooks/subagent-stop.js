@@ -42,7 +42,7 @@ function writeContext(message) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'SubagentStop',
-      additionalContext: message,
+      additionalContext: paceUtils.appendArtifactDirHint(cwd, message),
     },
   }));
 }

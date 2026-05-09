@@ -140,10 +140,11 @@ function bashPathLooksArtifact(target, cwd, artDir) {
     for (const file of ARTIFACT_FILES) {
       if (t === `${root}/${file}`) return true;
     }
+    if (t === `${root}/changes`) return true;
     if (t.startsWith(`${root}/changes/`)) return true;
   }
   return /^(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)$/.test(t) ||
-    /^(?:\.\/)?changes\//.test(t);
+    /^(?:\.\/)?changes(?:\/|$)/.test(t);
 }
 
 function bashCommandRedirectsToArtifact(command, cwd, artDir) {
@@ -179,6 +180,18 @@ function bashSearchText(command) {
   return String(command || '').replace(/\\(["'`])/g, '$1').replace(/\\/g, '/');
 }
 
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function bashTextReferencesPathOrChild(text, target) {
+  const normalized = String(target || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!normalized) return false;
+  const c = String(text || '');
+  if (c.includes(`${normalized}/`)) return true;
+  return new RegExp(`${escapeRegExp(normalized)}(?=$|[\\s"'\\\`;|&<>])`).test(c);
+}
+
 function bashCommandReferencesArtifactWriterLock(command, cwd) {
   const c = bashSearchText(command);
   const lockPath = paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/');
@@ -207,12 +220,12 @@ function bashCommandReferencesArtifact(command, cwd, artDir) {
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
   for (const root of roots) {
     for (const file of ARTIFACT_FILES) {
-      if (c.includes(`${root}/${file}`)) return true;
+      if (bashTextReferencesPathOrChild(c, `${root}/${file}`)) return true;
     }
-    if (c.includes(`${root}/changes/`)) return true;
+    if (bashTextReferencesPathOrChild(c, `${root}/changes`)) return true;
   }
   return /(^|[\s"'`=])(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)(?=$|[\s"'`;|&<>])/.test(c) ||
-    /(^|[\s"'`=])(?:\.\/)?changes\//.test(c);
+    /(^|[\s"'`=])(?:\.\/)?changes(?:\/|$)/.test(c);
 }
 
 function bashShellCommandReferencesArtifact(command, cwd, artDir) {
@@ -419,10 +432,11 @@ paceUtils.withStdinParsed((stdin) => {
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
   function denyOrHint(reason) {
+    const enrichedReason = paceUtils.appendArtifactDirHint(cwd, reason);
     if (isTeammate()) {
-      return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${reason}` } };
+      return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${enrichedReason}` } };
     }
-    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } };
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: enrichedReason } };
   }
   function hardDeny(reason, action, fields = {}) {
     const output = {
@@ -667,7 +681,7 @@ paceUtils.withStdinParsed((stdin) => {
         (bashCommandLooksMutating(bashCommand) &&
           (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
-        const reason = bashArtifactDenyReason(bashCommand);
+        const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : bashArtifactDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT${teammateTag}`, {
@@ -953,7 +967,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (isArtifactWriterManagedRel(artifactRelForMutation) && !isArtifactWriterAgent(stdin)) {
       return hardDeny(
-        directArtifactMutationDenyReason(toolName, artifactRelForMutation),
+        paceUtils.appendArtifactDirHint(cwd, directArtifactMutationDenyReason(toolName, artifactRelForMutation)),
         'DENY_DIRECT_ARTIFACT_EDIT',
         {
           artifact: artifactRelForMutation,
@@ -1185,7 +1199,7 @@ paceUtils.withStdinParsed((stdin) => {
 
   // 非 v6 的 legacy task.md 不再作为可执行上下文注入。
   if (taskFileExists && taskActiveContent) {
-    const ctx = `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。迁移或桥接只处理 artifact 状态，不能算作完成原始代码任务；之后必须重试被阻止的原始工具调用。`;
+    const ctx = paceUtils.appendArtifactDirHint(cwd, `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。迁移或桥接只处理 artifact 状态，不能算作完成原始代码任务；之后必须重试被阻止的原始工具调用。`);
     const output = {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",

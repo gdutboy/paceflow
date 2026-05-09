@@ -62,6 +62,7 @@ paceUtils.withStdinParsed((stdin) => {
     const reason = err ? `错误：${err}` : '错误详情见工具输出';
     const ctx = [
       `PACE 工具失败恢复：${toolName} 执行失败${target}。${reason}。`,
+      `${paceUtils.artifactDirRuntimeHint(cwd)}。`,
       '不要把失败工具调用视为完成；若失败发生在 artifact 写入，请按 SessionStart 注入的 Artifact 目录重试或重新派 artifact-writer。',
       '若失败发生在 Bash 验证，请先读取失败输出、修复后重跑；确认验证通过前不要派 verify/close-chg。',
     ].join('');

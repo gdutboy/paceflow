@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.42';
+const PACE_VERSION = 'v6.0.43';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -529,7 +529,7 @@ function v5MigrationPromptMessage(cwd) {
   const artifactDir = info.dir.replace(/\\/g, '/');
   return [
     '检测到旧 v5 PACE artifact，但当前 artifact 根目录没有 changes/ v6 详情目录。',
-    `Legacy artifact 根目录: ${displayDir(info.dir)}`,
+    `PaceFlow artifact 根目录（legacy v5）: ${displayDir(info.dir)}`,
     `检测到文件: ${info.files.join(', ')}`,
     '注意：触发本提示的当前工具调用已被 hook 阻止；目标代码/artifact 尚未被修改。不要声称本次写入已经完成。',
     'PACEflow v6 不会自动改写旧 vault/本地 artifact。请先用 AskUserQuestion 询问用户如何处理：',
@@ -581,6 +581,13 @@ function artifactDirRuntimeHint(cwd) {
   const choice = readArtifactRootChoice(cwd) || 'auto';
   const choicePath = getArtifactRootChoicePath(cwd);
   return `Artifact 根目录：${displayDir(artDir)}（选择=${choice}；配置文件=${choicePath}；.pace/ 只保存配置/运行状态，不存 task.md / changes/**）`;
+}
+
+function appendArtifactDirHint(cwd, message) {
+  const text = String(message || '');
+  if (!text) return artifactDirRuntimeHint(cwd);
+  if (text.includes('Artifact 根目录') || text.includes('artifact 根目录')) return text;
+  return `${text}\n${artifactDirRuntimeHint(cwd)}`;
 }
 
 // T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
@@ -1311,7 +1318,7 @@ module.exports = {
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
   getArtifactWriterLockPath, readArtifactWriterLock, acquireArtifactWriterLock,
   artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock, operationFromAgentPrompt,
-  artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, ensureProjectInfra,
+  artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
   // 计划文件

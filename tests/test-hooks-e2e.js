@@ -783,6 +783,7 @@ test('9d. legacy v5 活跃项目只提示迁移或桥接', () => {
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
   assert.ok(r.stdout.includes('deny'));
   assert.ok(r.stdout.includes('v5 PACE artifact'));
+  assert.ok(r.stdout.includes('PaceFlow artifact 根目录'));
   assert.ok(r.stdout.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stdout.includes('AskUserQuestion'));
   assert.ok(r.stdout.includes('--dry-run'));
@@ -802,12 +803,34 @@ test('9d1. vault 中 legacy v5 artifact 优先进入迁移提示，不先询问 
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
+  assert.ok(r.stdout.includes('PaceFlow artifact 根目录'));
   assert.ok(r.stdout.includes('v5 PACE artifact'));
   assert.ok(r.stdout.includes('--dry-run'));
   assert.ok(r.stdout.includes('当前工具调用已被 hook 阻止'));
   assert.ok(r.stdout.includes('必须再次使用 AskUserQuestion'));
   assert.ok(!r.stdout.includes('PACEflow 首次启用需要选择 artifact 存放位置'));
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '迁移确认前不应在 vault 创建 changes/');
+});
+
+test('9d2. legacy v5 不允许用 Bash 手动创建 changes/ 绕过迁移', () => {
+  const dir = makeTmpDir('ptu-legacy-vault-mkdir');
+  const projectName = projectNameForDir(dir);
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectName);
+  fs.mkdirSync(vaultDir, { recursive: true });
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), '# Task\n\n- [ ] Legacy vault task\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: `mkdir -p "${path.join(vaultDir, 'changes')}"` },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('PaceFlow artifact 根目录'));
+  assert.ok(r.stdout.includes('禁止在用户确认前创建 changes/'));
+  assert.ok(r.stdout.includes('--dry-run'));
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '手动 mkdir changes/ 必须在 PreToolUse 被拦截');
 });
 
 test('9e. worktree 本地 CHG 详情写入 → DENY 并重定向到 vault', () => {
@@ -1267,6 +1290,7 @@ test('9hc0b1. 主 session 不得用 Edit/MultiEdit 直接修改 artifact', () =>
     assert.strictEqual(r.code, 0);
     assert.ok(r.stdout.includes('"deny"'), `${stdin.tool_name} should be denied`);
     assert.ok(r.stdout.includes('禁止主 session/非 artifact-writer'), `${stdin.tool_name} should explain artifact-writer-only`);
+    assert.ok(r.stdout.includes('Artifact 根目录'), `${stdin.tool_name} should include artifact root`);
   }
 });
 
@@ -1741,6 +1765,7 @@ test('9hg. Bash 修改 artifact 被拒绝', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+  assert.ok(r.stdout.includes('Artifact 根目录'));
 });
 
 test('9hga. Bash 重定向写 artifact 被拒绝', () => {
@@ -1757,6 +1782,7 @@ test('9hga. Bash 重定向写 artifact 被拒绝', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+  assert.ok(r.stdout.includes('Artifact 根目录'));
 });
 
 test('9hgb. Bash 修改 artifact 的等价路径也被拒绝', () => {
@@ -1908,10 +1934,13 @@ test('14b. legacy v5 Stop 只提示迁移或桥接', () => {
   const dir = makeLegacyProject('stop-legacy');
   const r = runHook('stop.js', { cwd: dir, stdin: { stop_hook_active: false }, env: { PACE_VAULT_PATH: '' } });
   assert.strictEqual(r.code, 2);
-  assert.ok(r.stderr.includes('legacy task.md'));
+  assert.ok(r.stderr.includes('旧 v5 PACE artifact'));
+  assert.ok(r.stderr.includes('PaceFlow artifact 根目录'));
+  assert.ok(r.stderr.includes('Artifact 根目录'));
+  assert.ok(r.stderr.includes('AskUserQuestion'));
   assert.ok(r.stderr.includes('migrate/batch-archive-v5.js'));
   assert.ok(r.stderr.includes('artifact-writer create-chg'));
-  assert.ok(r.stderr.includes('重试原始工具调用'));
+  assert.ok(r.stderr.includes('重试被阻止的原始工具调用'));
   assert.ok(!r.stderr.includes('补齐实施详情'));
 });
 
@@ -2186,6 +2215,7 @@ test('17b. legacy v5 PostToolUse 只提示迁移或桥接', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('additionalContext'));
   assert.ok(r.stdout.includes('legacy task.md'));
+  assert.ok(r.stdout.includes('Artifact 根目录'));
   assert.ok(r.stdout.includes('artifact-writer create-chg'));
   assert.ok(r.stdout.includes('不再校验或修复 v5'));
   assert.ok(r.stdout.includes('不要把迁移本身报告为代码任务完成'));
@@ -2271,6 +2301,7 @@ test('18. TodoWrite 按详情未完成任务数提示', () => {
   const r = runHook('task-list-sync.js', { cwd: dir, stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'x' }, { content: 'y' }, { content: 'z' }, { content: 'w' }, { content: 'q' }] } } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('changes/<id>.md') || r.stdout.includes('未完成 T-NNN'));
+  assert.ok(r.stdout.includes('Artifact 根目录'));
 });
 
 test('18c. TodoWrite 不把 planned backlog 计入当前任务数', () => {
@@ -2397,6 +2428,7 @@ test('22. PostToolUseFailure Write/Edit/Bash 失败注入恢复提示', () => {
   const out = JSON.parse(r.stdout);
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolUseFailure');
   assert.ok(out.hookSpecificOutput.additionalContext.includes('工具失败恢复'));
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Artifact 根目录'));
   assert.ok(out.hookSpecificOutput.additionalContext.includes('不要把失败工具调用视为完成'));
   assert.ok(out.hookSpecificOutput.additionalContext.includes('确认验证通过前不要派 verify/close-chg'));
 });
@@ -2448,6 +2480,7 @@ test('23a. SubagentStop artifact-writer 缺报告标题时注入格式提醒', (
   const out = JSON.parse(r.stdout);
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'SubagentStop');
   assert.ok(out.hookSpecificOutput.additionalContext.includes('未检测到 `## artifact-writer 报告`'));
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Artifact 根目录'));
 });
 
 test('23b. SubagentStop 允许全局时间戳前缀但记录为日志 warning', () => {

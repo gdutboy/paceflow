@@ -67,7 +67,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.42"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.43"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -279,6 +279,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.43 | 2026-05-09 | 修复真实 `ccauth` worktree 暴露的迁移提示断点：PreToolUse / Stop / PostToolUse / PostToolUseFailure / TaskSync / SubagentStop 的 artifact 相关拦截和提醒统一带当前 Artifact 根目录；legacy v5 下 Bash 手动 `mkdir changes/` 会被拦截，避免把旧 vault 伪装成未迁移的 v6 |
 | v6.0.42 | 2026-05-09 | 加固 v5→v6 归档式迁移脚本：legacy 文件内多个 `<!-- ARCHIVE -->` 历史边界会全部降级为 v5 历史注释，迁移后仍只保留一个 v6 标准 ARCHIVE 标记；同时兼容 CRLF legacy 文件。已用真实 `ccauth` v5 vault 副本完成 dry-run 与正式迁移 rehearsal |
 | v6.0.41 | 2026-05-09 | 修复 Smoke6 暴露的 artifact 直接编辑绕过：主 session / 非 artifact-writer 现在不能用 `Write` / `Edit` / `MultiEdit` 直接修改 `task.md`、`implementation_plan.md`、`walkthrough.md`、`findings.md`、`corrections.md` 或 `changes/**`；这些流程 artifact 只能由持有写锁的 `paceflow:artifact-writer` 写入。`spec.md` 仍是项目规格文件，不归 artifact-writer 管理 |
 | v6.0.40 | 2026-05-09 | 修复 Smoke4 暴露的 legacy v5 迁移提示歧义：hook 现在明确说明被拒绝的工具调用没有落盘、dry-run 后必须再次询问用户确认、迁移只处理 artifact 状态且原始代码任务仍需按 v6 P-A-C 重试；Smoke 手册同步区分迁移确认前/后的预期 |
@@ -332,4 +333,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.42 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.43 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
