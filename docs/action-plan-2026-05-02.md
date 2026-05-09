@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.36（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.37（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-09，v6.0.36）
+### 0.1 当前执行视图（2026-05-09，v6.0.37）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,11 +27,11 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.36）：
+执行状态（v6.0.37）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
-- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口；v6.0.35 拆分 plugin runtime root，marketplace 只发布 `plugin/` 下的运行时资产；v6.0.36 修复 2026-05-09 审计确认项：findings 日期差、Stop walkthrough 噪声、SessionStart walkthrough 最近记录截断、PostToolUse 死分支和文档/模板一致性。
+- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口；v6.0.35 拆分 plugin runtime root，marketplace 只发布 `plugin/` 下的运行时资产；v6.0.36 修复 2026-05-09 审计确认项：findings 日期差、Stop walkthrough 噪声、SessionStart walkthrough 最近记录截断、PostToolUse 死分支和文档/模板一致性；v6.0.37 修复二轮审计确认项：PreCompact native plan 项目过滤、Bash 间接写 artifact 保护与 bridge/template 说明收敛。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
@@ -43,6 +43,8 @@
 | P0-20260506-02 | ✅ v6.0.11 | PreToolUse enforcement 路径 stdin 解析失败 fail-closed | hook stdin/JSON 在某些环境可能异常；`stdin.ok=false` 时不能自然放行 | `hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js` | PACE 项目中 Write/Edit/MultiEdit stdin 非 JSON 或缺 `file_path` 时 deny；非 PACE 项目保持低干扰 |
 | P0-20260508-01 | ✅ v6.0.33 | 修复 artifact-writer worktree 并发锁竞态 | Smoke5 中 Session B 在收到 fresh lock deny 后用 Bash 删除 `.pace/artifact-writer.lock` 并抢占；subagent 还可用 Bash 写入伪锁；锁中 `pid` 是 hook 进程，不是 agent liveness，导致误判 stale | `hooks/pre-tool-use.js`、`hooks/pace-utils.js`、`tests/test-hooks-e2e.js`、`docs/production-smoke-v6.0.32.md` | Bash 对 `.pace/artifact-writer.lock` 的 rm/redirect/touch/mv/cp/script write 均 deny；lock deny 文案不再建议 Claude 删除锁；lock payload 不暴露误导性 `pid`；Smoke5 并发时第二 session 只能等待/重试，不得破坏第一 session 锁 |
 | P0-20260508-02 | ✅ v6.0.34 | 修复审计确认的路径与运行态分裂 | Bash 写保护可被 `.//task.md` / `.pace//artifact-writer.lock` 等价路径绕过；worktree runtime 仍写子 worktree `.pace`；`artifact-root=vault` 缺 env 时误落本地；Stop `.pace` 缺失时无法累计降级 | `hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/session-start.js`、`hooks/stop.js`、`hooks/pre-compact.js`、`hooks/post-tool-use.js`、`tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | Bash artifact/lock 等价路径 deny；worktree runtime 写宿主 `.pace`；vault env 缺失 fail-closed；Stop 连续阻止可降级且 idle PASS 不落盘；C/V 与 PostToolUse artifact 判定基于 artifact root |
+| P0-20260509-01 | ✅ v6.0.37 | PreCompact native plan 只桥接当前项目 | `~/.claude/plans` 是全局目录，旧逻辑取最近 `.md` 并写入当前项目 `.pace/current-native-plan`，可能把其他项目 native plan 桥接进 PaceFlow | `hooks/pre-compact.js`、`tests/test-hooks-e2e.js` | 只记录内容中匹配当前 cwd 或项目名候选的 native plan；无匹配时只写 `NATIVE_PLAN_SKIP_FOREIGN` 日志，不写 current-native-plan |
+| P0-20260509-02 | ✅ v6.0.37 | Bash 间接写 artifact 保护补强 | `bash -c` 内层脚本、`npx prettier --write task.md`、`npm run fix -- task.md` 等可绕过直接 Bash 写保护 | `hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js` | shell `-c` 内层脚本、常见 formatter/linter 写入参数、package runner 只要引用 artifact 且存在写入语义即 deny；只读 grep 重定向到非 artifact 仍放行 |
 
 执行原则：
 
@@ -114,7 +116,7 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.36）：
+最近一次验证结果（v6.0.37）：
 
 ```bash
 node --check plugin/hooks/*.js  # PASS
@@ -183,7 +185,7 @@ Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vau
 
 #### 0.1.10 当前剩余验证缺口
 
-v6.0.36 代码层未发现 P0 阻断缺口。剩余工作按验证价值排序：
+v6.0.37 代码层未发现 P0 阻断缺口。剩余工作按验证价值排序：
 
 | 优先级 | 缺口 | 当前状态 | 下一步 |
 |---|---|---|---|
@@ -213,7 +215,7 @@ issue #3 的 4 个质量缺口来自真实 milestone retro：验证 4 项（type
 3. mechanical gate：`review-confirmed/source/summary/findings` 是否足够；`review-findings` 中 P0/P1 非零时是否必须附 hotfix CHG / won't-fix evidence。
 4. 后续结构化字段：invariants、red-evidence、protocol-change-checklist 是否先进入 skill/review checklist，等真实使用稳定后再进入 artifact schema。
 
-临时决策：不在 v6.0.36 后立即实现；先用 production smoke 和 issue #3 反馈设计一版低摩擦 `close-chg review gate`。
+临时决策：不在当前 patch 线立即实现；先用 production smoke 和 issue #3 反馈设计一版低摩擦 `close-chg review gate`。
 
 ## 1. 调研背景
 

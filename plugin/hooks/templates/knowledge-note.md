@@ -8,6 +8,8 @@ updated: YYYY-MM-DDTHH:mm:ss+08:00
 sources: []
 ---
 
+<!-- 用于 knowledge/ 笔记时默认 status: concluded；若复制为 thoughts/ 酝酿笔记，请改为 status: discussing，并按实际情况删除 sources。 -->
+
 <!-- knowledge 笔记格式要求：
 - status: discussing（酝酿中）| concluded（已验证）| archived（已过时）
 - projects: 来源项目列表，至少一个（如 [paceflow-hooks]）

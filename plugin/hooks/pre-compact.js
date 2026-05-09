@@ -77,7 +77,7 @@ try {
     if (walkActive) {
       const today = todayISO();
       // T-425: 正则匹配对齐 stop.js 精确度，避免 includes() 子串误匹配
-      const hasTodayEntry = new RegExp('\\|\\s*' + today + '\\s*\\|').test(walkActive);
+      const hasTodayEntry = new RegExp('^\\|\\s*' + today + '\\s*\\|', 'm').test(walkActive);
       snapshot.walkthrough = { hasTodayEntry };
     }
   } catch(e) {}
@@ -92,7 +92,7 @@ try {
     try {
       if (fs.existsSync(nativePlansDir)) {
         const now = Date.now();
-        const recentPlans = fs.readdirSync(nativePlansDir)
+        const allRecentPlans = fs.readdirSync(nativePlansDir)
           .filter(f => f.endsWith('.md'))
           .map(f => {
             try {
@@ -103,12 +103,30 @@ try {
           })
           .filter(Boolean)
           .sort((a, b) => b.mtime - a.mtime);
+        const currentPlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
+        try {
+          if (fs.existsSync(currentPlanFile)) {
+            const currentPlan = fs.readFileSync(currentPlanFile, 'utf8').trim();
+            if (currentPlan && !paceUtils.nativePlanMatchesProject(currentPlan, cwd)) {
+              fs.unlinkSync(currentPlanFile);
+              log(paceUtils.logEntry('PreCompact', 'NATIVE_PLAN_DROP_FOREIGN', { proj, plan: currentPlan }));
+            }
+          }
+        } catch(e) {}
+
+        const recentPlans = allRecentPlans.filter(plan => paceUtils.nativePlanMatchesProject(plan.path, cwd));
         if (recentPlans.length > 0) {
           snapshot.nativePlans = recentPlans.map(e => e.path);
-          // T-326: 自动写入最近的 native plan 路径到 .pace/current-native-plan
+          // T-326: 自动写入最近的 native plan 路径到 .pace/current-native-plan；不覆盖 AI 主动记录的路径。
           try {
-            fs.writeFileSync(path.join(PACE_RUNTIME, 'current-native-plan'), recentPlans[0].path, 'utf8');
+            fs.mkdirSync(PACE_RUNTIME, { recursive: true });
+            if (!fs.existsSync(currentPlanFile)) fs.writeFileSync(currentPlanFile, recentPlans[0].path, 'utf8');
           } catch(e) {}
+        } else if (allRecentPlans.length > 0) {
+          log(paceUtils.logEntry('PreCompact', 'NATIVE_PLAN_SKIP_FOREIGN', {
+            proj,
+            candidates: allRecentPlans.length,
+          }));
         }
       }
     } catch(e) {}

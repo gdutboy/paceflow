@@ -125,7 +125,7 @@ if (paceSignal === 'artifact') {
     const today = todayISO();
     const hasToday = new RegExp(`^\\|\\s*${today}\\s*\\|`, 'm').test(walkActive);
     if (!hasToday) {
-      warnings.push(`walkthrough.md 缺少 ${today} 的工作记录索引行。${FORMAT_SNIPPETS.walkthroughDetail}`);
+      warnings.push(`walkthrough.md 缺少 ${today} 的工作记录索引行；上方 close-chg 派遣会自动补写，不要由主 session 直接补。${FORMAT_SNIPPETS.walkthroughDetail}`);
     }
   }
 
@@ -167,6 +167,7 @@ if (paceSignal === 'artifact') {
 }
 
 // Claude 任务列表残留检测：本会话用过任务列表工具且 task.md 无活跃任务 → 仅 log + 清理 flag
+// v6 artifact 模式的 task-list flags 由 SessionStart 按会话清理；Stop 不在收尾中改写这些运行态。
 // 不阻止退出，因为 hook 无法查询 Claude 内部任务列表实际状态。
 const taskListFlags = [path.join(PACE_RUNTIME, 'task-list-used'), path.join(PACE_RUNTIME, 'todowrite-used')];
 if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && taskActive) {

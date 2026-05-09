@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.36';
+const PACE_VERSION = 'v6.0.37';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -202,6 +202,10 @@ function worktreeBaseDir(cwd) {
 function addProjectCandidate(candidates, name) {
   const normalized = sanitizeProjectName(name);
   if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+}
+
+function escapeRegex(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function gitWorktreeMainCheckoutDir(gitDir) {
@@ -853,7 +857,32 @@ function countByStatus(text, { topLevelOnly = false } = {}) {
  */
 function getNativePlanPath(cwd) {
   const fp = path.join(getProjectRuntimeDir(cwd), 'current-native-plan');
-  try { return fs.readFileSync(fp, 'utf8').trim() || null; } catch(e) { return null; }
+  try {
+    const planPath = fs.readFileSync(fp, 'utf8').trim();
+    if (!planPath || !nativePlanMatchesProject(planPath, cwd)) return null;
+    return planPath;
+  } catch(e) { return null; }
+}
+
+function nativePlanMatchesProject(planPath, cwd) {
+  const normalizedPlanPath = normalizePath(path.resolve(cwd || process.cwd(), String(planPath || '')));
+  const normalizedCwd = normalizePath(path.resolve(cwd || process.cwd()));
+  const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
+  if (normalizedPlanPath.startsWith(cwdWithSlash)) return true;
+
+  let content = '';
+  try { content = fs.readFileSync(normalizedPlanPath, 'utf8').slice(0, 65536); } catch(e) { return false; }
+  const normalizedContent = content.replace(/\\/g, '/').toLowerCase();
+  if (normalizedContent.includes(normalizedCwd.toLowerCase())) return true;
+
+  const candidates = new Set(getProjectNameCandidates(cwd)
+    .map(name => String(name || '').toLowerCase())
+    .filter(name => name.length >= 3));
+  for (const name of candidates) {
+    const re = new RegExp(`(^|[^a-z0-9_-])${escapeRegex(name)}([^a-z0-9_-]|$)`, 'i');
+    if (re.test(normalizedContent)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1284,7 +1313,7 @@ module.exports = {
   parseFrontmatter, detailPathForId, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成
-  scanRelatedNotes, getNativePlanPath, createLogger, logEntry, formatBridgeHint,
+  scanRelatedNotes, getNativePlanPath, nativePlanMatchesProject, createLogger, logEntry, formatBridgeHint,
   // stdin 解析
   parseHookStdin, withStdinParsed, parseStdinSync,
 };

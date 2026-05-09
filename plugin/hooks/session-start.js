@@ -146,15 +146,12 @@ if (eventType === 'compact') {
           lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
         }
         // AI 主动记录的 native plan 路径（优先于扫描结果）
-        const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
         try {
-          if (fs.existsSync(nativePlanFile)) {
-            const planPath = fs.readFileSync(nativePlanFile, 'utf8').trim();
-            if (planPath) {
-              lines.push('');
-              lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-              lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
-            }
+          const planPath = paceUtils.getNativePlanPath(cwd);
+          if (planPath) {
+            lines.push('');
+            lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
+            lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
           }
         } catch(e) {}
         process.stdout.write(lines.join('\n') + '\n\n');
@@ -199,15 +196,12 @@ if (eventType === 'compact') {
 
 // T-326: startup 路径也检测 .pace/current-native-plan（修复跨会话盲区）
 if (eventType !== 'compact') {
-  const nativePlanFile = path.join(PACE_RUNTIME, 'current-native-plan');
   try {
-    if (fs.existsSync(nativePlanFile)) {
-      const planPath = fs.readFileSync(nativePlanFile, 'utf8').trim();
-      if (planPath) {
-        process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
-        process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
-        process.stdout.write(`请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。\n\n`);
-      }
+    const planPath = paceUtils.getNativePlanPath(cwd);
+    if (planPath) {
+      process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
+      process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
+      process.stdout.write(`请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。\n\n`);
     }
   } catch(e) {}
 }

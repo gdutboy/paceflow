@@ -139,7 +139,7 @@ sources:
 2. **检查 knowledge/ 是否已有同主题笔记**：Grep `knowledge/` 目录中的标题和标签
 3. **已有** → Edit 追加新内容到 `## 详情` section，更新 `updated` 日期和 `sources`
 4. **未有** → Write 创建新笔记，使用 knowledge/ 模板，`status: concluded`
-5. **关联 finding**：`record-finding` 当前不维护 knowledge frontmatter 字段；通用知识的反向链接写在 knowledge 笔记正文或 finding 详情正文中。既有 finding 需要补链时不要主 session 手写，记录为 artifact writer 后续更新需求。
+5. **关联 finding**：`record-finding` 当前不维护 knowledge frontmatter 字段，且当前没有 `modify-finding` 指令；不要虚构 `update-chg` 能修改 finding 详情。通用知识的反向链接优先写在 knowledge 笔记正文引用原 finding；若确实需要补充 artifact 记录，派 `artifact-writer record-finding` 新建一条补充 finding，说明与原 finding / knowledge 笔记的关系。
 
 > 提取的知识必须自包含——不依赖原 finding 的上下文就能理解。摘要是结论，详情是完整推理。
 

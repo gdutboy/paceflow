@@ -37,10 +37,29 @@ function isBashTool(toolName) {
   return toolName === 'Bash';
 }
 
+function shellCommandScripts(command) {
+  const scripts = [];
+  const c = String(command || '');
+  const re = /(^|[;&|]\s*)(?:bash|sh|zsh|fish)\s+-c\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|]+))/gi;
+  let m;
+  while ((m = re.exec(c)) !== null) {
+    const script = m[2] || m[3] || m[4] || m[5] || '';
+    if (script) scripts.push(script);
+  }
+  return scripts;
+}
+
+function commandTextLooksMutating(c) {
+  return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
+    /(^|[;&|]\s*)(npm|pnpm|yarn)\s+(?:run|exec|x)\b/i.test(c) ||
+    /(^|[;&|]\s*)npx\b[\s\S]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
+    /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
+    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+}
+
 function bashCommandLooksMutating(command) {
   const c = String(command || '');
-  return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
-    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+  return commandTextLooksMutating(c) || shellCommandScripts(c).some(script => commandTextLooksMutating(script));
 }
 
 function bashOutputRedirectTargets(command) {
@@ -122,6 +141,10 @@ function bashCommandRedirectsToArtifact(command, cwd, artDir) {
   return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifact(target, cwd, artDir));
 }
 
+function bashShellCommandRedirectsToArtifact(command, cwd, artDir) {
+  return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifact(script, cwd, artDir));
+}
+
 function bashPathLooksArtifactWriterLock(target, cwd) {
   const raw = String(target || '').trim().replace(/\\/g, '/').replace(/^['"]|['"]$/g, '');
   if (!raw || /^&\d+$/.test(raw)) return false;
@@ -139,25 +162,39 @@ function bashCommandRedirectsToArtifactWriterLock(command, cwd) {
   return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifactWriterLock(target, cwd));
 }
 
+function bashShellCommandRedirectsToArtifactWriterLock(command, cwd) {
+  return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifactWriterLock(script, cwd));
+}
+
+function bashSearchText(command) {
+  return String(command || '').replace(/\\(["'`])/g, '$1').replace(/\\/g, '/');
+}
+
 function bashCommandReferencesArtifactWriterLock(command, cwd) {
-  const c = String(command || '').replace(/\\/g, '/');
+  const c = bashSearchText(command);
   const lockPath = paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/');
   const rel = path.relative(cwd, lockPath).replace(/\\/g, '/');
   return c.includes(lockPath) ||
     (rel && c.includes(rel)) ||
     /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
     /(?:^|[\s"'`=;|&])artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
-    bashCommandPathTokens(command).some(target => bashPathLooksArtifactWriterLock(target, cwd));
+    bashCommandPathTokens(c).some(target => bashPathLooksArtifactWriterLock(target, cwd));
+}
+
+function bashShellCommandReferencesArtifactWriterLock(command, cwd) {
+  return shellCommandScripts(command).some(script => bashCommandReferencesArtifactWriterLock(script, cwd));
 }
 
 function bashCommandMutatesArtifactWriterLock(command, cwd) {
   return bashCommandRedirectsToArtifactWriterLock(command, cwd) ||
-    (bashCommandLooksMutating(command) && bashCommandReferencesArtifactWriterLock(command, cwd));
+    bashShellCommandRedirectsToArtifactWriterLock(command, cwd) ||
+    (bashCommandLooksMutating(command) &&
+      (bashCommandReferencesArtifactWriterLock(command, cwd) || bashShellCommandReferencesArtifactWriterLock(command, cwd)));
 }
 
 function bashCommandReferencesArtifact(command, cwd, artDir) {
-  const c = String(command || '').replace(/\\/g, '/');
-  if (bashCommandPathTokens(command).some(target => bashPathLooksArtifact(target, cwd, artDir))) return true;
+  const c = bashSearchText(command);
+  if (bashCommandPathTokens(c).some(target => bashPathLooksArtifact(target, cwd, artDir))) return true;
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
   for (const root of roots) {
     for (const file of ARTIFACT_FILES) {
@@ -167,6 +204,10 @@ function bashCommandReferencesArtifact(command, cwd, artDir) {
   }
   return /(^|[\s"'`=])(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)(?=$|[\s"'`;|&<>])/.test(c) ||
     /(^|[\s"'`=])(?:\.\/)?changes\//.test(c);
+}
+
+function bashShellCommandReferencesArtifact(command, cwd, artDir) {
+  return shellCommandScripts(command).some(script => bashCommandReferencesArtifact(script, cwd, artDir));
 }
 
 function bashArtifactWriterLockDenyReason(command) {
@@ -605,7 +646,9 @@ paceUtils.withStdinParsed((stdin) => {
         return;
       }
       const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
-        (bashCommandLooksMutating(bashCommand) && bashCommandReferencesArtifact(bashCommand, cwd, artDir));
+        bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
+        (bashCommandLooksMutating(bashCommand) &&
+          (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
         const reason = bashArtifactDenyReason(bashCommand);
         const output = denyOrHint(reason);

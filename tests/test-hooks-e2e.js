@@ -1622,17 +1622,21 @@ test('9hf. Bash 只读 artifact 放行', () => {
 
 test('9hfa. Bash 读取 artifact 并重定向到非 artifact 放行', () => {
   const dir = makeV6Project('ptu-bash-read-artifact-redirect');
-  const r = runHook('pre-tool-use.js', {
-    cwd: dir,
-    stdin: {
-      tool_name: 'Bash',
-      tool_input: {
-        command: `grep -c "ARCHIVE" ${path.join(dir, 'walkthrough.md')} > /tmp/paceflow-grep-count.txt`,
+  const commands = [
+    `grep -c "ARCHIVE" ${path.join(dir, 'walkthrough.md')} > /tmp/paceflow-grep-count.txt`,
+    `bash -c 'grep -c "ARCHIVE" task.md > /tmp/paceflow-grep-count.txt'`,
+  ];
+  for (const command of commands) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Bash',
+        tool_input: { command },
       },
-    },
-  });
-  assert.strictEqual(r.code, 0);
-  assert.ok(!r.stdout.includes('"deny"'));
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(!r.stdout.includes('"deny"'), `只读 artifact 命令应放行: ${command}`);
+  }
 });
 
 test('9hg. Bash 修改 artifact 被拒绝', () => {
@@ -1674,6 +1678,28 @@ test('9hgb. Bash 修改 artifact 的等价路径也被拒绝', () => {
     'rm .//task.md',
     'sed -i s/x/y/ .//task.md',
     'rm ./changes/../task.md',
+  ];
+  for (const command of commands) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Bash',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+  }
+});
+
+test('9hgc. Bash shell wrapper / package runner 修改 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-wrapper-artifact');
+  const commands = [
+    `bash -c 'node -e "require(\\"fs\\").writeFileSync(\\"task.md\\",\\"x\\")"'`,
+    `bash -c 'cat > task.md <<EOF\nx\nEOF'`,
+    'npx prettier --write task.md',
+    'npm run fix -- task.md',
   ];
   for (const command of commands) {
     const r = runHook('pre-tool-use.js', {
@@ -2155,6 +2181,31 @@ test('19a. PreCompact 在 root 选择前保持零写入', () => {
   const r = runHook('pre-compact.js', { cwd: dir });
   assert.strictEqual(r.code, 0);
   assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'root 选择前 PreCompact 不应创建 .pace');
+});
+
+test('19b. PreCompact 只记录匹配当前项目的 native plan', () => {
+  const dir = makeV6Project('pc-native-plan-filter');
+  const home = makeTmpDir('pc-native-plan-home');
+  const plansDir = path.join(home, '.claude', 'plans');
+  fs.mkdirSync(plansDir, { recursive: true });
+
+  const foreignPlan = path.join(plansDir, 'foreign.md');
+  fs.writeFileSync(foreignPlan, '# ccauth unrelated plan\n\n不属于当前项目。\n', 'utf8');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'current-native-plan'), foreignPlan, 'utf8');
+  let r = runHook('pre-compact.js', { cwd: dir, env: { HOME: home } });
+  assert.strictEqual(r.code, 0);
+  let snap = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'pre-compact-state.json'), 'utf8'));
+  assert.ok(!snap.nativePlans, '无关 native plan 不应进入当前项目快照');
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'current-native-plan')), '已有无关 current-native-plan 应被清理');
+
+  const matchingPlan = path.join(plansDir, 'matching.md');
+  fs.writeFileSync(matchingPlan, `# ${projectNameForDir(dir)} native plan\n\n用于当前项目。\n`, 'utf8');
+  r = runHook('pre-compact.js', { cwd: dir, env: { HOME: home } });
+  assert.strictEqual(r.code, 0);
+  snap = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'pre-compact-state.json'), 'utf8'));
+  assert.deepStrictEqual(snap.nativePlans, [matchingPlan.replace(/\\/g, '/')]);
+  assert.strictEqual(fs.readFileSync(path.join(dir, '.pace', 'current-native-plan'), 'utf8'), matchingPlan.replace(/\\/g, '/'));
 });
 
 test('21. StopFailure PACE 项目记录日志', () => {

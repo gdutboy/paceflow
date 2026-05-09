@@ -661,6 +661,22 @@ test('listPlanFiles: 双路径合并去重按日期降序', () => {
   assert.strictEqual(result[2].name, '2026-03-01-old.md');
 });
 
+test('getNativePlanPath: 过滤不属于当前项目的 current-native-plan', () => {
+  const dir = makeTmpDir('native-plan-filter-project');
+  const runtime = getProjectRuntimeDir(dir);
+  fs.mkdirSync(runtime, { recursive: true });
+  const foreign = path.join(makeTmpDir('native-plan-foreign'), 'plan.md');
+  fs.writeFileSync(foreign, '# unrelated project\n\nccauth task\n', 'utf8');
+  fs.writeFileSync(path.join(runtime, 'current-native-plan'), foreign, 'utf8');
+  assert.strictEqual(paceUtils.getNativePlanPath(dir), null);
+
+  const local = path.join(dir, 'docs', 'plan.md');
+  fs.mkdirSync(path.dirname(local), { recursive: true });
+  fs.writeFileSync(local, '# local plan\n', 'utf8');
+  fs.writeFileSync(path.join(runtime, 'current-native-plan'), local, 'utf8');
+  assert.strictEqual(paceUtils.getNativePlanPath(dir), local.replace(/\\/g, '/'));
+});
+
 // ============================================================
 // 9. hasUnsyncedPlanFiles() / listUnsyncedPlanFiles() — 4 个测试
 // ============================================================

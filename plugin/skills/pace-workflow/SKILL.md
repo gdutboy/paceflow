@@ -144,7 +144,7 @@ artifact writer 会同时写：
 - `## 工作记录` 验证摘要
 - `task.md` / `implementation_plan.md` 归档索引与 `walkthrough.md` 完成索引
 
-若只记录验证、暂不归档，才派 `update-chg action=verify`。Stop hook 会阻止 `completed` 但未 verified 的 CHG 结束会话。
+若只记录验证、暂不归档，才派 `update-chg action=verify`。Stop hook 会在 AI 主动停止时阻止 `completed` 但未 verified 的 CHG 结束会话。
 
 ---
 
