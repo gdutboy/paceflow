@@ -1,4 +1,4 @@
-# PACEflow v6.0.40 Production Smoke
+# PACEflow v6.0.41 Production Smoke
 
 > Purpose: verify the installed marketplace plugin in real Claude Code main sessions.
 > This is different from fixture baselines and hook unit tests.
@@ -13,7 +13,7 @@ Expected plugin:
 
 ```text
 paceflow @ paceaitian-paceflow
-Version: 6.0.40
+Version: 6.0.41
 Installed components:
   Agents: artifact-writer
   Skills: artifact-management, pace-bridge, pace-knowledge, pace-workflow
@@ -29,7 +29,7 @@ export PACE_VAULT_PATH="/mnt/c/Users/Xiao/OneDrive/Documents/Obsidian"
 Plugin log path:
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.40"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.41"
 test -d "$PLUGIN_DIR"
 tail -n 80 "$PLUGIN_DIR/hooks/pace-hooks.log"
 ```
@@ -37,7 +37,7 @@ tail -n 80 "$PLUGIN_DIR/hooks/pace-hooks.log"
 If the cache path differs, find it with:
 
 ```bash
-find "$HOME/.claude/plugins" -path '*paceaitian-paceflow*paceflow*6.0.40*' -type d | head
+find "$HOME/.claude/plugins" -path '*paceaitian-paceflow*paceflow*6.0.41*' -type d | head
 ```
 
 Useful evidence to capture after each smoke:
@@ -290,6 +290,9 @@ Use the git-backed project from Smoke 1/2:
 ```bash
 cd /mnt/k/AI/paceflow-smoke-local
 git init
+mkdir -p .pace
+printf '*\n!.gitignore\n' > .pace/.gitignore
+git rm --cached -r .pace 2>/dev/null || true
 git add .
 git -c user.name="PACEflow Smoke" -c user.email="paceflow-smoke@example.local" commit -m "smoke base" || \
   git -c user.name="PACEflow Smoke" -c user.email="paceflow-smoke@example.local" commit --allow-empty -m "smoke base"
@@ -319,6 +322,7 @@ Immediately in Session B:
 Expected:
 
 - Worktree resolves to the host project artifact root, not a separate worktree artifact directory.
+- Runtime files under `.pace/*` are not committed or copied as worktree-local authority; only `.pace/.gitignore` may be tracked.
 - If Session A still holds `artifact-writer.lock`, Session B artifact-writer dispatch is denied with "已有 artifact-writer 正在写入".
 - Session B must wait/retry; it must not delete or rewrite `.pace/artifact-writer.lock`.
 - When Session A finishes or fails, `SubagentStop` / `PostToolUseFailure:Agent` releases the lock.
@@ -329,28 +333,30 @@ Verify:
 HOST=/mnt/k/AI/paceflow-smoke-local
 WT=/mnt/k/AI/paceflow-smoke-local-wt
 test -f "$HOST/.pace/artifact-root"
-test ! -f "$WT/.pace/artifact-root" || cat "$WT/.pace/artifact-root"
+test ! -f "$WT/.pace/artifact-root" || { echo "unexpected worktree-local artifact-root"; cat "$WT/.pace/artifact-root"; false; }
 test ! -f "$HOST/.pace/artifact-writer.lock" || cat "$HOST/.pace/artifact-writer.lock"
 tail -n 200 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'ARTIFACT_LOCK|DENY_ARTIFACT_LOCK|RELEASE_ARTIFACT_LOCK|sid='
 ```
 
 If both operations finish too quickly to overlap, this smoke still verifies routing. The lock-deny path is covered by E2E; rerun with a longer finding body if you need production overlap.
 
-## Smoke 6: Bash Artifact Write Protection
+## Smoke 6: Direct Artifact Write Protection
 
 Run in `/mnt/k/AI/paceflow-smoke-local`.
 
 Prompt:
 
 ```text
-尝试用 Bash 命令直接修改 task.md，比如 echo test >> task.md，看看 PACEflow 是否会阻止。不要绕过 hook。
+尝试用 Bash 命令直接修改 task.md，比如 echo test >> task.md，看看 PACEflow 是否会阻止。不要绕过 hook；如果 Bash 被拦，再尝试 Write 和 Edit，确认它们也会被 hook 拦截。
 ```
 
 Expected:
 
 - PreToolUse denies the Bash write.
-- `task.md` is not modified by Bash.
-- The model must not use Bash to edit artifacts.
+- PreToolUse also denies direct `Write` / `Edit` / `MultiEdit` mutations to artifact-writer-managed files when the caller is the main session or any non-`artifact-writer` agent: `task.md`, `implementation_plan.md`, `walkthrough.md`, `findings.md`, `corrections.md`, and `changes/**`.
+- `task.md` is not modified by Bash, Write, Edit, or MultiEdit.
+- The denial should tell the model to dispatch `paceflow:artifact-writer`; it must not say "use Edit" as the recovery path for main-session artifact edits.
+- `spec.md` is a project specification file and is not managed by artifact-writer; this smoke does not require blocking normal `Edit` to `spec.md`.
 
 Then prompt:
 
@@ -368,6 +374,7 @@ Verify:
 ```bash
 cd /mnt/k/AI/paceflow-smoke-local
 tail -n 200 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'DENY_BASH|artifact-writer.lock|task.md'
+tail -n 200 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'DENY_DIRECT_ARTIFACT_(WRITE|EDIT)|DENY_BASH_ARTIFACT|task.md'
 ```
 
 ## Smoke 7: Plan Bridge Reminder

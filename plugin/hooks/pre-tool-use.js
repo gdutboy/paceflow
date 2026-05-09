@@ -42,6 +42,10 @@ function getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir,
   return paceUtils.artifactRelativePathForFile(artDir, filePath);
 }
 
+function isArtifactWriterManagedRel(artifactRel) {
+  return !!artifactRel && artifactRel !== 'spec.md';
+}
+
 function shellCommandScripts(command) {
   const scripts = [];
   const c = String(command || '');
@@ -389,6 +393,14 @@ function artifactWriterMissingLockReason(check, artifactRel) {
     `artifact-writer 正在尝试修改 ${artifactRel}，但当前会话没有持有 artifact 写锁（${check.reason}）。`,
     '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先获取写锁，再允许 agent 写 artifact。',
     check.lock && check.lock.ok ? `当前锁：${paceUtils.formatArtifactWriterLock(check.lock)}` : `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`,
+  ].join('\n');
+}
+
+function directArtifactMutationDenyReason(toolName, artifactRel) {
+  return [
+    `禁止主 session/非 artifact-writer 使用 ${toolName} 直接修改流程 artifact：${artifactRel}。`,
+    'v6 流程 artifact 只能由 paceflow:artifact-writer 在持有 artifact 写锁时写入。',
+    '请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。'
   ].join('\n');
 }
 
@@ -778,9 +790,21 @@ paceUtils.withStdinParsed((stdin) => {
     }
   }
 
+  if (isArtifactWriterManagedRel(artifactRelForMutation) && toolName === 'Write' && !isArtifactWriterAgent(stdin)) {
+    return hardDeny(
+      directArtifactMutationDenyReason(toolName, artifactRelForMutation),
+      'DENY_DIRECT_ARTIFACT_WRITE',
+      {
+        artifact: artifactRelForMutation,
+        agent_id: stdin.agentId,
+        agent_type: stdin.agentType,
+      }
+    );
+  }
+
   if (isEditMutationTool(toolName) && isInsideProject && paceSignal) {
     const artifactRel = paceUtils.artifactRelativePathForFile(artDir, filePath);
-    if (artifactRel && fs.existsSync(filePath)) {
+    if (artifactRel && fs.existsSync(filePath) && isArtifactWriterAgent(stdin)) {
       try {
         const current = fs.readFileSync(filePath, 'utf8');
         const normalized = paceUtils.normalizeLineEndings(current);
@@ -925,6 +949,18 @@ paceUtils.withStdinParsed((stdin) => {
           dur: Date.now() - t0,
         }));
       }
+    }
+
+    if (isArtifactWriterManagedRel(artifactRelForMutation) && !isArtifactWriterAgent(stdin)) {
+      return hardDeny(
+        directArtifactMutationDenyReason(toolName, artifactRelForMutation),
+        'DENY_DIRECT_ARTIFACT_EDIT',
+        {
+          artifact: artifactRelForMutation,
+          agent_id: stdin.agentId,
+          agent_type: stdin.agentType,
+        }
+      );
     }
 
     if (isCodeFile && isInsideProject) {

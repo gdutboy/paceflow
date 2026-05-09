@@ -558,9 +558,13 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
 test('9b. create-chg 写 verified-date null → 放行', () => {
   const dir = makeV6Project('ptu-create-null', { withIndex: false, detail: false });
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const sessionId = seedArtifactWriterLock(dir, 'sid-create-null');
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
+      session_id: sessionId,
+      agent_id: 'agent-create-null',
+      agent_type: 'paceflow:artifact-writer',
       tool_name: 'Write',
       tool_input: {
         file_path: fp,
@@ -835,7 +839,7 @@ test('9f. worktree 本地 finding/correction 详情写入 → DENY 并重定向�
   }
 });
 
-test('9g. worktree 写 vault 中的详情路径 → 放行', () => {
+test('9g. 主 session 写 vault 中的详情路径 → DENY artifact-writer-only', () => {
   const { worktree, vaultDir } = makeVaultBackedWorktree('redirect-vault-pass');
   const fp = path.join(vaultDir, 'changes', 'chg-20260504-02.md');
   const r = runHook('pre-tool-use.js', {
@@ -843,7 +847,8 @@ test('9g. worktree 写 vault 中的详情路径 → 放行', () => {
     stdin: { tool_name: 'Write', tool_input: { file_path: fp, content: '# vault detail\n' } },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止主 session/非 artifact-writer'));
 });
 
 test('9h. worktree 普通代码文件不触发 artifact 重定向', () => {
@@ -1232,6 +1237,56 @@ test('9hc0b. artifact-writer 修改 artifact 时必须持有当前 session 写�
   assert.ok(r.stdout.includes('没有持有 artifact 写锁'));
 });
 
+test('9hc0b1. 主 session 不得用 Edit/MultiEdit 直接修改 artifact', () => {
+  const dir = makeV6Project('direct-artifact-edit-deny');
+  const cases = [
+    {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'task.md'),
+        old_string: '<!-- ARCHIVE -->',
+        new_string: 'test\n<!-- ARCHIVE -->',
+      },
+    },
+    {
+      tool_name: 'MultiEdit',
+      tool_input: {
+        file_path: path.join(dir, 'implementation_plan.md'),
+        edits: [
+          {
+            old_string: '<!-- ARCHIVE -->',
+            new_string: 'test\n<!-- ARCHIVE -->',
+          },
+        ],
+      },
+    },
+  ];
+
+  for (const stdin of cases) {
+    const r = runHook('pre-tool-use.js', { cwd: dir, stdin });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `${stdin.tool_name} should be denied`);
+    assert.ok(r.stdout.includes('禁止主 session/非 artifact-writer'), `${stdin.tool_name} should explain artifact-writer-only`);
+  }
+});
+
+test('9hc0b1a. spec.md 不是 artifact-writer 管理对象，主 session 可 Edit', () => {
+  const dir = makeV6Project('direct-spec-edit-pass');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'spec.md'),
+        old_string: '[项目名称]',
+        new_string: 'Smoke Project',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
 test('9hc0b2. Bash 不得删除或重定向写入 artifact-writer.lock', () => {
   const dir = makeV6Project('agent-artifact-lock-bash-protect');
   const lockPath = path.join(dir, '.pace', 'artifact-writer.lock');
@@ -1307,6 +1362,27 @@ test('9hc0c. artifact-writer 持有写锁时可新建 changes 详情，已有详
   assert.strictEqual(overwriteExisting.code, 0);
   assert.ok(overwriteExisting.stdout.includes('"deny"'));
   assert.ok(overwriteExisting.stdout.includes('禁止使用 Write 覆盖已有 artifact'));
+});
+
+test('9hc0d. artifact-writer 持有写锁时可 Edit 索引 artifact', () => {
+  const dir = makeV6Project('agent-artifact-lock-edit-pass');
+  const sessionId = seedArtifactWriterLock(dir, 'sid-edit-pass');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: sessionId,
+      agent_id: 'agent-edit-pass',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'task.md'),
+        old_string: '测试变更',
+        new_string: '测试变更',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
 });
 
 test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
