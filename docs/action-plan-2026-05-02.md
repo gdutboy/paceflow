@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.41（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.42（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-09，v6.0.41）
+### 0.1 当前执行视图（2026-05-09，v6.0.42）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,11 +27,11 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.41）：
+执行状态（v6.0.42）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
-- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口；v6.0.35 拆分 plugin runtime root，marketplace 只发布 `plugin/` 下的运行时资产；v6.0.36 修复 2026-05-09 审计确认项：findings 日期差、Stop walkthrough 噪声、SessionStart walkthrough 最近记录截断、PostToolUse 死分支和文档/模板一致性；v6.0.37 修复二轮审计确认项：PreCompact native plan 项目过滤、Bash 间接写 artifact 保护与 bridge/template 说明收敛；v6.0.38 完成 r2 后续代码质量收尾：PostToolUse per-CHG warning 节流、artifact-root 输入截断、logger lock stale 阈值调整与 artifact mutation helper 抽取；v6.0.39 同步 Claude Code native build 工具面变化：`Glob/Grep` 可能不可用时，skill/smoke 改用 Bash `find` / `rg` / `grep` fallback 口径；v6.0.40 修复 Smoke4 暴露的 legacy v5 迁移提示歧义，明确被阻止的工具未落盘、dry-run 后二次确认、迁移后仍需重试原始代码任务；v6.0.41 修复 Smoke6 暴露的主 session `Edit/MultiEdit` 直接修改 artifact 绕过。
+- P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口；v6.0.35 拆分 plugin runtime root，marketplace 只发布 `plugin/` 下的运行时资产；v6.0.36 修复 2026-05-09 审计确认项：findings 日期差、Stop walkthrough 噪声、SessionStart walkthrough 最近记录截断、PostToolUse 死分支和文档/模板一致性；v6.0.37 修复二轮审计确认项：PreCompact native plan 项目过滤、Bash 间接写 artifact 保护与 bridge/template 说明收敛；v6.0.38 完成 r2 后续代码质量收尾：PostToolUse per-CHG warning 节流、artifact-root 输入截断、logger lock stale 阈值调整与 artifact mutation helper 抽取；v6.0.39 同步 Claude Code native build 工具面变化：`Glob/Grep` 可能不可用时，skill/smoke 改用 Bash `find` / `rg` / `grep` fallback 口径；v6.0.40 修复 Smoke4 暴露的 legacy v5 迁移提示歧义，明确被阻止的工具未落盘、dry-run 后二次确认、迁移后仍需重试原始代码任务；v6.0.41 修复 Smoke6 暴露的主 session `Edit/MultiEdit` 直接修改 artifact 绕过；v6.0.42 加固 v5 迁移脚本的多 ARCHIVE/CRLF 真实 vault 兼容性。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
@@ -118,15 +118,15 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.41）：
+最近一次验证结果（v6.0.42）：
 
 ```bash
-node --check plugin/hooks/*.js  # PASS
-node tests/test-hooks-e2e.js      # 122/122 PASS
-node tests/test-pace-utils.js     # 104/104 PASS
-node tests/test-install.js        # 24/24 PASS
-claude plugin validate .          # PASS
-git diff --check                  # PASS
+node --check plugin/hooks/*.js plugin/migrate/*.js  # PASS
+node tests/test-hooks-e2e.js                         # 125/125 PASS
+node tests/test-pace-utils.js                        # 104/104 PASS
+node tests/test-install.js                           # 24/24 PASS
+claude plugin validate ./plugin                      # PASS
+git diff --check                                     # PASS
 ```
 
 当前本机 Claude Code：
@@ -187,12 +187,12 @@ Artifact 目录选择候选（2026-05-07）：PaceFlow 同时支持 Obsidian vau
 
 #### 0.1.10 当前剩余验证缺口
 
-v6.0.41 已修复当前 production smoke 暴露的 P0 阻断缺口。剩余工作按验证价值排序：
+v6.0.42 已修复当前 production smoke 暴露的 P0 阻断缺口，并完成真实 v5 vault 副本迁移 rehearsal。剩余工作按验证价值排序：
 
 | 优先级 | 缺口 | 当前状态 | 下一步 |
 |---|---|---|---|
 | P1 | Installed-plugin production smoke | ✅ v6.0.41 Smoke0-7 已完成；Smoke6 复测确认 Bash / Write / Edit 直接改流程 artifact 均被拦，`spec.md` Edit 例外正常；marketplace cache 运行时发布面干净 | 后续只在发新版或改 hook/agent runtime 时复跑关键 smoke；Smoke5 setup 已修订以避免 `.pace/*` 运行态被 git 跟踪 |
-| P1 | 真实 v5 vault 副本迁移 rehearsal | 迁移脚本和 hook guard 已有 fixture 覆盖 | 对一个真实 v5 vault 副本执行 dry-run + 正式迁移，确认无 `changes/` 混入旧活跃区、`.v5-backup` 防重复执行 |
+| P1 | 真实 v5 vault 副本迁移 rehearsal | ✅ v6.0.42 已用 `ccauth` Obsidian v5 vault 副本完成 dry-run + 正式迁移 rehearsal；脚本兼容 legacy 文件内多个 ARCHIVE 历史边界与 CRLF，迁移后每个主 artifact 仅保留 1 个 v6 标准 ARCHIVE，`.v5-backup` 与 `changes/findings`、`changes/corrections` 正常生成 | 不直接迁移 live vault；后续真实迁移前仍先复制 rehearsal 或至少 dry-run + 用户二次确认 |
 | P1-design | close-chg review gate 设计评估 | GitHub issue #3 提出 `REVIEWED` / invariants / red-evidence / protocol checklist。讨论结论：review gate 有潜在高收益，但触发频率与机械边界未定；若设计成“每次 close 都提示主 session 自行判断”，会退化为提示工程和繁琐流程 | 暂不实现。先设计何时触发 review、谁 review、哪些字段可机械检查。候选方向：只在 close 前要求 review evidence；小 CHG 可 manual，代码/协议/安全/跨模块 CHG 推荐独立 review agent；hook 只检查 evidence 字段存在和 P0/P1 处置格式，不判断 review 内容真伪 |
 | P2 | 当前 Claude Code `/plan` bridge production 测试 | synthetic plan / bridge 测试已有，真实 `/plan` UX 未重新 dogfood | 用 Claude Code 当前版本生成一个 native plan，再桥接为 `create-chg`，确认不依赖随机文件名 |
 | P2 | Agent fixture coverage 扩充 | Phase C agent fixture 目前偏薄，`approve-and-start` 之外的肯定路径主要靠 E2E 覆盖 | 补 `tc-c3-close-chg-success`、`tc-c4-archive-chg-success`、`tc-c5-record-finding-success`、`tc-c6-record-correction-dual-write`，用于锁定 artifact-writer 正向 contract |
@@ -237,7 +237,10 @@ Marketplace cache 发布面检查：
 迁移 rehearsal 备注：
 
 - 当前 `paceflow-hooks` 本地/Obsidian artifact 已存在 `changes/`，不是 v5 迁移对象；不要对 live `paceflow-hooks` 执行 v5 迁移。
-- v5 迁移 rehearsal 应使用真实旧 v5 vault 的副本，判定标准是 artifact 根目录有 v5 `task.md` / `implementation_plan.md` 等文件但没有 `changes/`。
+- `ccauth` Obsidian artifact 是真实 v5 候选：有 `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `spec.md`，无 `changes/` 与 `.v5-backup`。
+- v6.0.41 dry-run 曾因 legacy 文件内多个 `<!-- ARCHIVE -->` 标记中止；v6.0.42 将所有 legacy ARCHIVE 降级为 `<!-- v5 历史 active/archive 边界 -->`，并补 CRLF 兼容。
+- 已在 `/tmp/paceflow-migrate-ccauth` 副本完成 dry-run + 正式迁移 rehearsal：4 个主 artifact 均只保留 1 个 v6 标准 ARCHIVE，history-boundary 计数分别为 task=3、implementation_plan=2、walkthrough=2、findings=2，`.v5-backup` 与 `changes/findings`、`changes/corrections` 正常生成。
+- 不直接迁移 live `ccauth`；真实迁移仍需用户确认 dry-run 摘要后执行。
 
 ---
 

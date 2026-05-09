@@ -39,7 +39,8 @@ const CORRECTIONS_TEMPLATE =
  * 2. v5 自带的 <!-- ARCHIVE --> 标记替换为分隔注释，避免与 v6 ARCHIVE 双重存在
  */
 function transformV5Body(content) {
-  const lines = content.split('\n');
+  const normalized = content.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
   let i = 0;
   while (i < lines.length && lines[i].trim() === '') i++;
   if (i < lines.length && lines[i].startsWith('# ')) {
@@ -47,7 +48,7 @@ function transformV5Body(content) {
   }
   return lines
     .join('\n')
-    .replace(/^<!-- ARCHIVE -->$/m, '<!-- v5 历史 active/archive 边界 -->');
+    .replace(/^<!-- ARCHIVE -->$/gm, '<!-- v5 历史 active/archive 边界 -->');
 }
 
 function archiveV5(projectPath, dryRun, force) {

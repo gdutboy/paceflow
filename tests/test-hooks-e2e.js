@@ -2214,6 +2214,56 @@ test('17d. migrate 默认拒绝重复执行', () => {
   );
 });
 
+test('17e. migrate 接受 legacy 文件内多个 ARCHIVE 历史边界', () => {
+  const dir = makeLegacyProject('migrate-v5-multi-archive');
+  fs.writeFileSync(
+    path.join(dir, 'task.md'),
+    [
+      '# Task',
+      '',
+      '- [/] Active legacy task',
+      '',
+      '<!-- ARCHIVE -->',
+      '',
+      '- [x] Archived legacy task 1',
+      '',
+      '<!-- ARCHIVE -->',
+      '',
+      '- [x] Archived legacy task 2',
+      '',
+      '<!-- ARCHIVE -->',
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+
+  const out = execFileSync('node', [MIGRATE_SCRIPT, dir], { encoding: 'utf8' });
+  assert.ok(out.includes('[DONE] task.md'));
+  const migrated = fs.readFileSync(path.join(dir, 'task.md'), 'utf8');
+  const archiveCount = (migrated.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+  const historyBoundaryCount = (migrated.match(/^<!-- v5 历史 active\/archive 边界 -->$/gm) || []).length;
+  assert.strictEqual(archiveCount, 1);
+  assert.strictEqual(historyBoundaryCount, 3);
+  assert.ok(migrated.includes('- [/] Active legacy task'));
+  assert.ok(migrated.includes('- [x] Archived legacy task 2'));
+});
+
+test('17f. migrate 兼容 CRLF legacy ARCHIVE 标记', () => {
+  const dir = makeLegacyProject('migrate-v5-crlf-archive');
+  fs.writeFileSync(
+    path.join(dir, 'task.md'),
+    '# Task\r\n\r\n- [ ] Legacy task\r\n\r\n<!-- ARCHIVE -->\r\n\r\n- [x] Old task\r\n',
+    'utf8'
+  );
+
+  execFileSync('node', [MIGRATE_SCRIPT, dir], { encoding: 'utf8' });
+  const migrated = fs.readFileSync(path.join(dir, 'task.md'), 'utf8');
+  const archiveCount = (migrated.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+  assert.strictEqual(archiveCount, 1);
+  assert.ok(migrated.includes('<!-- v5 历史 active/archive 边界 -->'));
+  assert.ok(!migrated.includes('\r'));
+});
+
 console.log('\n--- task-list / pre-compact / lifecycle observers ---');
 
 test('18. TodoWrite 按详情未完成任务数提示', () => {
