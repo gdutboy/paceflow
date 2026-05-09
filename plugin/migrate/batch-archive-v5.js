@@ -3,8 +3,8 @@
  * batch-archive-v5.js
  *
  * PACEflow v5 → v6 归档式迁移（B 方案）
- * 用 v6 标准模板覆盖文件顶部，原 v5 全部内容推到 ARCHIVE 下方
- * 零内容解析、零数据丢失（备份到 .v5-backup）
+ * 用 v6 标准模板覆盖文件顶部，原 v5 内容以历史区形式推到 ARCHIVE 下方
+ * 轻量转换 frontmatter/ARCHIVE/H1；精确原文备份到 .v5-backup，避免数据丢失
  *
  * 用法：
  *   node batch-archive-v5.js <project-vault-path> [--dry-run]
@@ -35,20 +35,53 @@ const CORRECTIONS_TEMPLATE =
 
 /**
  * v5 内容预处理：
- * 1. 顶部 H1 降级为 H2 + 标记"v5 历史"，避免与 v6 模板 H1 重复
- * 2. v5 自带的 <!-- ARCHIVE --> 标记替换为分隔注释，避免与 v6 ARCHIVE 双重存在
+ * 1. 归档区加 v5 历史说明，避免模型把下方内容当成 v6 活跃区
+ * 2. 顶部 YAML frontmatter 转成历史代码块，避免读起来像第二个活动 frontmatter
+ * 3. 顶部 H1 降级为 H2 + 标记"v5 历史"，避免与 v6 模板 H1 重复
+ * 4. v5 自带的 <!-- ARCHIVE --> 标记替换为分隔注释，避免与 v6 ARCHIVE 双重存在
  */
 function transformV5Body(content) {
-  const normalized = content.replace(/\r\n?/g, '\n');
+  const normalized = content
+    .replace(/\r\n?/g, '\n')
+    .replace(/^<!-- ARCHIVE -->$/gm, '<!-- v5 历史 active/archive 边界 -->');
   const lines = normalized.split('\n');
+  const result = [
+    '## v5 历史归档',
+    '',
+    '> 以下内容由 PACEflow v5→v6 迁移脚本归档保留，不参与 v6 活跃流程。',
+    '> 原始精确内容保存在同名 `.v5-backup`；本区只作历史查阅。',
+    '',
+  ];
+
   let i = 0;
   while (i < lines.length && lines[i].trim() === '') i++;
-  if (i < lines.length && lines[i].startsWith('# ')) {
-    lines[i] = '## (v5 历史) ' + lines[i].substring(2);
+
+  if (lines[i] && lines[i].trim() === '---') {
+    let end = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j].trim() === '---') {
+        end = j;
+        break;
+      }
+    }
+    if (end > i) {
+      result.push('### v5 原始 frontmatter', '', '```yaml');
+      result.push(...lines.slice(i + 1, end));
+      result.push('```', '');
+      i = end + 1;
+    }
   }
-  return lines
-    .join('\n')
-    .replace(/^<!-- ARCHIVE -->$/gm, '<!-- v5 历史 active/archive 边界 -->');
+
+  while (i < lines.length && lines[i].trim() === '') i++;
+  const body = lines.slice(i);
+  for (let j = 0; j < body.length; j++) {
+    if (body[j].trim() === '') continue;
+    if (body[j].startsWith('# ')) {
+      body[j] = '## (v5 历史) ' + body[j].substring(2);
+    }
+    break;
+  }
+  return result.concat(body).join('\n');
 }
 
 function archiveV5(projectPath, dryRun, force) {
@@ -95,7 +128,10 @@ function archiveV5(projectPath, dryRun, force) {
       continue;
     }
 
-    const original = fs.readFileSync(filePath, 'utf8');
+    const backupPath = `${filePath}.v5-backup`;
+    const hasBackup = fs.existsSync(backupPath);
+    const sourcePath = force && hasBackup ? backupPath : filePath;
+    const original = fs.readFileSync(sourcePath, 'utf8');
     const v5Body = transformV5Body(original);
     const newContent = `${V6_TEMPLATES[file]}${v5Body}\n`;
 
@@ -107,15 +143,22 @@ function archiveV5(projectPath, dryRun, force) {
     }
 
     if (dryRun) {
+      const sourceNote = force && hasBackup ? `，使用已有 ${file}.v5-backup 作为源` : '';
       console.log(
         `[DRY-RUN] ${file}：${original.length} → ${newContent.length} 字符 ` +
-          `(v6 模板 ${V6_TEMPLATES[file].length} + v5 历史 ${v5Body.length})`,
+          `(v6 模板 ${V6_TEMPLATES[file].length} + v5 历史 ${v5Body.length})${sourceNote}`,
       );
     } else {
-      fs.writeFileSync(`${filePath}.v5-backup`, original, 'utf8');
+      let backupNote;
+      if (hasBackup) {
+        backupNote = `使用已有 ${file}.v5-backup 作为源，不覆盖备份`;
+      } else {
+        fs.writeFileSync(backupPath, original, 'utf8');
+        backupNote = `备份 ${file}.v5-backup (${original.length} 字符)`;
+      }
       fs.writeFileSync(filePath, newContent, 'utf8');
       console.log(
-        `[DONE] ${file}：备份 ${file}.v5-backup (${original.length} 字符)，` +
+        `[DONE] ${file}：${backupNote}，` +
           `新文件 ${newContent.length} 字符`,
       );
     }
