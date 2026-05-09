@@ -321,6 +321,9 @@ test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
   const dir = makeV6Project('ss-session-flags', {
     paceRuntime: {
       'archive-reminded-chg-20260504-01': '1',
+      'status-mismatch-chg-20260504-01': '1',
+      'verify-missing-chg-20260504-01': '1',
+      'blocked-tasks-chg-20260504-01': '1',
       'cli-refresh-done': '1',
       'task-list-used': '1',
       'findings-age-2000-01-01': '1',
@@ -330,6 +333,9 @@ test('3a. SessionStart 清理每会话 .pace 运行态 flags', () => {
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'archive-reminded-chg-20260504-01')));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'status-mismatch-chg-20260504-01')));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'verify-missing-chg-20260504-01')));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'blocked-tasks-chg-20260504-01')));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'cli-refresh-done')));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'findings-age-2000-01-01')), '历史 findings 去重 flag 应按日期清理');
@@ -2043,6 +2049,29 @@ test('15e. 写入 .pace/artifact-root 不触发无任务流程提醒', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.strictEqual(r.stdout, '');
+});
+
+test('15f. PostToolUse 同一 CHG 状态提醒每会话只提示一次', () => {
+  const dir = makeV6Project('post-entry-warning-once', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: false }),
+  });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const stdin = {
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: fp,
+      old_string: '## 工作记录',
+      new_string: '## 工作记录',
+    },
+  };
+  const first = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(first.code, 0);
+  assert.ok(first.stdout.includes('缺少 verified-date'));
+
+  const second = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(second.code, 0);
+  assert.ok(!second.stdout.includes('缺少 verified-date'));
 });
 
 test('16. correction 详情变更 → knowledge 提醒', () => {

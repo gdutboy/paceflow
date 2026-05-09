@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.37';
+const PACE_VERSION = 'v6.0.38';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -11,6 +11,7 @@ const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
 const ARTIFACT_WRITER_LOCK_FILE = 'artifact-writer.lock';
 const ARTIFACT_WRITER_LOCK_TTL_MS = Number(process.env.PACE_ARTIFACT_LOCK_TTL_MS || 30 * 60 * 1000);
+const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
@@ -81,6 +82,9 @@ const SESSION_SCOPED_FLAGS = [
 
 const SESSION_SCOPED_FLAG_PREFIXES = [
   'archive-reminded-',           // post-tool-use.js：按 CHG slug 去重归档提醒
+  'status-mismatch-',            // post-tool-use.js：按 CHG slug 去重索引/status 不一致提醒
+  'verify-missing-',             // post-tool-use.js：按 CHG slug 去重 completed 未 verified 提醒
+  'blocked-tasks-',              // post-tool-use.js：按 CHG slug 去重 blocked task 提醒
 ];
 
 /** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
@@ -400,7 +404,7 @@ function releaseArtifactWriterLock(cwd, info = {}) {
 }
 
 function normalizeArtifactRootChoice(choice) {
-  let raw = String(choice || '').trim();
+  let raw = String(choice || '').slice(0, ARTIFACT_ROOT_CHOICE_MAX_CHARS).trim();
   if (!raw) return '';
   const first = raw[0];
   const last = raw[raw.length - 1];
@@ -928,6 +932,7 @@ function scanRelatedNotes(projectName) {
 
 // 1MB：全覆盖日志（ENTRY+SKIP+PASS）后每 session ~50KB，1MB 可保留 ~20 session / 7-10 天
 const MAX_LOG_SIZE = 1024 * 1024;
+const LOGGER_LOCK_STALE_MS = 30 * 1000;
 /**
  * 创建带日志轮转的 logger 函数（1MB 上限，超过截断保留后半）
  * @param {string} logPath - 日志文件路径
@@ -943,7 +948,7 @@ function createLogger(logPath) {
       } catch(e) {
         try {
           const stat = fs.statSync(lockPath);
-          if (Date.now() - stat.mtimeMs > 5000) {
+          if (Date.now() - stat.mtimeMs > LOGGER_LOCK_STALE_MS) {
             fs.unlinkSync(lockPath);
             lockFd = fs.openSync(lockPath, 'wx');
           }

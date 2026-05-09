@@ -37,6 +37,11 @@ function isBashTool(toolName) {
   return toolName === 'Bash';
 }
 
+function getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath) {
+  if (!isFileMutationTool(toolName) || !isInsideProject || !paceSignal) return null;
+  return paceUtils.artifactRelativePathForFile(artDir, filePath);
+}
+
 function shellCommandScripts(command) {
   const scripts = [];
   const c = String(command || '');
@@ -689,9 +694,7 @@ paceUtils.withStdinParsed((stdin) => {
     isInsideProject = normalizedFile.startsWith(artDirWithSlash);
   }
 
-  const artifactRelForMutation = isFileMutationTool(toolName) && isInsideProject && paceSignal
-    ? paceUtils.artifactRelativePathForFile(artDir, filePath)
-    : null;
+  const artifactRelForMutation = getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath);
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
       const lockCheck = paceUtils.artifactWriterLockMatches(cwd, stdin.sessionId);

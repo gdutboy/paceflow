@@ -365,6 +365,18 @@ test('PACE_ARTIFACT_ROOT=local → 自动化环境跳过询问', () => {
   }
 });
 
+test('PACE_ARTIFACT_ROOT 超长值会截断后再解析', () => {
+  const dir = makeTmpDir('gad-choice-env-long');
+  const prev = process.env.PACE_ARTIFACT_ROOT;
+  process.env.PACE_ARTIFACT_ROOT = 'x'.repeat(5000);
+  try {
+    assert.strictEqual(readArtifactRootChoice(dir).length, 4096);
+  } finally {
+    if (prev === undefined) delete process.env.PACE_ARTIFACT_ROOT;
+    else process.env.PACE_ARTIFACT_ROOT = prev;
+  }
+});
+
 test('首次启用且 vault/local 都无 changes → 需要选择 artifact root', () => {
   const dir = makeTmpDir('gad-choice-needed');
   assert.strictEqual(artifactRootChoiceNeeded(dir), true);
