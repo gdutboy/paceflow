@@ -2544,6 +2544,43 @@ test('22. PostToolUseFailure Write/Edit/Bash 失败注入恢复提示', () => {
   assert.ok(out.hookSpecificOutput.additionalContext.includes('确认验证通过前不要派 verify/close-chg'));
 });
 
+test('22c. PostToolUseFailure 保留未完成 index:changes 事务锁', () => {
+  const dir = makeV6Project('ptuf-index-tx-open');
+  const lockPath = seedArtifactResourceLock(dir, 'index:changes', {
+    sessionId: 'sid-index-fail',
+    agentId: 'agent-index-fail',
+    file: path.join(dir, 'task.md'),
+  });
+  const txDir = path.join(dir, '.pace', 'index-transactions');
+  fs.mkdirSync(txDir, { recursive: true });
+  fs.writeFileSync(path.join(txDir, `${safeLockName('agent:agent-index-fail')}.json`), JSON.stringify({
+    sessionId: 'sid-index-fail',
+    agentId: 'agent-index-fail',
+    ownerKey: 'agent:agent-index-fail',
+    touched: ['task.md'],
+    timestampMs: Date.now(),
+  }, null, 2) + '\n', 'utf8');
+
+  const beforeLog = fs.existsSync(path.join(HOOKS_DIR, 'pace-hooks.log')) ? fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8') : '';
+  const r = runHook('post-tool-use-failure.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-index-fail',
+      agent_id: 'agent-index-fail',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: { file_path: path.join(dir, 'implementation_plan.md') },
+      error: 'Edit failed',
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(fs.existsSync(lockPath), 'index:changes 半事务失败时应保留锁，等待同 agent 重试或 SubagentStop 清理');
+  const afterLog = fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8');
+  const delta = afterLog.slice(beforeLog.length);
+  assert.ok(delta.includes('KEEP_ARTIFACT_RESOURCE_LOCK'));
+  assert.ok(delta.includes('index-transaction-open-after-failure'));
+});
+
 test('22a. PostToolUseFailure 用户中断只记录日志不注入恢复提示', () => {
   const dir = makeV6Project('ptuf-interrupt');
   const r = runHook('post-tool-use-failure.js', {

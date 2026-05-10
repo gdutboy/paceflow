@@ -49,8 +49,13 @@ paceUtils.withStdinParsed((stdin) => {
       const artifactRel = paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath);
       const resource = paceUtils.artifactResourceForRel(artifactRel);
       if (resource) {
-        const release = paceUtils.releaseArtifactResourceLock(cwd, resource, { sessionId: stdin.sessionId, agentId: stdin.agentId });
-        log(logEntry('PostToolUseFailure', release.released ? 'RELEASE_ARTIFACT_RESOURCE_LOCK' : 'RELEASE_ARTIFACT_RESOURCE_LOCK_SKIP', {
+        const owner = { sessionId: stdin.sessionId, agentId: stdin.agentId };
+        const tx = resource === 'index:changes' ? paceUtils.readArtifactIndexTransaction(cwd, owner) : { ok: false, touched: [] };
+        const keepIndexLock = tx.ok && tx.touched.length > 0 && tx.touched.length < 2;
+        const release = keepIndexLock
+          ? { released: false, reason: 'index-transaction-open-after-failure', touched: tx.touched }
+          : paceUtils.releaseArtifactResourceLock(cwd, resource, owner);
+        log(logEntry('PostToolUseFailure', keepIndexLock ? 'KEEP_ARTIFACT_RESOURCE_LOCK' : (release.released ? 'RELEASE_ARTIFACT_RESOURCE_LOCK' : 'RELEASE_ARTIFACT_RESOURCE_LOCK_SKIP'), {
           proj,
           tool: toolName,
           file: stdin.filePath,
@@ -58,6 +63,7 @@ paceUtils.withStdinParsed((stdin) => {
           resource,
           agent_id: stdin.agentId,
           reason: release.reason,
+          touched: Array.isArray(release.touched) ? release.touched.join(',') : '',
           dur: Date.now() - t0,
         }));
       }

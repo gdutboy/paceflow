@@ -1227,7 +1227,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 2 个测试
+// 18. release sanity — 3 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1271,6 +1271,32 @@ test('plugin runtime root 不包含开发资料', () => {
   }
   walk(pluginRoot);
   assert.deepStrictEqual(disallowed.sort(), [], `plugin runtime 不应包含开发资料: ${disallowed.join(', ')}`);
+});
+
+test('plugin runtime 文档不保留 create-chg 扫描分配旧语义', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const pluginRoot = path.join(repoRoot, 'plugin');
+  const stale = [];
+  const forbidden = [
+    /ID\s+由\s+`?artifact-writer create-chg`?\s+扫描\s+`?changes\/`?\s+后生成/,
+    /CHG\/HOTFIX[^。\n]*扫描\s+`?changes\/`?[^。\n]*生成/,
+    /create-chg[^。\n]*扫描\s+`?changes\/`?[^。\n]*分配/,
+  ];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.name.endsWith('.md')) {
+        const text = fs.readFileSync(full, 'utf8');
+        if (forbidden.some(re => re.test(text))) {
+          stale.push(path.relative(pluginRoot, full).split(path.sep).join('/'));
+        }
+      }
+    }
+  }
+  walk(pluginRoot);
+  assert.deepStrictEqual(stale.sort(), [], `plugin runtime 文档仍含旧编号语义: ${stale.join(', ')}`);
 });
 
 // ============================================================

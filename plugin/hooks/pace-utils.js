@@ -732,6 +732,18 @@ function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
   return { released: false, reason: 'index-transaction-open', touched: [...touched].sort() };
 }
 
+function readArtifactIndexTransaction(cwd, info = {}) {
+  const txPath = ownerScopedPath(cwd, 'index-transactions', info);
+  if (!txPath) return { ok: false, path: '', touched: [], reason: 'missing-owner' };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(txPath, 'utf8'));
+    const touched = Array.isArray(parsed.touched) ? parsed.touched : [];
+    return { ok: true, path: txPath, touched, raw: parsed };
+  } catch(e) {
+    return { ok: false, path: txPath, touched: [], reason: e.message || String(e) };
+  }
+}
+
 function scanMaxNumberInDir(dir, re) {
   let max = 0;
   let files = [];
@@ -1759,7 +1771,7 @@ module.exports = {
   artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock,
   artifactResourceForRel, getArtifactResourceLockPath, readArtifactResourceLock,
   acquireArtifactResourceLock, releaseArtifactResourceLock, releaseArtifactResourcesForOwner,
-  markIndexChangesTouchedAndMaybeRelease, formatArtifactResourceLock,
+  markIndexChangesTouchedAndMaybeRelease, readArtifactIndexTransaction, formatArtifactResourceLock,
   reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
   isArtifactRuntimeControlPath, operationFromAgentPrompt,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
