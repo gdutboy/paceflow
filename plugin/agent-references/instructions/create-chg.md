@@ -36,11 +36,11 @@
 
 ## CHG-ID 分配（hook reservation + 二次防御）
 
-并发派多 agent 时不能靠扫描索引分配 nn。PreToolUse:Agent 会为 `create-chg` 原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，并通过 additionalContext 注入 `reserved-id` / `reserved-file`。必须优先使用 hook 预留编号；不得重新扫描索引自行分配编号。
+并发派多 agent 时不能靠扫描索引分配 nn。PreToolUse:Agent 会为 `create-chg` 原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`。Claude Code 不保证 PreToolUse additionalContext 会进入 subagent 初始 prompt；因此主 session 首次派遣缺 `reserved-id` 时，hook 会先预留编号并 deny，要求主 session 把 `reserved-id` / `reserved-file` 原样写进 Agent prompt 后重派。artifact-writer 必须优先使用 prompt 中的 hook 预留编号；不得重新扫描索引自行分配编号。
 
 二次防御：
 
-1. 若 hook additionalContext 提供 `reserved-id` / `reserved-file`：直接使用该编号与文件路径。
+1. 若 prompt 已包含 hook deny 文案要求重派时给出的 `reserved-id` / `reserved-file`：直接使用该编号与文件路径。
 2. 若缺少 reserved 信息但仍要新建 `changes/chg-*.md` / `changes/hotfix-*.md`，不要自行扫描；报告 `hook-deny` 或让主 session 重新派遣 artifact-writer。
 3. 写入目标文件已存在 → 报告 `file-conflict`，主 session 重新派遣；不要用 Write 覆盖已有详情。
 

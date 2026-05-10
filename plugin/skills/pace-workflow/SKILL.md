@@ -76,6 +76,8 @@ technical-decision: <How>
 
 A 阶段完成标志：`task.md` 与 `implementation_plan.md` 有同一个活跃 `[[chg-*]]` / `[[hotfix-*]]` 索引，且 `changes/<id>.md` 存在。
 
+注意：`create-chg` 首次派遣可能被 hook 阻止并返回 `reserved-id` / `reserved-file`。这是正常并发保护；把这两个字段原样加入 Agent prompt 后重派，不要让 agent 自行扫描索引分配编号。
+
 ---
 
 ## C (Check)

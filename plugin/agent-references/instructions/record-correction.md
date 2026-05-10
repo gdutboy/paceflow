@@ -45,7 +45,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 0. 前置检查：用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
 1. 派生 title（参考上方规则）
 2. 归一化 knowledge-link / project-scope（参考上方规则）
-3. 使用 hook additionalContext 中的 `reserved-id` 作为 correction-id（CORRECTION-YYYY-MM-DD-NN）；不得自行扫描 `changes/corrections/` 分配同日序号
+3. 使用 prompt 中的 hook 预留 `reserved-id` 作为 correction-id（CORRECTION-YYYY-MM-DD-NN）。若 prompt 缺 `reserved-id` / `reserved-file-prefix`，报告 `hook-deny` 并让主 session 重派；不得自行扫描 `changes/corrections/` 分配同日序号
 4. 生成 slug（基于派生的 title）
 5. `mkdir -p changes/corrections/`（仅在 base `changes/` 已存在时）
 6. Write `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`（详情文件结构见下）

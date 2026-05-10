@@ -302,6 +302,77 @@ function promptHasNonEmptyField(prompt, field) {
   return new RegExp(`(?:^|[\\n,，;；])\\s*${escaped}\\s*[:=]\\s*\\S+`, 'mi').test(String(prompt || ''));
 }
 
+function promptFieldValue(prompt, field) {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = String(prompt || '').match(new RegExp(`(?:^|[\\n,，;；])\\s*${escaped}\\s*[:=]\\s*([^\\n,，;；]+)`, 'mi'));
+  return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
+}
+
+function explicitReservationFromPrompt(prompt) {
+  const id = promptFieldValue(prompt, 'reserved-id').toUpperCase();
+  const fileRel = promptFieldValue(prompt, 'reserved-file').replace(/\\/g, '/');
+  let filePrefix = promptFieldValue(prompt, 'reserved-file-prefix').replace(/\\/g, '/');
+  filePrefix = filePrefix.replace(/<slug>\.md$/i, '').replace(/\*\.md$/i, '');
+  return { id, fileRel, filePrefix };
+}
+
+function relFromReservedId(id) {
+  const m = String(id || '').match(/^(CHG|HOTFIX)-(\d{8})-(\d{2})$/i);
+  if (!m) return '';
+  return `changes/${m[1].toLowerCase()}-${m[2]}-${m[3]}.md`;
+}
+
+function reservationRelForLookup(explicit) {
+  if (explicit.fileRel) return explicit.fileRel;
+  const fromId = relFromReservedId(explicit.id);
+  if (fromId) return fromId;
+  if (explicit.filePrefix) return `${explicit.filePrefix}slug.md`;
+  return '';
+}
+
+function reservationMatchesExplicit(reservation, explicit) {
+  if (!reservation) return false;
+  if (explicit.id && reservation.id !== explicit.id) return false;
+  if (explicit.fileRel && reservation.fileRel !== explicit.fileRel) return false;
+  if (explicit.filePrefix && reservation.filePrefix !== explicit.filePrefix) return false;
+  return true;
+}
+
+function artifactWriterCreateChgHint(artDir) {
+  return [
+    '派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：',
+    `artifact_dir: ${displayDir(artDir)}`,
+    'operation: create-chg',
+    'title: <变更标题>',
+    'tasks:',
+    '- T-001: <首个任务>',
+    'hook 会先预留 reserved-id；若收到 reserved-id required 的 deny，请把 hook 给出的 reserved-id / reserved-file 原样写入 prompt 后重派。'
+  ].join('\n');
+}
+
+function reservationRequiredReason(operation, artDir, reservation) {
+  const lines = [
+    `PACE hook 已为 ${operation} 预留唯一编号，但 Claude Code 不会可靠地把 PreToolUse additionalContext 注入到 subagent 初始 prompt。`,
+    '本次 Agent 已被阻止；请重派 artifact-writer，并在 prompt 顶部原样加入以下字段：',
+    `artifact_dir: ${displayDir(artDir)}`,
+    `operation: ${operation}`,
+  ];
+  if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
+  if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
+  if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
+  lines.push('.pace/ 只保存配置/运行状态，不存 artifact；artifact_dir 必须指向 task.md / implementation_plan.md / changes/** 所在根目录。');
+  lines.push('不要启动不带 reserved-id 的 create-chg / record-correction agent；不要让 agent 自行扫描索引分配编号。');
+  return lines.join('\n');
+}
+
+function reservationExplicitMissingReason(operation, explicit) {
+  return [
+    `artifact-writer prompt 声明了 ${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}，但当前 session 没有匹配的 hook reservation。`,
+    `请先派一次不带 reserved-id 的 ${operation}，让 PreToolUse 预留编号并返回 deny 文案；然后把该文案中的 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
+    '不要手写或复用旧 session 的 reserved-id。'
+  ].join('\n');
+}
+
 function promptMentionsVerifyAction(prompt) {
   const text = String(prompt || '');
   return /(?:^|[\s\n])action\s*[:=]\s*verify\b/i.test(text) ||
@@ -423,7 +494,7 @@ function artifactReservationDenyReason(match, artifactRel) {
   return [
     `artifact-writer 写入的详情文件不匹配 hook 预留编号：${artifactRel}。`,
     `期望：${match.expected}`,
-    '请使用 PreToolUse:Agent 注入的 reserved-id / reserved-file，不要重新扫描索引自行分配编号。'
+    '请使用主 session 重派 prompt 中的 reserved-id / reserved-file，不要重新扫描索引自行分配编号。'
   ].join('\n');
 }
 
@@ -630,38 +701,6 @@ paceUtils.withStdinParsed((stdin) => {
             return;
           }
         }
-        const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt);
-        const reservation = paceUtils.reserveArtifactId(cwd, {
-          sessionId: stdin.sessionId,
-          agentId: stdin.agentId,
-          artifactDir: artDir,
-          operation,
-          prompt: stdin.toolInput.prompt,
-        });
-        if ((operation === 'create-chg' || operation === 'record-correction') && !reservation.reserved) {
-          const reason = [
-            `PACE hook 无法为 ${operation} 预留唯一编号，已阻止本次 artifact-writer 以避免并发 ID 冲突。`,
-            reservation.lock && reservation.lock.ok ? `当前 sequence 锁：${paceUtils.formatArtifactResourceLock(reservation.lock)}` : `原因：${reservation.reason || 'unknown'}`,
-            '请稍后重试；不要让 agent 自行扫描索引分配编号。'
-          ].join('\n');
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ID_RESERVATION', {
-            proj,
-            agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
-            artifact_dir: displayDir(artDir),
-            operation,
-            reason: reservation.reason || '',
-            dur: Date.now() - t0,
-          }));
-          return;
-        }
         const ensured = ensureArtifactWriterBase();
         if (ensured.missingAfter.length > 0) {
           paceUtils.clearArtifactReservation(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
@@ -684,6 +723,92 @@ paceUtils.withStdinParsed((stdin) => {
             dur: Date.now() - t0,
           }));
           return;
+        }
+        const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt);
+        let reservation = { reserved: false };
+        if (operation === 'create-chg' || operation === 'record-correction') {
+          const explicit = explicitReservationFromPrompt(stdin.toolInput.prompt);
+          const hasExplicitReservation = !!(explicit.id || explicit.fileRel || explicit.filePrefix);
+          if (!hasExplicitReservation) {
+            const owner = { sessionId: stdin.sessionId, agentId: stdin.agentId };
+            const existingReservation = paceUtils.readArtifactReservation(cwd, owner);
+            reservation = existingReservation && existingReservation.operation === operation
+              ? { reserved: true, ...existingReservation }
+              : paceUtils.reserveArtifactId(cwd, {
+                sessionId: stdin.sessionId,
+                agentId: stdin.agentId,
+                artifactDir: artDir,
+                operation,
+                prompt: stdin.toolInput.prompt,
+              });
+            if (!reservation.reserved) {
+              const reason = [
+                `PACE hook 无法为 ${operation} 预留唯一编号，已阻止本次 artifact-writer 以避免并发 ID 冲突。`,
+                reservation.lock && reservation.lock.ok ? `当前 sequence 锁：${paceUtils.formatArtifactResourceLock(reservation.lock)}` : `原因：${reservation.reason || 'unknown'}`,
+                '请稍后重试；不要让 agent 自行扫描索引分配编号。'
+              ].join('\n');
+              const output = {
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  permissionDecision: "deny",
+                  permissionDecisionReason: reason
+                }
+              };
+              process.stdout.write(JSON.stringify(output));
+              log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ID_RESERVATION', {
+                proj,
+                agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+                artifact_dir: displayDir(artDir),
+                operation,
+                reason: reservation.reason || '',
+                dur: Date.now() - t0,
+              }));
+              return;
+            }
+            const reason = reservationRequiredReason(operation, artDir, reservation);
+            const output = {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: reason
+              }
+            };
+            process.stdout.write(JSON.stringify(output));
+            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_REQUIRED', {
+              proj,
+              agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+              artifact_dir: displayDir(artDir),
+              operation,
+              reserved: reservation.id || reservation.fileRel || reservation.filePrefix || '',
+              dur: Date.now() - t0,
+            }));
+            return;
+          }
+
+          const lookupRel = reservationRelForLookup(explicit);
+          reservation = lookupRel
+            ? paceUtils.findArtifactReservationForRel(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId }, lookupRel)
+            : paceUtils.readArtifactReservation(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+          if (!reservationMatchesExplicit(reservation, explicit)) {
+            const reason = reservationExplicitMissingReason(operation, explicit);
+            const output = {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: reason
+              }
+            };
+            process.stdout.write(JSON.stringify(output));
+            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_MISMATCH', {
+              proj,
+              agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+              artifact_dir: displayDir(artDir),
+              operation,
+              reserved: explicit.id || explicit.fileRel || explicit.filePrefix || '',
+              dur: Date.now() - t0,
+            }));
+            return;
+          }
         }
         const created = [...new Set([
           ...ensured.createdFiles,
@@ -800,7 +925,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (writeNeedsReservation && !reservation) {
           const reason = [
             `artifact-writer 正在新建 ${artifactRelForMutation}，但当前 session/agent 没有 hook 预留编号。`,
-            '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先注入 reserved-id / reserved-file。',
+            '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先预留编号并用 deny 文案返回 reserved-id / reserved-file。',
             '不要让 agent 自行扫描索引分配 CHG/HOTFIX/CORRECTION 编号。'
           ].join('\n');
           const output = {
@@ -1129,7 +1254,7 @@ paceUtils.withStdinParsed((stdin) => {
         const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
         const reason = doneEntries.length > 0
           ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
-          : `v6 项目没有活跃 CHG/HOTFIX。请派 artifact-writer create-chg 创建 changes/<id>.md，并同步 task.md / implementation_plan.md 索引后再写代码。`;
+          : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
@@ -1290,10 +1415,10 @@ paceUtils.withStdinParsed((stdin) => {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
             ? `检测到未同步的 Superpowers 计划文件，请调用 paceflow:pace-bridge：Read plan → 派 artifact-writer create-chg 创建 v6 CHG 后再写代码。`
-            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
+            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\n${artifactWriterCreateChgHint(artDir)}\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
         }
       } else {
-        reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。请派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引。\n${FORMAT_SNIPPETS.skillRef}`;
+        reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
       }
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
@@ -1316,7 +1441,7 @@ paceUtils.withStdinParsed((stdin) => {
         const createdMsg = createdFiles.length > 0
           ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
           : `${artifactRootHint}。`;
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先派 artifact-writer create-chg 创建 v6 CHG，确认用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）后再写代码。\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先创建 v6 CHG，确认用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）后再写代码。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));

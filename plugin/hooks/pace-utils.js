@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.47';
+const PACE_VERSION = 'v6.0.48';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -1035,7 +1035,8 @@ function artifactRootChoiceMessage(cwd) {
     `用户选择后，只把选择结果写入配置文件 ${choicePath}：选择 vault 时写入纯文本 vault；选择本地时写入纯文本 local；不要包含引号。`,
     `注意：${displayDir(path.join(stateDir, '.pace'))} 只是 PaceFlow 配置/运行态目录，不是 artifact 根目录；不要把 task.md / implementation_plan.md / changes/** 写进 .pace/。`,
     `若选择本地项目目录，后续 artifact_dir 必须是 ${displayDir(stateDir)}；若选择 Obsidian vault，后续 artifact_dir 必须是 ${displayDir(vaultDir)}。`,
-    '写入配置文件后重试本次操作，hook 会在所选 artifact 根目录懒创建 task.md / implementation_plan.md / changes/**。'
+    '若本次被拦截的是代码 Write/Edit/MultiEdit：写入配置文件后不要直接重试代码写入；先派 artifact-writer create-chg，并在用户明确批准/要求执行后派 approve-and-start，再重试代码写入。',
+    '若本次被拦截的是 artifact-writer Agent：写入配置文件后按 hook 提示重派同一个 Agent。hook 会在所选 artifact 根目录懒创建 task.md / implementation_plan.md / changes/**。'
   ].join('\n');
 }
 

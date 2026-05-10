@@ -18,7 +18,7 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 hook 在派 `artifact-writer create-chg` 时原子预留，并通过 additionalContext 注入 `reserved-id` / `reserved-file`；artifact writer 必须使用该预留编号，主 session 不自行写入文件。
+ID 由 hook 在派 `artifact-writer create-chg` 时原子预留。Claude Code 不保证 PreToolUse additionalContext 会进入 subagent 初始 prompt；若 hook 返回 reserved-id required 的 deny，主 session 必须把 `reserved-id` / `reserved-file` 原样加入 Agent prompt 后重派。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
 
 `T-NNN` 是单个 CHG/HOTFIX 内的局部任务编号。不同 CHG 可以都从 `T-001` 开始；所有状态更新必须同时带 `target: CHG-...` 和 `task-id: T-...`，避免多 worktree / 多 CHG 并发时产生歧义。
 

@@ -66,6 +66,8 @@ technical-decision: <关键设计决策和取舍>
 - `task.md` 活跃 wikilink 索引
 - `implementation_plan.md` 活跃 wikilink 索引
 
+若 hook 返回 reserved-id required 的 deny，这是正常并发保护。把 deny 文案中的 `reserved-id` / `reserved-file` 原样加入 Agent prompt 后重派；不要让 agent 自行扫描索引分配编号。
+
 ### Step 4：auto-APPROVED（可选）
 
 如果用户已在上游计划流程中参与并确认设计，且准备开始首个任务，继续派：
