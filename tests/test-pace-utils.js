@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -284,6 +284,41 @@ test('artifact-writer lock 遇到损坏锁文件会自愈重建', () => {
   assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-corrupt');
 });
 
+test('artifact-writer stale lock 被其他进程删除时继续重试获取', () => {
+  const dir = makeTmpDir('awl-stale-enoent');
+  const lockPath = getArtifactWriterLockPath(dir);
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, JSON.stringify({
+    sessionId: 'sid-stale',
+    artifactDir: dir,
+    timestampMs: 1,
+  }), 'utf8');
+
+  const originalUnlinkSync = fs.unlinkSync;
+  let injected = false;
+  fs.unlinkSync = (target) => {
+    if (!injected && target === lockPath) {
+      injected = true;
+      originalUnlinkSync(target);
+      const err = new Error('ENOENT: simulated concurrent stale lock cleanup');
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return originalUnlinkSync(target);
+  };
+  try {
+    const acquired = acquireArtifactWriterLock(dir, {
+      sessionId: 'sid-retry',
+      artifactDir: dir,
+      operation: 'create-chg',
+    });
+    assert.strictEqual(acquired.acquired, true);
+    assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-retry');
+  } finally {
+    fs.unlinkSync = originalUnlinkSync;
+  }
+});
+
 test('artifact resource lock 按文件资源互斥，不同资源可并发', () => {
   const dir = makeTmpDir('arl-basic');
   const detailA = 'detail:changes/chg-20260510-01.md';
@@ -300,6 +335,43 @@ test('artifact resource lock 按文件资源互斥，不同资源可并发', () 
   assert.strictEqual(otherResource.acquired, true);
   assert.strictEqual(releaseArtifactResourceLock(dir, detailA, { sessionId: 'sid-a', agentId: 'agent-a' }).released, true);
   assert.strictEqual(releaseArtifactResourceLock(dir, detailB, { sessionId: 'sid-b', agentId: 'agent-b' }).released, true);
+});
+
+test('artifact resource stale lock 被其他进程删除时继续重试获取', () => {
+  const dir = makeTmpDir('arl-stale-enoent');
+  const resource = 'detail:changes/chg-20260510-01.md';
+  const lockPath = getArtifactResourceLockPath(dir, resource);
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, JSON.stringify({
+    version: 'resource-v1',
+    resource,
+    sessionId: 'sid-stale',
+    ownerKey: 'session:sid-stale',
+    timestampMs: 1,
+  }), 'utf8');
+
+  const originalUnlinkSync = fs.unlinkSync;
+  let injected = false;
+  fs.unlinkSync = (target) => {
+    if (!injected && target === lockPath) {
+      injected = true;
+      originalUnlinkSync(target);
+      const err = new Error('ENOENT: simulated concurrent stale resource cleanup');
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return originalUnlinkSync(target);
+  };
+  try {
+    const acquired = acquireArtifactResourceLock(dir, resource, {
+      sessionId: 'sid-resource-retry',
+      file: 'changes/chg-20260510-01.md',
+    });
+    assert.strictEqual(acquired.acquired, true);
+    assert.strictEqual(readArtifactResourceLock(dir, resource).sessionId, 'sid-resource-retry');
+  } finally {
+    fs.unlinkSync = originalUnlinkSync;
+  }
 });
 
 test('index:changes 在 task.md 与 implementation_plan.md 都触碰后释放', () => {
@@ -1227,7 +1299,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 3 个测试
+// 18. release sanity — 4 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1297,6 +1369,14 @@ test('plugin runtime 文档不保留 create-chg 扫描分配旧语义', () => {
   }
   walk(pluginRoot);
   assert.deepStrictEqual(stale.sort(), [], `plugin runtime 文档仍含旧编号语义: ${stale.join(', ')}`);
+});
+
+test('v5 migration script 使用共享 artifact 常量', () => {
+  assert.deepStrictEqual(MIGRATABLE_ARTIFACT_FILES, ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']);
+  const repoRoot = path.join(__dirname, '..');
+  const script = fs.readFileSync(path.join(repoRoot, 'plugin', 'migrate', 'batch-archive-v5.js'), 'utf8');
+  assert.ok(script.includes('MIGRATABLE_ARTIFACT_FILES'), '迁移脚本应引用 pace-utils 导出的迁移文件列表');
+  assert.ok(!/const\s+ARTIFACT_FILES\s*=\s*\[/.test(script), '迁移脚本不得硬编码 ARTIFACT_FILES 数组');
 });
 
 // ============================================================

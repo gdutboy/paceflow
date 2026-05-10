@@ -51,6 +51,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (resource) {
         const owner = { sessionId: stdin.sessionId, agentId: stdin.agentId };
         const tx = resource === 'index:changes' ? paceUtils.readArtifactIndexTransaction(cwd, owner) : { ok: false, touched: [] };
+        // 只保留已写入一侧索引的半事务锁；无确认写入或双索引已完成时释放以减少并发阻塞。
         const keepIndexLock = tx.ok && tx.touched.length > 0 && tx.touched.length < 2;
         const release = keepIndexLock
           ? { released: false, reason: 'index-transaction-open-after-failure', touched: tx.touched }

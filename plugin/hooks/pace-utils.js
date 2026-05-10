@@ -6,6 +6,7 @@ const path = require('path');
 const PACE_VERSION = 'v6.0.47';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
+const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
@@ -365,7 +366,14 @@ function acquireArtifactWriterLock(cwd, info = {}) {
       if (e && e.code === 'EEXIST') {
         const existing = readArtifactWriterLock(cwd);
         if (isArtifactWriterLockStale(existing, now)) {
-          try { fs.unlinkSync(lockPath); continue; } catch(e2) {}
+          try {
+            fs.unlinkSync(lockPath);
+          } catch(e2) {
+            if (!e2 || e2.code !== 'ENOENT') {
+              return { acquired: false, path: lockPath, lock: existing, reason: e2 && e2.message || String(e2) };
+            }
+          }
+          continue;
         }
         return { acquired: false, path: lockPath, lock: existing, reason: 'locked' };
       }
@@ -479,7 +487,14 @@ function acquireJsonLock(lockPath, payload, { ttlMs, waitMs } = {}) {
       if (e && e.code === 'EEXIST') {
         const existing = readJsonLock(lockPath);
         if (jsonLockIsStale(existing, ttlMs, now)) {
-          try { fs.unlinkSync(lockPath); continue; } catch(e2) {}
+          try {
+            fs.unlinkSync(lockPath);
+          } catch(e2) {
+            if (!e2 || e2.code !== 'ENOENT') {
+              return { acquired: false, path: lockPath, lock: existing, reason: e2 && e2.message || String(e2), waitedMs: Date.now() - started };
+            }
+          }
+          continue;
         }
         if (lockMatchesOwner(existing, payload)) {
           return { acquired: true, reentrant: true, path: lockPath, lock: existing, waitedMs: now - started };
@@ -770,6 +785,7 @@ function nextSequenceNumber(cwd, sequenceName, existingMax) {
   try {
     let current = 0;
     try { current = Number(fs.readFileSync(counterPath, 'utf8').trim()) || 0; } catch(e) {}
+    // 并发下编号允许跳号：counter 一旦分配不回滚，优先保证 artifact ID 不复用。
     const next = Math.max(current, existingMax || 0) + 1;
     fs.mkdirSync(path.dirname(counterPath), { recursive: true });
     fs.writeFileSync(counterPath, `${next}\n`, 'utf8');
@@ -1753,7 +1769,7 @@ function parseStdinSync() {
 // I-04: 多行格式按功能分组，便于 diff 审阅
 module.exports = {
   // 常量
-  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS,

@@ -7,31 +7,39 @@
  * 轻量转换 frontmatter/ARCHIVE/H1；精确原文备份到 .v5-backup，避免数据丢失
  *
  * 用法：
- *   node batch-archive-v5.js <project-vault-path> [--dry-run]
+ *   node batch-archive-v5.js <project-vault-path> [--dry-run] [--force]
+ *
+ * --force：目标已存在 changes/ 或 .v5-backup 时允许重跑；如已有 .v5-backup，
+ *          使用备份作为迁移源且不覆盖备份。
  *
  * 设计依据：docs/v5-archival-strategy.md（B 方案）
  */
 
 const fs = require('fs');
 const path = require('path');
+const { ARCHIVE_MARKER, ARCHIVE_PATTERN, MIGRATABLE_ARTIFACT_FILES } = require('../hooks/pace-utils');
 
-const ARTIFACT_FILES = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+const ARTIFACT_FILES = MIGRATABLE_ARTIFACT_FILES;
+
+function archiveLinePattern() {
+  return new RegExp(ARCHIVE_PATTERN.source, 'gm');
+}
 
 // v6 标准模板（来自 agent-references/artifact-writer-spec.md §5.6）
 // 顶部为活跃区（空），紧跟 ARCHIVE 标记
 const V6_TEMPLATES = {
   'task.md':
-    '# 项目任务追踪\n\n## 活跃任务\n\n\n<!-- ARCHIVE -->\n\n',
+    `# 项目任务追踪\n\n## 活跃任务\n\n\n${ARCHIVE_MARKER}\n\n`,
   'implementation_plan.md':
-    '# 实施计划\n\n## 变更索引\n\n<!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->\n\n\n<!-- ARCHIVE -->\n\n',
+    `# 实施计划\n\n## 变更索引\n\n<!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->\n\n\n${ARCHIVE_MARKER}\n\n`,
   'walkthrough.md':
-    '# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n\n\n<!-- ARCHIVE -->\n\n',
+    `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n\n\n${ARCHIVE_MARKER}\n\n`,
   'findings.md':
-    '# 调研记录\n\n## 摘要索引\n\n<!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->\n\n\n<!-- ARCHIVE -->\n\n',
+    `# 调研记录\n\n## 摘要索引\n\n<!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->\n\n\n${ARCHIVE_MARKER}\n\n`,
 };
 
 const CORRECTIONS_TEMPLATE =
-  '# Corrections 记录\n\n> AI 行为纠正历史。每条 correction 必双写到 knowledge/ 或标 project-only。\n\n## 索引\n\n<!-- 格式：- [[correction-id]] <title> [date::] [knowledge:: [[note]] | project-only] -->\n\n\n<!-- ARCHIVE -->\n';
+  `# Corrections 记录\n\n> AI 行为纠正历史。每条 correction 必双写到 knowledge/ 或标 project-only。\n\n## 索引\n\n<!-- 格式：- [[correction-id]] <title> [date::] [knowledge:: [[note]] | project-only] -->\n\n\n${ARCHIVE_MARKER}\n`;
 
 /**
  * v5 内容预处理：
@@ -43,7 +51,7 @@ const CORRECTIONS_TEMPLATE =
 function transformV5Body(content) {
   const normalized = content
     .replace(/\r\n?/g, '\n')
-    .replace(/^<!-- ARCHIVE -->$/gm, '<!-- v5 历史 active/archive 边界 -->');
+    .replace(archiveLinePattern(), '<!-- v5 历史 active/archive 边界 -->');
   const lines = normalized.split('\n');
   const result = [
     '## v5 历史归档',
@@ -136,7 +144,7 @@ function archiveV5(projectPath, dryRun, force) {
     const newContent = `${V6_TEMPLATES[file]}${v5Body}\n`;
 
     // 健壮性：新内容必须只有 1 个 ARCHIVE 标记
-    const archiveCount = (newContent.match(/^<!-- ARCHIVE -->$/gm) || []).length;
+    const archiveCount = (newContent.match(archiveLinePattern()) || []).length;
     if (archiveCount !== 1) {
       console.error(`[ERROR] ${file}：ARCHIVE 标记数 ${archiveCount}（期望 1），脚本中止`);
       process.exit(1);
@@ -188,7 +196,7 @@ function archiveV5(projectPath, dryRun, force) {
     console.log('');
     console.log('回滚方法（如需）：');
     console.log(`  cd "${projectPath}"`);
-    console.log('  for f in task.md implementation_plan.md walkthrough.md findings.md; do');
+    console.log(`  for f in ${ARTIFACT_FILES.join(' ')}; do`);
     console.log('    mv "$f" "$f.v6-attempted" && mv "$f.v5-backup" "$f"');
     console.log('  done');
   }

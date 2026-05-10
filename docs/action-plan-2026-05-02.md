@@ -122,8 +122,8 @@
 
 ```bash
 node --check plugin/hooks/*.js plugin/migrate/*.js  # PASS
-node tests/test-hooks-e2e.js                         # 129/129 PASS
-node tests/test-pace-utils.js                        # 111/111 PASS
+node tests/test-hooks-e2e.js                         # 130/130 PASS
+node tests/test-pace-utils.js                        # 115/115 PASS
 claude plugin validate ./plugin                      # PASS
 git diff --check                                     # PASS
 ```
