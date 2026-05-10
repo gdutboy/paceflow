@@ -668,6 +668,7 @@ test('9c1. 首次启用且 vault/local 都无 artifact → DENY 要求选择 art
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
   assert.ok(r.stdout.includes('artifact-root'));
   assert.ok(r.stdout.includes('配置文件'), '应把 .pace/artifact-root 描述为配置文件');
   assert.ok(r.stdout.includes('不是 artifact 根目录'), '应明确 .pace/ 不是 artifact 根目录');
@@ -710,14 +711,15 @@ test('9c2a. PreToolUse 关键路径日志包含 artifact_dir 与 choice', () => 
   assert.ok(!/\n[^\[]/.test(delta), '结构化日志字段不应因多行 reason 断裂');
 });
 
-test('9c3. SessionStart 首次启用不输出选择提示、不自动创建模板', () => {
+test('9c3. SessionStart 首次启用只提示 skill，不询问、不自动创建模板', () => {
   const dir = makeTmpDir('ss-artifact-root-choice');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
   const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(dir));
   const r = runHookDetailed('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
-  assert.ok(!r.stdout.includes('Artifact 目录选择'), 'SessionStart 不应在闲聊前主动打扰');
+  assert.ok(!r.stdout.includes('Artifact 目录选择'), 'SessionStart 不应主动要求选择 artifact root');
   assert.ok(!r.stdout.includes('AskUserQuestion'), '选择应推迟到 PreToolUse 阶段');
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'), 'SessionStart 应提示主 session 先读取 Paceflow workflow skill');
   assert.strictEqual(r.stderr, '', '非 git 项目不应泄漏 git fatal stderr');
   assert.ok(!fs.existsSync(path.join(dir, '.pace')), '选择前 SessionStart 不应创建 .pace 运行态目录');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
@@ -1039,6 +1041,7 @@ test('9hab. artifact-root=local 后首次 create-chg Agent 创建模板并要求
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('reserved-id'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
   assert.ok(r.stdout.includes('重派 artifact-writer'));
   assert.ok(r.stdout.includes('.pace/ 只保存配置/运行状态'));
   assert.ok(r.stdout.includes(`artifact_dir: ${dir.replace(/\\/g, '/')}/`));
@@ -1662,6 +1665,7 @@ test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
   assert.ok(r.stdout.includes('approval-confirmed: true'));
 });
 
@@ -1841,6 +1845,7 @@ test('9hc3. close-chg 缺验证摘要字段 → DENY', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
   assert.ok(r.stdout.includes('walkthrough-summary'));
 });
 

@@ -340,6 +340,7 @@ function reservationMatchesExplicit(reservation, explicit) {
 
 function artifactWriterCreateChgHint(artDir) {
   return [
+    FORMAT_SNIPPETS.skillRef,
     '派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：',
     `artifact_dir: ${displayDir(artDir)}`,
     'operation: create-chg',
@@ -353,6 +354,7 @@ function artifactWriterCreateChgHint(artDir) {
 function reservationRequiredReason(operation, artDir, reservation) {
   const lines = [
     `PACE hook 已为 ${operation} 预留唯一编号，但 Claude Code 不会可靠地把 PreToolUse additionalContext 注入到 subagent 初始 prompt。`,
+    FORMAT_SNIPPETS.skillRef,
     '本次 Agent 已被阻止；请重派 artifact-writer，并在 prompt 顶部原样加入以下字段：',
     `artifact_dir: ${displayDir(artDir)}`,
     `operation: ${operation}`,
@@ -368,6 +370,7 @@ function reservationRequiredReason(operation, artDir, reservation) {
 function reservationExplicitMissingReason(operation, explicit) {
   return [
     `artifact-writer prompt 声明了 ${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}，但当前 session 没有匹配的 hook reservation。`,
+    FORMAT_SNIPPETS.skillRef,
     `请先派一次不带 reserved-id 的 ${operation}，让 PreToolUse 预留编号并返回 deny 文案；然后把该文案中的 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
     '不要手写或复用旧 session 的 reserved-id。'
   ].join('\n');
@@ -417,6 +420,7 @@ function agentLifecyclePromptDenyReason(prompt) {
     if (missing.length > 0) {
       return [
         `派 artifact-writer 执行 C 阶段批准时缺少必填字段：${missing.join(', ')}。`,
+        FORMAT_SNIPPETS.skillRef,
         'C 阶段批准是确认边界：主 session 可以基于用户明确执行指令、已接受方案或 AskUserQuestion 设置 approval-confirmed: true，但必须写明确认来源与证据。',
         '示例：',
         'approval-confirmed: true',
@@ -430,6 +434,7 @@ function agentLifecyclePromptDenyReason(prompt) {
   if (mentionsApproveOnly && promptApproveContainsStartIntent(text)) {
     return [
       '不要用 action=approve 同时表达开始执行或 in-progress 状态。',
+      FORMAT_SNIPPETS.skillRef,
       'action=approve 只插入 APPROVED，适用于“先批准但暂不执行”。',
       '若用户已明确批准并准备开始，请改派 approve-and-start：',
       'action: approve-and-start',
@@ -443,6 +448,7 @@ function agentLifecyclePromptDenyReason(prompt) {
   if (mentionsUpdateStatus && promptMentionsVerifyAction(text) && !mentionsCloseChg) {
     return [
       '不要把 update-status 与 update-chg action=verify 串在同一次 agent 派遣中。',
+      FORMAT_SNIPPETS.skillRef,
       '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
       '如果只是中间任务完成：只派 update-chg action=update-status。',
       '如果这是最后任务且验证已通过：直接派 close-chg complete-open-tasks: true，合并完成状态、VERIFIED、归档和 walkthrough。'
@@ -458,6 +464,7 @@ function agentLifecyclePromptDenyReason(prompt) {
     if (missing.length > 0) {
       return [
         `派 artifact-writer 执行 close-chg 时缺少必填字段：${missing.join(', ')}。`,
+        FORMAT_SNIPPETS.skillRef,
         'close-chg 只能在主 session 已运行并读取验证结果、确认通过后调用；agent 不得自行判断验证是否通过。',
         '最后任务收尾主路径：',
         'operation: close-chg',
@@ -501,6 +508,7 @@ function artifactReservationDenyReason(match, artifactRel) {
 function directArtifactMutationDenyReason(toolName, artifactRel) {
   return [
     `禁止主 session/非 artifact-writer 使用 ${toolName} 直接修改流程 artifact：${artifactRel}。`,
+    FORMAT_SNIPPETS.skillRef,
     'v6 流程 artifact 只能由 paceflow:artifact-writer 通过受 hook resource lock 保护的 Write/Edit/MultiEdit 路径写入。',
     '请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。'
   ].join('\n');

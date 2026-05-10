@@ -211,8 +211,8 @@ if (paceSignal && !rootChoicePending) {
   try { ensureProjectInfra(cwd); } catch(e) {}
 }
 
-// 首次启用且 vault/local 都无 artifact 时，SessionStart 只记录，不打扰闲聊。
-// 真正写代码或派 artifact-writer 时由 PreToolUse 强制询问并阻断。
+// 首次启用且 vault/local 都无 artifact 时，SessionStart 只注入轻量 skill 提醒，不询问、不落盘。
+// 真正写代码或派 artifact-writer 时由 PreToolUse 强制询问 artifact root 并阻断。
 if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
   log(paceUtils.logEntry('SessionStart', 'ARTIFACT_ROOT_CHOICE_PENDING', {
     cwd,
@@ -221,6 +221,13 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
     local_artifact_dir: paceUtils.displayDir(paceUtils.getProjectStateDir(cwd)),
     vault_artifact_dir: paceUtils.VAULT_PATH ? paceUtils.displayDir(path.join(paceUtils.VAULT_PATH, 'projects', getProjectName(cwd))) : '',
   }));
+  process.stdout.write([
+    '=== PACEflow 启用提示 ===',
+    '本项目已触发 PACEflow 信号；收到代码修改任务时先调用 Skill(paceflow:pace-workflow)。',
+    '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
+    '首次写代码或派 artifact-writer 时，PreToolUse 会要求选择 artifact root；选择前不会创建 .pace/、changes/ 或 Obsidian 空项目目录。',
+    '',
+  ].join('\n') + '\n');
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
 } else if (paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);

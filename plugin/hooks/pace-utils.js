@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.48';
+const PACE_VERSION = 'v6.0.49';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -69,7 +69,7 @@ const FORMAT_SNIPPETS = {
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
   walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 | CHG-YYYYMMDD-NN |',
   // Skill 引用
-  skillRef: '格式参考：paceflow:artifact-management skill',
+  skillRef: '流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)',
 };
 
 // 会话级 flag 文件集中管理（session-start 重置用）
@@ -1029,6 +1029,7 @@ function artifactRootChoiceMessage(cwd) {
   const choicePath = getArtifactRootChoicePath(cwd);
   return [
     'PACEflow 首次启用需要选择 artifact 存放位置。',
+    FORMAT_SNIPPETS.skillRef,
     `Obsidian vault artifact 根目录: ${displayDir(vaultDir)}`,
     `本地项目 artifact 根目录: ${displayDir(stateDir)}`,
     '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"。',

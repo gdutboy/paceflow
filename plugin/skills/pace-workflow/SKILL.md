@@ -3,8 +3,9 @@ name: pace-workflow
 effort: high
 description: >
   PACEflow v6 核心流程（Plan-Artifact-Check-Execute-Verify）。自动激活条件：
-  3+ 文件修改、新增依赖、10+ 工具调用、架构设计/技术选型、用户要求规划/设计/分析、
-  单文件 100+ 行、核心模块重构。HOTFIX 场景也适用。提供 hook 强制保障。
+  已启用 PACEflow 的项目中任何代码修改、测试新增、实现任务、3+ 文件修改、新增依赖、
+  10+ 工具调用、架构设计/技术选型、用户要求规划/设计/分析、单文件 100+ 行、
+  核心模块重构。HOTFIX 场景也适用。提供 hook 强制保障。
 ---
 
 # PACE 协议工作流程
@@ -30,6 +31,8 @@ flowchart TD
 ```
 
 启用后遵循 P-A-C-E-V。禁止用主 session 直接 Edit/Write artifact 来绕过 agent。
+
+在已触发 PACEflow 信号的项目中，代码修改任务即使只涉及 1-2 个文件，也先按本 skill 判断流程；不要等第一次 Edit 被 hook 拦截后才进入 PACE。
 
 Artifact 根目录以 hook 注入或 PreToolUse 提示为准。选择“本地项目目录”时，artifact 根目录就是项目根目录本身；`.pace/` 只保存 `artifact-root`、计数器等运行态配置，不存 `task.md` / `changes/**`，也不能作为 `artifact_dir`。
 
