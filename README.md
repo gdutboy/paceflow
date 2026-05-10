@@ -67,7 +67,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.46"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.47"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -127,7 +127,7 @@ brainstorming（需求探索 + 方案设计）
 
 - 首次启用可选择将 Artifact 存储到 `projects/<项目名>/` 或本地项目目录，选择写入 `.pace/artifact-root`
 - Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
-- `artifact-writer` 派遣前会获取项目级写锁，避免多个 worktree 同时创建同一个 CHG ID 或抢写索引
+- `artifact-writer` 派遣时由 hook 预留 CHG/CORRECTION 编号；真实写入时按详情文件或索引资源短暂加锁，多 worktree 只在共享索引写入窗口串行
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
 - 兼容 Obsidian Tasks / Dataview 跨项目查询
@@ -239,7 +239,10 @@ paceflow/
 | `degraded` | 降级标记 |
 | `task-list-used` | 本会话是否用过 Claude 任务列表工具 |
 | `artifact-root` | artifact 存放位置选择：`local` / `vault` / 绝对路径 / 相对路径 |
-| `artifact-writer.lock` | artifact-writer 写锁，防止多 worktree / 多 session 并发抢写 CHG ID 与索引 |
+| `locks/artifacts/*.lock` | artifact resource lock；按详情文件或索引资源保护真实写入窗口 |
+| `sequences/*.counter` | CHG/HOTFIX/CORRECTION 编号计数器，由 hook 原子分配 |
+| `reservations/*.json` | 当前 session/agent 的预留编号 |
+| `index-transactions/*.json` | `task.md` + `implementation_plan.md` 成对索引写入事务 |
 | `disabled` | 豁免标记（用户手动创建）|
 | `synced-plans` | 已桥接的 plan 文件列表 |
 
@@ -279,6 +282,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.47 | 2026-05-10 | 重构 artifact-writer 并发锁：Agent 派遣不再持有项目级锁；create-chg / record-correction 由 hook 原子预留编号；真实 Write/Edit/MultiEdit 按资源短暂加锁，详情文件可并发写入，`task.md` + `implementation_plan.md` 作为一组索引事务串行；Bash/Write/Edit/MultiEdit 禁止手写 `.pace/locks` / `sequences` / `reservations` / `index-transactions` 控制面 |
 | v6.0.46 | 2026-05-09 | 补齐 P2 release sanity：plugin manifest 与 marketplace version 纳入单元测试，plugin runtime root 机械检查不含 docs/tests/internal/ticket 等开发资料；agent baseline 扩到 29 case，Phase C 增加 close-chg、archive-chg、record-finding、record-correction 正向 contract |
 | v6.0.45 | 2026-05-09 | 修复 production dogfood 暴露的 native plan 桥接收尾遗漏：pace-bridge Step 5 改为硬收尾，明确将源 plan basename 幂等写入宿主项目运行态 `.pace/synced-plans`；PreToolUse / SessionStart 的桥接提醒同步给出实际 synced-plans 路径，worktree 场景不再依赖模型猜测路径 |
 | v6.0.44 | 2026-05-09 | 优化 v5→v6 归档式迁移可读性和重跑安全性：旧 v5 文件顶部 frontmatter 不再原样落在 `<!-- ARCHIVE -->` 下方，而是转换为“v5 原始 frontmatter”历史 YAML 代码块；归档区增加 v5 历史说明，旧 H1 继续降级；`--force` 遇到已有 `.v5-backup` 时使用备份作为迁移源且不覆盖备份 |
@@ -336,4 +340,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.46 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.47 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

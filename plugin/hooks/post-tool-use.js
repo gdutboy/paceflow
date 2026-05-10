@@ -51,6 +51,29 @@ paceUtils.withStdinParsed((stdin) => {
   const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
   const isChangeDetailEdit = !!artifactRel && /^changes\/.+\.md$/i.test(artifactRel);
   const isV6ArtifactEdit = isArtifactEdit || isChangeDetailEdit;
+  if (artifactRel && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
+    const resource = paceUtils.artifactResourceForRel(artifactRel);
+    if (resource) {
+      const release = resource === 'index:changes'
+        ? paceUtils.markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, { sessionId: stdin.sessionId, agentId: stdin.agentId })
+        : paceUtils.releaseArtifactResourceLock(cwd, resource, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+      const reservationCleared = toolName === 'Write'
+        ? paceUtils.clearArtifactReservationForRel(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId }, artifactRel)
+        : false;
+      log(paceUtils.logEntry('PostToolUse', release.released ? 'RELEASE_ARTIFACT_RESOURCE_LOCK' : 'KEEP_ARTIFACT_RESOURCE_LOCK', {
+        proj,
+        tool: toolName,
+        file: filePath || '-',
+        artifact: artifactRel,
+        resource,
+        agent_id: stdin.agentId,
+        reason: release.reason || '',
+        touched: Array.isArray(release.touched) ? release.touched.join(',') : '',
+        reservation_cleared: reservationCleared ? 'yes' : '',
+        dur: Date.now() - t0,
+      }));
+    }
+  }
   const runtimeConfigPaths = [
     paceUtils.getArtifactRootChoicePath(cwd),
     paceUtils.getV5MigrationStatePath(cwd),

@@ -14,7 +14,7 @@
 缺失必填字段时必须立即报告 `missing-fields`，且不得推断 / 兜底：
 - 缺 `title` 或 `title` 为空 → `missing-fields: title`，禁止用 `background` / `scope` / task 描述派生标题
 - 缺 `tasks` 或 `tasks` 为空 → `missing-fields: tasks`
-- 任一必填字段缺失时，不分配 CHG-ID，不读取索引，不 Write / Edit 任何 artifact
+- 任一必填字段缺失时，不使用 hook 预留编号写入，不读取索引，不 Write / Edit 任何 artifact；报告 `missing-fields`
 
 ## 操作步骤
 
@@ -34,14 +34,15 @@
 - 不搜索 `~/.claude`
 - 不为报告统计大小或行数运行 `wc` / `du`
 
-## CHG-ID 推算（含冲突检测）
+## CHG-ID 分配（hook reservation + 二次防御）
 
-并发派多 agent 时可能撞 nn，需冲突检测（Claude Code Write 工具是覆盖语义，无 exclusive mode）。PreToolUse 会在派 `artifact-writer` 前获取项目级 artifact 写锁，避免 worktree 并发创建同一个 `CHG-YYYYMMDD-NN`；本段仍作为 agent 内部二次防御：
+并发派多 agent 时不能靠扫描索引分配 nn。PreToolUse:Agent 会为 `create-chg` 原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，并通过 additionalContext 注入 `reserved-id` / `reserved-file`。必须优先使用 hook 预留编号；不得重新扫描索引自行分配编号。
 
-1. `Bash: ls $ARTIFACT_DIR/changes/chg-YYYYMMDD-*.md $ARTIFACT_DIR/changes/hotfix-YYYYMMDD-*.md 2>/dev/null` 列出当日已有 ID
-2. 提取最大 nn → next_nn = max + 1（无文件则 01）
-3. **冲突检测**：如步骤 1 的列表中已包含目标文件名，则 next_nn += 1（最多 3 次）
-4. 仍 CONFLICT → 报告 `file-conflict`，主 session 重新派遣
+二次防御：
+
+1. 若 hook additionalContext 提供 `reserved-id` / `reserved-file`：直接使用该编号与文件路径。
+2. 若缺少 reserved 信息但仍要新建 `changes/chg-*.md` / `changes/hotfix-*.md`，不要自行扫描；报告 `hook-deny` 或让主 session 重新派遣 artifact-writer。
+3. 写入目标文件已存在 → 报告 `file-conflict`，主 session 重新派遣；不要用 Write 覆盖已有详情。
 
 ## 详情文件结构
 

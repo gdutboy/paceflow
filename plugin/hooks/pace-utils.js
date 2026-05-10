@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.46';
+const PACE_VERSION = 'v6.0.47';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
@@ -11,6 +11,10 @@ const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
 const ARTIFACT_WRITER_LOCK_FILE = 'artifact-writer.lock';
 const ARTIFACT_WRITER_LOCK_TTL_MS = Number(process.env.PACE_ARTIFACT_LOCK_TTL_MS || 30 * 60 * 1000);
+const ARTIFACT_RESOURCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ARTIFACT_RESOURCE_LOCK_TTL_MS || 5 * 60 * 1000) || 5 * 60 * 1000);
+const ARTIFACT_RESOURCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_RESOURCE_LOCK_WAIT_MS || 2500) || 2500);
+const ARTIFACT_SEQUENCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_TTL_MS || 30 * 1000) || 30 * 1000);
+const ARTIFACT_SEQUENCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_WAIT_MS || 2500) || 2500);
 const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
@@ -401,6 +405,438 @@ function releaseArtifactWriterLock(cwd, info = {}) {
   } catch(e) {
     return { released: false, lock, reason: e.message || String(e) };
   }
+}
+
+function sleepSync(ms) {
+  if (!ms || ms <= 0) return;
+  const sab = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(sab), 0, 0, Math.max(1, Math.floor(ms)));
+}
+
+function lockOwnerInfo(info = {}) {
+  const sessionId = normalizeSessionId(info.sessionId || currentSessionId());
+  const agentId = String(info.agentId || '').trim();
+  const ownerKey = agentId ? `agent:${agentId}` : (sessionId ? `session:${sessionId}` : '');
+  return { sessionId, agentId, ownerKey };
+}
+
+function lockMatchesOwner(lock, info = {}) {
+  if (!lock || !lock.ok) return false;
+  const owner = lockOwnerInfo(info);
+  if (owner.agentId && lock.agentId) return owner.agentId === lock.agentId;
+  if (owner.ownerKey && lock.ownerKey && owner.ownerKey === lock.ownerKey) return true;
+  return !!owner.sessionId && !!lock.sessionId && owner.sessionId === lock.sessionId;
+}
+
+function safeLockName(value) {
+  return encodeURIComponent(String(value || 'unknown')).replace(/%/g, '_');
+}
+
+function readJsonLock(lockPath) {
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      ok: true,
+      path: lockPath,
+      sessionId: normalizeSessionId(parsed.sessionId || parsed.session_id),
+      agentId: String(parsed.agentId || parsed.agent_id || '').trim(),
+      ownerKey: String(parsed.ownerKey || parsed.owner_key || '').trim(),
+      resource: String(parsed.resource || ''),
+      artifactDir: String(parsed.artifactDir || parsed.artifact_dir || ''),
+      cwd: String(parsed.cwd || ''),
+      file: String(parsed.file || ''),
+      operation: String(parsed.operation || ''),
+      createdAt: String(parsed.createdAt || parsed.created_at || ''),
+      timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
+      raw: parsed,
+    };
+  } catch(e) {
+    return { ok: false, path: lockPath, error: e.message };
+  }
+}
+
+function jsonLockIsStale(lock, ttlMs, now = Date.now()) {
+  if (!lock) return false;
+  if (!lock.ok) return true;
+  if (!lock.timestampMs) return true;
+  return now - lock.timestampMs > ttlMs;
+}
+
+function acquireJsonLock(lockPath, payload, { ttlMs, waitMs } = {}) {
+  const started = Date.now();
+  const deadline = started + Math.max(0, waitMs || 0);
+  let delay = 50;
+  for (;;) {
+    const now = Date.now();
+    try {
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      const fd = fs.openSync(lockPath, 'wx');
+      try { fs.writeFileSync(fd, `${JSON.stringify({ ...payload, timestampMs: now, createdAt: new Date(now).toISOString() }, null, 2)}\n`, 'utf8'); }
+      finally { fs.closeSync(fd); }
+      return { acquired: true, path: lockPath, lock: readJsonLock(lockPath), waitedMs: now - started };
+    } catch(e) {
+      if (e && e.code === 'EEXIST') {
+        const existing = readJsonLock(lockPath);
+        if (jsonLockIsStale(existing, ttlMs, now)) {
+          try { fs.unlinkSync(lockPath); continue; } catch(e2) {}
+        }
+        if (lockMatchesOwner(existing, payload)) {
+          return { acquired: true, reentrant: true, path: lockPath, lock: existing, waitedMs: now - started };
+        }
+        if (now < deadline) {
+          sleepSync(Math.min(delay, deadline - now));
+          delay = Math.min(250, delay * 2);
+          continue;
+        }
+        return { acquired: false, path: lockPath, lock: existing, reason: 'locked', waitedMs: now - started };
+      }
+      return { acquired: false, path: lockPath, lock: null, reason: e.message || String(e), waitedMs: Date.now() - started };
+    }
+  }
+}
+
+function releaseJsonLock(lockPath, info = {}, { ttlMs = ARTIFACT_RESOURCE_LOCK_TTL_MS } = {}) {
+  const lock = readJsonLock(lockPath);
+  if (!lock.ok) return { released: false, lock, reason: 'missing' };
+  if (!lockMatchesOwner(lock, info) && !jsonLockIsStale(lock, ttlMs)) {
+    return { released: false, lock, reason: 'owner-mismatch' };
+  }
+  try {
+    fs.unlinkSync(lockPath);
+    return { released: true, lock, reason: '' };
+  } catch(e) {
+    return { released: false, lock, reason: e.message || String(e) };
+  }
+}
+
+function getArtifactResourceLockDir(cwd) {
+  return path.join(getProjectRuntimeDir(cwd), 'locks', 'artifacts');
+}
+
+function getArtifactResourceLockPath(cwd, resource) {
+  return path.join(getArtifactResourceLockDir(cwd), `${safeLockName(resource)}.lock`);
+}
+
+function readArtifactResourceLock(cwd, resource) {
+  return readJsonLock(getArtifactResourceLockPath(cwd, resource));
+}
+
+function artifactResourceForRel(artifactRel) {
+  const rel = String(artifactRel || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!rel || rel === 'spec.md') return '';
+  if (rel === 'task.md' || rel === 'implementation_plan.md') return 'index:changes';
+  if (rel === 'findings.md' || rel === 'corrections.md' || rel === 'walkthrough.md') return `index:${rel}`;
+  if (/^changes\/.+\.md$/i.test(rel)) return `detail:${rel}`;
+  return '';
+}
+
+function formatArtifactResourceLock(lock) {
+  if (!lock || !lock.ok) return 'unknown lock';
+  const ageSec = lock.timestampMs ? Math.max(0, Math.round((Date.now() - lock.timestampMs) / 1000)) : '?';
+  return `resource=${lock.resource || '-'} session=${lock.sessionId || '-'} agent=${lock.agentId || '-'} file=${lock.file || '-'} age=${ageSec}s lock=${lock.path}`;
+}
+
+function acquireArtifactResourceLock(cwd, resource, info = {}) {
+  if (!resource) return { acquired: true, path: '', lock: null, reason: 'no-resource' };
+  const owner = lockOwnerInfo(info);
+  const payload = {
+    version: 'resource-v1',
+    resource,
+    sessionId: owner.sessionId,
+    agentId: owner.agentId,
+    ownerKey: owner.ownerKey,
+    artifactDir: String(info.artifactDir || ''),
+    cwd: String(cwd || ''),
+    file: String(info.file || ''),
+    operation: String(info.operation || ''),
+    toolName: String(info.toolName || ''),
+  };
+  return acquireJsonLock(getArtifactResourceLockPath(cwd, resource), payload, {
+    ttlMs: ARTIFACT_RESOURCE_LOCK_TTL_MS,
+    waitMs: ARTIFACT_RESOURCE_LOCK_WAIT_MS,
+  });
+}
+
+function releaseArtifactResourceLock(cwd, resource, info = {}) {
+  if (!resource) return { released: false, lock: null, reason: 'no-resource' };
+  return releaseJsonLock(getArtifactResourceLockPath(cwd, resource), info, { ttlMs: ARTIFACT_RESOURCE_LOCK_TTL_MS });
+}
+
+function ownerScopedPath(cwd, dirName, info = {}) {
+  const owner = lockOwnerInfo(info);
+  if (!owner.ownerKey) return '';
+  return path.join(getProjectRuntimeDir(cwd), dirName, `${safeLockName(owner.ownerKey)}.json`);
+}
+
+function getArtifactReservationPath(cwd, info = {}) {
+  return ownerScopedPath(cwd, 'reservations', info);
+}
+
+function getArtifactReservationDir(cwd) {
+  return path.join(getProjectRuntimeDir(cwd), 'reservations');
+}
+
+function reservationMatchesOwner(reservation, info = {}) {
+  if (!reservation) return false;
+  const owner = lockOwnerInfo(info);
+  if (owner.agentId && reservation.agentId) return owner.agentId === reservation.agentId;
+  if (owner.ownerKey && reservation.ownerKey && owner.ownerKey === reservation.ownerKey) return true;
+  return !!owner.sessionId && !!reservation.sessionId && owner.sessionId === reservation.sessionId;
+}
+
+function readArtifactReservation(cwd, info = {}) {
+  const fp = getArtifactReservationPath(cwd, info);
+  if (fp) {
+    try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch(e) {}
+  }
+  if (info.agentId) {
+    const fallback = getArtifactReservationPath(cwd, { ...info, agentId: '' });
+    if (fallback && fallback !== fp) {
+      try { return JSON.parse(fs.readFileSync(fallback, 'utf8')); } catch(e) {}
+    }
+  }
+  return null;
+}
+
+function writeArtifactReservation(cwd, info = {}, reservation = {}) {
+  const fp = getArtifactReservationPath(cwd, info);
+  if (!fp) return { ok: false, reason: 'missing-owner' };
+  try {
+    const data = { ...reservation, ...lockOwnerInfo(info), createdAt: new Date().toISOString(), timestampMs: Date.now() };
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    const uniqueKey = reservation.id || reservation.fileRel || reservation.filePrefix || '';
+    if (uniqueKey) {
+      const uniquePath = path.join(getArtifactReservationDir(cwd), `${safeLockName(`${data.ownerKey}:${uniqueKey}`)}.json`);
+      if (uniquePath !== fp) fs.writeFileSync(uniquePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    }
+    return { ok: true, path: fp };
+  } catch(e) {
+    return { ok: false, reason: e.message || String(e) };
+  }
+}
+
+function clearArtifactReservation(cwd, info = {}) {
+  const fp = getArtifactReservationPath(cwd, info);
+  let cleared = false;
+  if (fp) {
+    try { fs.unlinkSync(fp); cleared = true; } catch(e) {}
+  }
+  let files = [];
+  try { files = fs.readdirSync(getArtifactReservationDir(cwd)); } catch(e) { files = []; }
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const target = path.join(getArtifactReservationDir(cwd), file);
+    let parsed = null;
+    try { parsed = JSON.parse(fs.readFileSync(target, 'utf8')); } catch(e) {}
+    const shouldClear = info.agentId
+      ? (String(parsed && parsed.agentId || '').trim() === String(info.agentId).trim())
+      : reservationMatchesOwner(parsed, info);
+    if (shouldClear) {
+      try { fs.unlinkSync(target); cleared = true; } catch(e) {}
+    }
+  }
+  return cleared;
+}
+
+function clearArtifactReservationForRel(cwd, info = {}, artifactRel = '') {
+  const rel = String(artifactRel || '').replace(/\\/g, '/');
+  if (!rel) return false;
+  let cleared = false;
+  let files = [];
+  try { files = fs.readdirSync(getArtifactReservationDir(cwd)); } catch(e) { files = []; }
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const target = path.join(getArtifactReservationDir(cwd), file);
+    let parsed = null;
+    try { parsed = JSON.parse(fs.readFileSync(target, 'utf8')); } catch(e) {}
+    if (!reservationMatchesOwner(parsed, info)) continue;
+    if (!reservationMatchesArtifactRel(parsed, rel).ok) continue;
+    try { fs.unlinkSync(target); cleared = true; } catch(e) {}
+  }
+  return cleared;
+}
+
+function findArtifactReservationForRel(cwd, info = {}, artifactRel = '') {
+  const candidates = [];
+  const direct = readArtifactReservation(cwd, info);
+  if (direct) candidates.push(direct);
+  let files = [];
+  try { files = fs.readdirSync(getArtifactReservationDir(cwd)); } catch(e) { files = []; }
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try { candidates.push(JSON.parse(fs.readFileSync(path.join(getArtifactReservationDir(cwd), file), 'utf8'))); } catch(e) {}
+  }
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const key = `${candidate && candidate.ownerKey}:${candidate && (candidate.fileRel || candidate.filePrefix || candidate.id)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (candidate && candidate.timestampMs && Date.now() - candidate.timestampMs > ARTIFACT_WRITER_LOCK_TTL_MS) continue;
+    if (!reservationMatchesOwner(candidate, info)) continue;
+    if (reservationMatchesArtifactRel(candidate, artifactRel).ok) return candidate;
+  }
+  return null;
+}
+
+function releaseArtifactResourcesForOwner(cwd, info = {}) {
+  const owner = lockOwnerInfo(info);
+  const released = [];
+  const dirs = [
+    getArtifactResourceLockDir(cwd),
+    path.join(getProjectRuntimeDir(cwd), 'locks', 'sequences'),
+  ];
+  for (const dir of dirs) {
+    let files = [];
+    try { files = fs.readdirSync(dir); } catch(e) { continue; }
+    for (const file of files) {
+      if (!file.endsWith('.lock')) continue;
+      const fp = path.join(dir, file);
+      const lock = readJsonLock(fp);
+      if (lockMatchesOwner(lock, owner) || jsonLockIsStale(lock, ARTIFACT_RESOURCE_LOCK_TTL_MS)) {
+        try {
+          fs.unlinkSync(fp);
+          released.push(fp);
+        } catch(e) {}
+      }
+    }
+  }
+  clearArtifactReservation(cwd, owner);
+  const txPath = ownerScopedPath(cwd, 'index-transactions', owner);
+  try { fs.unlinkSync(txPath); } catch(e) {}
+  return released;
+}
+
+function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
+  const rel = String(artifactRel || '').replace(/\\/g, '/');
+  if (rel !== 'task.md' && rel !== 'implementation_plan.md') {
+    return releaseArtifactResourceLock(cwd, artifactResourceForRel(rel), info);
+  }
+  const txPath = ownerScopedPath(cwd, 'index-transactions', info);
+  if (!txPath) return { released: false, reason: 'missing-owner' };
+  let tx = { touched: [] };
+  try { tx = JSON.parse(fs.readFileSync(txPath, 'utf8')); } catch(e) {}
+  const touched = new Set(Array.isArray(tx.touched) ? tx.touched : []);
+  touched.add(rel);
+  tx = { ...lockOwnerInfo(info), touched: [...touched].sort(), updatedAt: new Date().toISOString(), timestampMs: Date.now() };
+  try {
+    fs.mkdirSync(path.dirname(txPath), { recursive: true });
+    fs.writeFileSync(txPath, `${JSON.stringify(tx, null, 2)}\n`, 'utf8');
+  } catch(e) {}
+  if (touched.has('task.md') && touched.has('implementation_plan.md')) {
+    const release = releaseArtifactResourceLock(cwd, 'index:changes', info);
+    try { fs.unlinkSync(txPath); } catch(e) {}
+    return release;
+  }
+  return { released: false, reason: 'index-transaction-open', touched: [...touched].sort() };
+}
+
+function scanMaxNumberInDir(dir, re) {
+  let max = 0;
+  let files = [];
+  try { files = fs.readdirSync(dir); } catch(e) { return 0; }
+  for (const file of files) {
+    const m = String(file).match(re);
+    if (m) max = Math.max(max, Number(m[1]) || 0);
+  }
+  return max;
+}
+
+function nextSequenceNumber(cwd, sequenceName, existingMax) {
+  const runtime = getProjectRuntimeDir(cwd);
+  const lockPath = path.join(runtime, 'locks', 'sequences', `${safeLockName(sequenceName)}.lock`);
+  const counterPath = path.join(runtime, 'sequences', `${safeLockName(sequenceName)}.counter`);
+  const owner = lockOwnerInfo({ sessionId: currentSessionId() });
+  const lock = acquireJsonLock(lockPath, {
+    version: 'sequence-v1',
+    resource: `sequence:${sequenceName}`,
+    sessionId: owner.sessionId,
+    ownerKey: owner.ownerKey,
+  }, { ttlMs: ARTIFACT_SEQUENCE_LOCK_TTL_MS, waitMs: ARTIFACT_SEQUENCE_LOCK_WAIT_MS });
+  if (!lock.acquired) return { ok: false, reason: 'sequence-locked', lock: lock.lock };
+  try {
+    let current = 0;
+    try { current = Number(fs.readFileSync(counterPath, 'utf8').trim()) || 0; } catch(e) {}
+    const next = Math.max(current, existingMax || 0) + 1;
+    fs.mkdirSync(path.dirname(counterPath), { recursive: true });
+    fs.writeFileSync(counterPath, `${next}\n`, 'utf8');
+    return { ok: true, number: next, counterPath };
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch(e) {}
+  }
+}
+
+function inferChangeKindFromPrompt(prompt) {
+  const text = String(prompt || '');
+  if (/^\s*type\s*[:=]\s*["']?hotfix["']?\s*$/mi.test(text) || /["']type["']\s*:\s*["']hotfix["']/i.test(text)) {
+    return 'HOTFIX';
+  }
+  return 'CHG';
+}
+
+function reserveArtifactId(cwd, info = {}) {
+  const operation = String(info.operation || operationFromAgentPrompt(info.prompt)).toLowerCase();
+  const artDir = info.artifactDir || getArtifactDir(cwd);
+  const owner = lockOwnerInfo(info);
+  if (!owner.ownerKey) return { reserved: false, reason: 'missing-owner' };
+
+  if (operation === 'create-chg') {
+    const kind = inferChangeKindFromPrompt(info.prompt);
+    const dateCompact = todayISO().replace(/-/g, '');
+    const lower = kind.toLowerCase();
+    const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes'), new RegExp(`^${lower}-${dateCompact}-(\\d{2})\\.md$`, 'i'));
+    const seq = nextSequenceNumber(cwd, `${lower}-${dateCompact}`, existingMax);
+    if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock };
+    const nn = String(seq.number).padStart(2, '0');
+    const id = `${kind}-${dateCompact}-${nn}`;
+    const fileRel = `changes/${lower}-${dateCompact}-${nn}.md`;
+    const written = writeArtifactReservation(cwd, owner, { operation, kind, id, fileRel });
+    return { reserved: true, operation, kind, id, fileRel, path: written.path };
+  }
+
+  if (operation === 'record-correction') {
+    const date = todayISO();
+    const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes', 'corrections'), new RegExp(`^correction-${date}-(\\d{2})-.+\\.md$`, 'i'));
+    const seq = nextSequenceNumber(cwd, `correction-${date}`, existingMax);
+    if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock };
+    const nn = String(seq.number).padStart(2, '0');
+    const id = `CORRECTION-${date}-${nn}`;
+    const filePrefix = `changes/corrections/correction-${date}-${nn}-`;
+    const written = writeArtifactReservation(cwd, owner, { operation, id, filePrefix });
+    return { reserved: true, operation, id, filePrefix, path: written.path };
+  }
+
+  return { reserved: false, reason: 'operation-no-reservation', operation };
+}
+
+function reservationMatchesArtifactRel(reservation, artifactRel) {
+  if (!reservation || !artifactRel) return { ok: true };
+  const rel = String(artifactRel || '').replace(/\\/g, '/');
+  if (reservation.fileRel && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(rel)) {
+    return rel === reservation.fileRel
+      ? { ok: true }
+      : { ok: false, expected: reservation.fileRel, actual: rel };
+  }
+  if (reservation.filePrefix && /^changes\/corrections\/correction-\d{4}-\d{2}-\d{2}-\d{2}-.+\.md$/i.test(rel)) {
+    return rel.startsWith(reservation.filePrefix) && rel.endsWith('.md')
+      ? { ok: true }
+      : { ok: false, expected: `${reservation.filePrefix}<slug>.md`, actual: rel };
+  }
+  return { ok: true };
+}
+
+function isArtifactRuntimeControlPath(cwd, targetPath) {
+  const fp = normalizePath(path.resolve(String(targetPath || '')));
+  const runtime = normalizePath(getProjectRuntimeDir(cwd));
+  const runtimeSlash = runtime.endsWith('/') ? runtime : `${runtime}/`;
+  const rel = fp.startsWith(runtimeSlash) ? fp.slice(runtimeSlash.length) : '';
+  if (!rel) return false;
+  return rel === ARTIFACT_WRITER_LOCK_FILE ||
+    /^locks\//.test(rel) ||
+    /^sequences\//.test(rel) ||
+    /^reservations\//.test(rel) ||
+    /^index-transactions\//.test(rel);
 }
 
 function normalizeArtifactRootChoice(choice) {
@@ -1307,6 +1743,8 @@ module.exports = {
   // 常量
   PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
+  ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS,
+  ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
@@ -1318,7 +1756,12 @@ module.exports = {
   getArtifactRootChoicePath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
   getArtifactWriterLockPath, readArtifactWriterLock, acquireArtifactWriterLock,
-  artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock, operationFromAgentPrompt,
+  artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock,
+  artifactResourceForRel, getArtifactResourceLockPath, readArtifactResourceLock,
+  acquireArtifactResourceLock, releaseArtifactResourceLock, releaseArtifactResourcesForOwner,
+  markIndexChangesTouchedAndMaybeRelease, formatArtifactResourceLock,
+  reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
+  isArtifactRuntimeControlPath, operationFromAgentPrompt,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,

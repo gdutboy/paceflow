@@ -69,12 +69,14 @@ try {
   }
 
   const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+  const releasedResources = paceUtils.releaseArtifactResourcesForOwner(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
   log(logEntry('SubagentStop', release.released ? 'RELEASE_ARTIFACT_LOCK' : 'RELEASE_ARTIFACT_LOCK_SKIP', {
     proj,
     agent_type: agentType,
     agent_id: stdin.agentId,
     reason: release.reason,
     lock: release.lock && release.lock.path,
+    resource_locks: releasedResources.length,
     dur: Date.now() - t0,
   }));
 

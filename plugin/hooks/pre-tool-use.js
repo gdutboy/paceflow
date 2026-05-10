@@ -155,25 +155,24 @@ function bashShellCommandRedirectsToArtifact(command, cwd, artDir) {
   return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifact(script, cwd, artDir));
 }
 
-function bashPathLooksArtifactWriterLock(target, cwd) {
+function bashPathLooksArtifactRuntimeControl(target, cwd) {
   const raw = String(target || '').trim().replace(/\\/g, '/').replace(/^['"]|['"]$/g, '');
   if (!raw || /^&\d+$/.test(raw)) return false;
-  const lockPath = paceUtils.getArtifactWriterLockPath(cwd);
-  const normalizedLock = paceUtils.normalizePath(path.resolve(lockPath));
   try {
     const resolved = paceUtils.resolveToolFilePath(cwd, raw);
-    if (paceUtils.normalizePath(path.resolve(resolved)) === normalizedLock) return true;
+    if (paceUtils.isArtifactRuntimeControlPath(cwd, resolved)) return true;
   } catch(e) {}
   return /(?:^|\/)\.pace\/artifact-writer\.lock$/.test(raw) ||
+    /(?:^|\/)\.pace\/(?:locks|sequences|reservations|index-transactions)(?:\/|$)/.test(raw) ||
     raw === 'artifact-writer.lock';
 }
 
-function bashCommandRedirectsToArtifactWriterLock(command, cwd) {
-  return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifactWriterLock(target, cwd));
+function bashCommandRedirectsToArtifactRuntimeControl(command, cwd) {
+  return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifactRuntimeControl(target, cwd));
 }
 
-function bashShellCommandRedirectsToArtifactWriterLock(command, cwd) {
-  return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifactWriterLock(script, cwd));
+function bashShellCommandRedirectsToArtifactRuntimeControl(command, cwd) {
+  return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifactRuntimeControl(script, cwd));
 }
 
 function bashSearchText(command) {
@@ -192,26 +191,36 @@ function bashTextReferencesPathOrChild(text, target) {
   return new RegExp(`${escapeRegExp(normalized)}(?=$|[\\s"'\\\`;|&<>])`).test(c);
 }
 
-function bashCommandReferencesArtifactWriterLock(command, cwd) {
+function bashCommandReferencesArtifactRuntimeControl(command, cwd) {
   const c = bashSearchText(command);
-  const lockPath = paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/');
-  const rel = path.relative(cwd, lockPath).replace(/\\/g, '/');
-  return c.includes(lockPath) ||
-    (rel && c.includes(rel)) ||
+  const runtime = paceUtils.getProjectRuntimeDir(cwd).replace(/\\/g, '/').replace(/\/+$/, '');
+  const relRuntime = path.relative(cwd, runtime).replace(/\\/g, '/').replace(/\/+$/, '');
+  return bashTextReferencesPathOrChild(c, `${runtime}/locks`) ||
+    bashTextReferencesPathOrChild(c, `${runtime}/sequences`) ||
+    bashTextReferencesPathOrChild(c, `${runtime}/reservations`) ||
+    bashTextReferencesPathOrChild(c, `${runtime}/index-transactions`) ||
+    (relRuntime && (
+      bashTextReferencesPathOrChild(c, `${relRuntime}/locks`) ||
+      bashTextReferencesPathOrChild(c, `${relRuntime}/sequences`) ||
+      bashTextReferencesPathOrChild(c, `${relRuntime}/reservations`) ||
+      bashTextReferencesPathOrChild(c, `${relRuntime}/index-transactions`)
+    )) ||
+    c.includes(paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/')) ||
     /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
+    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/(?:locks|sequences|reservations|index-transactions)(?:\/|$)/.test(c) ||
     /(?:^|[\s"'`=;|&])artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
-    bashCommandPathTokens(c).some(target => bashPathLooksArtifactWriterLock(target, cwd));
+    bashCommandPathTokens(c).some(target => bashPathLooksArtifactRuntimeControl(target, cwd));
 }
 
-function bashShellCommandReferencesArtifactWriterLock(command, cwd) {
-  return shellCommandScripts(command).some(script => bashCommandReferencesArtifactWriterLock(script, cwd));
+function bashShellCommandReferencesArtifactRuntimeControl(command, cwd) {
+  return shellCommandScripts(command).some(script => bashCommandReferencesArtifactRuntimeControl(script, cwd));
 }
 
-function bashCommandMutatesArtifactWriterLock(command, cwd) {
-  return bashCommandRedirectsToArtifactWriterLock(command, cwd) ||
-    bashShellCommandRedirectsToArtifactWriterLock(command, cwd) ||
+function bashCommandMutatesArtifactRuntimeControl(command, cwd) {
+  return bashCommandRedirectsToArtifactRuntimeControl(command, cwd) ||
+    bashShellCommandRedirectsToArtifactRuntimeControl(command, cwd) ||
     (bashCommandLooksMutating(command) &&
-      (bashCommandReferencesArtifactWriterLock(command, cwd) || bashShellCommandReferencesArtifactWriterLock(command, cwd)));
+      (bashCommandReferencesArtifactRuntimeControl(command, cwd) || bashShellCommandReferencesArtifactRuntimeControl(command, cwd)));
 }
 
 function bashCommandReferencesArtifact(command, cwd, artDir) {
@@ -232,11 +241,11 @@ function bashShellCommandReferencesArtifact(command, cwd, artDir) {
   return shellCommandScripts(command).some(script => bashCommandReferencesArtifact(script, cwd, artDir));
 }
 
-function bashArtifactWriterLockDenyReason(command) {
+function bashArtifactRuntimeControlDenyReason(command) {
   return [
-    '禁止使用 Bash 修改 artifact-writer 写锁。该锁是 PaceFlow 运行态互斥信号，只能由 hook 在 Agent 派遣、SubagentStop 或 Agent 失败恢复时创建/释放。',
-    '如果看到已有锁，请等待当前 artifact-writer 完成后重试；不要用 rm、重定向、touch、mv、cp、tee 或脚本写入删除/改写锁文件。',
-    `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`,
+    '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
+    '如果看到已有锁，请等待当前 artifact 写入完成后重试；不要用 rm、重定向、touch、mv、cp、tee 或脚本写入删除/改写 .pace/locks、.pace/sequences、.pace/reservations、.pace/index-transactions 或 legacy artifact-writer.lock。',
+    `运行态目录：${paceUtils.getProjectRuntimeDir(cwd)}`,
     `被拦截的命令：${String(command || '').slice(0, 500)}`
   ].join('\n');
 }
@@ -392,27 +401,36 @@ function agentLifecyclePromptDenyReason(prompt) {
   return '';
 }
 
-function artifactWriterLockDenyReason(lock) {
+function legacyArtifactWriterLockDenyReason(lock) {
   return [
-    '已有 artifact-writer 正在写入当前项目 artifact，已阻止本次并发派遣以避免 CHG-ID / 索引 / 归档竞争。',
+    '检测到旧版本 artifact-writer 项目级写锁仍在当前项目中，已阻止本次派遣以避免跨版本并发写入。',
     `当前锁：${paceUtils.formatArtifactWriterLock(lock)}`,
-    '请等待前一个 artifact-writer 结束后重试；不要用 Bash 删除或改写锁文件。锁过期清理由 PaceFlow hook 按 TTL 自动处理。',
+    '请等待旧 artifact-writer 结束后重试；不要用 Bash 删除或改写锁文件。锁过期清理由 PaceFlow hook 按 TTL 自动处理。',
     `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`
   ].join('\n');
 }
 
-function artifactWriterMissingLockReason(check, artifactRel) {
+function artifactResourceLockDenyReason(lockAttempt, resource, artifactRel) {
   return [
-    `artifact-writer 正在尝试修改 ${artifactRel}，但当前会话没有持有 artifact 写锁（${check.reason}）。`,
-    '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先获取写锁，再允许 agent 写 artifact。',
-    check.lock && check.lock.ok ? `当前锁：${paceUtils.formatArtifactWriterLock(check.lock)}` : `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`,
+    `当前 artifact resource 正被其他 artifact-writer 写入，已阻止修改 ${artifactRel}。`,
+    `资源：${resource}`,
+    lockAttempt.lock && lockAttempt.lock.ok ? `当前锁：${paceUtils.formatArtifactResourceLock(lockAttempt.lock)}` : `锁文件：${lockAttempt.path}`,
+    `hook 已等待 ${lockAttempt.waitedMs || 0}ms。不要循环重试；请等待对方写入完成后重新 Read 目标 artifact，再重试本次 artifact-writer 操作。`
+  ].join('\n');
+}
+
+function artifactReservationDenyReason(match, artifactRel) {
+  return [
+    `artifact-writer 写入的详情文件不匹配 hook 预留编号：${artifactRel}。`,
+    `期望：${match.expected}`,
+    '请使用 PreToolUse:Agent 注入的 reserved-id / reserved-file，不要重新扫描索引自行分配编号。'
   ].join('\n');
 }
 
 function directArtifactMutationDenyReason(toolName, artifactRel) {
   return [
     `禁止主 session/非 artifact-writer 使用 ${toolName} 直接修改流程 artifact：${artifactRel}。`,
-    'v6 流程 artifact 只能由 paceflow:artifact-writer 在持有 artifact 写锁时写入。',
+    'v6 流程 artifact 只能由 paceflow:artifact-writer 通过受 hook resource lock 保护的 Write/Edit/MultiEdit 路径写入。',
     '请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。'
   ].join('\n');
 }
@@ -588,13 +606,44 @@ paceUtils.withStdinParsed((stdin) => {
           }));
           return;
         }
-        const lockAttempt = paceUtils.acquireArtifactWriterLock(cwd, {
+        const legacyLock = paceUtils.readArtifactWriterLock(cwd);
+        if (legacyLock.ok) {
+          const legacyCheck = paceUtils.artifactWriterLockMatches(cwd, '__paceflow-new-agent__');
+          if (!legacyCheck.ok && legacyCheck.reason !== 'stale-cleared') {
+            const reason = legacyArtifactWriterLockDenyReason(legacyLock);
+            const output = {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: reason
+              }
+            };
+            process.stdout.write(JSON.stringify(output));
+            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_LEGACY_ARTIFACT_LOCK', {
+              proj,
+              agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+              artifact_dir: displayDir(artDir),
+              lock: legacyLock.path,
+              owner: legacyLock.sessionId || '',
+              dur: Date.now() - t0,
+            }));
+            return;
+          }
+        }
+        const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt);
+        const reservation = paceUtils.reserveArtifactId(cwd, {
           sessionId: stdin.sessionId,
+          agentId: stdin.agentId,
           artifactDir: artDir,
-          operation: paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt),
+          operation,
+          prompt: stdin.toolInput.prompt,
         });
-        if (!lockAttempt.acquired) {
-          const reason = artifactWriterLockDenyReason(lockAttempt.lock);
+        if ((operation === 'create-chg' || operation === 'record-correction') && !reservation.reserved) {
+          const reason = [
+            `PACE hook 无法为 ${operation} 预留唯一编号，已阻止本次 artifact-writer 以避免并发 ID 冲突。`,
+            reservation.lock && reservation.lock.ok ? `当前 sequence 锁：${paceUtils.formatArtifactResourceLock(reservation.lock)}` : `原因：${reservation.reason || 'unknown'}`,
+            '请稍后重试；不要让 agent 自行扫描索引分配编号。'
+          ].join('\n');
           const output = {
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
@@ -603,19 +652,19 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_LOCK', {
+          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ID_RESERVATION', {
             proj,
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             artifact_dir: displayDir(artDir),
-            lock: lockAttempt.path,
-            owner: lockAttempt.lock && lockAttempt.lock.ok ? lockAttempt.lock.sessionId : '',
+            operation,
+            reason: reservation.reason || '',
             dur: Date.now() - t0,
           }));
           return;
         }
         const ensured = ensureArtifactWriterBase();
         if (ensured.missingAfter.length > 0) {
-          paceUtils.releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId });
+          paceUtils.clearArtifactReservation(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
           const errorLine = ensured.error ? `\n底层错误：${ensured.error}` : '';
           const reason = `PACE hook 无法在 artifact_dir 创建完整 v6 Artifact 基础结构：${displayDir(artDir)}\n仍缺失：${ensured.missingAfter.join(', ')}${errorLine}\n请检查路径/权限后重试；禁止让 artifact-writer 自行创建 base changes/ 或根索引模板。`;
           const output = {
@@ -643,10 +692,13 @@ paceUtils.withStdinParsed((stdin) => {
           ...(ensured.missingBefore.includes('changes/corrections/') ? ['changes/corrections/'] : []),
         ])];
         const createdMsg = created.length > 0 ? `；已自动创建 Artifact 基础模板：${created.join(', ')}` : '';
+        const reservationMsg = reservation.reserved
+          ? `；reserved-id: ${reservation.id}${reservation.fileRel ? `；reserved-file: ${reservation.fileRel}` : ''}${reservation.filePrefix ? `；reserved-file-prefix: ${reservation.filePrefix}<slug>.md` : ''}。必须使用该预留编号，不得重新扫描索引分配编号`
+          : '';
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}（.pace/ 只保存配置/运行状态，不存 artifact）；artifact 写锁已获取：${lockAttempt.path}${createdMsg}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}（.pace/ 只保存配置/运行状态，不存 artifact）；artifact 写入采用 hook resource lock：读/思考可并发，真实 Write/Edit/MultiEdit 时按目标文件短暂加锁${reservationMsg}${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));
@@ -654,7 +706,8 @@ paceUtils.withStdinParsed((stdin) => {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
-          lock: lockAttempt.path,
+          operation,
+          reserved: reservation.reserved ? (reservation.id || reservation.fileRel || reservation.filePrefix || '') : '',
           created: created.join(', '),
           dur: Date.now() - t0,
         }));
@@ -664,14 +717,14 @@ paceUtils.withStdinParsed((stdin) => {
       return;
     }
     if (isBashTool(toolName)) {
-      if (bashCommandMutatesArtifactWriterLock(bashCommand, cwd)) {
-        const reason = bashArtifactWriterLockDenyReason(bashCommand);
+      if (bashCommandMutatesArtifactRuntimeControl(bashCommand, cwd)) {
+        const reason = bashArtifactRuntimeControlDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT_LOCK${teammateTag}`, {
+        log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT_RUNTIME${teammateTag}`, {
           proj,
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-          lock: paceUtils.getArtifactWriterLockPath(cwd),
+          runtime: paceUtils.getProjectRuntimeDir(cwd),
           dur: Date.now() - t0,
         }));
         return;
@@ -712,6 +765,17 @@ paceUtils.withStdinParsed((stdin) => {
   // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
   const normalizedFile = paceUtils.normalizePath(filePath);
   const normalizedCwd = paceUtils.normalizePath(cwd);
+  if (isFileMutationTool(toolName) && paceUtils.isArtifactRuntimeControlPath(cwd, filePath)) {
+    return hardDeny(
+      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写/删除 .pace/locks、.pace/sequences、.pace/reservations、.pace/index-transactions 或 legacy artifact-writer.lock。`,
+      'DENY_ARTIFACT_RUNTIME_CONTROL',
+      {
+        file: filePath,
+        agent_id: stdin.agentId,
+        agent_type: stdin.agentType,
+      }
+    );
+  }
   const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
   let isInsideProject = normalizedFile.startsWith(cwdWithSlash);
   if (!isInsideProject && artDir !== cwd) {
@@ -721,11 +785,86 @@ paceUtils.withStdinParsed((stdin) => {
   }
 
   const artifactRelForMutation = getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath);
+  let artifactResourceLockHeld = null;
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
-      const lockCheck = paceUtils.artifactWriterLockMatches(cwd, stdin.sessionId);
-      if (!lockCheck.ok) {
-        const reason = artifactWriterMissingLockReason(lockCheck, artifactRelForMutation);
+      let reservation = paceUtils.findArtifactReservationForRel(cwd, {
+        sessionId: stdin.sessionId,
+        agentId: stdin.agentId,
+      }, artifactRelForMutation);
+      if (toolName === 'Write') {
+        const writeNeedsReservation = !fs.existsSync(filePath) && (
+          /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation) ||
+          /^changes\/corrections\/correction-\d{4}-\d{2}-\d{2}-\d{2}-.+\.md$/i.test(artifactRelForMutation)
+        );
+        if (writeNeedsReservation && !reservation) {
+          const reason = [
+            `artifact-writer 正在新建 ${artifactRelForMutation}，但当前 session/agent 没有 hook 预留编号。`,
+            '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先注入 reserved-id / reserved-file。',
+            '不要让 agent 自行扫描索引分配 CHG/HOTFIX/CORRECTION 编号。'
+          ].join('\n');
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISSING', {
+            proj,
+            tool: toolName,
+            file: filePath,
+            artifact: artifactRelForMutation,
+            agent_id: stdin.agentId,
+            agent_type: stdin.agentType,
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
+        if (!reservation) {
+          reservation = paceUtils.readArtifactReservation(cwd, {
+            sessionId: stdin.sessionId,
+            agentId: stdin.agentId,
+          });
+        }
+        const reservationMatch = writeNeedsReservation
+          ? paceUtils.reservationMatchesArtifactRel(reservation, artifactRelForMutation)
+          : { ok: true };
+        if (!reservationMatch.ok) {
+          const reason = artifactReservationDenyReason(reservationMatch, artifactRelForMutation);
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISMATCH', {
+            proj,
+            tool: toolName,
+            file: filePath,
+            artifact: artifactRelForMutation,
+            agent_id: stdin.agentId,
+            agent_type: stdin.agentType,
+            expected: reservationMatch.expected,
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
+      }
+      const resource = paceUtils.artifactResourceForRel(artifactRelForMutation);
+      const lockAttempt = paceUtils.acquireArtifactResourceLock(cwd, resource, {
+        sessionId: stdin.sessionId,
+        agentId: stdin.agentId,
+        artifactDir: artDir,
+        file: filePath,
+        operation: reservation && reservation.operation || '',
+        toolName,
+      });
+      if (!lockAttempt.acquired) {
+        const reason = artifactResourceLockDenyReason(lockAttempt, resource, artifactRelForMutation);
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
@@ -734,35 +873,39 @@ paceUtils.withStdinParsed((stdin) => {
           }
         };
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_WRITER_NO_LOCK', {
+        log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_RESOURCE_LOCK', {
           proj,
           tool: toolName,
           file: filePath,
           artifact: artifactRelForMutation,
+          resource,
           agent_id: stdin.agentId,
           agent_type: stdin.agentType,
-          reason: lockCheck.reason,
+          reason: lockAttempt.reason,
           dur: Date.now() - t0,
         }));
         return;
       }
-      log(paceUtils.logEntry('PreToolUse', 'PASS_ARTIFACT_WRITER_LOCK', {
+      artifactResourceLockHeld = resource;
+      log(paceUtils.logEntry('PreToolUse', lockAttempt.reentrant ? 'PASS_ARTIFACT_RESOURCE_LOCK_REENTRANT' : 'PASS_ARTIFACT_RESOURCE_LOCK', {
         proj,
         tool: toolName,
         file: filePath,
         artifact: artifactRelForMutation,
+        resource,
         agent_id: stdin.agentId,
         agent_type: stdin.agentType,
+        waited_ms: lockAttempt.waitedMs || 0,
         dur: Date.now() - t0,
       }));
     } else {
-      const existingLock = paceUtils.readArtifactWriterLock(cwd);
-      const lockCheck = existingLock.ok ? paceUtils.artifactWriterLockMatches(cwd, '__paceflow-non-agent__') : { ok: true };
-      if (existingLock.ok && !lockCheck.ok && lockCheck.reason !== 'stale-cleared') {
+      const resource = paceUtils.artifactResourceForRel(artifactRelForMutation);
+      const existingLock = resource ? paceUtils.readArtifactResourceLock(cwd, resource) : { ok: false };
+      if (existingLock.ok) {
         const reason = [
-          `当前 artifact 正由 artifact-writer 写入，禁止主 session/其他 agent 同时修改 ${artifactRelForMutation}。`,
-          `当前锁：${paceUtils.formatArtifactWriterLock(existingLock)}`,
-          '请等待 artifact-writer 结束后再重试。'
+          `当前 artifact resource 正由 artifact-writer 写入，禁止主 session/其他 agent 同时修改 ${artifactRelForMutation}。`,
+          `当前锁：${paceUtils.formatArtifactResourceLock(existingLock)}`,
+          '请等待 artifact 写入结束后再重试。'
         ].join('\n');
         const output = {
           hookSpecificOutput: {
@@ -777,6 +920,7 @@ paceUtils.withStdinParsed((stdin) => {
           tool: toolName,
           file: filePath,
           artifact: artifactRelForMutation,
+          resource,
           owner: existingLock.sessionId,
           dur: Date.now() - t0,
         }));
@@ -847,6 +991,9 @@ paceUtils.withStdinParsed((stdin) => {
   // v4.3.2: Write 覆盖已有 artifact 保护（仅 PACE 项目内生效）
   if (toolName === 'Write' && isInsideProject && paceSignal) {
     if (artifactRelForMutation && fs.existsSync(filePath)) {
+      if (artifactResourceLockHeld) {
+        paceUtils.releaseArtifactResourceLock(cwd, artifactResourceLockHeld, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+      }
       const reason = `禁止使用 Write 覆盖已有 artifact：${artifactRelForMutation}。create-chg 若遇到同名文件必须重新分配 CHG-ID；更新已有 artifact 请使用 Edit。`;
       const output = {
         hookSpecificOutput: {

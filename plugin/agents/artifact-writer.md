@@ -104,7 +104,7 @@ Artifact 写入是确定性 CRUD，默认走最短工具路径。
 - 不要为了“确认自己刚写的内容”重复 Read 全文件。Write/Edit 成功 + hook PASS + 你生成前已校验的 payload 即可作为报告依据。
 - 只在以下情况追加 Read/检查：工具报错、hook 对本次目标给出 warn/deny、目标文件当前内容未知且 Edit 需要上下文、归档移动需要定位原行、用户输入与现有文件存在冲突。
 - 报告保持简短，只列出核心验证项；不要逐项展开 13 个 frontmatter 字段、ARCHIVE 数量、文件名大小写等机械细节，除非失败。
-- Bash 仅用于项目检测、ID 分配/冲突检测、生成时间戳和只读定位；不要用 Bash 做写后全文复核，也不要为报告统计 `wc` / `du`。
+- Bash 仅用于项目检测、生成时间戳和只读定位；CHG/HOTFIX/CORRECTION 编号以 hook additionalContext 的 `reserved-id` / `reserved-file` 为准，不要用 Bash 扫描索引自行分配编号；不要用 Bash 做写后全文复核，也不要为报告统计 `wc` / `du`。
 - **禁止用 Bash 修改 artifact**：不得用 `sed -i` / `perl -pi` / 重定向 / `rm` / `mv` / `cp` / `touch` / `mkdir` / 脚本写文件等方式修改 `task.md`、`implementation_plan.md`、`walkthrough.md`、`findings.md`、`corrections.md`、`changes/**`。如 `Edit` 因 CRLF 换行匹配失败，直接重试 `Edit`；hook 会在 `Edit` / `MultiEdit` 前把 artifact 换行机械归一化为 LF。
 
 ### Slug 生成规则

@@ -30,6 +30,7 @@ paceUtils.withStdinParsed((stdin) => {
     const agentType = stdin.agentType || stdin.toolInput.subagent_type || stdin.toolInput.subagentType || '';
     if (toolName === 'Agent' && isArtifactWriterAgentType(agentType)) {
       const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+      const releasedResources = paceUtils.releaseArtifactResourcesForOwner(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
       log(logEntry('PostToolUseFailure', release.released ? 'RELEASE_ARTIFACT_LOCK' : 'RELEASE_ARTIFACT_LOCK_SKIP', {
         proj,
         tool: toolName,
@@ -37,8 +38,29 @@ paceUtils.withStdinParsed((stdin) => {
         agent_id: stdin.agentId,
         reason: release.reason,
         lock: release.lock && release.lock.path,
+        resource_locks: releasedResources.length,
         dur: Date.now() - t0,
       }));
+    }
+
+    if (['Write', 'Edit', 'MultiEdit'].includes(toolName) && isArtifactWriterAgentType(agentType) && stdin.filePath) {
+      const artDir = paceUtils.isPaceProject(cwd) === 'artifact' ? paceUtils.getArtifactDir(cwd) : cwd;
+      const resolvedFilePath = paceUtils.resolveToolFilePath(cwd, stdin.filePath);
+      const artifactRel = paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath);
+      const resource = paceUtils.artifactResourceForRel(artifactRel);
+      if (resource) {
+        const release = paceUtils.releaseArtifactResourceLock(cwd, resource, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+        log(logEntry('PostToolUseFailure', release.released ? 'RELEASE_ARTIFACT_RESOURCE_LOCK' : 'RELEASE_ARTIFACT_RESOURCE_LOCK_SKIP', {
+          proj,
+          tool: toolName,
+          file: stdin.filePath,
+          artifact: artifactRel,
+          resource,
+          agent_id: stdin.agentId,
+          reason: release.reason,
+          dur: Date.now() - t0,
+        }));
+      }
     }
 
     const err = String(stdin.error || stdin.raw.error_message || stdin.raw.stderr || '')

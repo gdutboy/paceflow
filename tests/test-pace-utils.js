@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -282,6 +282,94 @@ test('artifact-writer lock 遇到损坏锁文件会自愈重建', () => {
   });
   assert.strictEqual(acquired.acquired, true);
   assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-corrupt');
+});
+
+test('artifact resource lock 按文件资源互斥，不同资源可并发', () => {
+  const dir = makeTmpDir('arl-basic');
+  const detailA = 'detail:changes/chg-20260510-01.md';
+  const detailB = 'detail:changes/chg-20260510-02.md';
+  const first = acquireArtifactResourceLock(dir, detailA, { sessionId: 'sid-a', agentId: 'agent-a', file: 'changes/chg-20260510-01.md' });
+  assert.strictEqual(first.acquired, true);
+  assert.strictEqual(readArtifactResourceLock(dir, detailA).sessionId, 'sid-a');
+
+  const sameResource = acquireArtifactResourceLock(dir, detailA, { sessionId: 'sid-b', agentId: 'agent-b', file: 'changes/chg-20260510-01.md' });
+  assert.strictEqual(sameResource.acquired, false);
+  assert.strictEqual(sameResource.lock.sessionId, 'sid-a');
+
+  const otherResource = acquireArtifactResourceLock(dir, detailB, { sessionId: 'sid-b', agentId: 'agent-b', file: 'changes/chg-20260510-02.md' });
+  assert.strictEqual(otherResource.acquired, true);
+  assert.strictEqual(releaseArtifactResourceLock(dir, detailA, { sessionId: 'sid-a', agentId: 'agent-a' }).released, true);
+  assert.strictEqual(releaseArtifactResourceLock(dir, detailB, { sessionId: 'sid-b', agentId: 'agent-b' }).released, true);
+});
+
+test('index:changes 在 task.md 与 implementation_plan.md 都触碰后释放', () => {
+  const dir = makeTmpDir('arl-index');
+  const resource = artifactResourceForRel('task.md');
+  assert.strictEqual(resource, 'index:changes');
+  const lock = acquireArtifactResourceLock(dir, resource, { sessionId: 'sid-index', agentId: 'agent-index', file: 'task.md' });
+  assert.strictEqual(lock.acquired, true);
+  const first = markIndexChangesTouchedAndMaybeRelease(dir, 'task.md', { sessionId: 'sid-index', agentId: 'agent-index' });
+  assert.strictEqual(first.released, false);
+  assert.strictEqual(readArtifactResourceLock(dir, resource).ok, true);
+  const second = markIndexChangesTouchedAndMaybeRelease(dir, 'implementation_plan.md', { sessionId: 'sid-index', agentId: 'agent-index' });
+  assert.strictEqual(second.released, true);
+  assert.strictEqual(readArtifactResourceLock(dir, resource).ok, false);
+});
+
+test('reserveArtifactId 为 create-chg 原子分配 CHG 编号并写 reservation', () => {
+  const dir = makeTmpDir('reservation-chg');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  const first = reserveArtifactId(dir, {
+    sessionId: 'sid-reserve',
+    artifactDir: dir,
+    operation: 'create-chg',
+    prompt: 'operation: create-chg',
+  });
+  assert.strictEqual(first.reserved, true);
+  assert.ok(/^CHG-\d{8}-01$/.test(first.id));
+  assert.strictEqual(readArtifactReservation(dir, { sessionId: 'sid-reserve' }).fileRel, first.fileRel);
+  const second = reserveArtifactId(dir, {
+    sessionId: 'sid-reserve-2',
+    artifactDir: dir,
+    operation: 'create-chg',
+    prompt: 'operation: create-chg',
+  });
+  assert.strictEqual(second.reserved, true);
+  assert.ok(second.id.endsWith('-02'));
+});
+
+test('同一 session 多个 reservation 可按目标文件精确匹配', () => {
+  const dir = makeTmpDir('reservation-same-session');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  const first = reserveArtifactId(dir, {
+    sessionId: 'sid-same',
+    artifactDir: dir,
+    operation: 'create-chg',
+    prompt: 'operation: create-chg',
+  });
+  const second = reserveArtifactId(dir, {
+    sessionId: 'sid-same',
+    artifactDir: dir,
+    operation: 'create-chg',
+    prompt: 'operation: create-chg',
+  });
+  assert.strictEqual(first.reserved, true);
+  assert.strictEqual(second.reserved, true);
+  assert.notStrictEqual(first.fileRel, second.fileRel);
+  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, first.fileRel).fileRel, first.fileRel);
+  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, second.fileRel).fileRel, second.fileRel);
+  assert.strictEqual(clearArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, first.fileRel), true);
+  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, first.fileRel), null);
+  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, second.fileRel).fileRel, second.fileRel);
+});
+
+test('isArtifactRuntimeControlPath 识别锁/sequence/reservation 控制面', () => {
+  const dir = makeTmpDir('runtime-control');
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'locks', 'artifacts', 'x.lock')), true);
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'sequences', 'chg.counter')), true);
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'reservations', 'session.json')), true);
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'index-transactions', 'session.json')), true);
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'artifact-root')), false);
 });
 
 // ============================================================
