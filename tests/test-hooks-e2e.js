@@ -9,6 +9,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const HOOKS_DIR = path.join(__dirname, '..', 'plugin', 'hooks');
 const MIGRATE_SCRIPT = path.join(__dirname, '..', 'plugin', 'migrate', 'batch-archive-v5.js');
+const RESERVE_HELPER = path.join(HOOKS_DIR, 'reserve-artifact-id.js');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;
@@ -47,6 +48,16 @@ function runHookDetailed(hookName, { cwd, stdin = {}, env = {} }) {
   const r = spawnSync('node', [hookPath], {
     cwd,
     input: typeof stdin === 'string' ? stdin : JSON.stringify(stdin),
+    encoding: 'utf8',
+    timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
+  });
+  return { code: r.status || 0, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+function runReserveHelper({ cwd, args = [], env = {} }) {
+  const r = spawnSync('node', [RESERVE_HELPER, ...args], {
+    cwd,
     encoding: 'utf8',
     timeout: 10000,
     env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
@@ -1186,6 +1197,97 @@ test('9hc. artifact-writer create-chg 带 vault artifact_dir + reserved-id → �
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc-helper. reserve-artifact-id helper 预留 create-chg 后 Agent 首派即放行', () => {
+  const dir = makeTmpDir('agent-reserve-helper-local');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-create' },
+  });
+  assert.strictEqual(helper.code, 0);
+  assert.ok(helper.stdout.includes(`artifact_dir: ${dir.replace(/\\/g, '/')}/`));
+  assert.ok(helper.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
+  assert.ok(helper.stdout.includes(`reserved-file: changes/chg-${today().replace(/-/g, '')}-01.md`));
+  assert.ok(fs.existsSync(path.join(dir, 'changes')), 'helper 应在 root 已选择后懒创建 changes/');
+  assert.ok(fs.existsSync(path.join(dir, 'task.md')), 'helper 应在 root 已选择后懒创建 task.md');
+
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-helper-create',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: `${helper.stdout}\ntitle: helper smoke\ntasks:\n- T-001: do it`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+  assert.ok(r.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
+});
+
+test('9hc-helper2. reserve-artifact-id helper 默认复用未消费 reservation，--new 才分配新编号', () => {
+  const dir = makeV6Project('agent-reserve-helper-reuse', { withIndex: false, detail: false });
+  const env = { CLAUDE_CODE_SESSION_ID: 'sid-helper-reuse' };
+  const first = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg'], env });
+  const second = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg'], env });
+  const third = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg', '--new'], env });
+  assert.strictEqual(first.code, 0);
+  assert.strictEqual(second.code, 0);
+  assert.strictEqual(third.code, 0);
+  assert.ok(first.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
+  assert.ok(second.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
+  assert.ok(second.stdout.includes('已复用当前 session 尚未消费的 reservation'));
+  assert.ok(third.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-02`));
+});
+
+test('9hc-helper3. reserve-artifact-id helper 支持 record-correction prefix', () => {
+  const dir = makeV6Project('agent-reserve-helper-correction', { withIndex: false, detail: false });
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'record-correction'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-correction' },
+  });
+  assert.strictEqual(helper.code, 0);
+  assert.ok(helper.stdout.includes(`reserved-id: CORRECTION-${today()}-01`));
+  assert.ok(helper.stdout.includes(`reserved-file-prefix: changes/corrections/correction-${today()}-01-<slug>.md`));
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-helper-correction',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Record correction',
+        prompt: `${helper.stdout}\ntrigger-quote: test\nwrong-behavior: wrong behavior details are long enough\ncorrect-behavior: correct behavior details are long enough\ntrigger-scenario: helper\nroot-cause: helper\nproject-scope: project-only`,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('9hc-helper4. reserve-artifact-id helper 在 root 未选择时只提示选择，不落项目运行态', () => {
+  const dir = makeTmpDir('agent-reserve-helper-root-choice');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-choice' },
+  });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('PACEflow 首次启用需要选择 artifact 存放位置'));
+  assert.ok(helper.stdout.includes('AskUserQuestion'));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'root 选择前 helper 不应创建项目 .pace/');
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'root 选择前 helper 不应懒创建 changes/');
 });
 
 test('9hc-mismatch. create-chg 显式 reserved-id 与 hook reservation 不匹配 → DENY', () => {

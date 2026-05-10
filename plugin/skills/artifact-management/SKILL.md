@@ -47,6 +47,17 @@ changes/
 
 ---
 
+## CHG 粒度
+
+CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是大计划容器。
+
+- 大计划可以存在，但应拆成多个 CHG：数据结构/迁移、后端接口、前端调用、文档/配置等可独立验证的部分分别建 CHG。
+- 每个 CHG 内可以有多个 `T-NNN`，但这些任务应服务于同一个闭环，并默认在一次执行流中完成。
+- 默认收尾路径是 `close-chg complete-open-tasks:true`，它会把仍 open 的 T-NNN 统一收口为 `[x]`、写 VERIFIED、归档索引并写 walkthrough。
+- `update-status` 不是逐步看板更新；只在暂停、阻塞、跳过、跨 session、长任务进度或多 CHG/worktree 可见性需要时使用。
+
+---
+
 ## 唯一写入路径
 
 | 目标 | 操作 |
@@ -54,7 +65,7 @@ changes/
 | 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
 | 仅批准 C 阶段，暂不开始 | operation=`update-chg`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
 | 批准并开始首个任务 | operation=`update-chg`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
-| 更新中间任务状态 | operation=`update-chg`，section=`tasks`，action=`update-status` |
+| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，section=`tasks`，action=`update-status` |
 | 追加工作记录/实施说明 | operation=`update-chg`，section=`work-record` / `implementation`，action=`append` |
 | 只记录 V 阶段暂不归档 | operation=`update-chg`，action=`verify` |
 | 归档 CHG/HOTFIX | operation=`archive-chg` |
@@ -113,7 +124,7 @@ changes/
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 在派 `artifact-writer create-chg` 时原子预留。Claude Code 不保证 `PreToolUse:Agent additionalContext` 会进入 subagent 初始 prompt；如果 hook 返回 reserved-id required 的 deny，主 session 必须把 `reserved-id` / `reserved-file` 原样写入 Agent prompt 后重派。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 `node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。若跳过 helper，PreToolUse 会用 deny 文案返回同样字段，作为 fallback。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 时原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
@@ -126,10 +137,20 @@ changes/
 
 创建变更：
 
+先预留编号：
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg
+```
+
+把 helper 输出放在 prompt 顶部：
+
 ```text
 派 artifact-writer:
-artifact_dir: <SessionStart hook 提供的 artifact 目录>
+artifact_dir: <helper 输出>
 operation: create-chg
+reserved-id: <helper 输出>
+reserved-file: <helper 输出>
 title: <标题>
 tasks:
   - T-001: <任务>
@@ -198,6 +219,8 @@ complete-open-tasks: true
 verify-summary: <已运行并阅读的验证结果>
 walkthrough-summary: <完成摘要>
 ```
+
+连续执行的 CHG 不需要在每个 T-NNN 完成后都派 `update-status`。只要主 session 已运行并读取验证结果，`close-chg complete-open-tasks:true` 就是默认收口方式。
 
 ---
 

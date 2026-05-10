@@ -341,13 +341,16 @@ function reservationMatchesExplicit(reservation, explicit) {
 function artifactWriterCreateChgHint(artDir) {
   return [
     FORMAT_SNIPPETS.skillRef,
+    FORMAT_SNIPPETS.reserveHelper,
     '派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：',
     `artifact_dir: ${displayDir(artDir)}`,
     'operation: create-chg',
+    'reserved-id: <helper 输出或 hook deny 输出>',
+    'reserved-file: <helper 输出或 hook deny 输出>',
     'title: <变更标题>',
     'tasks:',
     '- T-001: <首个任务>',
-    'hook 会先预留 reserved-id；若收到 reserved-id required 的 deny，请把 hook 给出的 reserved-id / reserved-file 原样写入 prompt 后重派。'
+    '若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file 作为 fallback；收到后原样写入 prompt 重派。'
   ].join('\n');
 }
 
@@ -355,6 +358,7 @@ function reservationRequiredReason(operation, artDir, reservation) {
   const lines = [
     `PACE hook 已为 ${operation} 预留唯一编号，但 Claude Code 不会可靠地把 PreToolUse additionalContext 注入到 subagent 初始 prompt。`,
     FORMAT_SNIPPETS.skillRef,
+    operation === 'create-chg' ? FORMAT_SNIPPETS.reserveHelper : '后续可先运行 Bash: node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation record-correction 预留 correction 编号。',
     '本次 Agent 已被阻止；请重派 artifact-writer，并在 prompt 顶部原样加入以下字段：',
     `artifact_dir: ${displayDir(artDir)}`,
     `operation: ${operation}`,
@@ -371,7 +375,7 @@ function reservationExplicitMissingReason(operation, explicit) {
   return [
     `artifact-writer prompt 声明了 ${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}，但当前 session 没有匹配的 hook reservation。`,
     FORMAT_SNIPPETS.skillRef,
-    `请先派一次不带 reserved-id 的 ${operation}，让 PreToolUse 预留编号并返回 deny 文案；然后把该文案中的 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
+    `请先在主 session 运行 Bash: node "\${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation ${operation}，或派一次不带 reserved-id 的 ${operation} 触发 hook fallback；然后把 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
     '不要手写或复用旧 session 的 reserved-id。'
   ].join('\n');
 }
@@ -450,7 +454,8 @@ function agentLifecyclePromptDenyReason(prompt) {
       '不要把 update-status 与 update-chg action=verify 串在同一次 agent 派遣中。',
       FORMAT_SNIPPETS.skillRef,
       '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
-      '如果只是中间任务完成：只派 update-chg action=update-status。',
+      '如果同一 CHG 会继续连续执行：不要为中间任务单独派 update-status，继续完成剩余代码/测试。',
+      '只有暂停、阻塞、跳过、跨 session 或长任务进度可见性需要时，才派 update-chg action=update-status。',
       '如果这是最后任务且验证已通过：直接派 close-chg complete-open-tasks: true，合并完成状态、VERIFIED、归档和 walkthrough。'
     ].join('\n');
   }
@@ -817,6 +822,7 @@ paceUtils.withStdinParsed((stdin) => {
             }));
             return;
           }
+          reservation = { reserved: true, ...reservation };
         }
         const created = [...new Set([
           ...ensured.createdFiles,
@@ -934,6 +940,7 @@ paceUtils.withStdinParsed((stdin) => {
           const reason = [
             `artifact-writer 正在新建 ${artifactRelForMutation}，但当前 session/agent 没有 hook 预留编号。`,
             '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先预留编号并用 deny 文案返回 reserved-id / reserved-file。',
+            '更好的路径是先在主 session 运行 reserve-artifact-id helper，把 helper 输出放进 artifact-writer prompt 顶部。',
             '不要让 agent 自行扫描索引分配 CHG/HOTFIX/CORRECTION 编号。'
           ].join('\n');
           const output = {

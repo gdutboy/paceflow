@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.49';
+const PACE_VERSION = 'v6.0.50';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -64,6 +64,7 @@ const FORMAT_SNIPPETS = {
   // 归档操作（T-441: 移动标记而非内容）
   approveAndStartOp: '批准并开始 = 派 artifact-writer update-chg action=approve-and-start：需 approval-confirmed: true、approval-source、approval-evidence 与 task-id',
   closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg：需 verification-confirmed: true、complete-open-tasks: true、verify-summary、walkthrough-summary',
+  reserveHelper: '预留编号 = 主 session 先运行 Bash: node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部',
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',

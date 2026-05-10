@@ -23,7 +23,7 @@
 
 **禁止**由 agent 自行判断验证是否通过。`verification-confirmed` 缺失或非 true 时，不得写任何 artifact。
 
-主路径：最后一个任务代码写完后，主 session 先运行验证并读取结果；验证通过后直接派 `close-chg verification-confirmed: true complete-open-tasks: true`。不要先派 `update-status [x]` 再派 `update-chg action=verify` 再归档，除非用户明确要求暂不归档。
+主路径：一个连续 CHG 的代码写完后，主 session 先运行验证并读取结果；验证通过后直接派 `close-chg verification-confirmed: true complete-open-tasks: true`。即使详情中仍有 `[ ]` / `[/]` 的 T-NNN，只要这些任务已经在本轮执行并由验证覆盖，也由 close-chg 统一收口。不要先派逐个 `update-status [x]` 再派 `update-chg action=verify` 再归档，除非用户明确要求暂不归档或需要跨 session 留存进度。
 
 > **报告标题强制**：最终报告第一行必须字面使用 `## artifact-writer 报告`。禁止在标题前输出任何自然语言、空行或说明，尤其禁止 `所有编辑均已通过。生成报告。` / `操作完成，报告如下：` / `验证通过。` 等前缀。失败、幂等、部分修复场景同样适用。
 > **全局对话样式豁免**：最终报告不得继承主 session / CLAUDE.md 的时间戳、Insight 块、固定结尾语或任何前后缀。第一个字符必须是 `#`。

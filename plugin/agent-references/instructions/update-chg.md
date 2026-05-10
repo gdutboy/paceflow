@@ -56,7 +56,7 @@ Read + Edit 整个 section 替换为 content
      - Read + Edit `implementation_plan.md` 同上
      - 若 frontmatter status 未变（如多个 [x] 但仍有 [/]），跳过此步
 
-最后一个任务的主路径不是 `update-status [x]` 后立刻串联 `verify`。若主 session 已经运行并读取验证结果且确认通过，应直接派 `close-chg complete-open-tasks: true`，由 close-chg 一次完成最后任务收口、completed、VERIFIED、归档和 walkthrough。`update-status [x]` 只用于中间任务完成，或最后任务暂不验证/暂不收尾时停在 completed。
+连续执行的同一 CHG 不需要每完成一个 T-NNN 就派 `update-status [x]`。CHG 是连续执行、可验证、可关闭的最小变更单元；若主 session 正在同一执行流里继续完成剩余任务，应继续写代码/测试，最后验证通过后直接派 `close-chg complete-open-tasks: true`，由 close-chg 一次完成 open tasks 收口、completed、VERIFIED、归档和 walkthrough。`update-status [x]` 只用于暂停、阻塞、跳过、跨 session、长任务进度可见性，或最后任务暂不验证/暂不收尾时停在 completed。
 
 ### action=approve
 

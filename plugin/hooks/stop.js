@@ -101,7 +101,7 @@ if (paceSignal === 'artifact') {
         continue;
       }
       if (change.tasks.pending > 0) {
-        warnings.push(`${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。请继续执行；中间任务完成时用 update-chg action=update-status 维护 T-NNN 状态。`);
+        warnings.push(`${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。若本轮仍可连续执行，请继续完成代码/测试，不必为中间任务逐个 update-status；只有暂停、阻塞、跳过或跨 session 时才派 update-chg action=update-status 维护 T-NNN 状态。`);
         continue;
       }
       if (change.tasks.total > 0) {
