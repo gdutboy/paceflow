@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, getProjectRuntimeDir, formatBridgeHint, getNativePlanPath, getProjectName, displayDir, normalizeArtifactRootChoice, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
+const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, getProjectRuntimeDir, formatBridgeHint, getNativePlanPath, getProjectName, displayDir, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -16,6 +16,39 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
+const {
+  bashCommandLooksMutating,
+  bashCommandRedirectsToArtifact,
+  bashShellCommandRedirectsToArtifact,
+  bashCommandMutatesArtifactRuntimeControl,
+  bashCommandReferencesArtifact,
+  bashShellCommandReferencesArtifact,
+  bashArtifactRuntimeControlDenyReason,
+  bashArtifactDenyReason,
+} = require('./pre-tool-use/bash-guard');
+const {
+  isArtifactWriterAgentTool,
+  extractPromptArtifactDir,
+  promptHasExactArtifactDir,
+  promptHasTrueField,
+  explicitReservationFromPrompt,
+  reservationRelForLookup,
+  reservationMatchesExplicit,
+  artifactWriterCreateChgHint,
+  reservationRequiredReason,
+  reservationExplicitMissingReason,
+  agentLifecyclePromptDenyReason,
+  legacyArtifactWriterLockDenyReason,
+  artifactResourceLockDenyReason,
+  artifactReservationDenyReason,
+  agentArtifactDirDenyReason,
+} = require('./pre-tool-use/agent-lifecycle-guard');
+const {
+  isArtifactWriterManagedRel,
+  directArtifactMutationDenyReason,
+  detectChangeDetailMarkerMutation,
+  markerMutationDenyReason,
+} = require('./pre-tool-use/marker-guard');
 
 function isArtifactWriterAgent(stdin) {
   return paceUtils.isArtifactWriterAgentType(stdin.agentType);
@@ -40,475 +73,6 @@ function isBashTool(toolName) {
 function getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath) {
   if (!isFileMutationTool(toolName) || !isInsideProject || !paceSignal) return null;
   return paceUtils.artifactRelativePathForFile(artDir, filePath);
-}
-
-function isArtifactWriterManagedRel(artifactRel) {
-  return !!artifactRel && artifactRel !== 'spec.md';
-}
-
-function shellCommandScripts(command) {
-  const scripts = [];
-  const c = String(command || '');
-  const re = /(^|[;&|]\s*)(?:bash|sh|zsh|fish)\s+-c\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|]+))/gi;
-  let m;
-  while ((m = re.exec(c)) !== null) {
-    const script = m[2] || m[3] || m[4] || m[5] || '';
-    if (script) scripts.push(script);
-  }
-  return scripts;
-}
-
-function commandTextLooksMutating(c) {
-  return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
-    /(^|[;&|]\s*)(npm|pnpm|yarn)\s+(?:run|exec|x)\b/i.test(c) ||
-    /(^|[;&|]\s*)npx\b[\s\S]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
-    /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
-    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
-}
-
-function bashCommandLooksMutating(command) {
-  const c = String(command || '');
-  return commandTextLooksMutating(c) || shellCommandScripts(c).some(script => commandTextLooksMutating(script));
-}
-
-function bashOutputRedirectTargets(command) {
-  const c = String(command || '');
-  const targets = [];
-  let quote = null;
-  let escaped = false;
-  for (let i = 0; i < c.length; i++) {
-    const ch = c[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      quote = ch;
-      continue;
-    }
-    if (ch !== '>') continue;
-
-    let j = i + 1;
-    if (c[j] === '>') j++;
-    if (c[j] === '|') j++;
-    while (/\s/.test(c[j] || '')) j++;
-    if (!c[j]) continue;
-
-    let target = '';
-    if (c[j] === '"' || c[j] === "'") {
-      const endQuote = c[j++];
-      while (j < c.length && c[j] !== endQuote) target += c[j++];
-    } else {
-      while (j < c.length && !/[\s;&|<>]/.test(c[j])) target += c[j++];
-    }
-    if (target) targets.push(target);
-  }
-  return targets;
-}
-
-function bashCommandPathTokens(command) {
-  const tokens = [];
-  const re = /"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|<>]+)/g;
-  let match;
-  while ((match = re.exec(String(command || ''))) !== null) {
-    const token = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? '').trim();
-    if (!token || token.startsWith('-') || /^\w+=/.test(token)) continue;
-    tokens.push(token);
-  }
-  return tokens;
-}
-
-function bashPathLooksArtifact(target, cwd, artDir) {
-  const t = String(target || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!t || /^&\d+$/.test(t)) return false;
-  try {
-    const resolved = paceUtils.resolveToolFilePath(cwd, t);
-    if (paceUtils.artifactRelativePathForFile(artDir, resolved)) return true;
-    if (paceUtils.artifactRelativePathForFile(cwd, resolved)) return true;
-  } catch(e) {}
-  // Fallback only catches simple CWD-relative artifact names that tokenization cannot resolve.
-  const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
-  for (const root of roots) {
-    for (const file of ARTIFACT_FILES) {
-      if (t === `${root}/${file}`) return true;
-    }
-    if (t === `${root}/changes`) return true;
-    if (t.startsWith(`${root}/changes/`)) return true;
-  }
-  return /^(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)$/.test(t) ||
-    /^(?:\.\/)?changes(?:\/|$)/.test(t);
-}
-
-function bashCommandRedirectsToArtifact(command, cwd, artDir) {
-  return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifact(target, cwd, artDir));
-}
-
-function bashShellCommandRedirectsToArtifact(command, cwd, artDir) {
-  return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifact(script, cwd, artDir));
-}
-
-function bashPathLooksArtifactRuntimeControl(target, cwd) {
-  const raw = String(target || '').trim().replace(/\\/g, '/').replace(/^['"]|['"]$/g, '');
-  if (!raw || /^&\d+$/.test(raw)) return false;
-  try {
-    const resolved = paceUtils.resolveToolFilePath(cwd, raw);
-    if (paceUtils.isArtifactRuntimeControlPath(cwd, resolved)) return true;
-  } catch(e) {}
-  return /(?:^|\/)\.pace\/artifact-writer\.lock$/.test(raw) ||
-    /(?:^|\/)\.pace\/(?:locks|sequences|reservations|index-transactions)(?:\/|$)/.test(raw) ||
-    raw === 'artifact-writer.lock';
-}
-
-function bashCommandRedirectsToArtifactRuntimeControl(command, cwd) {
-  return bashOutputRedirectTargets(command).some(target => bashPathLooksArtifactRuntimeControl(target, cwd));
-}
-
-function bashShellCommandRedirectsToArtifactRuntimeControl(command, cwd) {
-  return shellCommandScripts(command).some(script => bashCommandRedirectsToArtifactRuntimeControl(script, cwd));
-}
-
-function bashSearchText(command) {
-  return String(command || '').replace(/\\(["'`])/g, '$1').replace(/\\/g, '/');
-}
-
-function escapeRegExp(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function bashTextReferencesPathOrChild(text, target) {
-  const normalized = String(target || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!normalized) return false;
-  const c = String(text || '');
-  if (c.includes(`${normalized}/`)) return true;
-  return new RegExp(`${escapeRegExp(normalized)}(?=$|[\\s"'\\\`;|&<>])`).test(c);
-}
-
-function bashCommandReferencesArtifactRuntimeControl(command, cwd) {
-  const c = bashSearchText(command);
-  const runtime = paceUtils.getProjectRuntimeDir(cwd).replace(/\\/g, '/').replace(/\/+$/, '');
-  const relRuntime = path.relative(cwd, runtime).replace(/\\/g, '/').replace(/\/+$/, '');
-  return bashTextReferencesPathOrChild(c, `${runtime}/locks`) ||
-    bashTextReferencesPathOrChild(c, `${runtime}/sequences`) ||
-    bashTextReferencesPathOrChild(c, `${runtime}/reservations`) ||
-    bashTextReferencesPathOrChild(c, `${runtime}/index-transactions`) ||
-    (relRuntime && (
-      bashTextReferencesPathOrChild(c, `${relRuntime}/locks`) ||
-      bashTextReferencesPathOrChild(c, `${relRuntime}/sequences`) ||
-      bashTextReferencesPathOrChild(c, `${relRuntime}/reservations`) ||
-      bashTextReferencesPathOrChild(c, `${relRuntime}/index-transactions`)
-    )) ||
-    c.includes(paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/')) ||
-    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
-    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/(?:locks|sequences|reservations|index-transactions)(?:\/|$)/.test(c) ||
-    /(?:^|[\s"'`=;|&])artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
-    bashCommandPathTokens(c).some(target => bashPathLooksArtifactRuntimeControl(target, cwd));
-}
-
-function bashShellCommandReferencesArtifactRuntimeControl(command, cwd) {
-  return shellCommandScripts(command).some(script => bashCommandReferencesArtifactRuntimeControl(script, cwd));
-}
-
-function bashCommandMutatesArtifactRuntimeControl(command, cwd) {
-  return bashCommandRedirectsToArtifactRuntimeControl(command, cwd) ||
-    bashShellCommandRedirectsToArtifactRuntimeControl(command, cwd) ||
-    (bashCommandLooksMutating(command) &&
-      (bashCommandReferencesArtifactRuntimeControl(command, cwd) || bashShellCommandReferencesArtifactRuntimeControl(command, cwd)));
-}
-
-function bashCommandReferencesArtifact(command, cwd, artDir) {
-  const c = bashSearchText(command);
-  if (bashCommandPathTokens(c).some(target => bashPathLooksArtifact(target, cwd, artDir))) return true;
-  const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
-  for (const root of roots) {
-    for (const file of ARTIFACT_FILES) {
-      if (bashTextReferencesPathOrChild(c, `${root}/${file}`)) return true;
-    }
-    if (bashTextReferencesPathOrChild(c, `${root}/changes`)) return true;
-  }
-  return /(^|[\s"'`=])(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)(?=$|[\s"'`;|&<>])/.test(c) ||
-    /(^|[\s"'`=])(?:\.\/)?changes(?:\/|$)/.test(c);
-}
-
-function bashShellCommandReferencesArtifact(command, cwd, artDir) {
-  return shellCommandScripts(command).some(script => bashCommandReferencesArtifact(script, cwd, artDir));
-}
-
-function bashArtifactRuntimeControlDenyReason(command) {
-  return [
-    '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
-    '如果看到写入繁忙，请等待当前 artifact 写入完成后重试；不要用 Bash 删除或改写 PaceFlow 运行态文件。',
-    `被拦截的命令：${String(command || '').slice(0, 500)}`
-  ].join('\n');
-}
-
-function bashArtifactDenyReason(command) {
-  return [
-    '禁止使用 Bash 修改 artifact 文件。artifact 只能通过 artifact-writer 的 Write/Edit 路径修改，以便 hook 能检查格式和索引一致性。',
-    '允许用 Bash 读取 artifact（test/grep/cat/wc 等），但禁止 sed -i、重定向、rm/mv/cp/touch/mkdir、脚本写文件等会改变 artifact 的命令。',
-    '如果是 CRLF 导致 Edit 匹配失败，请直接重试 Edit；hook 会在 Edit/MultiEdit 前把 artifact 换行机械归一化为 LF。',
-    `被拦截的命令：${String(command || '').slice(0, 500)}`
-  ].join('\n');
-}
-
-function isArtifactWriterAgentTool(stdin) {
-  return paceUtils.isArtifactWriterAgentType(stdin.toolInput.subagent_type || stdin.toolInput.subagentType);
-}
-
-function normalizeArtifactDirValue(value) {
-  const raw = normalizeArtifactRootChoice(value);
-  if (!raw) return '';
-  return paceUtils.normalizePath(raw.replace(/\\/g, '/')).replace(/\/+$/, '');
-}
-
-function extractPromptArtifactDir(prompt) {
-  const match = String(prompt || '').match(/^\s*artifact_dir\s*[:=]\s*(.+?)\s*$/mi);
-  return match ? normalizeArtifactDirValue(match[1]) : '';
-}
-
-function promptHasExactArtifactDir(prompt, dir) {
-  const declared = extractPromptArtifactDir(prompt);
-  return declared && declared === normalizeArtifactDirValue(dir);
-}
-
-function agentArtifactDirDenyReason(artDir, declared = '') {
-  const dir = displayDir(artDir);
-  const declaredLine = declared ? `\n当前 prompt 中的 artifact_dir 是：${displayDir(declared)}` : '';
-  return [
-    `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
-    '请重派同一个 agent，并在 prompt 顶部加入：',
-    `artifact_dir: ${dir}`,
-    'artifact_dir 仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。',
-    '不要让 artifact-writer 自行推断或改写 artifact_dir。'
-  ].join('\n');
-}
-
-function promptHasTrueField(prompt, field) {
-  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[\\n\\s,，;；])${escaped}\\s*[:=]\\s*true\\b`, 'i').test(String(prompt || ''));
-}
-
-function promptHasNonEmptyField(prompt, field) {
-  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[\\n,，;；])\\s*${escaped}\\s*[:=]\\s*\\S+`, 'mi').test(String(prompt || ''));
-}
-
-function promptFieldValue(prompt, field) {
-  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = String(prompt || '').match(new RegExp(`(?:^|[\\n,，;；])\\s*${escaped}\\s*[:=]\\s*([^\\n,，;；]+)`, 'mi'));
-  return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
-}
-
-function explicitReservationFromPrompt(prompt) {
-  const id = promptFieldValue(prompt, 'reserved-id').toUpperCase();
-  const fileRel = promptFieldValue(prompt, 'reserved-file').replace(/\\/g, '/');
-  let filePrefix = promptFieldValue(prompt, 'reserved-file-prefix').replace(/\\/g, '/');
-  filePrefix = filePrefix.replace(/<slug>\.md$/i, '').replace(/\*\.md$/i, '');
-  return { id, fileRel, filePrefix };
-}
-
-function relFromReservedId(id) {
-  const m = String(id || '').match(/^(CHG|HOTFIX)-(\d{8})-(\d{2})$/i);
-  if (!m) return '';
-  return `changes/${m[1].toLowerCase()}-${m[2]}-${m[3]}.md`;
-}
-
-function reservationRelForLookup(explicit) {
-  if (explicit.fileRel) return explicit.fileRel;
-  const fromId = relFromReservedId(explicit.id);
-  if (fromId) return fromId;
-  if (explicit.filePrefix) return `${explicit.filePrefix}slug.md`;
-  return '';
-}
-
-function reservationMatchesExplicit(reservation, explicit) {
-  if (!reservation) return false;
-  if (explicit.id && reservation.id !== explicit.id) return false;
-  if (explicit.fileRel && reservation.fileRel !== explicit.fileRel) return false;
-  if (explicit.filePrefix && reservation.filePrefix !== explicit.filePrefix) return false;
-  return true;
-}
-
-function artifactWriterCreateChgHint(artDir) {
-  return [
-    FORMAT_SNIPPETS.skillRef,
-    FORMAT_SNIPPETS.reserveHelper,
-    '派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：',
-    `artifact_dir: ${displayDir(artDir)}`,
-    'operation: create-chg',
-    'reserved-id: <helper 输出或 hook deny 输出>',
-    'reserved-file: <helper 输出或 hook deny 输出>',
-    'title: <变更标题>',
-    'tasks:',
-    '- T-001: <首个任务>',
-    '若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file 作为 fallback；收到后原样写入 prompt 重派。'
-  ].join('\n');
-}
-
-function reservationRequiredReason(operation, artDir, reservation) {
-  const lines = [
-    `PACEflow 已为 ${operation} 预留唯一编号。本次 Agent 已被阻止，请重派 artifact-writer 并带上以下字段：`,
-    FORMAT_SNIPPETS.skillRef,
-    operation === 'create-chg' ? FORMAT_SNIPPETS.reserveHelper : `后续可先运行 Bash: node "${path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/')}" --operation record-correction 预留 correction 编号。`,
-    `artifact_dir: ${displayDir(artDir)}`,
-    `operation: ${operation}`,
-  ];
-  if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
-  if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
-  if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
-  lines.push('不要启动不带 reserved-id 的 create-chg / record-correction agent；不要让 agent 扫描索引自行分配编号。');
-  return lines.join('\n');
-}
-
-function reservationExplicitMissingReason(operation, explicit) {
-  return [
-    `artifact-writer prompt 中的预留字段无效或已过期，当前没有匹配的 hook reservation：${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}。`,
-    FORMAT_SNIPPETS.skillRef,
-    `请先在主 session 运行 Bash: node "${path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/')}" --operation ${operation}，然后把新的 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
-    '不要手写或复用旧 session 的 reserved-id。'
-  ].join('\n');
-}
-
-function promptMentionsVerifyAction(prompt) {
-  const text = String(prompt || '');
-  return /(?:^|[\s\n])action\s*[:=]\s*verify\b/i.test(text) ||
-    /\bupdate-chg\s+action=verify\b/i.test(text) ||
-    /执行\s*verify\s*操作/i.test(text) ||
-    /\bverify\s+操作/i.test(text);
-}
-
-function promptMentionsApproveAndStart(prompt) {
-  return /\bapprove-and-start\b/i.test(String(prompt || ''));
-}
-
-function promptMentionsApproveOnly(prompt) {
-  const text = String(prompt || '');
-  return /(?:^|[\s\n])action\s*[:=]\s*approve\b(?!-and-start)/i.test(text) ||
-    /\bupdate-chg\s+action=approve\b(?!-and-start)/i.test(text) ||
-    /执行\s*approve\s*操作/i.test(text) ||
-    /action=approve(?!-and-start)/i.test(text);
-}
-
-function promptApproveContainsStartIntent(prompt) {
-  const text = String(prompt || '');
-  return /(?:status|状态)[^\n]{0,24}(?:in-progress|进行中)/i.test(text) ||
-    /(?:改为|设为|推到|进入)[^\n]{0,24}(?:in-progress|进行中)/i.test(text) ||
-    /(?:开始实施|开始执行|立即开始|启动任务|标记为\s*\[\/\]|标记.*进行中)/i.test(text);
-}
-
-function agentLifecyclePromptDenyReason(prompt) {
-  const text = String(prompt || '');
-  const mentionsApproveAndStart = promptMentionsApproveAndStart(text);
-  const mentionsApproveOnly = promptMentionsApproveOnly(text);
-  const mentionsApprovalAction = mentionsApproveAndStart || mentionsApproveOnly;
-  const mentionsCloseChg = /\bclose-chg\b/i.test(text);
-  const mentionsUpdateStatus = /\bupdate-status\b/i.test(text);
-
-  if (mentionsApprovalAction) {
-    const missing = [];
-    if (!promptHasTrueField(text, 'approval-confirmed')) missing.push('approval-confirmed: true');
-    if (!promptHasNonEmptyField(text, 'approval-source')) missing.push('approval-source');
-    if (!promptHasNonEmptyField(text, 'approval-evidence')) missing.push('approval-evidence');
-    if (mentionsApproveAndStart && !promptHasNonEmptyField(text, 'task-id')) missing.push('task-id');
-    if (missing.length > 0) {
-      return [
-        `派 artifact-writer 执行 C 阶段批准时缺少必填字段：${missing.join(', ')}。`,
-        FORMAT_SNIPPETS.skillRef,
-        'C 阶段批准是确认边界：主 session 可以基于用户明确执行指令、已接受方案或 AskUserQuestion 设置 approval-confirmed: true，但必须写明确认来源与证据。',
-        '示例：',
-        'approval-confirmed: true',
-        'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
-        'approval-evidence: <用户原话或已确认方案摘要>',
-        mentionsApproveAndStart ? 'task-id: T-NNN' : '若批准后立即开始，请改用 action=approve-and-start 并提供 task-id。'
-      ].join('\n');
-    }
-  }
-
-  if (mentionsApproveOnly && promptApproveContainsStartIntent(text)) {
-    return [
-      '不要用 action=approve 同时表达开始执行或 in-progress 状态。',
-      FORMAT_SNIPPETS.skillRef,
-      'action=approve 只插入 APPROVED，适用于“先批准但暂不执行”。',
-      '若用户已明确批准并准备开始，请改派 approve-and-start：',
-      'action: approve-and-start',
-      'approval-confirmed: true',
-      'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
-      'approval-evidence: <用户原话或已确认方案摘要>',
-      'task-id: T-NNN'
-    ].join('\n');
-  }
-
-  if (mentionsUpdateStatus && promptMentionsVerifyAction(text) && !mentionsCloseChg) {
-    return [
-      '不要把 update-status 与 update-chg action=verify 串在同一次 agent 派遣中。',
-      FORMAT_SNIPPETS.skillRef,
-      '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
-      '如果同一 CHG 会继续连续执行：不要为中间任务单独派 update-status，继续完成剩余代码/测试。',
-      '只有暂停、阻塞、跳过、跨 session 或长任务进度可见性需要时，才派 update-chg action=update-status。',
-      '如果这是最后任务且验证已通过：直接派 close-chg complete-open-tasks: true，合并完成状态、VERIFIED、归档和 walkthrough。'
-    ].join('\n');
-  }
-
-  if (mentionsCloseChg) {
-    const missing = [];
-    if (!promptHasTrueField(text, 'verification-confirmed')) missing.push('verification-confirmed: true');
-    if (!promptHasTrueField(text, 'complete-open-tasks')) missing.push('complete-open-tasks: true');
-    if (!promptHasNonEmptyField(text, 'verify-summary')) missing.push('verify-summary');
-    if (!promptHasNonEmptyField(text, 'walkthrough-summary')) missing.push('walkthrough-summary');
-    if (missing.length > 0) {
-      return [
-        `派 artifact-writer 执行 close-chg 时缺少必填字段：${missing.join(', ')}。`,
-        FORMAT_SNIPPETS.skillRef,
-        'close-chg 只能在主 session 已运行并读取验证结果、确认通过后调用；agent 不得自行判断验证是否通过。',
-        '最后任务收尾主路径：',
-        'operation: close-chg',
-        'verification-confirmed: true',
-        'complete-open-tasks: true',
-        'verify-summary: <已运行并读取的验证结果>',
-        'walkthrough-summary: <完成摘要>'
-      ].join('\n');
-    }
-  }
-
-  return '';
-}
-
-function legacyArtifactWriterLockDenyReason(lock) {
-  return [
-    '检测到旧版本 artifact-writer 项目级写锁仍在当前项目中，已阻止本次派遣以避免跨版本并发写入。',
-    '请等待当前 artifact-writer 结束后重试；不要用 Bash 删除或改写写锁。若长时间未恢复，请查看 pace-hooks.log。'
-  ].join('\n');
-}
-
-function artifactResourceLockDenyReason(lockAttempt, resource, artifactRel) {
-  return [
-    `当前 artifact 正被其他 artifact-writer 写入，已阻止修改 ${artifactRel}。`,
-    '不要循环重试或删除运行态文件；请等待对方写入完成后重新 Read 目标 artifact，再重试本次 artifact-writer 操作。'
-  ].join('\n');
-}
-
-function artifactReservationDenyReason(match, artifactRel) {
-  return [
-    `artifact-writer 写入的详情文件不匹配 hook 预留编号：${artifactRel}。`,
-    `期望：${match.expected}`,
-    '请使用主 session 重派 prompt 中的 reserved-id / reserved-file，不要重新扫描索引自行分配编号。'
-  ].join('\n');
-}
-
-function directArtifactMutationDenyReason(toolName, artifactRel) {
-  return [
-    `禁止主 session/非 artifact-writer 使用 ${toolName} 直接修改流程 artifact：${artifactRel}。`,
-    FORMAT_SNIPPETS.skillRef,
-    'v6 流程 artifact 只能由 paceflow:artifact-writer 通过受保护的 Write/Edit/MultiEdit 路径写入。',
-    '请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。'
-  ].join('\n');
 }
 
 // S-1: 统一 stdin 解析
@@ -1228,16 +792,15 @@ paceUtils.withStdinParsed((stdin) => {
     });
 
     // 阻止主 session 直接手写 C/V 阶段标志；应派 artifact writer。
-    const isChangeDetail = !!artifactRelForMutation &&
-      /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation);
-    const mutationText = newString || content || '';
-    if (isFileMutationTool(toolName) && isInsideProject && isChangeDetail && mutationText) {
-      const addedApproved = mutationText.includes('<!-- APPROVED -->') && !oldString.includes('<!-- APPROVED -->');
-      const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
-      const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
-        !paceUtils.hasNonNullVerifiedDate(oldString || '');
-      if ((addedApproved || addedVerified || setVerifiedDate) && !isArtifactWriterAgent(stdin)) {
-        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行对应批准或验证/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`;
+    const markerMutation = detectChangeDetailMarkerMutation({
+      artifactRel: artifactRelForMutation,
+      newString,
+      oldString,
+      content,
+    });
+    if (isFileMutationTool(toolName) && isInsideProject && markerMutation.hasMarkerMutation) {
+      if (!isArtifactWriterAgent(stdin)) {
+        const reason = markerMutationDenyReason(markerMutation);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
@@ -1245,25 +808,23 @@ paceUtils.withStdinParsed((stdin) => {
           file: filePath,
           agent_id: stdin.agentId,
           agent_type: stdin.agentType,
-          addedApproved,
-          addedVerified,
-          setVerifiedDate,
+          addedApproved: markerMutation.addedApproved,
+          addedVerified: markerMutation.addedVerified,
+          setVerifiedDate: markerMutation.setVerifiedDate,
           dur: Date.now() - t0,
         }));
         return;
       }
-      if (addedApproved || addedVerified || setVerifiedDate) {
-        log(paceUtils.logEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
-          proj,
-          file: filePath,
-          agent_id: stdin.agentId,
-          agent_type: stdin.agentType,
-          addedApproved,
-          addedVerified,
-          setVerifiedDate,
-          dur: Date.now() - t0,
-        }));
-      }
+      log(paceUtils.logEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
+        proj,
+        file: filePath,
+        agent_id: stdin.agentId,
+        agent_type: stdin.agentType,
+        addedApproved: markerMutation.addedApproved,
+        addedVerified: markerMutation.addedVerified,
+        setVerifiedDate: markerMutation.setVerifiedDate,
+        dur: Date.now() - t0,
+      }));
     }
 
     if (isArtifactWriterManagedRel(artifactRelForMutation) && !isArtifactWriterAgent(stdin)) {

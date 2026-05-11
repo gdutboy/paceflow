@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.50';
+const PACE_VERSION = 'v6.0.51';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');

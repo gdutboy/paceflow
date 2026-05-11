@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.50（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.51（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-11，v6.0.50）
+### 0.1 当前执行视图（2026-05-11，v6.0.51）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,12 +27,13 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.50）：
+执行状态（v6.0.51）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
 - P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口；v6.0.35 拆分 plugin runtime root，marketplace 只发布 `plugin/` 下的运行时资产；v6.0.36 修复 2026-05-09 审计确认项：findings 日期差、Stop walkthrough 噪声、SessionStart walkthrough 最近记录截断、PostToolUse 死分支和文档/模板一致性；v6.0.37 修复二轮审计确认项：PreCompact native plan 项目过滤、Bash 间接写 artifact 保护与 bridge/template 说明收敛；v6.0.38 完成 r2 后续代码质量收尾：PostToolUse per-CHG warning 节流、artifact-root 输入截断、logger lock stale 阈值调整与 artifact mutation helper 抽取；v6.0.39 同步 Claude Code native build 工具面变化：`Glob/Grep` 可能不可用时，skill/smoke 改用 Bash `find` / `rg` / `grep` fallback 口径；v6.0.40 修复 Smoke4 暴露的 legacy v5 迁移提示歧义，明确被阻止的工具未落盘、dry-run 后二次确认、迁移后仍需重试原始代码任务；v6.0.41 修复 Smoke6 暴露的主 session `Edit/MultiEdit` 直接修改 artifact 绕过；v6.0.42 加固 v5 迁移脚本的多 ARCHIVE/CRLF 真实 vault 兼容性；v6.0.43 修复 hook 拦截提示缺 artifact 根目录与 legacy 手动 mkdir changes/ 绕过；v6.0.44 优化 v5 迁移归档区可读性，旧 frontmatter 转为历史 YAML 代码块，避免误读为第二个活动 frontmatter，并让 `--force` 重跑复用已有 `.v5-backup` 而不覆盖备份；v6.0.45 修复 native plan 桥接 Step 5 漏写 `.pace/synced-plans` 的 dogfood 缺口，hook/skill 明确宿主项目 runtime 路径与幂等 basename 写入；v6.0.46 补齐 P2 agent fixture 与 release sanity：Phase C 扩到 close/archive/finding/correction 正向 contract，单元测试覆盖 manifest 版本一致性和 plugin runtime root 文件面；v6.0.47 将 artifact-writer 并发控制从 Agent 生命周期项目级锁改为 hook ID reservation + 写入阶段 resource lock；v6.0.48 修复 Smoke1 暴露的 subagent 无法可靠接收 `PreToolUse:Agent additionalContext` 问题，`create-chg` / `record-correction` 首次派遣改为预留编号后 deny，要求主 session 带 `reserved-id` / `reserved-file` 重派。
 - v6.0.49 补齐 hook deny 与 SessionStart 的 Paceflow skill 入口提示；v6.0.50 收紧 CHG 粒度语义并新增 `reserve-artifact-id.js` helper，使主 session 可在首次 artifact-writer 派遣前确定性预留编号，减少 production smoke 中的可预见重试。
+- v6.0.51 完成 `pre-tool-use.js` 结构拆分：Bash guard、artifact-writer Agent lifecycle guard、marker/direct artifact mutation guard 下沉到 `plugin/hooks/pre-tool-use/*.js`，主 hook 保留路由、stdout 输出与日志顺序。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
 
@@ -75,6 +76,7 @@
 | P1-20260508-06 | ✅ v6.0.35 | 拆分 plugin runtime root | marketplace `source:"./"` 会把 docs/tests/internal/tickets 等开发资料一起安装到 plugin cache，污染用户运行时目录 | `.claude-plugin/marketplace.json`、`plugin/**`、`tests/test-hooks-e2e.js`、`tests/test-pace-utils.js`、`tests/agent-tests/**`、`README.md`、`REFERENCE.md`、`internal/skills/audit/**` | marketplace `source` 改为 `./plugin`；运行时资产移动到 `plugin/`；根目录保留开发资料；测试和审计 skill 改读 `plugin/**` |
 | P1-20260509-01 | ✅ v6.0.38 | r2 代码质量收尾 | PostToolUse 状态类提醒会在同一会话反复提示；logger lock 5s stale 阈值偏短；`PACE_ARTIFACT_ROOT` 超长输入未限长；pre-tool-use artifact mutation 条件分散 | `hooks/post-tool-use.js`、`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | 同一 CHG 的 status mismatch / missing verify / blocked task 提醒按 session 去重且 SessionStart 清理；logger lock stale 阈值 30s；artifact-root 选择值截断到 4096 字符；artifact mutation 判定 helper 化 |
 | P1-20260510-01 | ✅ v6.0.50 | 收紧 CHG 粒度语义并新增 reserved-id helper | Smoke1 显示主 session 已读取 skill 后仍稳定经历 artifact-root、reserved-id、approve/close 缺字段等重试；同时模型把一个连续 CHG 的 T-001/T-002 完成拆成多次 `update-status`，把 artifact 当逐步项目管理看板 | `hooks/reserve-artifact-id.js`、`hooks/pre-tool-use.js`、`hooks/stop.js`、`skills/**`、`agents/**`、`agent-references/**`、`tests/test-hooks-e2e.js`、`README.md` | 主 session 可先运行 helper 预留 `reserved-id`，首次 `create-chg`/`record-correction` 不再必须先 deny；skill/agent/hook 统一声明 CHG 是连续执行、可验证、可关闭的最小变更单元，`update-status` 只用于暂停/阻塞/跳过/跨 session/长任务可见性，默认用 `close-chg complete-open-tasks:true` 收口 |
+| P2-20260511-01 | ✅ v6.0.51 | 拆分 `pre-tool-use.js` guard 模块 | `pre-tool-use.js` 同时承担 Bash 写保护、artifact root/迁移、Agent 生命周期、marker gate、C/E 阶段门禁，审计成本高，后续改动容易误碰不相关逻辑 | `hooks/pre-tool-use.js`、`hooks/pre-tool-use/bash-guard.js`、`hooks/pre-tool-use/agent-lifecycle-guard.js`、`hooks/pre-tool-use/marker-guard.js`、`tests/**`、`README.md`、`REFERENCE.md` | Bash artifact/runtime-control 检测、artifact-writer prompt/lifecycle 检查、C/V marker 与直接 artifact mutation 判断已拆为 helper；主入口保持 gate 顺序、输出和日志责任不变；E2E/单元/安装/manifest 校验覆盖运行时子目录 |
 
 #### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
 
@@ -120,10 +122,10 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.50）：
+最近一次验证结果（v6.0.51）：
 
 ```bash
-for f in plugin/hooks/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
+for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
 node tests/test-hooks-e2e.js                         # 149/149 PASS
 node tests/test-pace-utils.js                        # 115/115 PASS
 claude plugin validate ./plugin                      # PASS
@@ -364,10 +366,12 @@ P2 可选优化：
 - 已把 artifact-writer 多步收尾中的状态类 PostToolUse warning 降噪；最终一致性仍由 SubagentStop/Stop 兜底，非 artifact-writer 仍提示。
 - 已补 `walkthrough.md` wikilink 机械校验，要求第 2 列 wikilink 指向第 3 列 CHG/HOTFIX 的详情 slug，例如 `[[chg-20260511-02]]`。
 - 已补 create-chg 详情 frontmatter `status` 机械校验，拒绝 `status: open` 等非法值。
+- 已完成 `pre-tool-use.js` 结构拆分：`bash-guard.js`、`agent-lifecycle-guard.js`、`marker-guard.js` 承接可纯函数化的 guard 判断；主入口保留 hook I/O、gate 顺序、日志和输出格式。
 
 验证结果：
 - `node tests/test-hooks-e2e.js`：149/149 PASS
 - `node tests/test-pace-utils.js`：115/115 PASS
+- `node tests/test-install.js`：26/26 PASS
 - `claude plugin validate ./plugin`：PASS
 - `git diff --check`：PASS
 

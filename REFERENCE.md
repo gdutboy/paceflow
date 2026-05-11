@@ -1,6 +1,6 @@
-# PACEflow v6.0.48 参考手册
+# PACEflow v6.0.51 参考手册
 
-> 最后更新：2026-05-10
+> 最后更新：2026-05-11
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify)
 > v6 决策：不兼容 v5 活跃流程；v5 内容只作为 ARCHIVE 历史。
 
@@ -15,7 +15,7 @@
 | Artifact 写入 | `plugin/agents/artifact-writer.md` |
 | Artifact schema | `plugin/agent-references/artifact-writer-spec.md` |
 | Agent 操作步骤 | `plugin/agent-references/instructions/*.md` |
-| Hook 运行逻辑 | `plugin/hooks/*.js` + `plugin/hooks/pace-utils.js` |
+| Hook 运行逻辑 | `plugin/hooks/*.js` + `plugin/hooks/pre-tool-use/*.js` + `plugin/hooks/pace-utils.js` |
 | 主 session 规则 | `CLAUDE.md` |
 | 用户 Skill 规则 | `plugin/skills/*/SKILL.md` |
 | 内部审计资料 | `internal/skills/audit/` |

@@ -73,7 +73,7 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.50"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.51"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
@@ -194,6 +194,10 @@ paceflow/
 │   │   ├── hooks.json                #     自动注册配置
 │   │   ├── pace-utils.js             #     公共工具库
 │   │   ├── pre-tool-use.js           #     写代码前：任务检查 + 审批检查
+│   │   ├── pre-tool-use/             #     PreToolUse guard helper modules
+│   │   │   ├── agent-lifecycle-guard.js
+│   │   │   ├── bash-guard.js
+│   │   │   └── marker-guard.js
 │   │   ├── post-tool-use.js          #     写代码后：归档提醒 + 格式检查
 │   │   ├── post-tool-use-failure.js  #     工具失败后：恢复提示
 │   │   ├── session-start.js          #     会话启动：上下文注入
@@ -288,6 +292,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.51 | 2026-05-11 | 拆分 `pre-tool-use.js` 热路径：Bash 写保护、artifact-writer Agent 生命周期门禁、C/V marker 与直接 artifact mutation 判断分别下沉到 `hooks/pre-tool-use/*-guard.js` helper；主入口保留事件路由、输出和日志，降低后续审计/修改误碰风险 |
 | v6.0.50 | 2026-05-10 | 收紧 CHG 粒度语义：CHG 是连续执行、可验证、可关闭的最小变更单元，大计划应拆成多个 CHG；连续执行默认由 `close-chg complete-open-tasks:true` 收口，`update-status` 只用于暂停/阻塞/跳过/跨 session/长任务可见性。新增 `hooks/reserve-artifact-id.js` helper，主 session 可先预留 create-chg / record-correction 编号；新增 `hooks/sync-plan.js` helper，pace-bridge 收尾可幂等写入宿主 `.pace/synced-plans` |
 | v6.0.49 | 2026-05-10 | 补齐 production Smoke1 暴露的 Paceflow skill 入口提示：首次启用 SessionStart 只注入轻量 `Skill(paceflow:pace-workflow)` 提醒；artifact-root 选择、reserved-id 重派、approve-and-start 缺字段、close-chg 缺验证摘要等 hook deny 均提示读取 `paceflow:pace-workflow` / `paceflow:artifact-management`；扩宽 workflow skill 触发描述，覆盖已启用 PACEflow 项目中的 1-2 文件代码修改 |
 | v6.0.48 | 2026-05-10 | 修复 production Smoke1 暴露的 artifact-writer reserved-id 传递缺口：不再依赖 `PreToolUse:Agent additionalContext` 被 subagent 读取；`create-chg` / `record-correction` 首次派遣会先预留编号并 deny，要求主 session 把 `reserved-id` / `reserved-file` 或 `reserved-file-prefix` 原样写入 prompt 后重派；同时收紧首次 artifact-root 选择后的提示，避免直接重试代码写入而跳过 create/approve 流程 |
@@ -349,4 +354,4 @@ paceflow/
 
 ---
 
-**版本**: v6.0.50 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.51 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

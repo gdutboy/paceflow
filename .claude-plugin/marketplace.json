@@ -9,7 +9,7 @@
       "name": "paceflow",
       "source": "./plugin",
       "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify protocol with hooks",
-      "version": "6.0.50"
+      "version": "6.0.51"
     }
   ]
 }
