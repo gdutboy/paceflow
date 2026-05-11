@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-10，v6.0.48）
+### 0.1 当前执行视图（2026-05-11，v6.0.50）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -64,8 +64,8 @@
 | P1-20260506-05 | ✅ v6.0.15 / v6.0.24 / v6.0.25 收紧 | 合并高频 agent 收尾操作 | approve→start、completed→verify→archive 连续派 agent 成本高，且 Stop 提示会让主 session做 2-3 次机械派遣 | `agents/**`、`hooks/**`、`skills/**`、`CLAUDE.md`、`README.md`、`REFERENCE.md`、`tests/test-hooks-e2e.js` | 新增 `update-chg action=approve-and-start` 与 `close-chg`；v6.0.24 增加 PreToolUse:Agent 语义保护：禁止 `update-status+verify` 同派遣，`close-chg` 必须带验证确认/摘要；v6.0.25 要求 `approve` 与 `approve-and-start` 都带 `approval-confirmed/source/evidence`，且 `approve` 不得表达开始执行；不跳过用户确认或验证 |
 | P1-20260507-01 | ✅ v6.0.27 | `SubagentStop` artifact-writer 报告协议观察 | production prompt 可能受全局时间戳/样式影响；仅靠更长 prompt 追求 100% 标题稳定不符合 PaceFlow 机械兜底理念 | `hooks/subagent-stop.js`、`hooks/hooks.json`、`tests/test-hooks-e2e.js` | 只针对 `artifact-writer`；缺 `## artifact-writer 报告` 或缺 `**状态**` 时注入恢复提示；合法时间戳前缀仅记日志 warning；记录 transcript path 到 `.pace/last-artifact-writer-transcript`；不 block，避免 stop loop |
 | P1-20260507-02 | ✅ v6.0.27 | `PostToolUseFailure` Write/Edit/MultiEdit/Bash 失败恢复提示 | 工具失败后主 session 容易把失败视为完成，尤其是 artifact 写入失败或验证 Bash 失败后误派 verify/close-chg | `hooks/post-tool-use-failure.js`、`hooks/hooks.json`、`tests/test-hooks-e2e.js` | PACE 项目中失败工具输出 `additionalContext`：不得视为完成；artifact 写入按 Artifact 目录重试或重新派 agent；验证失败必须读输出、修复、重跑；用户中断只记录日志 |
-| P1-20260507-03 | ✅ v6.0.27 | SessionStart 输出大小保护 | Claude Code 会把过大 hook 输出落盘而非完整注入，导致启动上下文丢失且不易察觉 | `hooks/session-start.js`、`tests/test-hooks-e2e.js` | SessionStart stdout 在 50KB 前截断并提示 Read artifact 文件；日志记录 `output_bytes` 与 `truncated` |
-| P1-20260507-04 | ✅ v6.0.27 | 5.1.4 生命周期能力继承测试补齐 | v6 多次重构后必须明确验证 SessionStart、compact 后注入、PreCompact 快照、StopFailure 等 v5.1.4 功能仍在 | `tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | startup 注入 v6 artifact + artifact_dir；compact 消费快照并注入 G-9/close-chg；PreCompact 记录 activeChanges/runtime/findings/walkthrough；StopFailure 仍记录 API 中断；stdin parser 支持 subagent 字段 |
+| P1-20260507-03 | ✅ v6.0.27 | SessionStart 输出大小保护 | 过大 hook 输出可能无法完整注入，导致启动上下文丢失且不易察觉 | `hooks/session-start.js`、`tests/test-hooks-e2e.js` | SessionStart stdout 在 50KB 前截断并提示 Read artifact 文件；日志记录 `output_bytes` 与 `truncated` |
+| P1-20260507-04 | ✅ v6.0.27 | 5.1.4 生命周期能力继承测试补齐 | v6 多次重构后必须明确验证 SessionStart、compact 后注入、PreCompact 快照、StopFailure 等 v5.1.4 功能仍在 | `tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | startup 注入 v6 artifact + artifact_dir；compact 消费快照并注入 CHG 完成检查 / close-chg 提示；PreCompact 记录 activeChanges/runtime/findings/walkthrough；StopFailure 仍记录 API 中断；stdin parser 支持 subagent 字段 |
 | P1-20260507-05 | ✅ v6.0.27 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` 兼容性回归 | Claude Code 可清理子进程 env；PaceFlow 不应只依赖 vault env 恢复本地项目 artifact 路由 | `tests/test-hooks-e2e.js` | scrub 场景下，即使 `PACE_VAULT_PATH` 不可用，项目级 `.pace/artifact-root=local` 仍可让 SessionStart 恢复本地 artifact 路由并懒创建模板 |
 | P1-20260508-01 | ✅ v6.0.28 | 修复 v6.0.27 audit 确认缺口 | `close-chg` prompt 门控未强制 `complete-open-tasks:true`；verified-date 逻辑分叉；compact snapshot null、knowledge 时间戳示例、hook 数量文档存在小缺口；`ConfigChange` 对 plugin 安装链路无保护价值 | `hooks/**`、`skills/pace-knowledge/SKILL.md`、`README.md`、`REFERENCE.md`、`tests/**` | close-chg 缺 `complete-open-tasks:true` 被 deny；verified-date 使用共享 helper；`ConfigChange` / `config-guard` 从发布面移除 |
 | P1-20260508-02 | ✅ v6.0.29 | 清理 `audit` 发布面与 ticket02 文档口径 | `audit` 是 PaceFlow 内部审计流程，不是用户项目 skill；README PreCompact I/O、artifact-writer spec ARCHIVE 范围、action-plan/guidebook 历史状态描述与当前实现不一致 | `hooks/pace-utils.js`、`skills/pace-knowledge/SKILL.md`、`internal/skills/audit/**`、`README.md`、`REFERENCE.md`、`agent-references/artifact-writer-spec.md`、`docs/**` | marketplace 发布 skill 减为 4；内部审计资料保留在 `internal/skills/audit`；文档与实际 hook/template 对齐 |
@@ -366,7 +366,7 @@ P2 可选优化：
 - 已补 create-chg 详情 frontmatter `status` 机械校验，拒绝 `status: open` 等非法值。
 
 验证结果：
-- `node tests/test-hooks-e2e.js`：146/146 PASS
+- `node tests/test-hooks-e2e.js`：147/147 PASS
 - `node tests/test-pace-utils.js`：115/115 PASS
 - `claude plugin validate ./plugin`：PASS
 - `git diff --check`：PASS
