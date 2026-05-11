@@ -1567,7 +1567,10 @@ function validateWalkthroughLinks(cwd) {
     const expectedId = id[0].toUpperCase();
     const expectedSlug = slugForChangeId(expectedId);
     const link = summaryCell.match(/\[\[([^|\]#]+)(?:#[^|\]]+)?(?:\|[^\]]+)?\]\]/);
-    if (!link) continue;
+    if (!link) {
+      issues.push(`walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedSlug}]]。`);
+      continue;
+    }
     const target = String(link[1] || '').trim().toLowerCase();
     if (target !== expectedSlug) {
       issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedSlug}]]，当前为 [[${target}]]。`);

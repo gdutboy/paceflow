@@ -146,7 +146,7 @@ function makeV6Project(label, opts = {}) {
   const index = opts.withIndex === false ? '' : `- ${mark} [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n`;
   fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${index}\n<!-- ARCHIVE -->\n`, 'utf8');
   fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${opts.implIndex === undefined ? index : opts.implIndex}\n<!-- ARCHIVE -->\n`, 'utf8');
-  fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${opts.walkToday === false ? '' : `| ${today()} | smoke | CHG-20260504-01 |\n`}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${opts.walkToday === false ? '' : `| ${today()} | [[chg-20260504-01]] smoke | CHG-20260504-01 |\n`}\n<!-- ARCHIVE -->\n`, 'utf8');
   fs.writeFileSync(path.join(dir, 'findings.md'), '# 调研记录\n\n## 摘要索引\n\n<!-- ARCHIVE -->\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'corrections.md'), '# Corrections 记录\n\n## 索引\n\n<!-- ARCHIVE -->\n', 'utf8');
   if (opts.detail !== false) {
@@ -232,7 +232,7 @@ function makeV6ProjectWithChanges(label, changes, opts = {}) {
   fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${indexBlock}\n<!-- ARCHIVE -->\n`, 'utf8');
   fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${indexBlock}\n<!-- ARCHIVE -->\n`, 'utf8');
   if (opts.walkToday !== false) {
-    fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n| ${today()} | smoke | CHG-20260504-01 |\n<!-- ARCHIVE -->\n`, 'utf8');
+    fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n| ${today()} | [[chg-20260504-01]] smoke | CHG-20260504-01 |\n<!-- ARCHIVE -->\n`, 'utf8');
   }
   for (const c of changes) {
     const id = c.id || 'CHG-20260504-01';
@@ -764,12 +764,15 @@ test('9c2a. PreToolUse 关键路径日志包含 artifact_dir 与 choice', () => 
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
   assert.ok(r.stdout.includes('"deny"'));
   const after = fs.readFileSync(logFile, 'utf8');
-  const delta = after.slice(before.length);
-  assert.ok(delta.includes('PreToolUse'));
-  assert.ok(delta.includes('act=ROUTE'));
-  assert.ok(delta.includes(`artifact_dir=${dir.replace(/\\/g, '/')}/`));
-  assert.ok(delta.includes('choice=local'));
-  assert.ok(!/\n[^\[]/.test(delta), '结构化日志字段不应因多行 reason 断裂');
+  const delta = after.length >= before.length ? after.slice(before.length) : after;
+  const routeLine = after.split('\n').find(line =>
+    line.includes('PreToolUse') &&
+    line.includes('act=ROUTE') &&
+    line.includes(`artifact_dir=${dir.replace(/\\/g, '/')}/`) &&
+    line.includes('choice=local')
+  );
+  assert.ok(routeLine, `应写入本次 artifact_dir route 日志；delta=${delta}`);
+  assert.ok(routeLine.startsWith('['), '结构化日志字段不应因多行 reason 断裂');
 });
 
 test('9c3. SessionStart 首次启用只提示 skill，不询问、不自动创建模板', () => {
@@ -2458,6 +2461,24 @@ test('14k. Stop 机械检查 walkthrough wikilink 指向详情文件', () => {
   assert.ok(r.stderr.includes('wikilink 应为 [[chg-20260504-01]]'));
 });
 
+test('14k1. Stop 机械检查 walkthrough 行必须含详情 wikilink', () => {
+  const dir = makeV6Project('stop-walkthrough-missing-link', { withIndex: false });
+  fs.writeFileSync(path.join(dir, 'walkthrough.md'), [
+    '# 工作记录',
+    '',
+    '## 最近工作',
+    '',
+    '| 日期 | 完成内容 | 关联变更 |',
+    '| --- | --- | --- |',
+    `| ${today()} | smoke without link | CHG-20260504-01 |`,
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('缺少 wikilink，应为 [[chg-20260504-01]]'));
+});
+
 console.log('\n--- post-tool-use.js ---');
 
 test('15. v6 schema 缺 verified-date → warning', () => {
@@ -2666,6 +2687,37 @@ test('15g. walkthrough wikilink 必须指向 CHG/HOTFIX 详情 slug', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('wikilink 应为 [[chg-20260504-01]]'));
+});
+
+test('15g1. walkthrough 行缺少 wikilink 时 PostToolUse 提醒', () => {
+  const dir = makeV6Project('post-walkthrough-missing-link', { withIndex: false });
+  const fp = path.join(dir, 'walkthrough.md');
+  fs.writeFileSync(fp, [
+    '# 工作记录',
+    '',
+    '## 最近工作',
+    '',
+    '| 日期 | 完成内容 | 关联变更 |',
+    '| --- | --- | --- |',
+    `| ${today()} | smoke without link | CHG-20260504-01 |`,
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-walkthrough',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: 'smoke',
+        new_string: 'smoke',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('缺少 wikilink，应为 [[chg-20260504-01]]'));
 });
 
 test('16. correction 详情变更 → knowledge 提醒', () => {
