@@ -75,6 +75,23 @@ function getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir,
   return paceUtils.artifactRelativePathForFile(artDir, filePath);
 }
 
+function isUnderDir(baseDir, targetPath) {
+  const base = paceUtils.normalizePath(path.resolve(baseDir || ''));
+  const target = paceUtils.normalizePath(path.resolve(targetPath || ''));
+  const baseWithSlash = base.endsWith('/') ? base : `${base}/`;
+  return !!base && (target === base || target.startsWith(baseWithSlash));
+}
+
+function shouldDenyWorktreeHostNonArtifactWrite(cwd, artDir, filePath, artifactRel) {
+  if (!filePath || artifactRel) return false;
+  const context = paceUtils.executionContextForCwd(cwd);
+  if (!context.isWorktree) return false;
+  if (paceUtils.normalizePath(artDir) !== paceUtils.normalizePath(context.stateDir)) return false;
+  if (!isUnderDir(artDir, filePath)) return false;
+  if (isUnderDir(cwd, filePath)) return false;
+  return true;
+}
+
 // S-1: 统一 stdin 解析
 paceUtils.withStdinParsed((stdin) => {
   try {
@@ -334,7 +351,7 @@ paceUtils.withStdinParsed((stdin) => {
               }));
               return;
             }
-            const reason = reservationRequiredReason(operation, artDir, reservation);
+            const reason = reservationRequiredReason(operation, artDir, reservation, cwd);
             const output = {
               hookSpecificOutput: {
                 hookEventName: "PreToolUse",
@@ -380,6 +397,76 @@ paceUtils.withStdinParsed((stdin) => {
           }
           reservation = { reserved: true, ...reservation };
         }
+        const targetChangeId = operation === 'create-chg'
+          ? (reservation && reservation.id || paceUtils.changeIdFromAgentPrompt(stdin.toolInput.prompt))
+          : paceUtils.changeIdFromAgentPrompt(stdin.toolInput.prompt);
+        if (targetChangeId && ['update-chg', 'close-chg', 'archive-chg'].includes(operation)) {
+          const ownerStatus = paceUtils.changeOwnerStatus(cwd, targetChangeId, stdin.sessionId);
+          if (ownerStatus.disposition === 'foreign-fresh') {
+            const reason = [
+              `${targetChangeId} 正由另一个 Claude Code session 负责，当前 session 不应接手更新或收尾。`,
+              `owner: worktree=${ownerStatus.owner.worktree || '-'} branch=${ownerStatus.owner.branch || '-'} state=${ownerStatus.owner.state || '-'}`,
+              '请等待对方完成；若确认原 session 已失效，稍后重试并在 prompt 中加入 owner-takeover-confirmed: true。'
+            ].join('\n');
+            const output = {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: reason
+              }
+            };
+            process.stdout.write(JSON.stringify(output));
+            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER', {
+              proj,
+              agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+              target: targetChangeId,
+              owner_session: ownerStatus.owner.sessionId || '',
+              owner_state: ownerStatus.owner.state || '',
+              owner_worktree: ownerStatus.owner.worktree || '',
+              dur: Date.now() - t0,
+            }));
+            return;
+          }
+          if (ownerStatus.disposition === 'foreign-stale' && !paceUtils.ownerTakeoverConfirmed(stdin.toolInput.prompt)) {
+            const reason = [
+              `${targetChangeId} 的 owner 记录已过期，但属于另一个 session。`,
+              '若确认需要由当前 session 接手，请重派同一 artifact-writer，并加入 owner-takeover-confirmed: true。'
+            ].join('\n');
+            const output = {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: reason
+              }
+            };
+            process.stdout.write(JSON.stringify(output));
+            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER_STALE', {
+              proj,
+              agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+              target: targetChangeId,
+              owner_session: ownerStatus.owner.sessionId || '',
+              dur: Date.now() - t0,
+            }));
+            return;
+          }
+        }
+        if (targetChangeId && ['create-chg', 'update-chg', 'close-chg', 'archive-chg'].includes(operation)) {
+          const ownerState = ['close-chg', 'archive-chg'].includes(operation) ? 'closing' : 'active';
+          const ownerWrite = paceUtils.writeChangeOwner(cwd, targetChangeId, {
+            sessionId: stdin.sessionId,
+            agentId: stdin.agentId,
+            operation,
+            state: ownerState,
+          });
+          log(paceUtils.logEntry('PreToolUse', ownerWrite.ok ? 'CHANGE_OWNER_SET' : 'CHANGE_OWNER_SET_FAILED', {
+            proj,
+            target: targetChangeId,
+            operation,
+            state: ownerState,
+            reason: ownerWrite.reason || '',
+            dur: Date.now() - t0,
+          }));
+        }
         const created = [...new Set([
           ...ensured.createdFiles,
           ...(ensured.missingBefore.includes('changes/') ? ['changes/'] : []),
@@ -393,7 +480,7 @@ paceUtils.withStdinParsed((stdin) => {
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}；仅用于 task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**${reservationMsg}${createdMsg}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}；仅用于 task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**；execution-context: ${paceUtils.executionContextForCwd(cwd).text}${reservationMsg}${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));
@@ -481,8 +568,63 @@ paceUtils.withStdinParsed((stdin) => {
 
   const artifactRelForMutation = getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath);
   let artifactResourceLockHeld = null;
+  if (isFileMutationTool(toolName) && paceSignal && shouldDenyWorktreeHostNonArtifactWrite(cwd, artDir, filePath, artifactRelForMutation)) {
+    const context = paceUtils.executionContextForCwd(cwd);
+    const relToHost = path.relative(artDir, filePath).replace(/\\/g, '/');
+    const worktreePath = path.join(cwd, relToHost).replace(/\\/g, '/');
+    return hardDeny(
+      [
+        `当前 cwd 是 worktree：${displayDir(cwd)}，但本次要写入宿主目录中的普通文件：${filePath}`,
+        `artifact_dir=${displayDir(artDir)} 只用于 PaceFlow artifacts；${relToHost} 不是 artifact。`,
+        `请把普通项目文件写到当前 worktree 路径：${worktreePath}`,
+        '若用户明确要求修改宿主 checkout，请在宿主 checkout 会话中执行。'
+      ].join('\n'),
+      'DENY_WORKTREE_HOST_NON_ARTIFACT_WRITE',
+      {
+        worktree: context.worktree,
+        branch: context.branch,
+        host_file: filePath,
+        worktree_file: worktreePath,
+      }
+    );
+  }
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
+      if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation)) {
+        const mutationText = [content, newString].filter(Boolean).join('\n');
+        if (/^status:\s*archived\s*$/mi.test(mutationText)) {
+          const missingArchive = ['task.md', 'implementation_plan.md'].filter(file => {
+            try { return !paceUtils.ARCHIVE_PATTERN.test(fs.readFileSync(path.join(artDir, file), 'utf8')); }
+            catch(e) { return true; }
+          });
+          if (missingArchive.length > 0) {
+            const reason = [
+              `禁止在根索引缺少 ARCHIVE 标记时先把详情归档：${artifactRelForMutation}。`,
+              `缺少 ARCHIVE 标记：${missingArchive.join(', ')}`,
+              '请先修复根索引双区结构，再执行 close-chg / archive-chg；不要留下详情 archived 但索引仍活跃的半归档状态。'
+            ].join('\n');
+            const output = {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: reason
+              }
+            };
+            process.stdout.write(JSON.stringify(output));
+            log(paceUtils.logEntry('PreToolUse', 'DENY_ARCHIVE_WITHOUT_INDEX_MARKER', {
+              proj,
+              tool: toolName,
+              file: filePath,
+              artifact: artifactRelForMutation,
+              missing: missingArchive.join(','),
+              agent_id: stdin.agentId,
+              agent_type: stdin.agentType,
+              dur: Date.now() - t0,
+            }));
+            return;
+          }
+        }
+      }
       if (toolName === 'Write' && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation)) {
         const fm = paceUtils.parseFrontmatter(content || '');
         const status = String(fm.status || '').replace(/^["']|["']$/g, '').trim();

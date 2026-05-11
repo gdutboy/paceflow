@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.51';
+const PACE_VERSION = 'v6.0.52';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -18,6 +18,7 @@ const ARTIFACT_SEQUENCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ART
 const ARTIFACT_SEQUENCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_WAIT_MS || 2500) || 2500);
 const PLAN_SYNC_LOCK_TTL_MS = ARTIFACT_SEQUENCE_LOCK_TTL_MS;
 const PLAN_SYNC_LOCK_WAIT_MS = ARTIFACT_SEQUENCE_LOCK_WAIT_MS;
+const CHANGE_OWNER_TTL_MS = Math.max(60 * 1000, Number(process.env.PACE_CHANGE_OWNER_TTL_MS || 30 * 60 * 1000) || 30 * 60 * 1000);
 const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/');
 const SYNC_PLAN_SCRIPT = path.resolve(__dirname, 'sync-plan.js').replace(/\\/g, '/');
@@ -54,9 +55,9 @@ const SKILL_DIRS = [
 
 // v6 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
 const FORMAT_SNIPPETS = {
-  taskEntry: '- [ ] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
+  taskEntry: '- [ ] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
   taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
-  implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003]',
+  implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
   implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
   approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；approve/approve-and-start 都必须带 approval-confirmed、approval-source、approval-evidence',
   verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；主路径是验证结果已读取后 close-chg，暂不归档时才用 update-chg action=verify',
@@ -293,6 +294,35 @@ function getProjectRuntimeDir(cwd) {
   return path.join(getProjectStateDir(cwd), '.pace');
 }
 
+function gitBranchName(cwd) {
+  try {
+    const { execFileSync } = require('child_process');
+    return String(execFileSync('git', ['-C', cwd || process.cwd(), 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1000,
+    })).trim();
+  } catch(e) {
+    return '';
+  }
+}
+
+function executionContextForCwd(cwd) {
+  const resolved = path.resolve(cwd || process.cwd());
+  const stateDir = getProjectStateDir(resolved);
+  const isWorktree = normalizePath(stateDir) !== normalizePath(resolved);
+  const worktree = isWorktree ? path.basename(resolved) : 'main';
+  const branch = gitBranchName(resolved) || worktree || 'unknown';
+  return {
+    worktree,
+    branch,
+    cwd: resolved,
+    stateDir,
+    isWorktree,
+    text: `[worktree:: ${worktree}] [branch:: ${branch}]`,
+  };
+}
+
 function getArtifactRootChoicePath(cwd) {
   return path.join(getProjectRuntimeDir(cwd), ARTIFACT_ROOT_CHOICE_FILE);
 }
@@ -346,6 +376,16 @@ function operationFromAgentPrompt(prompt) {
   if (byField) return byField[1].toLowerCase();
   const known = text.match(/\b(create-chg|update-chg|archive-chg|close-chg|record-finding|record-correction)\b/i);
   return known ? known[1].toLowerCase() : '';
+}
+
+function changeIdFromAgentPrompt(prompt) {
+  const text = String(prompt || '');
+  const target = text.match(/^\s*(?:target|change-id|chg-id)\s*[:=]\s*["']?((?:CHG|HOTFIX)-\d{8}-\d{2})["']?\s*$/mi);
+  if (target) return target[1].toUpperCase();
+  const reserved = text.match(/^\s*reserved-id\s*[:=]\s*["']?((?:CHG|HOTFIX)-\d{8}-\d{2})["']?\s*$/mi);
+  if (reserved) return reserved[1].toUpperCase();
+  const any = text.match(/\b((?:CHG|HOTFIX)-\d{8}-\d{2})\b/i);
+  return any ? any[1].toUpperCase() : '';
 }
 
 function acquireArtifactWriterLock(cwd, info = {}) {
@@ -730,6 +770,110 @@ function releaseArtifactResourcesForOwner(cwd, info = {}) {
   return released;
 }
 
+function normalizeChangeId(id) {
+  const match = String(id || '').trim().toUpperCase().match(/^(CHG|HOTFIX)-\d{8}-\d{2}$/);
+  return match ? match[0] : '';
+}
+
+function getChangeOwnerDir(cwd) {
+  return path.join(getProjectRuntimeDir(cwd), 'change-owners');
+}
+
+function getChangeOwnerPath(cwd, changeId) {
+  const id = normalizeChangeId(changeId);
+  if (!id) return '';
+  return path.join(getChangeOwnerDir(cwd), `${slugForChangeId(id)}.json`);
+}
+
+function readChangeOwner(cwd, changeId) {
+  const fp = getChangeOwnerPath(cwd, changeId);
+  if (!fp) return { ok: false, path: '', reason: 'invalid-id' };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    return {
+      ok: true,
+      path: fp,
+      changeId: normalizeChangeId(parsed.changeId || parsed.change_id || changeId),
+      sessionId: normalizeSessionId(parsed.sessionId || parsed.session_id),
+      agentId: String(parsed.agentId || parsed.agent_id || '').trim(),
+      ownerKey: String(parsed.ownerKey || parsed.owner_key || '').trim(),
+      state: String(parsed.state || 'active'),
+      cwd: String(parsed.cwd || ''),
+      worktree: String(parsed.worktree || ''),
+      branch: String(parsed.branch || ''),
+      operation: String(parsed.operation || ''),
+      createdAt: String(parsed.createdAt || parsed.created_at || ''),
+      updatedAt: String(parsed.updatedAt || parsed.updated_at || ''),
+      timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
+      raw: parsed,
+    };
+  } catch(e) {
+    return { ok: false, path: fp, reason: e.message || String(e) };
+  }
+}
+
+function writeChangeOwner(cwd, changeId, info = {}) {
+  const id = normalizeChangeId(changeId);
+  const fp = getChangeOwnerPath(cwd, id);
+  if (!id || !fp) return { ok: false, reason: 'invalid-id' };
+  const owner = lockOwnerInfo(info);
+  if (!owner.sessionId && !owner.agentId) return { ok: false, reason: 'missing-owner' };
+  const existing = readChangeOwner(cwd, id);
+  const context = executionContextForCwd(cwd);
+  const now = Date.now();
+  const payload = {
+    version: 'change-owner-v1',
+    changeId: id,
+    sessionId: owner.sessionId,
+    agentId: owner.agentId,
+    ownerKey: owner.ownerKey,
+    state: String(info.state || 'active'),
+    cwd: context.cwd,
+    stateDir: context.stateDir,
+    worktree: context.worktree,
+    branch: context.branch,
+    executionContext: context.text,
+    operation: String(info.operation || ''),
+    createdAt: existing.ok && existing.createdAt ? existing.createdAt : new Date(now).toISOString(),
+    updatedAt: new Date(now).toISOString(),
+    timestampMs: now,
+  };
+  try {
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    return { ok: true, path: fp, owner: payload };
+  } catch(e) {
+    return { ok: false, path: fp, reason: e.message || String(e) };
+  }
+}
+
+function markChangeOwnerClosed(cwd, changeId, info = {}) {
+  const current = readChangeOwner(cwd, changeId);
+  if (!current.ok) return { ok: false, reason: 'missing' };
+  const owner = lockOwnerInfo(info);
+  if (!lockMatchesOwner({ ok: true, ...current }, owner) && !jsonLockIsStale(current, CHANGE_OWNER_TTL_MS)) {
+    return { ok: false, reason: 'owner-mismatch', owner: current };
+  }
+  return writeChangeOwner(cwd, changeId, { ...info, state: 'closed', operation: info.operation || current.operation || 'close' });
+}
+
+function changeOwnerStatus(cwd, changeId, sessionId = currentSessionId()) {
+  const owner = readChangeOwner(cwd, changeId);
+  if (!owner.ok) return { disposition: 'unknown', owner, current: false, fresh: false, stale: false };
+  const sid = normalizeSessionId(sessionId || currentSessionId());
+  const current = !!sid && !!owner.sessionId && sid === owner.sessionId;
+  const stale = jsonLockIsStale(owner, CHANGE_OWNER_TTL_MS);
+  const closed = owner.state === 'closed';
+  if (current) return { disposition: closed ? 'current-closed' : 'current', owner, current: true, fresh: true, stale: false };
+  if (closed) return { disposition: 'closed', owner, current: false, fresh: true, stale: false };
+  if (stale) return { disposition: 'foreign-stale', owner, current: false, fresh: false, stale: true };
+  return { disposition: 'foreign-fresh', owner, current: false, fresh: true, stale: false };
+}
+
+function ownerTakeoverConfirmed(prompt) {
+  return /^\s*owner-takeover-confirmed\s*[:=]\s*true\b/mi.test(String(prompt || ''));
+}
+
 function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
   const rel = String(artifactRel || '').replace(/\\/g, '/');
   if (rel !== 'task.md' && rel !== 'implementation_plan.md') {
@@ -871,7 +1015,8 @@ function isArtifactRuntimeControlPath(cwd, targetPath) {
     /^locks\//.test(rel) ||
     /^sequences\//.test(rel) ||
     /^reservations\//.test(rel) ||
-    /^index-transactions\//.test(rel);
+    /^index-transactions\//.test(rel) ||
+    /^change-owners\//.test(rel);
 }
 
 function normalizeArtifactRootChoice(choice) {
@@ -944,16 +1089,41 @@ function legacyV5FilesInDir(dir) {
     'walkthrough.md': /<!-- ARCHIVE -->|#\s*工作记录|##\s*最近工作/i,
     'findings.md': /<!-- ARCHIVE -->|#\s*调研记录|##\s*未解决问题|##\s*Corrections\s*记录/i,
   };
-  return Object.entries(signatures).filter(([file, re]) => {
+  const contents = {};
+  const detected = Object.entries(signatures).filter(([file, re]) => {
     try {
       const fp = path.join(dir, file);
       if (!fs.existsSync(fp)) return false;
       const head = fs.readFileSync(fp, 'utf8').slice(0, 20000);
+      contents[file] = head;
       return re.test(head);
     } catch(e) {
       return false;
     }
   }).map(([file]) => file);
+  if (detected.length > 0) return detected;
+
+  // Minimal v5 fixtures seen in production can be English-only root files with
+  // active checkbox rows and no v6 changes/ directory. Require both roots so a
+  // generic task.md todo list does not become a false positive.
+  try {
+    for (const file of ['task.md', 'implementation_plan.md']) {
+      if (!contents[file]) {
+        const fp = path.join(dir, file);
+        if (fs.existsSync(fp)) contents[file] = fs.readFileSync(fp, 'utf8').slice(0, 20000);
+      }
+    }
+    const task = contents['task.md'] || '';
+    const impl = contents['implementation_plan.md'] || '';
+    const hasTaskRoot = /^#\s*(?:Task|Tasks|项目任务|项目任务追踪)\s*$/im.test(task);
+    const hasImplRoot = /^#\s*(?:Implementation\s+Plan|Plan|实施计划)\s*$/im.test(impl);
+    const hasTaskCheckbox = /^- \[[ xX\/!\-]\]\s+\S/m.test(task);
+    const hasImplCheckbox = /^- \[[ xX\/!\-]\]\s+\S/m.test(impl);
+    if (hasTaskRoot && hasImplRoot && hasTaskCheckbox && hasImplCheckbox) {
+      return ['task.md', 'implementation_plan.md'];
+    }
+  } catch(e) {}
+  return [];
 }
 
 function hasLegacyV5ArtifactsDir(dir) {
@@ -1040,6 +1210,7 @@ function artifactRootChoiceMessage(cwd) {
     `用户选择后，只把选择结果写入配置文件 ${choicePath}：vault 或 local，纯文本、无引号。`,
     '该配置文件不是 artifact 根目录。',
     `artifact_dir 只用于 PaceFlow artifacts：${PACE_ARTIFACT_ROOT_CONTENT}。`,
+    `配置写入后再运行 helper：node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     '写入配置后，不要直接重试代码写入；先创建/批准 CHG，再重试被阻止的代码写入。若被阻止的是 artifact-writer Agent，则按提示重派同一操作。'
   ].join('\n');
 }
@@ -1363,6 +1534,10 @@ function createTemplates(cwd) {
   if (configError) throw new Error(configError.message);
   const TEMPLATES_DIR = path.join(__dirname, 'templates');
   const artDir = getArtifactDir(cwd);
+  const migrationInfo = getV5MigrationInfo(cwd);
+  if (migrationInfo.needsPrompt) {
+    throw new Error(v5MigrationPromptMessage(cwd));
+  }
   // 确保目标目录存在（vault 模式下可能尚未创建）
   try { fs.mkdirSync(artDir, { recursive: true }); } catch(e) {}
   for (const sub of ['changes', 'changes/findings', 'changes/corrections']) {
@@ -1883,14 +2058,14 @@ module.exports = {
   // 常量
   PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
-  ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS,
+  ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
   RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, daysSinceISODate, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
-  resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile,
+  resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd,
   // 项目检测与路径
   isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
   getArtifactDir, getProjectStateDir, getProjectRuntimeDir,
@@ -1902,7 +2077,8 @@ module.exports = {
   acquireArtifactResourceLock, releaseArtifactResourceLock, releaseArtifactResourcesForOwner,
   markIndexChangesTouchedAndMaybeRelease, readArtifactIndexTransaction, formatArtifactResourceLock,
   reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
-  isArtifactRuntimeControlPath, operationFromAgentPrompt,
+  isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt,
+  getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, changeOwnerStatus, ownerTakeoverConfirmed,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,

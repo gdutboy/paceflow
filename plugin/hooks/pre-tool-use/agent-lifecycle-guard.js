@@ -93,6 +93,7 @@ function artifactWriterCreateChgHint(artDir) {
     '派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：',
     `artifact_dir: ${displayDir(artDir)}`,
     'operation: create-chg',
+    'execution-context: <helper 输出>',
     'reserved-id: <helper 输出或 hook deny 输出>',
     'reserved-file: <helper 输出或 hook deny 输出>',
     'title: <变更标题>',
@@ -102,7 +103,7 @@ function artifactWriterCreateChgHint(artDir) {
   ].join('\n');
 }
 
-function reservationRequiredReason(operation, artDir, reservation) {
+function reservationRequiredReason(operation, artDir, reservation, cwd = process.cwd()) {
   const lines = [
     `PACEflow 已为 ${operation} 预留唯一编号。本次 Agent 已被阻止，请重派 artifact-writer 并带上以下字段：`,
     FORMAT_SNIPPETS.skillRef,
@@ -113,6 +114,7 @@ function reservationRequiredReason(operation, artDir, reservation) {
   if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
   if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
   if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
+  if (operation === 'create-chg') lines.splice(5, 0, `execution-context: ${paceUtils.executionContextForCwd(cwd).text}`);
   lines.push('不要启动不带 reserved-id 的 create-chg / record-correction agent；不要让 agent 扫描索引自行分配编号。');
   return lines.join('\n');
 }

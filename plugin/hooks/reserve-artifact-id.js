@@ -9,7 +9,7 @@ const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
-  const args = { operation: '', type: '', cwd: '', sessionId: '', newReservation: false, help: false };
+  const args = { operation: '', type: '', cwd: '', sessionId: '', newReservation: false, help: false, unknown: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
@@ -24,6 +24,8 @@ function parseArgs(argv) {
       args.cwd = String(argv[++i] || '');
     } else if (arg === '--session-id') {
       args.sessionId = String(argv[++i] || '');
+    } else if (arg.startsWith('-')) {
+      args.unknown.push(arg);
     } else if (!args.operation && !arg.startsWith('-')) {
       args.operation = arg;
     }
@@ -38,8 +40,8 @@ function parseArgs(argv) {
 function usage() {
   return [
     'Usage:',
-    '  node hooks/reserve-artifact-id.js --operation create-chg [--type hotfix] [--new]',
-    '  node hooks/reserve-artifact-id.js --operation record-correction [--new]',
+    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg [--type hotfix] [--new]`,
+    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation record-correction [--new]`,
     '',
     'Run this from the main session before dispatching paceflow:artifact-writer.',
   ].join('\n');
@@ -77,11 +79,13 @@ function promptForReservation(operation, type) {
   return lines.join('\n');
 }
 
-function formatReservationBlock(artDir, operation, reservation, reused) {
+function formatReservationBlock(cwd, artDir, operation, reservation, reused) {
+  const context = paceUtils.executionContextForCwd(cwd);
   const lines = [
     `artifact_dir: ${paceUtils.displayDir(artDir)}`,
     `operation: ${operation}`,
   ];
+  if (operation === 'create-chg') lines.push(`execution-context: ${context.text}`);
   if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
   if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
   if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
@@ -100,6 +104,10 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(`${usage()}\n`);
+    return;
+  }
+  if (args.unknown.length > 0) {
+    fail(args.cwd, 'DENY_UNKNOWN_OPTION', `reserve-artifact-id 不支持参数：${args.unknown.join(', ')}。\n本 helper 只从当前 Claude Code 项目的 artifact-root 配置解析 artifact_dir；不要传 --artifact-dir。\n\n${usage()}`, { options: args.unknown.join(',') });
     return;
   }
   if (!['create-chg', 'record-correction'].includes(args.operation)) {
@@ -165,7 +173,7 @@ function main() {
     artifact_dir: paceUtils.displayDir(artDir),
     reserved: reservation.id || reservation.fileRel || reservation.filePrefix || '',
   }));
-  process.stdout.write(`${formatReservationBlock(artDir, args.operation, reservation, reused)}\n`);
+  process.stdout.write(`${formatReservationBlock(args.cwd, artDir, args.operation, reservation, reused)}\n`);
 }
 
 main();

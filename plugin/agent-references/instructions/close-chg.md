@@ -47,7 +47,15 @@
 
 ## 操作步骤
 
-> **CRLF / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。
+> **CRLF / stale-read / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，这表示其他 session 已改过文件快照；立即重新 `Read` 目标 artifact，基于最新内容重试，不要解释为 hook 锁失败。
+
+### 0. 根索引结构预检
+
+在改详情 status / verified / archived 之前，先 Read `task.md` 与 `implementation_plan.md`：
+
+- 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`，再继续后续步骤。
+- 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`。
+- 禁止先把详情改成 `status: archived`，再回头发现根索引无法归档。
 
 ### 1. 完成状态联动
 
@@ -102,7 +110,7 @@
 - 任务存在 `[ ]` / `[/]` 且 `complete-open-tasks` 不是 true → `format-violation: tasks not done`
 - `verified-date` 与 `<!-- VERIFIED -->` 不一致 → `format-violation: verification state inconsistent`
 - status 为 `cancelled` → `format-violation: cancelled change`
-- ARCHIVE 标记缺失 → `format-violation: archive marker missing`
+- ARCHIVE 标记缺失但目标索引行仍在活跃区 → 先补 `<!-- ARCHIVE -->` 独占行再归档；缺标记且目标索引行也不存在 → `format-violation: archive marker missing`
 - 根索引行在活跃区和 ARCHIVE 下方都找不到 → `format-violation: index row not found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 

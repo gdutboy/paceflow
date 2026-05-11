@@ -43,7 +43,8 @@ function setBlockCount(n, { ensure = false } = {}) {
 try {
 const t0 = Date.now();
 // S-1: 统一 stdin 解析
-const lastMessage = paceUtils.parseStdinSync().lastMessage;
+const stdin = paceUtils.parseStdinSync();
+const lastMessage = stdin.lastMessage;
 log(paceUtils.logEntry('Stop', 'ENTRY', { proj }));
 
 // I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
@@ -64,26 +65,40 @@ if (paceSignal === 'artifact') {
   let requiresWalkthrough = false;
   for (const change of classifiedEntries) {
     if (['backlog', 'ready'].includes(change.category)) continue;
+    const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, stdin.sessionId);
+    if (ownerStatus.disposition === 'foreign-fresh') {
+      log(paceUtils.logEntry('Stop', 'SKIP_FOREIGN_CHANGE_OWNER', {
+        proj,
+        change: change.id,
+        owner_state: ownerStatus.owner.state || '',
+        owner_worktree: ownerStatus.owner.worktree || '',
+        owner_branch: ownerStatus.owner.branch || '',
+      }));
+      continue;
+    }
+    const ownerPrefix = ownerStatus.disposition === 'foreign-stale'
+      ? `${change.id} 的 owner 记录已过期；若确认原 session 已失效，可由当前 session 接手。`
+      : '';
 
     if (change.category === 'inconsistent') {
       if (change.reason === 'index-missing') {
-        warnings.push(`task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${change.id} 必须同时存在。请派 artifact-writer 修复索引。`);
+        warnings.push(`${ownerPrefix}task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${change.id} 必须同时存在。请派 artifact-writer 修复索引。`);
       } else if (change.reason === 'detail-missing') {
-        warnings.push(`${change.id} 的详情文件缺失（应为 changes/${change.slug}.md），请派 artifact-writer 修复。`);
+        warnings.push(`${ownerPrefix}${change.id} 的详情文件缺失（应为 changes/${change.slug}.md），请派 artifact-writer 修复。`);
       } else if (change.reason === 'index-mismatch') {
-        warnings.push(`${change.id} 索引状态不一致：task.md=[${change.taskCheckbox}]，implementation_plan.md=[${change.implCheckbox}]。请派 update-chg action=update-status 修复。`);
+        warnings.push(`${ownerPrefix}${change.id} 索引状态不一致：task.md=[${change.taskCheckbox}]，implementation_plan.md=[${change.implCheckbox}]。请派 update-chg action=update-status 修复。`);
       } else if (change.reason === 'index-completed-with-pending-tasks') {
-        warnings.push(`${change.id} 索引已是 [x]，但详情仍有 ${change.tasks.pending} 个未完成任务。请派 update-chg action=update-status 修复状态联动，或继续完成任务。`);
+        warnings.push(`${ownerPrefix}${change.id} 索引已是 [x]，但详情仍有 ${change.tasks.pending} 个未完成任务。请派 update-chg action=update-status 修复状态联动，或继续完成任务。`);
       } else if (change.reason === 'index-completed-status-mismatch') {
-        warnings.push(`${change.id} 索引已是 [x]，但详情 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
+        warnings.push(`${ownerPrefix}${change.id} 索引已是 [x]，但详情 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
       } else if (change.reason === 'active-archived') {
-        warnings.push(`${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer close-chg 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。${FORMAT_SNIPPETS.closeOp}`);
+        warnings.push(`${ownerPrefix}${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer close-chg 或 archive-chg 做索引修复：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。${FORMAT_SNIPPETS.closeOp}`);
       } else if (change.reason === 'active-cancelled') {
-        warnings.push(`${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
+        warnings.push(`${ownerPrefix}${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
       } else if (change.reason === 'task-list-empty') {
-        warnings.push(`${change.id} 详情 status=${change.status}，但 ## 任务清单 中没有可识别的 T-NNN 任务行。请派 artifact-writer 修复 changes/${change.slug}.md 任务清单。`);
+        warnings.push(`${ownerPrefix}${change.id} 详情 status=${change.status}，但 ## 任务清单 中没有可识别的 T-NNN 任务行。请派 artifact-writer 修复 changes/${change.slug}.md 任务清单。`);
       } else {
-        warnings.push(`${change.id} 状态无法识别（status=${change.status || 'missing'}）。请派 artifact-writer 修复 frontmatter/index 状态。`);
+        warnings.push(`${ownerPrefix}${change.id} 状态无法识别（status=${change.status || 'missing'}）。请派 artifact-writer 修复 frontmatter/index 状态。`);
       }
       continue;
     }
@@ -91,31 +106,31 @@ if (paceSignal === 'artifact') {
     totalPending += change.tasks.pending;
 
     if (change.category === 'blocked') {
-      warnings.push(`${change.id} 有阻塞任务（[!]），请用 AskUserQuestion 询问用户如何处理，或派 update-chg action=update-status 标记完成/跳过。`);
+      warnings.push(`${ownerPrefix}${change.id} 有阻塞任务（[!]），请用 AskUserQuestion 询问用户如何处理，或派 update-chg action=update-status 标记完成/跳过。`);
       continue;
     }
 
     if (change.category === 'running') {
       if (!change.approved) {
-        warnings.push(`${change.id} 正在执行但未批准。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`);
+        warnings.push(`${ownerPrefix}${change.id} 正在执行但未批准。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`);
         continue;
       }
       if (change.tasks.pending > 0) {
-        warnings.push(`${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。若本轮仍可连续执行，请继续完成代码/测试，不必为中间任务逐个 update-status；只有暂停、阻塞、跳过或跨 session 时才派 update-chg action=update-status 维护 T-NNN 状态。`);
+        warnings.push(`${ownerPrefix}${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。若本轮仍可连续执行，请继续完成代码/测试，不必为中间任务逐个 update-status；只有暂停、阻塞、跳过或跨 session 时才派 update-chg action=update-status 维护 T-NNN 状态。`);
         continue;
       }
       if (change.tasks.total > 0) {
-        warnings.push(`${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。若验证已通过，请直接派 close-chg complete-open-tasks: true 收尾归档；若暂不验证，才派 update-chg action=update-status 修复 completed 状态。`);
+        warnings.push(`${ownerPrefix}${change.id} 任务已全部完成，但 frontmatter status=${change.status || 'missing'}。若验证已通过，请直接派 close-chg complete-open-tasks: true 收尾归档；若暂不验证，才派 update-chg action=update-status 修复 completed 状态。`);
       }
       continue;
     }
 
     if (change.category === 'closing-required') {
       if (!change.verified) {
-        warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。字段格式见 Skill(paceflow:artifact-management)。`);
+        warnings.push(`${ownerPrefix}${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。字段格式见 Skill(paceflow:artifact-management)。`);
       } else {
         requiresWalkthrough = true;
-        warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。字段格式见 Skill(paceflow:artifact-management)。`);
+        warnings.push(`${ownerPrefix}${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。字段格式见 Skill(paceflow:artifact-management)。`);
       }
     }
   }

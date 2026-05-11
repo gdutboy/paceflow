@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.51（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.52（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续复核至 v2.1.131）
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -16,7 +16,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-11，v6.0.51）
+### 0.1 当前执行视图（2026-05-12，v6.0.52）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -27,12 +27,13 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.51）：
+执行状态（v6.0.52）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
 - P1-POC-05 已在 v6.0.16 落地；v6.0.17 修复首次测试前审计发现的选择值容错与非 git stderr 噪音；v6.0.18 将选择提示从 SessionStart 移到真正动手前的 PreToolUse 阶段；v6.0.27 吸收调研报告中低风险 P1：SubagentStop 报告协议观察、PostToolUseFailure 恢复提示、SessionStart 输出大小保护与 compact/PreCompact 继承测试；v6.0.28 修复审计确认的非设计缺口；v6.0.29 清理 `audit` 发布面并修正文档口径；v6.0.30 增加 v5→v6 半自动迁移保护；v6.0.31 增加 session_id 日志串联与项目级 artifact-writer 写锁；v6.0.32 修复 Agent 工具失败时写锁释放链路；v6.0.33 修复 production Smoke0-5 暴露的锁保护与噪声问题；v6.0.34 修复全面审计确认的路径规范化、worktree runtime、vault env fail-closed、Stop 降级计数与 agent/skill 契约缺口；v6.0.35 拆分 plugin runtime root，marketplace 只发布 `plugin/` 下的运行时资产；v6.0.36 修复 2026-05-09 审计确认项：findings 日期差、Stop walkthrough 噪声、SessionStart walkthrough 最近记录截断、PostToolUse 死分支和文档/模板一致性；v6.0.37 修复二轮审计确认项：PreCompact native plan 项目过滤、Bash 间接写 artifact 保护与 bridge/template 说明收敛；v6.0.38 完成 r2 后续代码质量收尾：PostToolUse per-CHG warning 节流、artifact-root 输入截断、logger lock stale 阈值调整与 artifact mutation helper 抽取；v6.0.39 同步 Claude Code native build 工具面变化：`Glob/Grep` 可能不可用时，skill/smoke 改用 Bash `find` / `rg` / `grep` fallback 口径；v6.0.40 修复 Smoke4 暴露的 legacy v5 迁移提示歧义，明确被阻止的工具未落盘、dry-run 后二次确认、迁移后仍需重试原始代码任务；v6.0.41 修复 Smoke6 暴露的主 session `Edit/MultiEdit` 直接修改 artifact 绕过；v6.0.42 加固 v5 迁移脚本的多 ARCHIVE/CRLF 真实 vault 兼容性；v6.0.43 修复 hook 拦截提示缺 artifact 根目录与 legacy 手动 mkdir changes/ 绕过；v6.0.44 优化 v5 迁移归档区可读性，旧 frontmatter 转为历史 YAML 代码块，避免误读为第二个活动 frontmatter，并让 `--force` 重跑复用已有 `.v5-backup` 而不覆盖备份；v6.0.45 修复 native plan 桥接 Step 5 漏写 `.pace/synced-plans` 的 dogfood 缺口，hook/skill 明确宿主项目 runtime 路径与幂等 basename 写入；v6.0.46 补齐 P2 agent fixture 与 release sanity：Phase C 扩到 close/archive/finding/correction 正向 contract，单元测试覆盖 manifest 版本一致性和 plugin runtime root 文件面；v6.0.47 将 artifact-writer 并发控制从 Agent 生命周期项目级锁改为 hook ID reservation + 写入阶段 resource lock；v6.0.48 修复 Smoke1 暴露的 subagent 无法可靠接收 `PreToolUse:Agent additionalContext` 问题，`create-chg` / `record-correction` 首次派遣改为预留编号后 deny，要求主 session 带 `reserved-id` / `reserved-file` 重派。
 - v6.0.49 补齐 hook deny 与 SessionStart 的 Paceflow skill 入口提示；v6.0.50 收紧 CHG 粒度语义并新增 `reserve-artifact-id.js` helper，使主 session 可在首次 artifact-writer 派遣前确定性预留编号，减少 production smoke 中的可预见重试。
+- v6.0.52 修复 v6.0.51 Smoke1-6 暴露的 P0/P1：最小 v5 fixture 迁移漏检、helper 路径/未知参数误导、close/archive 半归档恢复、approve-and-start 语义、stale-read 指引、root 选择后 helper 顺序、implementation_plan 模板占位、worktree 跨 session Stop/Agent owner 归属，以及 worktree 中误把 artifact_dir 当普通项目根写宿主文件。
 - v6.0.51 完成 `pre-tool-use.js` 结构拆分：Bash guard、artifact-writer Agent lifecycle guard、marker/direct artifact mutation guard 下沉到 `plugin/hooks/pre-tool-use/*.js`，主 hook 保留路由、stdout 输出与日志顺序。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
@@ -76,6 +77,7 @@
 | P1-20260508-06 | ✅ v6.0.35 | 拆分 plugin runtime root | marketplace `source:"./"` 会把 docs/tests/internal/tickets 等开发资料一起安装到 plugin cache，污染用户运行时目录 | `.claude-plugin/marketplace.json`、`plugin/**`、`tests/test-hooks-e2e.js`、`tests/test-pace-utils.js`、`tests/agent-tests/**`、`README.md`、`REFERENCE.md`、`internal/skills/audit/**` | marketplace `source` 改为 `./plugin`；运行时资产移动到 `plugin/`；根目录保留开发资料；测试和审计 skill 改读 `plugin/**` |
 | P1-20260509-01 | ✅ v6.0.38 | r2 代码质量收尾 | PostToolUse 状态类提醒会在同一会话反复提示；logger lock 5s stale 阈值偏短；`PACE_ARTIFACT_ROOT` 超长输入未限长；pre-tool-use artifact mutation 条件分散 | `hooks/post-tool-use.js`、`hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`tests/test-hooks-e2e.js`、`tests/test-pace-utils.js` | 同一 CHG 的 status mismatch / missing verify / blocked task 提醒按 session 去重且 SessionStart 清理；logger lock stale 阈值 30s；artifact-root 选择值截断到 4096 字符；artifact mutation 判定 helper 化 |
 | P1-20260510-01 | ✅ v6.0.50 | 收紧 CHG 粒度语义并新增 reserved-id helper | Smoke1 显示主 session 已读取 skill 后仍稳定经历 artifact-root、reserved-id、approve/close 缺字段等重试；同时模型把一个连续 CHG 的 T-001/T-002 完成拆成多次 `update-status`，把 artifact 当逐步项目管理看板 | `hooks/reserve-artifact-id.js`、`hooks/pre-tool-use.js`、`hooks/stop.js`、`skills/**`、`agents/**`、`agent-references/**`、`tests/test-hooks-e2e.js`、`README.md` | 主 session 可先运行 helper 预留 `reserved-id`，首次 `create-chg`/`record-correction` 不再必须先 deny；skill/agent/hook 统一声明 CHG 是连续执行、可验证、可关闭的最小变更单元，`update-status` 只用于暂停/阻塞/跳过/跨 session/长任务可见性，默认用 `close-chg complete-open-tasks:true` 收口 |
+| P1-20260512-01 | ✅ v6.0.52 | Smoke1-6 修复与 worktree owner | v6.0.51 production smoke 暴露最小 v5 未识别、helper 路径搜索旧 cache、`--artifact-dir` 静默忽略、close/archive 半归档、worktree session 互相 Stop 阻断、artifact_dir 被误当普通项目根等问题 | `hooks/pace-utils.js`、`hooks/pre-tool-use.js`、`hooks/post-tool-use.js`、`hooks/stop.js`、`hooks/reserve-artifact-id.js`、`agents/**`、`agent-references/**`、`skills/**`、`tests/**` | 最小 v5 fixture fail-closed；helper 输出 execution-context 且未知参数 fail-fast；根索引缺 ARCHIVE 时禁止先归档详情；`.pace/change-owners` 让 Stop/Agent gate owner-aware；worktree 中写宿主非 artifact 普通文件被阻止并提示当前 worktree 路径 |
 | P2-20260511-01 | ✅ v6.0.51 | 拆分 `pre-tool-use.js` guard 模块 | `pre-tool-use.js` 同时承担 Bash 写保护、artifact root/迁移、Agent 生命周期、marker gate、C/E 阶段门禁，审计成本高，后续改动容易误碰不相关逻辑 | `hooks/pre-tool-use.js`、`hooks/pre-tool-use/bash-guard.js`、`hooks/pre-tool-use/agent-lifecycle-guard.js`、`hooks/pre-tool-use/marker-guard.js`、`tests/**`、`README.md`、`REFERENCE.md` | Bash artifact/runtime-control 检测、artifact-writer prompt/lifecycle 检查、C/V marker 与直接 artifact mutation 判断已拆为 helper；主入口保持 gate 顺序、输出和日志责任不变；E2E/单元/安装/manifest 校验覆盖运行时子目录 |
 
 #### 0.1.3 P1/P2 — 上游 Claude Code 能力 PoC，暂不进核心链路
@@ -122,12 +124,13 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.51）：
+最近一次验证结果（v6.0.52）：
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 149/149 PASS
-node tests/test-pace-utils.js                        # 115/115 PASS
+node tests/test-hooks-e2e.js                         # 155/155 PASS
+node tests/test-pace-utils.js                        # 119/119 PASS
+node tests/agent-tests/run-tests.js dummy            # PASS
 claude plugin validate ./plugin                      # PASS
 git diff --check                                     # PASS
 ```
@@ -385,6 +388,77 @@ P2 可选优化：
 - 仍可做的 P2 结构清理：`v5MigrationPromptMessage()` 与 `artifactRootChoiceMessage()` 仍偏“教学式 deny”，但迁移和首次选择都需要用户确认，当前保留脚本命令/AskUserQuestion 指引以保证安全；若 production UX 稳定，可再拆成短提示 + skill 详情。
 
 结论：并发 resource lock 本身通过；本轮已修 `artifact_dir` 边界文案、helper 绝对路径、walkthrough wikilink 机械校验，并继续收敛复审 2 C/D 的运行时文案噪声。下一步可重跑 Smoke1/Smoke3 生产验证，同时观察 TaskSync hint 是否足够。
+
+#### 0.1.10e3 v6.0.51 production Smoke1/2 语义观察（2026-05-11）
+
+Smoke1/2（local create+close + direct artifact write protection）真实运行结论（sid=e7d244fb-93a0-4d31-b574-863526f8ab5c）：
+
+- 核心链路通过：首次 artifact-root 选择为 `local`；主 session 运行 `reserve-artifact-id.js` 预留 `CHG-20260511-01`；`create-chg` 首次 Agent 直接 PASS；代码修改发生在 `approve-and-start` 之后；`npm test` 输出 `ok`；`close-chg complete-open-tasks:true` 将详情 `status` 推到 `archived`，写入 `<!-- APPROVED -->` / `<!-- VERIFIED -->`、`verified-date` / `archived-date`，并把 `task.md` / `implementation_plan.md` 索引移到 ARCHIVE 下方。
+- Direct artifact write protection 通过：主 session 对 `task.md` 的 Bash append、Write、Edit 均被 hook 拦截，日志分别记录 `DENY_BASH_ARTIFACT`、`DENY_DIRECT_ARTIFACT_WRITE`、`DENY_DIRECT_ARTIFACT_EDIT`；`task.md` 未被污染，Stop hook clean pass。
+- 语义观察：`approve-and-start` 当前只把传入的 `task-id`（本次为 `T-001`）标为 `[/]`，而同一 CHG 内的 `T-002` 仍保持 `[ ]`，最后由 `close-chg complete-open-tasks:true` 统一收口为 `[x]`。这不是功能 bug，且符合“artifact 不是实时看板；连续 CHG 默认最后统一收口”的设计。但 `task-id` 容易被主 session / 用户误读成“本次只开始 T-001”，从而诱导后续逐个 `update-status`。
+- 后续可选优化：保留当前状态机，不建议把 `approve-and-start` 自动改成所有 T-NNN `[/]`；那会在暂停/跨 session 时制造更不准确的“全部进行中”。更合适的是收敛文案，把 `task-id` 明确称为“执行锚点 / first task anchor”：`approve-and-start` 批准并开始的是整个 CHG，`task-id` 只用于标记进入执行的起点任务；连续完成时仍由 `close-chg complete-open-tasks:true` 收口剩余 `[ ]` / `[/]` 任务。
+- 非阻断噪声：首次 `create-chg` 的 artifact-writer 报告前出现 `All writes and edits succeeded. Now compile the report.`，SubagentStop 记录 `title-prefix` warning；功能无损，后续 update/close 报告均 PASS。
+
+#### 0.1.10e4 v6.0.51 production Smoke3 并发观察（2026-05-11）
+
+Smoke3（host + git worktree concurrent resource lock）真实运行结论（host sid=f3f1a8bf-a258-46c2-8e97-ff796e7f826f；worktree sid=21ffe076-512b-498e-a21d-7fb416f93b1d）：
+
+- 最终状态通过：host 与 worktree 都解析到宿主 artifact root `/mnt/k/AI/paceflow-smoke-local/`；`task.md` / `implementation_plan.md` 活跃区清空，`CHG-20260511-01`、`CHG-20260511-02`、`CHG-20260511-03` 均在 ARCHIVE；`changes/chg-20260511-02.md` 与 `changes/chg-20260511-03.md` 均为 `status: archived`，含 `verified-date` / `archived-date` 与 `<!-- APPROVED -->` / `<!-- VERIFIED -->`；`.pace/locks`、`.pace/reservations`、`.pace/index-transactions` 无残留。
+- Stop hook 跨 session 提醒不是功能 bug：host session 在 `21:00:52` Stop 时，worktree 的 `CHG-20260511-03` 已 `completed + verified` 但仍在活跃索引中，Stop hook 阻止退出是机械正确的。体验问题是它不知道另一个 session 的 close-chg 正在收尾，容易诱导 host session 重复派 close。后续可优化文案：若另一个 session 正在 close/归档，等待其完成后重试 Stop；仍存在再派 artifact-writer。
+- `branch-note.md` 写到 host 目录是模型路径选择错误，不是 hook artifact 分类 bug：worktree cwd 为 `/mnt/k/AI/paceflow-smoke-local-wt`，但主 session 调用了 `Write /mnt/k/AI/paceflow-smoke-local/branch-note.md`；hook 记录 `PASS_V6_NON_CODE`，说明 `branch-note.md` 被正确视为非 PaceFlow artifact 并放行。PaceFlow 不应硬拦普通文件路径；后续只应在 smoke 文档/skill 文案中继续强调 `artifact_dir` 仅用于 PaceFlow artifacts，普通文件按用户路径和当前 cwd 判断。
+- 并发归档出现的 `File has been modified since read` 不是 resource lock 失败：worktree close agent 先基于旧索引内容准备 Edit，期间 host close agent 在 `21:00:23/24` 已将 `CHG-20260511-02` 归档，Claude Code 的 Edit stale-read 前置校验在 `21:00:29` 拒绝了三个旧快照。worktree agent 重新 Read 后，在 `21:01:23/24` 成功获取 `index:changes` / `walkthrough` resource lock 并归档 `CHG-20260511-03`。后续可在 artifact-writer 指令中补充：遇到 stale-read 立即重新 Read 目标 artifact 并重试，不要解释为 hook 锁失败。
+- 设计方案：并发 worktree 下，项目 artifact 仍统一写在宿主/root artifact_dir，但 CHG 责任应拆成两层。`.pace/change-owners/<chg-id>.json` 记录运行态 owner（session_id、cwd、worktree/branch、state=`active|closing|closed`、updatedAt），供 Stop/Agent gate 做机械判断；artifact 详情和索引行记录人读执行上下文（例如 `[worktree:: main] [branch:: main]` 或 `[worktree:: paceflow-smoke-local-wt] [branch:: worktree-mt]`），方便用户分辨哪个 worktree/branch 产生该 CHG。不要把 session_id/lock/closing 等运行态写进 artifact。
+- Stop hook 目标语义：当前 session 只对自己 owner 的 CHG 做硬阻断；另一个 fresh session owner 的 completed+verified active CHG 不阻断当前 session，只提示/记日志；owner stale 或 owner unknown 的 CHG 进入恢复提示，可显式接手后 close。这样避免 host session 因 worktree session 的未归档 CHG 被阻止，同时不放过 orphan / 旧版本无 owner 的脏状态。
+- Agent gate 目标语义：`create-chg` / `approve-and-start` / `update-status` / `close-chg` / `archive-chg` 更新 owner 运行态；同一 CHG 被另一个 fresh session close/update 时应 deny 或强提示，除非 owner stale 或 prompt 显式接手。close 成功后 owner 标记 `closed` 或删除。resource lock 仍保护具体文件写入，owner 只决定“谁负责收尾”，不是替代写锁。
+- 非阻断噪声：两个 close agent 仍出现报告标题前缀 warning（`All edits successful. Generating report.` / `All edits completed. Generating report.`）。SubagentStop 已记录 `title-prefix` warning，但不阻断；可继续作为低优先级体验问题观察。
+
+#### 0.1.10e5 v6.0.51 production Smoke4 vault route 观察（2026-05-11）
+
+Smoke4（Obsidian vault route）真实运行结论（首次中断 sid=2c8e5027-e852-4730-a501-5914e45dcb0f；成功 sid=91a488c6-1524-4938-92b7-51ad60afe83a）：
+
+- 最终状态通过：本地项目 `/mnt/k/AI/paceflow-smoke-vault/.pace/artifact-root` 为 `vault`；本地项目没有 `task.md` 或 `changes/`；artifact 均创建在 `/mnt/c/Users/Xiao/OneDrive/Documents/Obsidian/projects/paceflow-smoke-vault/`；`index.js` 输出为 `vault smoke ok`，`node index.js` 验证通过。
+- Artifact 内容正确：`task.md` / `implementation_plan.md` 活跃区为空，`CHG-20260511-01` 已归档到 ARCHIVE；详情文件 `changes/chg-20260511-01.md` 为 `status: archived`，含 `completed-date` / `verified-date` / `archived-date`、`<!-- APPROVED -->` / `<!-- VERIFIED -->`，任务均 `[x]`；`walkthrough.md` 使用 `[[chg-20260511-01]]` wikilink。
+- 首次中断会话的问题是模型误判：用户要求“验证后归档”，但模型仍按“单行修改豁免”直接 Edit，PreToolUse 正确以 `DENY_ARTIFACT_ROOT_CHOICE` 阻止并提示先选择 artifact root、再创建/批准 CHG。这是模型未遵守 SessionStart skill 提醒，不是 hook 放行缺口。
+- 成功会话仍有一次无效重试：用户已在 prompt 中明确选择 `Obsidian vault project`，主 session 先运行 reserve helper，因 `.pace/artifact-root` 尚未写入而被 `DENY_ARTIFACT_ROOT_CHOICE` 阻止；随后写入 `vault` 并成功 reserve/create。后续可在 skill 中明确：若用户已显式选择 artifact root 且配置缺失，先写 `.pace/artifact-root`，再运行 reserve helper。
+- `reserve-artifact-id.js` 当前会静默忽略未知参数；本次模型传了不存在的 `--artifact-dir`，未造成错误，因为 helper 仍以 `.pace/artifact-root` 为权威解析到正确 vault project。后续可考虑 P3：helper 对未知参数 fail-fast，避免模型误以为 `--artifact-dir` 生效。
+- 非阻断噪声：create/close artifact-writer 报告仍有 title-prefix，SubagentStop 记录 warning 但未阻断。另一个 P3 细节是新建 `implementation_plan.md` 仍保留模板占位 `> **最后更新**: <YYYY-MM-DDTHH:mm:ss+08:00>`；功能无损，但模板语义不够干净，可考虑移除该行或在模板创建时填入真实时间。
+
+#### 0.1.10e6 v6.0.51 production Smoke5 v5 migration guard 失败分析（2026-05-11）
+
+Smoke5（v5 migration guard）未完成且暴露真实缺口（sid=87277331-da99-40ad-86b5-d94930d34b38）：
+
+- 失败 1：legacy v5 未被识别。Smoke fixture 为根目录 `task.md` + `implementation_plan.md`，内容是 `# Task` / `# Implementation Plan` 与普通 checkbox 行，且没有 `changes/`。当前 `legacyV5FilesInDir()` 只匹配 `<!-- ARCHIVE -->`、中文 v6/v5 标题、`### CHG/HOTFIX-` 等 PACE 特征，不匹配这种最小 v5 fixture；实测 `getV5MigrationInfo()` 返回 `detected:false`。因此 hook 在首次 Edit 前只给 `DENY_ARTIFACT_ROOT_CHOICE`，没有给 `DENY_V5_MIGRATION`。
+- 失败 2：选择 `local` 后，`reserve-artifact-id.js` 调用 `createTemplates()` 懒创建了 `changes/` 与 v6 模板文件。由于 `hasLegacyV5ArtifactsDir()` 一看到 `changes/` 存在就直接返回 false，后续 legacy 检测被永久绕过，项目进入“v5 根索引 + v6 changes 详情”的混合状态。
+- 失败 3：`create-chg` 在 legacy `task.md` / `implementation_plan.md` 顶部插入 v6 wikilink 索引，但原文件缺少 `<!-- ARCHIVE -->`。`close-chg` 在未预检根索引 ARCHIVE 标记的情况下先把详情文件改到 `status: archived`、写 `verified-date` / `<!-- VERIFIED -->` / `archived-date`，随后发现索引无法归档并失败，留下“详情 archived、索引仍在活跃区”的半归档状态。
+- 失败 4：恢复链路不闭合。主 session 直接改 artifact 被 hook 正确拦截；`archive-chg` 又因详情已 `status: archived` 拒绝执行 `format-violation: already archived`；`update-chg action=append` 只把“修复步骤”当作工作记录追加，不能改 frontmatter 或索引；Stop hook 当前提示“派 close-chg 修复索引”，但 close-chg 仍会遇到缺 ARCHIVE 标记，提示不够可执行。
+- 当前 artifacts 状态：`index.js` 已改为 `legacy migrated smoke`；`changes/chg-20260511-01.md` 为 `status: archived`，但 `task.md` / `implementation_plan.md` 无 `<!-- ARCHIVE -->`，且 `CHG-20260511-01` 与 `legacy v5 active item` 都留在活跃区；`walkthrough.md` 未写完成记录。
+- 修复方向：P0 修 legacy 检测，至少识别“无 changes 且同时存在 task.md + implementation_plan.md，并含 markdown checkbox 活跃行”的 v5/minimal fixture；同时在 `createTemplates()` / reserve helper 前 fail-closed，不允许在可能 legacy 的目录里创建 `changes/`。P1 修恢复链路：`close-chg` 先预检/修复索引 ARCHIVE 标记再把详情置 archived；`archive-chg` 或 `close-chg` 对“详情已 archived 但索引仍活跃”的状态应允许执行 index-only repair；Stop 提示应指向真实可执行的修复操作。
+
+#### 0.1.10e7 v6.0.51 production Smoke6 native plan bridge 观察（2026-05-11）
+
+Smoke6（native `/plan` bridge + sync-plan helper）真实运行结论（sid=5a64ea43-8e26-41e1-966e-28303936a271；project=`/mnt/k/AI/paceflowv6test`）：
+
+- 核心链路通过：`/plan` 生成 `/home/paceaitian/.claude/plans/optimized-imagining-crab.md`，用户通过 `ExitPlanMode` 批准后，主 session 选择 `local` artifact root，运行 `reserve-artifact-id.js` 预留 `CHG-20260511-01`，`create-chg` / `approve-and-start` / 代码修改 / `node calc.test.js` / `close-chg` 全部完成。
+- Bridge 同步通过：主 session 调用 `sync-plan.js --plan /home/paceaitian/.claude/plans/optimized-imagining-crab.md`；hook log 记录 `PlanSync | act=SYNCED | plan=optimized-imagining-crab.md`，`.pace/synced-plans/` 下存在同步标记，说明 v6.0.51 的 helper 替代手写 bash 脚本已生效。
+- Artifacts 最终正确：`.pace/artifact-root=local`；`changes/chg-20260511-01.md` 为 `status: archived`，含 `completed-date` / `verified-date` / `archived-date` 与 `<!-- APPROVED -->` / `<!-- VERIFIED -->`；`task.md` / `implementation_plan.md` 活跃区为空，CHG 位于 ARCHIVE 下方；`walkthrough.md` 使用 `[[chg-20260511-01]]`，Stop hook 两次 PASS。
+- 代码结果正确：`calc.js` 新增 `divide(a, b)`，除零抛 `Error("除数不能为零")`；`calc.test.js` 导入 `divide` 并覆盖正常除法、零被除数、除零错误消息；本地复跑 `node calc.test.js` 输出 `ok`。
+- 体验观察：ExitPlanMode 之后模型先尝试直接 `Edit calc.js`，被 `DENY_ARTIFACT_ROOT_CHOICE` 拦截后才进入 PaceFlow 初始化。这是首次启用时的预期兜底，不是功能 bug；但也说明 SessionStart 在 `signal=none` 时未注入 PaceFlow helper，首个代码写入仍需要一次选择拦截。
+- 修复项：主 session 在调用 `pace-bridge` 后仍搜索 `~/.claude/plugins/cache/paceaitian-paceflow` 来找 `reserve-artifact-id.js` / `sync-plan.js`，并同时看到 6.0.50 与 6.0.51。根因是 SessionStart 只有在 `paceSignal && task.md exists` 时才输出当前版本绝对 helper 路径；首次启用选择 artifact root 后不会重新注入，而 skill 只写 `node "<reserve-artifact-id.js 的绝对路径>"` 占位。应在 PreToolUse 首次选择/创建 CHG 提示、artifact-root choice deny、pace-bridge/pace-workflow skill 中提供当前运行时 helper 命令，或提供稳定 `claude plugin root` 解析 helper，禁止模型搜索 plugin cache 猜版本。
+- 修复项：`reserve-artifact-id.js` 静默忽略未知参数；本次模型传入 `--artifact-dir "/mnt/k/AI/paceflowv6test"`，helper 实际没有使用该参数，只是按 `.pace/artifact-root` 解析成功。应对未知 `--*` 参数 fail-fast，或正式支持 `--artifact-dir` 并明确其优先级；否则模型会误以为该参数生效。
+- P3 内容偏差：CHG 详情中写“与现有 add/multiply 保持一致的 export 风格（CommonJS）”，但实际 `calc.js` 是 ESM named export。代码和测试正确，属于 artifact 文案准确性问题，可观察，不建议单独为此加机械检查。
+- 非阻断噪声：create/update/close artifact-writer 仍有报告标题前缀 warning；SubagentStop 只记录 `title-prefix`，不影响 close 与 Stop PASS。
+
+#### 0.1.10e8 v6.0.52 Smoke1-6 修复落地（2026-05-12）
+
+本轮按上方 Smoke1-6 记录修复 1-12 与 worktree 严重问题 #16：
+
+- v5 migration guard：`legacyV5FilesInDir()` 识别无 `changes/`、同时存在 `task.md` + `implementation_plan.md` 且含 checkbox 活跃行的最小 v5 fixture；`createTemplates()` / reserve helper 在可能 legacy 目录中 fail-closed，不再先创建 `changes/` 造成永久绕过。
+- 半归档恢复：artifact-writer 在根索引缺 `<!-- ARCHIVE -->` 时不得先把详情改为 `status: archived`；`close-chg` / `archive-chg` 指令允许先补根索引 ARCHIVE 再移动索引，`archive-chg` 对详情已 archived 但索引仍活跃进入 index-only repair。
+- helper 入口：`reserve-artifact-id.js` 输出 `execution-context`，对未知 `--*` 参数 fail-fast，明确不支持 `--artifact-dir`；artifact-root 选择提示、workflow/bridge/artifact-management skill 均要求使用 hook 提供的当前 helper 完整命令，禁止搜索 plugin cache 猜版本。
+- worktree owner：新增 `.pace/change-owners/<chg-id>.json` 运行态 owner。`create-chg` / `update-chg` / `close-chg` / `archive-chg` 会记录 session、cwd、worktree、branch 与 state；Stop 对其他 fresh session owner 的 CHG 不硬阻断当前 session；Agent gate 阻止 fresh foreign owner 被另一个 session 接手，stale owner 需要 `owner-takeover-confirmed:true`。
+- worktree 普通文件路径：当 cwd 是 git worktree、artifact_dir 是宿主 local root，且 Write/Edit/MultiEdit 目标是宿主目录中的非 artifact 普通文件时，PreToolUse deny 并提示写当前 worktree 对应路径，避免模型把 `artifact_dir` 误当项目根。
+- 语义/文案：`approve-and-start` 的 `task-id` 明确为 first task anchor；artifact-writer 遇到 `File has been modified since read` 时重新 Read 后重试；显式 vault/local 选择时先写 `.pace/artifact-root` 再运行 helper；`implementation_plan.md` 模板移除静态“最后更新”占位。
+- 验证：`test-pace-utils` 119/119 PASS，`test-hooks-e2e` 155/155 PASS，`tests/agent-tests/run-tests.js dummy` PASS，hook JS `node --check` 与 `git diff --check` PASS。
 
 
 #### 0.1.10b v6.0.40 production Smoke5 记录

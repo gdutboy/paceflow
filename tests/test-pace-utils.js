@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, changeOwnerStatus } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -40,6 +40,27 @@ test('普通 task.md 无 PACE 签名 → 不误判 legacy', () => {
   const dir = makeTmpDir('plain-task-md');
   fs.writeFileSync(path.join(dir, 'task.md'), '# Task list\n\n- buy milk\n');
   assert.strictEqual(isPaceProject(dir), false);
+});
+
+test('英文最小 v5 task+implementation checkbox → legacy', () => {
+  const dir = makeTmpDir('legacy-v5-minimal');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy v5 active item\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] Legacy v5 implementation item\n', 'utf8');
+  assert.strictEqual(isPaceProject(dir), 'legacy');
+  const info = getV5MigrationInfo(dir);
+  assert.strictEqual(info.detected, true);
+  assert.strictEqual(info.needsPrompt, true);
+  assert.deepStrictEqual(info.files, ['task.md', 'implementation_plan.md']);
+});
+
+test('createTemplates 在可能 legacy v5 目录中 fail-closed 且不创建 changes', () => {
+  const dir = makeTmpDir('legacy-v5-template-deny');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy v5 active item\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] Legacy v5 implementation item\n', 'utf8');
+  assert.throws(() => createTemplates(dir), /旧 v5 PACE artifact|legacy v5/i);
+  assert.strictEqual(fs.existsSync(path.join(dir, 'changes')), false);
 });
 
 test('有 .pace/disabled + task.md → false（豁免优先）', () => {
@@ -546,6 +567,7 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
   assert.ok(msg.includes('配置文件'), '应明确 artifact-root 是配置文件');
   assert.ok(msg.includes('不是 artifact 根目录'), '应明确配置文件不是 artifact 根目录');
   assert.ok(msg.includes('只用于 PaceFlow artifacts'), '应明确 artifact_dir 的边界');
+  assert.ok(msg.includes('reserve-artifact-id.js'), '应给出当前 helper 路径');
 });
 
 test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移提示', () => {
@@ -632,6 +654,36 @@ test('worktree 宿主 .pace/disabled 对 worktree 生效', () => {
   fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'smoke')}\n`, 'utf8');
 
   assert.strictEqual(isPaceProject(worktree), false);
+});
+
+test('executionContextForCwd: git worktree 标记 worktree 名称并写宿主 stateDir', () => {
+  const root = makeTmpDir('exec-context-root');
+  const host = path.join(root, 'host');
+  const worktree = path.join(root, 'worktrees', 'feature-a');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'feature-a'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'feature-a')}\n`, 'utf8');
+  const ctx = executionContextForCwd(worktree);
+  assert.strictEqual(ctx.isWorktree, true);
+  assert.strictEqual(ctx.worktree, 'feature-a');
+  assert.strictEqual(ctx.stateDir, host);
+  assert.ok(ctx.text.includes('[worktree:: feature-a]'));
+});
+
+test('change owner runtime: 当前 session / foreign fresh 可区分', () => {
+  const dir = makeTmpDir('change-owner');
+  const written = writeChangeOwner(dir, 'CHG-20260512-01', {
+    sessionId: 'sid-owner',
+    agentId: 'agent-owner',
+    operation: 'create-chg',
+    state: 'active',
+  });
+  assert.strictEqual(written.ok, true);
+  const owner = readChangeOwner(dir, 'CHG-20260512-01');
+  assert.strictEqual(owner.ok, true);
+  assert.strictEqual(owner.sessionId, 'sid-owner');
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-owner').disposition, 'current');
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-other').disposition, 'foreign-fresh');
 });
 
 test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {

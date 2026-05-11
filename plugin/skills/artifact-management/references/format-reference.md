@@ -13,7 +13,7 @@
 
 ## 活跃任务
 
-- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006]
+- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
 
 <!-- ARCHIVE -->
 ```
@@ -23,11 +23,9 @@
 ```markdown
 # 实施计划
 
-> **最后更新**: <YYYY-MM-DDTHH:mm:ss+08:00>
-
 ## 变更索引
 
-- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006]
+- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
 
 <!-- ARCHIVE -->
 ```

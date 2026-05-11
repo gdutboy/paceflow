@@ -10,6 +10,7 @@
 - `type`（默认 change，可选 hotfix / research）
 - `related-finding`（可选，wikilink）
 - `background` / `scope` / `technical-decision`（可选）
+- `execution-context`（可选但推荐，由 reserve helper 输出，例如 `[worktree:: main] [branch:: main]`）
 
 缺失必填字段时必须立即报告 `missing-fields`，且不得推断 / 兜底：
 - 缺 `title` 或 `title` 为空 → `missing-fields: title`，禁止用 `background` / `scope` / task 描述派生标题
@@ -84,10 +85,12 @@
 `T-NNN` 是 **当前 CHG/HOTFIX 内的局部任务 ID**，不是全项目全局 ID。不同 CHG 都可以有 `T-001`，后续操作必须同时带 `target: CHG-...` 与 `task-id: T-...` 消除歧义。主 session 不需要为新 CHG 预分配 T-ID。
 
 ```
-- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN]
+- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
 ```
 
 刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
+
+若 prompt 包含 `execution-context`，task.md 与 implementation_plan.md 的索引行必须保留其中的 `[worktree:: ...] [branch:: ...]` 字段，方便多 worktree 并发时人读区分。不要把 session id、lock、owner state 写入 artifact；这些运行态只写 `.pace/`。
 
 ## 边界
 

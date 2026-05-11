@@ -13,6 +13,8 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
+如果用户已明确选择 vault/local 但配置文件还不存在，先按 hook 提示写 `.pace/artifact-root`（纯文本 `vault` 或 `local`），再运行 reserve helper。reserve helper 不接受 `--artifact-dir`；不要搜索旧 plugin cache 路径。
+
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
 - Schema / 索引模板：`${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md`
@@ -124,7 +126,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 绝对路径命令，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；不要搜索 `~/.claude/plugins/cache` 猜版本。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 时原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
@@ -140,7 +142,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 先预留编号：
 
 ```bash
-node "<reserve-artifact-id.js 的绝对路径>" --operation create-chg
+<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg 命令>
 ```
 
 把 helper 输出放在 prompt 顶部：
@@ -149,6 +151,7 @@ node "<reserve-artifact-id.js 的绝对路径>" --operation create-chg
 派 artifact-writer:
 artifact_dir: <helper 输出>
 operation: create-chg
+execution-context: <helper 输出>
 reserved-id: <helper 输出>
 reserved-file: <helper 输出>
 title: <标题>

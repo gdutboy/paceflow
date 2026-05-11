@@ -97,13 +97,13 @@ C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED --
 
 ### action=approve-and-start
 
-C 阶段用户已明确批准、并准备开始某个 T-NNN 时由主 session 调用。此 action 将 `approve` 与首次 `update-status` 合并，避免同一个 CHG 连续派两次 agent。
+C 阶段用户已明确批准、并准备开始整个 CHG 时由主 session 调用。`task-id` 是执行锚点（first task anchor）：它只标记本轮连续执行从哪个 T-NNN 开始，不表示只批准或只执行这一个任务。此 action 将 `approve` 与首次 `update-status` 合并，避免同一个 CHG 连续派两次 agent。
 
 **硬前置**：
 - `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。禁止由 agent 自行推断用户已批准。
 - `approval-source` 必填，推荐枚举：`user-directive` / `ask-user-question` / `accepted-plan` / `prior-approved-plan`。
 - `approval-evidence` 必填，写一句用户原话或已确认方案摘要。agent 不验证证据真伪，但报告中必须保留，方便审计。
-- `task-id` 必填，指明要标记为 `[/]` 的 T-NNN。
+- `task-id` 必填，指明要标记为 `[/]` 的首个 T-NNN；同一 CHG 内后续任务默认由主 session 连续完成，并由 `close-chg complete-open-tasks:true` 统一收口。
 
 子流程：
 1. Read `changes/chg-xxx.md`

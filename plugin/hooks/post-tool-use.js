@@ -54,6 +54,24 @@ paceUtils.withStdinParsed((stdin) => {
   const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
   const isChangeDetailEdit = !!artifactRel && /^changes\/.+\.md$/i.test(artifactRel);
   const isV6ArtifactEdit = isArtifactEdit || isChangeDetailEdit;
+  if (isAgentTool && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
+    const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt || '');
+    const target = paceUtils.changeIdFromAgentPrompt(stdin.toolInput.prompt || '');
+    if (target && ['close-chg', 'archive-chg'].includes(operation)) {
+      const closed = paceUtils.markChangeOwnerClosed(cwd, target, {
+        sessionId: stdin.sessionId,
+        agentId: stdin.agentId,
+        operation,
+      });
+      log(paceUtils.logEntry('PostToolUse', closed.ok ? 'CHANGE_OWNER_CLOSED' : 'CHANGE_OWNER_CLOSE_SKIPPED', {
+        proj,
+        target,
+        operation,
+        reason: closed.reason || '',
+        dur: Date.now() - t0,
+      }));
+    }
+  }
   if (artifactRel && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
     const resource = paceUtils.artifactResourceForRel(artifactRel);
     if (resource) {
@@ -140,6 +158,8 @@ paceUtils.withStdinParsed((stdin) => {
     if (!paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
       for (const entry of entries) {
         if (!entry.detail || entry.detail.missing) continue;
+        const ownerStatus = paceUtils.changeOwnerStatus(cwd, entry.id, stdin.sessionId);
+        if (ownerStatus.disposition === 'foreign-fresh') continue;
         const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
         const tasks = countDetailTasks(entry.detail.content);
         if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {

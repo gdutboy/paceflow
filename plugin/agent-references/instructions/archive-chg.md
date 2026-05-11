@@ -13,8 +13,8 @@
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
 1. 解析 target → 详情文件路径
 2. 文件不存在 → `target-not-found`
-3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed`
-   - 若 `status=archived` → 已归档，报告 `format-violation: already archived`
+3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed` 或 `archived`
+   - 若 `status=archived` → 进入 index-only repair：不改详情 frontmatter，只检查/修复 task.md 与 implementation_plan.md 归档位置，并补 walkthrough（若缺）
    - 若 `status=planned` / `in-progress` / `cancelled` → 报告 `format-violation: status not completed`
 4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
@@ -26,12 +26,17 @@
 
 ## 操作步骤
 
-> **CRLF / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。
+> **CRLF / stale-read / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，立即重新 `Read` 目标 artifact，基于最新内容重试；这通常是并发 session 改了索引快照，不是 hook 锁失败。
 
+0. **根索引结构预检**：
+   - Read `task.md` 与 `implementation_plan.md`
+   - 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`
+   - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
-   - Edit 改 `status` → `archived`
-   - 添加 `archived-date: <ISO 8601 datetime>`
+   - 若 status 已是 `archived`：不改详情 frontmatter，继续索引 repair
+   - 否则 Edit 改 `status` → `archived`
+   - 若 `archived-date: null`，填 `<ISO 8601 datetime>`
    - 若 `completed-date` 仍为 null（兜底场景）→ 填同一 ISO 8601 datetime
 2. **task.md 索引行归档**（按"ARCHIVE 内容移动"两步 Edit）：
    - Read task.md
@@ -98,11 +103,11 @@
 ## 边界
 
 - 任务未全部完成（含 [/] 或 [ ]）→ `format-violation: tasks not done`
-- frontmatter status 不是 completed → `format-violation: status not completed`
-- frontmatter status 已是 archived → `format-violation: already archived`
+- frontmatter status 不是 completed / archived → `format-violation: status not completed`
+- frontmatter status 已是 archived → 允许 index-only repair，不得报告 already archived
 - frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示验证通过后派 `close-chg`，或先派 `update-chg action=verify`）
 - frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）
 - 详情文件不存在 → `target-not-found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
-- ARCHIVE 标记缺失 → 报告并提示主 session 创建模板
+- ARCHIVE 标记缺失但目标索引行仍在活跃区 → 先补 `<!-- ARCHIVE -->` 独占行再移动索引；缺标记且目标索引行也不存在 → `format-violation: archive marker missing`
 - 索引行在 task.md 或 implementation_plan.md 中找不到 → `format-violation: index row not found`

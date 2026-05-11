@@ -152,10 +152,12 @@ schema-version: "6.0"
 ### 5.1 task.md
 
 ```
-- [<checkbox>] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN]
+- [<checkbox>] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
 ```
 
 例：`- [/] [[chg-20260502-01]] hooks.json if 条件优化 #change [tasks:: T-498~T-500]`
+
+当 create-chg prompt 含 `execution-context: [worktree:: ...] [branch:: ...]` 时，task.md 与 implementation_plan.md 索引行保留这些字段。session id、owner state、lock 信息只属于 `.pace/` 运行态，不写入 artifact。
 
 `T-NNN` 是当前 CHG/HOTFIX 内的局部任务 ID，不是全项目全局 ID。不同 CHG 可以同时包含 `T-001`；后续更新必须同时使用 `target: CHG-...` 与 `task-id: T-...` 定位。
 
@@ -217,8 +219,6 @@ schema-version: "6.0"
 
 ```markdown
 # 实施计划
-
-> **最后更新**: <YYYY-MM-DDTHH:mm:ss+08:00>
 
 ## 变更索引
 

@@ -725,6 +725,30 @@ test('9b1. create-chg 写入非法 CHG status=open → DENY', () => {
   assert.ok(r.stdout.includes('status 非法'));
 });
 
+test('9b2. artifact-writer 不得在根索引缺 ARCHIVE 时先归档详情', () => {
+  const dir = makeV6Project('ptu-archive-marker-precheck');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [x] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [x] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n', 'utf8');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-archive-marker-precheck',
+      agent_id: 'agent-archive-marker-precheck',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: 'status: completed',
+        new_string: 'status: archived',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('缺少 ARCHIVE 标记'));
+});
+
 test('9c. native plan 桥接提示走 artifact writer', () => {
   const dir = makeTmpDir('ptu-native-plan');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
@@ -1058,6 +1082,30 @@ test('9ha. worktree 普通代码文件 MultiEdit 不触发 artifact 重定向', 
   assert.ok(r.stdout.includes('additionalContext'));
 });
 
+test('9ha1. worktree 中写宿主普通文件 → DENY，避免 artifact_dir 被当项目根', () => {
+  const root = makeTmpDir('worktree-host-normal-write-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(path.join(host, 'changes'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+  for (const file of ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md']) {
+    fs.writeFileSync(path.join(host, file), `# ${file}\n\n<!-- ARCHIVE -->\n`, 'utf8');
+  }
+  const hostFile = path.join(host, 'branch-note.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: { tool_name: 'Write', tool_input: { file_path: hostFile, content: 'wrong checkout\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('DENY_WORKTREE_HOST_NON_ARTIFACT_WRITE') || r.stdout.includes('当前 cwd 是 worktree'));
+  assert.ok(r.stdout.includes(path.join(worktree, 'branch-note.md').replace(/\\/g, '/')));
+});
+
 test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', () => {
   const dir = makeTmpDir('agent-artifact-root-choice');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
@@ -1304,6 +1352,35 @@ test('9hc-helper. reserve-artifact-id helper 预留 create-chg 后 Agent 首派�
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
   assert.ok(r.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
+  assert.ok(helper.stdout.includes('execution-context:'), 'helper 应输出 execution-context');
+});
+
+test('9hc-helper1a. reserve-artifact-id helper 遇到未知参数 fail-fast', () => {
+  const dir = makeV6Project('agent-reserve-helper-unknown-arg', { withIndex: false, detail: false });
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--artifact-dir', dir],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-unknown-arg' },
+  });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('不支持参数：--artifact-dir'));
+  assert.ok(helper.stdout.includes('不要传 --artifact-dir'));
+});
+
+test('9hc-helper1b. reserve-artifact-id helper 在最小 v5 fixture 中不创建 changes', () => {
+  const dir = makeTmpDir('agent-reserve-helper-v5-minimal');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] legacy item\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] legacy impl\n', 'utf8');
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-v5-minimal' },
+  });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('旧 v5 PACE artifact'));
+  assert.strictEqual(fs.existsSync(path.join(dir, 'changes')), false);
 });
 
 test('9hc-helper2. reserve-artifact-id helper 默认复用未消费 reservation，--new 才分配新编号', () => {
@@ -2114,6 +2191,45 @@ test('9hc4. close-chg 完整收尾 prompt → 放行', () => {
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
 });
 
+test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', () => {
+  const dir = makeV6Project('agent-close-foreign-owner');
+  fs.mkdirSync(path.join(dir, '.pace', 'change-owners'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json'), JSON.stringify({
+    version: 'change-owner-v1',
+    changeId: 'CHG-20260504-01',
+    sessionId: 'sid-other-owner',
+    agentId: 'agent-other-owner',
+    ownerKey: 'agent:agent-other-owner',
+    state: 'active',
+    worktree: 'worktree-a',
+    branch: 'branch-a',
+    timestampMs: Date.now(),
+  }, null, 2) + '\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-current-owner',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Close CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'complete-open-tasks: true',
+          'verify-summary: node hello.js 输出 Hello World，PASS',
+          'walkthrough-summary: 创建 hello.js 并验证通过',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('另一个 Claude Code session'));
+});
+
 test('9hd. 非 artifact-writer Agent 不受 artifact_dir 约束', () => {
   const { worktree } = makeVaultBackedWorktree('agent-other-pass');
   const r = runHook('pre-tool-use.js', {
@@ -2366,6 +2482,35 @@ test('12. v6 completed + verified 仍活跃 → close-chg 优先阻止', () => {
   assert.strictEqual(r.code, 2);
   assert.ok(r.stderr.includes('close-chg'));
   assert.ok(r.stderr.includes('archive-chg'));
+});
+
+test('12a. Stop 跳过其他 fresh session owner 的待归档 CHG', () => {
+  const dir = makeV6ProjectWithChanges('stop-foreign-owner-closing', [{
+    id: 'CHG-20260504-02',
+    indexMark: '[x]',
+    status: 'completed',
+    task: '[x]',
+    approved: true,
+    verified: true,
+  }], { walkToday: false });
+  fs.mkdirSync(path.join(dir, '.pace', 'change-owners'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-02.json'), JSON.stringify({
+    version: 'change-owner-v1',
+    changeId: 'CHG-20260504-02',
+    sessionId: 'sid-other-owner',
+    agentId: 'agent-other-owner',
+    ownerKey: 'agent:agent-other-owner',
+    state: 'closing',
+    worktree: 'worktree-a',
+    branch: 'branch-a',
+    timestampMs: Date.now(),
+  }, null, 2) + '\n', 'utf8');
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current-owner-check' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stderr.includes('CHG-20260504-02'));
 });
 
 test('13. v6 索引不一致 → exit 2', () => {
