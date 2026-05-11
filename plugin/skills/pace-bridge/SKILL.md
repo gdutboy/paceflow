@@ -102,27 +102,13 @@ approval-evidence: <上游计划流程中用户确认的方案摘要>
 
 桥接成功后必须标记主计划文件已同步。不要省略这一步；否则后续会话无法审计这个 plan 是否已经桥接。
 
-写入目标是**项目运行态目录**的 `synced-plans`，不是 artifact 目录，也不是 `task.md`。worktree 场景必须写宿主项目的 `.pace/synced-plans`，不要写 worktree 自己的 `.pace/synced-plans`。优先使用 hook 提示里的配置文件路径：若提示 `配置文件=/path/to/project/.pace/artifact-root`，则 synced plans 文件是 `/path/to/project/.pace/synced-plans`。
-
-若没有现成路径，用下面命令幂等追加主计划文件名（只写 basename，每行一个）：
+优先使用 SessionStart / PreToolUse 提示中的 plan 同步 helper 绝对路径命令：
 
 ```bash
-PLAN_PATH="<已桥接的 plan 绝对路径>"
-PLAN_NAME="$(basename "$PLAN_PATH")"
-GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-if [ -n "$GIT_COMMON_DIR" ]; then
-  RUNTIME_DIR="$(dirname "$GIT_COMMON_DIR")/.pace"
-else
-  RUNTIME_DIR="$PWD/.pace"
-fi
-mkdir -p "$RUNTIME_DIR"
-touch "$RUNTIME_DIR/synced-plans"
-grep -Fxq "$PLAN_NAME" "$RUNTIME_DIR/synced-plans" || printf '%s\n' "$PLAN_NAME" >> "$RUNTIME_DIR/synced-plans"
+node "<sync-plan.js 的绝对路径>" --plan "<已桥接的 plan 绝对路径>"
 ```
 
-`~/.claude/plans/<name>.md` 这类 Claude Code native plan 也写 `<name>.md`，不要写完整路径。hook 会把同名 `-design.md` 伴随文件视为已同步；不要手写整个目录名。
-
-禁止一次性记录整个 `docs/plans/` 目录；多窗口场景下会吞掉其他窗口的未桥接计划。
+helper 会写入项目运行态 `.pace/synced-plans`，并在 worktree 场景写宿主项目运行态。只传入已桥接的单个 plan 文件路径；不要传目录名或通配路径。
 
 ---
 

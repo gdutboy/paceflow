@@ -10,6 +10,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const HOOKS_DIR = path.join(__dirname, '..', 'plugin', 'hooks');
 const MIGRATE_SCRIPT = path.join(__dirname, '..', 'plugin', 'migrate', 'batch-archive-v5.js');
 const RESERVE_HELPER = path.join(HOOKS_DIR, 'reserve-artifact-id.js');
+const SYNC_PLAN_HELPER = path.join(HOOKS_DIR, 'sync-plan.js');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;
@@ -57,6 +58,16 @@ function runHookDetailed(hookName, { cwd, stdin = {}, env = {} }) {
 
 function runReserveHelper({ cwd, args = [], env = {} }) {
   const r = spawnSync('node', [RESERVE_HELPER, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
+  });
+  return { code: r.status || 0, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+function runSyncPlanHelper({ cwd, args = [], env = {} }) {
+  const r = spawnSync('node', [SYNC_PLAN_HELPER, ...args], {
     cwd,
     encoding: 'utf8',
     timeout: 10000,
@@ -841,6 +852,7 @@ test('9c3a. artifact-root=local 的 SessionStart 不创建 Obsidian 空项目目
   assert.ok(r.stdout.includes('=== Artifact 目录 ==='), 'local 模式也应注入 artifact 根目录');
   assert.ok(r.stdout.includes(`路径: ${dir.replace(/\\/g, '/')}/`));
   assert.ok(r.stdout.includes('仅用于 PaceFlow artifacts'));
+  assert.ok(r.stdout.includes('sync-plan.js'), 'SessionStart 应提供 plan 同步 helper 绝对路径');
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'local 选择后 SessionStart 可在本地补齐模板');
   assert.ok(fs.existsSync(path.join(dir, 'task.md')), 'local 选择后 SessionStart 可在本地补齐 task.md');
   assert.ok(!fs.existsSync(vaultDir), 'local 选择不应创建 Obsidian 空项目目录');
@@ -1341,6 +1353,42 @@ test('9hc-helper4. reserve-artifact-id helper 在 root 未选择时只提示选�
   assert.ok(helper.stdout.includes('AskUserQuestion'));
   assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'root 选择前 helper 不应创建项目 .pace/');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'root 选择前 helper 不应懒创建 changes/');
+});
+
+test('9hc-helper5. sync-plan helper 幂等写入单个 plan basename', () => {
+  const dir = makeTmpDir('plan-sync-helper');
+  const plan = path.join(dir, 'docs', 'plans', '2026-05-11-helper-smoke.md');
+  fs.mkdirSync(path.dirname(plan), { recursive: true });
+  fs.writeFileSync(plan, '# helper smoke\n', 'utf8');
+
+  const first = runSyncPlanHelper({ cwd: dir, args: ['--plan', plan] });
+  const second = runSyncPlanHelper({ cwd: dir, args: ['--plan', plan] });
+  assert.strictEqual(first.code, 0);
+  assert.strictEqual(second.code, 0);
+  assert.ok(first.stdout.includes('synced-plan: 2026-05-11-helper-smoke.md'));
+  assert.ok(second.stdout.includes('plan 已经标记为同步'));
+
+  const syncedPath = path.join(dir, '.pace', 'synced-plans');
+  const lines = fs.readFileSync(syncedPath, 'utf8').trim().split('\n');
+  assert.deepStrictEqual(lines, ['2026-05-11-helper-smoke.md']);
+});
+
+test('9hc-helper6. sync-plan helper 在 git worktree 写宿主 .pace/synced-plans', () => {
+  const root = makeTmpDir('plan-sync-helper-worktree-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+  const plan = path.join(host, 'docs', 'plans', '2026-05-11-worktree-plan.md');
+  fs.mkdirSync(path.dirname(plan), { recursive: true });
+  fs.writeFileSync(plan, '# worktree plan\n', 'utf8');
+
+  const r = runSyncPlanHelper({ cwd: worktree, args: ['--plan', plan] });
+  assert.strictEqual(r.code, 0);
+  assert.ok(fs.existsSync(path.join(host, '.pace', 'synced-plans')), '应写宿主项目 runtime');
+  assert.strictEqual(fs.readFileSync(path.join(host, '.pace', 'synced-plans'), 'utf8'), '2026-05-11-worktree-plan.md\n');
+  assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'synced-plans')), '不应写 worktree 自己的 runtime');
 });
 
 test('9hc-mismatch. create-chg 显式 reserved-id 与 hook reservation 不匹配 → DENY', () => {

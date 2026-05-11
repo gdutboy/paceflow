@@ -18,7 +18,7 @@
 > 执行状态更新（2026-05-10，v6.0.47-v6.0.50）：项目级写锁已拆成 ID reservation + 写入阶段 resource lock。Agent 派遣和读/思考可并发；`create-chg` / `record-correction` 通过 session-scoped reservation 原子预留编号；真实 `Write/Edit/MultiEdit` 按 `detail:<file>`、`index:changes`、`index:<file>` 短暂加锁。CHG 粒度收紧为连续执行、可验证、可关闭的最小变更单元；大计划应拆成多个 CHG，同一 CHG 内多个 T-NNN 默认连续完成，最后用 `close-chg complete-open-tasks:true` 一次收口。
 > 执行状态更新（2026-05-08，v6.0.34）：全面审计确认项已修复：Bash artifact/lock 保护改为解析等价路径；worktree 运行态 `.pace` 统一到宿主项目；`artifact-root=vault` 缺 `PACE_VAULT_PATH` 时 fail-closed，不再静默落本地；Stop 防循环计数在 `.pace` 缺失时仍可降级但 idle PASS 不落盘；C/V 与 PostToolUse artifact 判定统一基于 artifact root。当前代码层验证基线：hook E2E 116/116、pace-utils 101/101、install 24/24。
 > 执行状态更新（2026-05-09，v6.0.46）：native plan bridge Step 5 已改为硬收尾，必须把源 plan basename 写入宿主项目 `.pace/synced-plans`；Phase C agent fixture 扩到 close/archive/finding/correction 正向 contract；release sanity 已纳入 `tests/test-pace-utils.js`，机械检查 plugin manifest/marketplace version 一致和 runtime root 不含开发资料。当前代码层验证基线：hook E2E 128/128、pace-utils 106/106、`claude plugin validate ./plugin` PASS。
-> 执行状态更新（2026-05-10，v6.0.50 验证基线）：hook E2E 136/136、pace-utils 115/115、`claude plugin validate ./plugin` PASS、`git diff --check` PASS。
+> 执行状态更新（2026-05-11，v6.0.50 验证基线）：hook E2E 149/149、pace-utils 115/115、`claude plugin validate ./plugin` PASS、`git diff --check` PASS。pace-bridge Step 5 已新增 `hooks/sync-plan.js` helper，桥接成功后由 helper 幂等写入宿主 `.pace/synced-plans`。
 
 ---
 
@@ -154,8 +154,8 @@ changes/**/*.md
 主 session 创建 CHG 或 correction 前，优先先运行 reservation helper，避免首次 Agent 因缺 `reserved-id` 被 hook deny：
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg
-node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation record-correction
+node "<SessionStart / PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation create-chg
+node "<SessionStart / PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation record-correction
 ```
 
 helper 输出的 `artifact_dir`、`operation`、`reserved-id`、`reserved-file` 或 `reserved-file-prefix` 必须原样放到后续 `artifact-writer` prompt 顶部。默认复用同一 session 尚未消费的 reservation；确实要创建第二个 CHG 时加 `--new`。
@@ -710,7 +710,7 @@ v6 目标：
 - 先把 plan 拆成连续执行、可独立验证和关闭的 CHG；不要把横跨前端、后端、存储、迁移、文档的大计划塞进单个 CHG。
 - 每个 CHG 派 agent `create-chg` 前先运行 `hooks/reserve-artifact-id.js --operation create-chg`，把 helper 输出原样放到 prompt 顶部；不要直接 Edit artifact。
 - auto-APPROVED 改为派 agent `update-chg action=approve-and-start`，带 `approval-confirmed/source/evidence/task-id`，一次完成批准与首个任务 `[/]`。
-- `.pace/synced-plans` 仍保留。
+- bridge 成功后运行 `hooks/sync-plan.js --plan <plan path>`，由 helper 幂等写入宿主 `.pace/synced-plans`。
 - 输出摘要改为包含 `changes/<id>.md` 路径。
 
 ### 7.4 `skills/pace-knowledge`

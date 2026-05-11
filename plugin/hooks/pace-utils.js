@@ -18,6 +18,7 @@ const ARTIFACT_SEQUENCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ART
 const ARTIFACT_SEQUENCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_WAIT_MS || 2500) || 2500);
 const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/');
+const SYNC_PLAN_SCRIPT = path.resolve(__dirname, 'sync-plan.js').replace(/\\/g, '/');
 const PACE_ARTIFACT_ROOT_CONTENT = 'task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
@@ -67,6 +68,7 @@ const FORMAT_SNIPPETS = {
   approveAndStartOp: '批准并开始 = 派 artifact-writer approve-and-start；字段格式见 Skill(paceflow:artifact-management)',
   closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg；字段格式见 Skill(paceflow:artifact-management)',
   reserveHelper: `预留编号 = 主 session 先运行 Bash: node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部`,
+  syncPlanHelper: `同步 plan = 桥接成功后运行 Bash: node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"`,
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
@@ -1179,6 +1181,75 @@ function listUnsyncedPlanFiles(cwd) {
   return plans.filter(p => !syncedSet.has(p.name));
 }
 
+function expandHomePath(value) {
+  const raw = String(value || '').trim();
+  if (raw === '~') return process.env.HOME || raw;
+  if (raw.startsWith('~/') || raw.startsWith('~\\')) {
+    const home = process.env.HOME || '';
+    return home ? path.join(home, raw.slice(2)) : raw;
+  }
+  return raw;
+}
+
+function normalizePlanSyncTarget(cwd, planPath) {
+  const raw = String(planPath || '').trim();
+  if (!raw) return { ok: false, reason: 'missing-plan' };
+  const resolved = path.resolve(cwd || process.cwd(), expandHomePath(raw));
+  const name = path.basename(resolved);
+  if (!/\.md$/i.test(name)) return { ok: false, reason: 'plan-not-markdown', planPath: resolved, name };
+  try {
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) return { ok: false, reason: 'plan-not-file', planPath: resolved, name };
+  } catch(e) {
+    return { ok: false, reason: 'plan-not-found', planPath: resolved, name, error: e.message || String(e) };
+  }
+  return { ok: true, planPath: resolved, name };
+}
+
+function syncPlanFile(cwd, planPath) {
+  const target = normalizePlanSyncTarget(cwd, planPath);
+  if (!target.ok) return { ok: false, ...target };
+
+  const runtimeDir = getProjectRuntimeDir(cwd);
+  const syncedPath = path.join(runtimeDir, 'synced-plans');
+  const lockPath = path.join(runtimeDir, 'locks', 'synced-plans.lock');
+  const lock = acquireJsonLock(lockPath, {
+    version: 'plan-sync-v1',
+    resource: 'synced-plans',
+    cwd: String(cwd || ''),
+    file: syncedPath,
+    operation: 'sync-plan',
+  }, { ttlMs: ARTIFACT_SEQUENCE_LOCK_TTL_MS, waitMs: ARTIFACT_SEQUENCE_LOCK_WAIT_MS });
+  if (!lock.acquired) {
+    return {
+      ok: false,
+      reason: 'synced-plans-locked',
+      lock: lock.lock,
+      waitedMs: lock.waitedMs,
+      planPath: target.planPath,
+      name: target.name,
+      syncedPath,
+      runtimeDir,
+    };
+  }
+
+  try {
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    let content = '';
+    try { content = fs.readFileSync(syncedPath, 'utf8'); } catch(e) {}
+    const normalized = normalizeLineEndings(content);
+    const names = normalized.split('\n').map(line => line.trim()).filter(Boolean);
+    if (names.includes(target.name)) {
+      return { ok: true, already: true, planPath: target.planPath, name: target.name, syncedPath, runtimeDir };
+    }
+    const prefix = normalized && !normalized.endsWith('\n') ? '\n' : '';
+    fs.appendFileSync(syncedPath, `${prefix}${target.name}\n`, 'utf8');
+    return { ok: true, already: false, planPath: target.planPath, name: target.name, syncedPath, runtimeDir };
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch(e) {}
+  }
+}
+
 /**
  * 多信号 PACE 激活判断
  * @param {string} cwd - 当前工作目录
@@ -1489,7 +1560,7 @@ function formatBridgeHint(cwd, artDir) {
   const planFiles = listUnsyncedPlanFiles(cwd);
   if (planFiles.length === 0) return null;
   const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
-  const bridgeSteps = '调用 Skill(paceflow:pace-bridge)，按该 skill 读取计划、创建 v6 CHG、必要时 approve-and-start，并记录同步标记。';
+  const bridgeSteps = `调用 Skill(paceflow:pace-bridge)，按该 skill 读取计划、创建 v6 CHG、必要时 approve-and-start；bridge 成功后运行 plan 同步 helper：node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"。`;
   return { fileList, bridgeSteps };
 }
 
@@ -1812,6 +1883,7 @@ module.exports = {
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS,
+  RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
@@ -1833,7 +1905,7 @@ module.exports = {
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
   // 计划文件
-  hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
+  hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, syncPlanFile,
   // 统计与检查
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
   parseFrontmatter, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,

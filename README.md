@@ -133,7 +133,7 @@ brainstorming（需求探索 + 方案设计）
 
 - 首次启用可选择将 Artifact 存储到 `projects/<项目名>/` 或本地项目目录，选择写入 `.pace/artifact-root`
 - Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
-- `artifact-writer` 派遣前可用 `hooks/reserve-artifact-id.js` 预留 CHG/CORRECTION 编号；真实写入时按详情文件或索引资源短暂加锁，多 worktree 只在共享索引写入窗口串行
+- `artifact-writer` 派遣前可用 `hooks/reserve-artifact-id.js` 预留 CHG/CORRECTION 编号；pace-bridge 收尾可用 `hooks/sync-plan.js` 标记 plan 已同步；真实写入时按详情文件或索引资源短暂加锁，多 worktree 只在共享索引写入窗口串行
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
 - 兼容 Obsidian Tasks / Dataview 跨项目查询
@@ -288,7 +288,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
-| v6.0.50 | 2026-05-10 | 收紧 CHG 粒度语义：CHG 是连续执行、可验证、可关闭的最小变更单元，大计划应拆成多个 CHG；连续执行默认由 `close-chg complete-open-tasks:true` 收口，`update-status` 只用于暂停/阻塞/跳过/跨 session/长任务可见性。新增 `hooks/reserve-artifact-id.js` helper，主 session 可先预留 create-chg / record-correction 编号，避免首次 artifact-writer 因缺 reserved-id 必然被 deny |
+| v6.0.50 | 2026-05-10 | 收紧 CHG 粒度语义：CHG 是连续执行、可验证、可关闭的最小变更单元，大计划应拆成多个 CHG；连续执行默认由 `close-chg complete-open-tasks:true` 收口，`update-status` 只用于暂停/阻塞/跳过/跨 session/长任务可见性。新增 `hooks/reserve-artifact-id.js` helper，主 session 可先预留 create-chg / record-correction 编号；新增 `hooks/sync-plan.js` helper，pace-bridge 收尾可幂等写入宿主 `.pace/synced-plans` |
 | v6.0.49 | 2026-05-10 | 补齐 production Smoke1 暴露的 Paceflow skill 入口提示：首次启用 SessionStart 只注入轻量 `Skill(paceflow:pace-workflow)` 提醒；artifact-root 选择、reserved-id 重派、approve-and-start 缺字段、close-chg 缺验证摘要等 hook deny 均提示读取 `paceflow:pace-workflow` / `paceflow:artifact-management`；扩宽 workflow skill 触发描述，覆盖已启用 PACEflow 项目中的 1-2 文件代码修改 |
 | v6.0.48 | 2026-05-10 | 修复 production Smoke1 暴露的 artifact-writer reserved-id 传递缺口：不再依赖 `PreToolUse:Agent additionalContext` 被 subagent 读取；`create-chg` / `record-correction` 首次派遣会先预留编号并 deny，要求主 session 把 `reserved-id` / `reserved-file` 或 `reserved-file-prefix` 原样写入 prompt 后重派；同时收紧首次 artifact-root 选择后的提示，避免直接重试代码写入而跳过 create/approve 流程 |
 | v6.0.47 | 2026-05-10 | 重构 artifact-writer 并发锁：Agent 派遣不再持有项目级锁；create-chg / record-correction 由 hook 原子预留编号；真实 Write/Edit/MultiEdit 按资源短暂加锁，详情文件可并发写入，`task.md` + `implementation_plan.md` 作为一组索引事务串行；Bash/Write/Edit/MultiEdit 禁止手写 `.pace/locks` / `sequences` / `reservations` / `index-transactions` 控制面 |
