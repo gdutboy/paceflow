@@ -254,7 +254,7 @@ function writeArtifactDirSection() {
     const vaultRoot = paceUtils.normalizePath(path.resolve(paceUtils.VAULT_PATH, 'projects'));
     if (normalizedArtDir.startsWith(`${vaultRoot}/`)) mode = 'Obsidian vault project';
   }
-  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n请使用此路径读写 artifact 文件；.pace/ 只保存配置/运行状态，不存 task.md / changes/**。\n\n`);
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。\n预留编号 helper: node "${path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/')}" --operation create-chg\n\n`);
 }
 
 let artifactDirInjected = false;

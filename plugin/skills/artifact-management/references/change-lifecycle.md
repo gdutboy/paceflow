@@ -18,13 +18,13 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行：
+ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 绝对路径命令：
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg
+node "<reserve-artifact-id.js 的绝对路径>" --operation create-chg
 ```
 
-再把 helper 输出的 `reserved-id` / `reserved-file` 原样加入 Agent prompt。若跳过 helper，PreToolUse 会用 deny 文案返回同样字段，作为 fallback。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
+再把 helper 输出的 `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
 
 `T-NNN` 是单个 CHG/HOTFIX 内的局部任务编号。不同 CHG 可以都从 `T-001` 开始；所有状态更新必须同时带 `target: CHG-...` 和 `task-id: T-...`，避免多 worktree / 多 CHG 并发时产生歧义。
 

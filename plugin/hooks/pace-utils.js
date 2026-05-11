@@ -17,6 +17,8 @@ const ARTIFACT_RESOURCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIF
 const ARTIFACT_SEQUENCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_TTL_MS || 30 * 1000) || 30 * 1000);
 const ARTIFACT_SEQUENCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_WAIT_MS || 2500) || 2500);
 const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
+const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/');
+const PACE_ARTIFACT_ROOT_CONTENT = 'task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
@@ -64,7 +66,7 @@ const FORMAT_SNIPPETS = {
   // 归档操作（T-441: 移动标记而非内容）
   approveAndStartOp: '批准并开始 = 派 artifact-writer update-chg action=approve-and-start：需 approval-confirmed: true、approval-source、approval-evidence 与 task-id',
   closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg：需 verification-confirmed: true、complete-open-tasks: true、verify-summary、walkthrough-summary',
-  reserveHelper: '预留编号 = 主 session 先运行 Bash: node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部',
+  reserveHelper: `预留编号 = 主 session 先运行 Bash: node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部`,
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
@@ -996,19 +998,16 @@ function v5MigrationPromptMessage(cwd) {
     '检测到旧 v5 PACE artifact，但当前 artifact 根目录没有 changes/ v6 详情目录。',
     `PaceFlow artifact 根目录（legacy v5）: ${displayDir(info.dir)}`,
     `检测到文件: ${info.files.join(', ')}`,
-    '注意：触发本提示的当前工具调用已被 hook 阻止；目标代码/artifact 尚未被修改。不要声称本次写入已经完成。',
-    'PACEflow v6 不会自动改写旧 vault/本地 artifact。请先用 AskUserQuestion 询问用户如何处理：',
-    '1. 迁移旧 v5 artifact 到 v6（推荐）：先运行 dry-run，展示摘要后再次确认，再运行正式迁移。',
-    '2. 暂不迁移，改用其它 artifact root：写入 .pace/artifact-root 为 local / vault / 绝对路径，并写入 .pace/v5-migration-state 为 ignored。',
-    '3. 取消本次操作，保持旧内容不变。',
-    '迁移命令（必须先 dry-run）：',
+    '请先用 AskUserQuestion 询问用户是否迁移、忽略旧 artifact，或取消本次操作；若前一个工具调用被 hook 阻止，目标文件尚未修改。',
+    '推荐迁移流程：先 dry-run，展示摘要并再次确认后再正式迁移。',
+    'dry-run 命令：',
     `node "${script}" "${artifactDir}" --dry-run`,
-    'dry-run 完成后，必须再次使用 AskUserQuestion 展示摘要并取得用户确认；不得把第一次选择当作正式迁移授权。',
-    '用户确认 dry-run 摘要后再运行：',
+    'dry-run 完成后，必须再次使用 AskUserQuestion 展示摘要并取得用户确认。',
+    '确认后正式迁移命令：',
     `node "${script}" "${artifactDir}"`,
-    `如果用户明确决定忽略这份旧 v5 artifact，请写入 ${getV5MigrationStatePath(cwd)}，内容为纯文本 ignored；要重新提示则删除该文件。`,
+    `忽略旧 artifact 时写入 ${getV5MigrationStatePath(cwd)}，内容为纯文本 ignored。`,
     '禁止在用户确认前创建 changes/、懒创建 v6 模板或派 artifact-writer create-chg。',
-    '迁移或忽略只处理 artifact 根目录状态，不完成原始代码任务；处理完成后必须按 P-A-C 创建/批准 v6 CHG，再重试被阻止的原始工具调用。'
+    '处理完成后重新走 v6 P-A-C（必要时派 artifact-writer create-chg），并重试被阻止的原始工具调用；不要把迁移本身当作原始任务完成。'
   ].join('\n');
 }
 
@@ -1033,12 +1032,11 @@ function artifactRootChoiceMessage(cwd) {
     FORMAT_SNIPPETS.skillRef,
     `Obsidian vault artifact 根目录: ${displayDir(vaultDir)}`,
     `本地项目 artifact 根目录: ${displayDir(stateDir)}`,
-    '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"。',
-    `用户选择后，只把选择结果写入配置文件 ${choicePath}：选择 vault 时写入纯文本 vault；选择本地时写入纯文本 local；不要包含引号。`,
-    `注意：${displayDir(path.join(stateDir, '.pace'))} 只是 PaceFlow 配置/运行态目录，不是 artifact 根目录；不要把 task.md / implementation_plan.md / changes/** 写进 .pace/。`,
-    `若选择本地项目目录，后续 artifact_dir 必须是 ${displayDir(stateDir)}；若选择 Obsidian vault，后续 artifact_dir 必须是 ${displayDir(vaultDir)}。`,
-    '若本次被拦截的是代码 Write/Edit/MultiEdit：写入配置文件后不要直接重试代码写入；先派 artifact-writer create-chg，并在用户明确批准/要求执行后派 approve-and-start，再重试代码写入。',
-    '若本次被拦截的是 artifact-writer Agent：写入配置文件后按 hook 提示重派同一个 Agent。hook 会在所选 artifact 根目录懒创建 task.md / implementation_plan.md / changes/**。'
+    '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"（至少两个选项）。',
+    `用户选择后，只把选择结果写入配置文件 ${choicePath}：vault 或 local，纯文本、无引号。`,
+    '该配置文件不是 artifact 根目录。',
+    `artifact_dir 只用于 PaceFlow artifacts：${PACE_ARTIFACT_ROOT_CONTENT}。`,
+    '写入配置后，不要直接重试代码写入；先创建/批准 CHG，再重试被阻止的代码写入。若被阻止的是 artifact-writer Agent，则按提示重派同一操作。'
   ].join('\n');
 }
 
@@ -1047,7 +1045,7 @@ function artifactDirRuntimeHint(cwd) {
   const stateDir = getProjectStateDir(cwd);
   const choice = readArtifactRootChoice(cwd) || 'auto';
   const choicePath = getArtifactRootChoicePath(cwd);
-  return `Artifact 根目录：${displayDir(artDir)}（选择=${choice}；配置文件=${choicePath}；.pace/ 只保存配置/运行状态，不存 task.md / changes/**）`;
+  return `Artifact 根目录：${displayDir(artDir)}（选择=${choice}；配置文件=${choicePath}；仅用于 ${PACE_ARTIFACT_ROOT_CONTENT}）`;
 }
 
 function appendArtifactDirHint(cwd, message) {
@@ -1546,6 +1544,43 @@ function detailPathForId(artDir, id) {
   return null;
 }
 
+function slugForChangeId(id) {
+  const lower = String(id || '').toLowerCase();
+  if (lower.startsWith('chg-') || lower.startsWith('hotfix-')) return lower;
+  if (/^chg-\d{8}-\d{2}$/i.test(lower)) return lower;
+  if (/^hotfix-\d{8}-\d{2}$/i.test(lower)) return lower;
+  return '';
+}
+
+function validateWalkthroughLinks(cwd) {
+  const artDir = getArtifactDir(cwd);
+  const active = readActive(cwd, 'walkthrough.md');
+  if (active === null) return [];
+  const issues = [];
+  for (const line of String(active || '').split(/\r?\n/)) {
+    if (!/^\|\s*\d{4}-\d{2}-\d{2}\s*\|/.test(line)) continue;
+    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+    if (cells.length < 3) continue;
+    const summaryCell = cells[1] || '';
+    const id = (cells[2] || '').match(/\b(CHG|HOTFIX)-\d{8}-\d{2}\b/i);
+    if (!id) continue;
+    const expectedId = id[0].toUpperCase();
+    const expectedSlug = slugForChangeId(expectedId);
+    const link = summaryCell.match(/\[\[([^|\]#]+)(?:#[^|\]]+)?(?:\|[^\]]+)?\]\]/);
+    if (!link) continue;
+    const target = String(link[1] || '').trim().toLowerCase();
+    if (target !== expectedSlug) {
+      issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedSlug}]]，当前为 [[${target}]]。`);
+      continue;
+    }
+    const detailPath = detailPathForId(artDir, expectedId);
+    if (detailPath && !fs.existsSync(detailPath)) {
+      issues.push(`walkthrough.md 行 ${expectedId} 指向 [[${expectedSlug}]]，但详情文件不存在：changes/${expectedSlug}.md。`);
+    }
+  }
+  return issues;
+}
+
 /** 从 v6 索引活跃区提取 CHG/HOTFIX wikilink 行 */
 function parseChangeIndex(activeText) {
   const entries = [];
@@ -1800,7 +1835,7 @@ module.exports = {
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles,
   // 统计与检查
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
-  parseFrontmatter, detailPathForId, parseChangeIndex, readChangeDetail, extractTaskSection,
+  parseFrontmatter, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, nativePlanMatchesProject, createLogger, logEntry, formatBridgeHint,

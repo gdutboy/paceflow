@@ -256,11 +256,11 @@ reserved-id helper 设计：
 - 新增 `plugin/hooks/reserve-artifact-id.js`，主 session 在派 `artifact-writer create-chg` 或 `record-correction` 前运行：
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg
-node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation record-correction
+node "<SessionStart / PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation create-chg
+node "<SessionStart / PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation record-correction
 ```
 
-- helper 使用 `CLAUDE_CODE_SESSION_ID` 创建 session-scoped reservation，输出可直接放到 Agent prompt 顶部的字段：`artifact_dir`、`operation`、`reserved-id`、`reserved-file` 或 `reserved-file-prefix`。
+- helper 使用当前 Claude Code session 创建 session-scoped reservation，输出可直接放到 Agent prompt 顶部的字段：`artifact_dir`、`operation`、`reserved-id`、`reserved-file` 或 `reserved-file-prefix`。
 - root 未选择时只输出 artifact-root AskUserQuestion 提示，不创建 `.pace/`、`changes/` 或 Obsidian 空项目目录。
 - 检测到 legacy v5 artifact 时只输出迁移提示，不懒创建 v6 模板、不预留 ID。
 - root 已选择且无 v5 阻塞时，helper 可以幂等懒创建 v6 基础模板，然后预留编号。
@@ -268,6 +268,109 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation record-cor
 - PreToolUse 原有 missing-reserved deny 仍保留为 fallback，避免旧模型/旧 skill 路径失去机械兜底。
 
 ---
+
+#### 0.1.10e1 v6.0.50 production Smoke1 验证（2026-05-10）
+
+Smoke1（CHG 粒度 + reserved-id helper）真实运行结论（sid=cae36fee-d1b6-4a07-bab2-e9b900dcb100）：
+
+核心链路通过：
+- SessionStart 正确注入 `Skill(paceflow:pace-workflow)` 提示。
+- 首次直接代码修改被 artifact-root 选择拦截（符合预期）。
+- 用户选择 `local` 后，主 session 正确运行 `reserve-artifact-id.js`。
+- `create-chg` 首次 Agent 派遣直接 PASS（reserved-id: CHG-20260510-01），无二次 reserved-id 失败。
+- C 阶段使用 `approve-and-start` 合并批准+开始。
+- E 阶段未发送任何 `update-status`——连续执行生效。
+- 验证 `npm test` 通过后，直接 `close-chg complete-open-tasks:true` 收口并归档。
+- 所有 artifacts 终态正确：详情 `status: archived`、两个任务 `[x]`、`<!-- APPROVED -->` / `<!-- VERIFIED -->` 齐全；`task.md` / `implementation_plan.md` 活跃区为空，ARCHIVE 下有 `[x]` 索引；`walkthrough.md` 已写入。Stop hook clean pass。
+
+发现的小问题：
+1. AskUserQuestion 首次失败：模型只给了 1 个 option（需 ≥2），重试为"批准并开始 / 暂不执行"后成功。skill 可明确"至少给两个选项"。
+2. artifact-writer 报告标题前缀 warning：`全部成功。编译报告。` / `全部操作完成。生成报告。` 出现在 `## artifact-writer 报告` 之前。SubagentStop 记录 `title-prefix` warning，功能无损。
+3. close-chg 多步编辑中间出现短暂 PostToolUse warning（completed 但缺 verified-date、verified 但仍在活跃索引）。终态正确，可考虑后续降低瞬时状态噪声。
+
+
+#### 0.1.10e2 v6.0.50 production Smoke3 验证（2026-05-11）
+
+Smoke3（host + git worktree 并发 artifact resource lock）真实运行结论：
+
+- Host session: `3283f6e5-96d2-4e14-abf0-c8b7737e2bfa`，cwd `/mnt/k/AI/paceflow-smoke-local`。
+- Worktree session: `c46f37fc-c1b6-4425-9d8a-cb7517c04fd8`，cwd `/mnt/k/AI/paceflow-smoke-local-wt`。
+- 两个 session 的 `SessionStart` 都正确路由到共享 artifact root `/mnt/k/AI/paceflow-smoke-local/`；这是预期的项目级 artifact 语义。
+- Hook resource lock 没有出现抢锁/死锁/长等待；两个 CHG 详情文件分别使用 `detail:changes/chg-20260511-01.md`、`detail:changes/chg-20260511-02.md`，索引更新通过 `index:changes` 串行短锁保护。
+- `CHG-20260511-01` 与 `CHG-20260511-02` 终态均为 `status: archived`，任务 `[x]`，`<!-- APPROVED -->` / `<!-- VERIFIED -->` 齐全；Stop hook 两个 session 均 PASS。
+
+暴露的问题：
+
+1. Worktree session 把业务文件 `branch-note.md` 写到了共享 artifact/root host 目录 `/mnt/k/AI/paceflow-smoke-local/branch-note.md`，而不是当前 worktree `/mnt/k/AI/paceflow-smoke-local-wt/branch-note.md`。这不是 artifact 分类 bug：`branch-note.md` 不属于 `task.md` / `implementation_plan.md` / `changes/**` 等 PaceFlow artifact，hook 放行非 artifact 写入符合职责边界。需要修的是 PaceFlow 文案边界：`artifact_dir` 只表示 PaceFlow artifact 根目录，不应被描述成普通项目文件的默认写入位置，也不应替主 session 定义代码、README、配置或业务文档路径规则。Smoke 验证脚本可单独检查 worktree 业务文件落点，但该检查不进入 hook 运行时门禁。
+2. Host session 未在开始时调用 `paceflow:pace-workflow`，先直接 `Write README.md`，随后才尝试派 artifact-writer。由于 README.md 被视为非 artifact/非代码文件，hook 放行，导致“先创建 CHG 再执行”的用户语义没有被机械兜住。需评估是否对 PACE project 中的普通项目文件写入也增加轻量流程提醒，至少在用户显式要求“创建 CHG”时避免先写文件。
+3. Host session 多次重试：首次 Agent 缺 `artifact_dir`；第二次缺 `reserved-id`；运行 `node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js"` 时 Bash 子进程里 `CLAUDE_PLUGIN_ROOT` 为空，实际变成 `/hooks/reserve-artifact-id.js`；后续通过搜索 plugin cache 找到绝对路径才复用 `CHG-20260511-02`。需要让 SessionStart/skill/hook 输出可直接复制的绝对 helper 路径，或提供不依赖 `CLAUDE_PLUGIN_ROOT` 的 helper 调用方式。
+4. Host session 首次 create-chg subagent 使用了无效 `status: open`，SubagentStop 只给 title-prefix warning，agent 自己失败后才重派 `status: planned`。这是模型字段执行问题，但说明 create-chg prompt/schema 仍可进一步收敛。
+5. Host session 试图在未 `approve-and-start` 时直接 `close-chg`，先被 hook 拦缺 `verify-summary` / `walkthrough-summary`，补字段后又被 agent 拒绝缺 `<!-- APPROVED -->`。最终能自恢复，但体验上仍多一次失败；skill 需要更明确“用户直接执行指令可作为 approval evidence，但仍必须先派 approve-and-start，再 close-chg”。
+6. `walkthrough.md` 两条新记录的 wikilink 错误：`[[new-branch-note-worktree-resource-lock-smoke]]`、`[[readme-host-resource-lock-smoke]]` 均无对应详情文件；正确应为 `[[chg-20260511-01]]`、`[[chg-20260511-02]]`。close-chg 报告声称 walkthrough wikilink 检查通过，说明当前 wikilink 校验没有覆盖 walkthrough 目标存在性，或 agent 自检报告不可信。需要 hook/测试补机械校验。
+7. close-chg 多步编辑仍会在中间状态触发短暂 PostToolUse warning（completed 但未 verified、verified 但仍在活跃索引）。终态正确但日志噪声仍存在。
+
+边界文案待修范围（2026-05-11 补充）：`plugin/skills/**/SKILL.md`、`plugin/agents/artifact-writer.md`、`plugin/hooks/session-start.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/reserve-artifact-id.js`、`plugin/hooks/pace-utils.js` 的用户可见提示里，凡是把 `artifact_dir` 推导成普通项目文件写入规则、默认 cwd/worktree 规则、或“不要写到某类非 artifact 目录”的内容，都应收敛为只定义 PaceFlow artifact：`task.md` / `implementation_plan.md` / `changes/**` / `walkthrough.md` / `findings.md` / `corrections.md`。`.pace/` 只保存配置/运行状态，不存 artifacts。非 artifact 文件路径不由 PaceFlow 文案定义。
+
+文案审计补充（2026-05-11）：除路径边界外，hook/skill/agent 的用户可见文案还暴露了过多内部实现细节，应收敛为可执行指令。典型问题包括：`Claude Code 不会可靠地把 PreToolUse additionalContext 注入到 subagent 初始 prompt`、`当前 session 没有匹配的 hook reservation`、`PreToolUse:Agent 会先预留编号并 deny`、`hook resource lock` 等实现解释。主 session 需要的是确定动作：已预留编号则带字段重派；预留字段无效则重新运行 helper；写锁繁忙则等待后 Read 目标 artifact 再重试。不要把 hook 事件名、additionalContext 注入机制、fallback 机制、session/agent reservation 细节作为主要文案。`CLAUDE_PLUGIN_ROOT` 也不应作为主 session Bash 命令的唯一形式，因 production smoke 显示 Bash 子进程可能为空；hook/SessionStart/skill 应优先给出可直接运行的绝对 helper 路径或明确要求使用 hook 输出的 helper 命令。
+
+本轮已确认的具体待修点：
+- `pre-tool-use.js` 的 reserved-id deny 文案去掉 Claude Code/additionalContext 解释，只保留“已预留编号，重派并带字段”。
+- `pre-tool-use.js` 的 artifact_dir deny 文案去掉 `docs/`、`cwd 可能只是代码工作目录` 等普通路径裁判语句。
+- `artifact-writer.md` 与 `agent-references/artifact-writer-spec.md` 去掉 agent 自行解析 `$ARTIFACT_DIR` / fallback cwd 的口径，改为必须使用 prompt/hook 传入的 `artifact_dir`。
+- `pace-utils.js` 的 `FORMAT_SNIPPETS.reserveHelper`、skills、agent-references 中的 helper 命令不再硬依赖 `${CLAUDE_PLUGIN_ROOT}`；改为 hook 输出绝对命令或 helper 路径。
+- SessionStart / Stop / PostToolUse / ReserveID / skills 中的 artifact 根目录说明统一为完整 artifact 列表：`task.md` / `implementation_plan.md` / `changes/**` / `walkthrough.md` / `findings.md` / `corrections.md`。
+- `walkthrough.md` wikilink 目标存在性需补机械校验，避免 agent 报告自称通过但写入 `[[slug]]` 而不是 `[[chg-*]]`。
+
+全量文案复读结果（2026-05-11，覆盖 `plugin/.claude-plugin/plugin.json`、`plugin/hooks/**`、`plugin/agents/**`、`plugin/agent-references/**`、`plugin/skills/**`、`plugin/hooks/templates/**`、`plugin/migrate/**`）：
+
+Claude Code 交叉审计补充（`docs/audits/audit-2026-05-11-paceflow-copy-out-of-scope.md`）：
+
+- 高价值结论：当前文案噪声不是零散问题，而是两个结构性模式造成的：`appendArtifactDirHint()` 对过多 hook 输出无差别追加 artifact 根目录说明；deny 文案承担了“速成手册”职责，内联 schema、helper、迁移步骤、调试原因和恢复路径，导致主 session 容易把 PaceFlow artifact 规则误读成普通项目文件路径规则。
+- 需纳入本轮 P1/P2 的增量：收紧 `post-tool-use-failure.js` 触发范围，避免只读 Bash 失败也注入 PaceFlow 写入恢复提示；`v5MigrationPromptMessage()` 与 `artifactRootChoiceMessage()` 瘦身，只输出阻断原因与下一步选择，不内联完整教学；`pre-tool-use.js` 对 `knowledge/`、`thoughts/` 写入的完整 frontmatter/正文模板应下沉到 `pace-knowledge` skill，hook 只做轻量提醒或机械拦截；`DENY_REDIRECT` 中“artifact 文件已迁移到 Obsidian vault”改为“当前 artifact_dir 是 Obsidian vault”；`reserve-artifact-id.js` 输出减少重复的 `.pace/` 科普和 prompt 教学。
+- 需同步瘦身但保留语义的项：artifact-writer 报告标题严格性仍需要保留，但 agent prompt 不应列 14 种失败标题变体；SubagentStop/测试负责反馈即可。`.pace/locks` 等 runtime-control 保护可以保留，但用户可见文案应更短，详细 owner/resource/waitedMs 放日志即可。
+- 下调或暂不作为 bug：`pace-bridge` 提到 native plan 文件名可能变化可保留为中性说明；`pace-knowledge` 的 Grep 缺失 fallback 属于工具兼容提示；agent 的 Edit-before-Read 规则是 Claude Code 工具约束，不能删除；emoji/G-9 不是功能阻断，但 G-9 章节号不应长期出现在通用 plugin 文案。
+
+P1 必修：
+- helper 路径口径：`pace-utils.js` 的 `FORMAT_SNIPPETS.reserveHelper`、`artifact-management/SKILL.md`、`pace-workflow/SKILL.md`、`pace-bridge/SKILL.md`、`change-lifecycle.md`、`create-chg.md` 都把 `node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js"` 当作主 session Bash 命令。Smoke3 已验证 Bash 子进程可能拿不到 `CLAUDE_PLUGIN_ROOT`，应由 hook 输出绝对 helper 路径/命令，skill 只要求“运行 hook 提供的 helper 命令”。
+- artifact_dir 边界：`session-start.js`、`artifactDirRuntimeHint()`、`artifactRootChoiceMessage()`、`reserve-artifact-id.js` 输出、`artifact-management`/`pace-workflow` skill 多处只写 `task.md / changes/**`，或把 `artifact_dir` 描述成普通项目文件的写入依据。应统一写成“仅 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`”，并明确非 artifact 文件路径不由 PaceFlow 决定。
+- 内部实现泄露：`reservationRequiredReason()`、`reservationExplicitMissingReason()`、`artifactResourceLockDenyReason()`、artifact-writer PASS additionalContext、`create-chg.md` 的 “PreToolUse:Agent 会先预留编号并 deny”、`reserve-artifact-id.js` 顶部注释/usage 中面向模型的 additionalContext/session reservation 解释，需要收敛为动作说明。可以保留日志里的 `resource/session/agent` 字段，但不要把实现机制作为主提示。
+- agent artifact_dir 规则：`artifact-writer.md` 与 `artifact-writer-spec.md` 仍保留“优先 vault / worktree 归一 / fallback cwd”的 agent 解析口径。v6 当前应由主 session/hook 解析并显式传入 `artifact_dir`；agent 缺失或不匹配就失败/让主 session 重派，不自行 fallback。
+- walkthrough 机械校验：`close-chg.md` 当前写 `[[<slug>]]`，实际 Smoke3 证明模型会用标题 slug。应改为目标详情 wikilink `[[chg-yyyymmdd-nn]]` / `[[hotfix-yyyymmdd-nn]]`，并在 hook/test 中机械校验 `walkthrough.md` 第 2 列 wikilink 与第 3 列 CHG-ID 对应详情文件存在。
+- C→E→V 顺序提示：hook 已能拦截未批准 close，但 skills 仍可更明确“用户直接执行指令可作为 approval-evidence；仍必须先 `approve-and-start`，然后写代码/测试，最后 `close-chg`”。这能减少 Smoke3 里的无效重试。
+- TaskSync 语义过严（Windows 实测，2026-05-11）：当项目只有 `docs/plans/*.md` Superpowers 计划文件、尚无 v6 `task.md` 时，`plugin/hooks/task-list-sync.js` 会对 `TaskCreate` / `TaskUpdate` / `TodoWrite` 直接 deny，提示先桥接 plan。这导致主 session “先建立任务清单” 连续报错，但真正需要硬拦的是后续代码/artifact 写入。Claude 内部任务列表是工作记忆，不是 PaceFlow artifact 权威；这里应改为 `additionalContext` 提醒（或只 log），让任务列表创建继续进行，同时保留 `Write/Edit/MultiEdit/Bash/Agent` 路径上的硬门禁。
+- PostToolUse Superpowers 提醒范围过宽（Windows 实测，2026-05-11）：在存在 `docs/plans/*.md` 且 `task.md` 不存在时，`plugin/hooks/post-tool-use.js` 会在任意工具成功后调用 `isPaceProject(cwd)`，因此 Edit 纯审计文档 `docs/audits/*.md` 也会收到“检测到 PACE 激活信号（superpowers）但 task.md 不存在，请先创建 Artifact 文件”的提醒。这不应进入 hard/soft 流程提醒主路径；PostToolUse 只应对 artifact 写入、代码写入、或明确进入 PACE 流程的 Agent/bridge 操作提示，普通文档编辑应 log-only 或完全静默。
+
+P2 可选优化：
+- Smoke1 的 AskUserQuestion 失败可在 skill 示例里补“至少两个选项”；这不是 PaceFlow artifact 阻断 bug。
+- close-chg 多步 Edit 产生的 PostToolUse 短暂 warning 是中间态噪声，终态正确；可后续做同 agent/同目标的短窗口节流。
+- artifact-writer 报告标题前缀 warning 仍是 production 兼容问题，但 SubagentStop 只 warn 不 block，功能无损；不建议回到超长 prompt 追求 100% 标题一致。
+
+确认可保留：
+- `pace-bridge` 写 `.pace/synced-plans` 属于运行态，不是 artifact 存放位置越界。
+- v5 migration 提示与 `batch-archive-v5.js` CLI 文案可以保留绝对脚本路径；这是用户实际要运行的迁移命令。
+- Bash runtime-control deny 中提到 `.pace/locks` / `sequences` / `reservations` / `index-transactions` 是安全边界提示，允许保留，但可减少“resource lock”术语。
+- `pace-knowledge` 关于 `Grep` 不可用时用 Bash `rg/grep/find` fallback 属于 Claude Code 工具兼容说明，不影响 artifact 边界。
+- `superpowers-integration.md` 中的 `docs/plans/` 是 plan 文件约定，不是普通项目文件写入裁判；不属于本轮 artifact_dir 越界问题。
+
+本轮落地结果（2026-05-11）：
+- 已将 helper 口径收敛为 SessionStart/PreToolUse 输出绝对路径命令；skills/spec 不再要求主 session 依赖 `${CLAUDE_PLUGIN_ROOT}`。
+- 已将 `artifact_dir` 文案收敛为只定义 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`；agent 不再自行 fallback cwd。
+- 已瘦身 reserved-id、v5 migration、artifact-root choice、knowledge/thoughts、PostToolUseFailure 等 hook 用户可见文案，去掉 additionalContext / PreToolUse:Agent / resource lock 等实现解释。
+- 已把 Superpowers plan + no task.md 的 `TaskCreate` / `TaskUpdate` / `TodoWrite` 从 deny 改成 additionalContext 提醒，Claude 任务列表继续作为工作记忆。
+- 已把 `PostToolUse` 无 task.md 提醒范围收窄到代码写入或 Agent 操作，普通 `docs/audits/*.md` 编辑不再触发创建 artifact 提醒。
+- 已补 AskUserQuestion 选项数量提示：需要批准确认时给 2-3 个互斥选项，不再只给单个确认选项。
+- 已把 artifact-writer 多步收尾中的状态类 PostToolUse warning 降噪；最终一致性仍由 SubagentStop/Stop 兜底，非 artifact-writer 仍提示。
+- 已补 `walkthrough.md` wikilink 机械校验，要求第 2 列 wikilink 指向第 3 列 CHG/HOTFIX 的详情 slug，例如 `[[chg-20260511-02]]`。
+- 已补 create-chg 详情 frontmatter `status` 机械校验，拒绝 `status: open` 等非法值。
+
+验证结果：
+- `node tests/test-hooks-e2e.js`：143/143 PASS
+- `node tests/test-pace-utils.js`：115/115 PASS
+- `claude plugin validate ./plugin`：PASS
+- `git diff --check`：PASS
+
+结论：并发 resource lock 本身通过；本轮已修 `artifact_dir` 边界文案、helper 绝对路径、walkthrough wikilink 机械校验。下一步可重跑 Smoke1/Smoke3 生产验证。
+
 
 #### 0.1.10b v6.0.40 production Smoke5 记录
 

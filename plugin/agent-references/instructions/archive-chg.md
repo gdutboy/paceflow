@@ -41,7 +41,8 @@
 3. **implementation_plan.md 索引行归档**：同 task.md
 4. **walkthrough.md 添加完成索引行**：
    - Read walkthrough.md
-   - 在"## 最近工作"表格活跃区追加：`| <YYYY-MM-DD> | [[chg-xxx]] <walkthrough-summary> | <CHG-ID> |`
+   - `<slug>` 必须是目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`。禁止用标题 slug。
+   - 在"## 最近工作"表格活跃区追加：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> | <CHG-ID> |`
 
 ## ARCHIVE 内容移动（详解）
 

@@ -80,7 +80,8 @@
   - 两处都没有 → `format-violation: index row not found`
 - Read `implementation_plan.md` 同上
 - Read `walkthrough.md`
-  - 若今日或历史已有包含 `[[<slug>]]` 的 walkthrough 行：不重复追加
+  - `<slug>` 必须是目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`。禁止用标题 slug。
+  - 若今日或历史已有包含 `[[<slug>]]` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加
   - 否则在 `## 最近工作` 表格活跃区追加：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> | <CHG-ID> |`
 
 ### 4. 归档详情状态

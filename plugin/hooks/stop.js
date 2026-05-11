@@ -128,6 +128,9 @@ if (paceSignal === 'artifact') {
       warnings.push(`walkthrough.md 缺少 ${today} 的工作记录索引行；上方 close-chg 派遣会自动补写，不要由主 session 直接补。${FORMAT_SNIPPETS.walkthroughDetail}`);
     }
   }
+  for (const issue of paceUtils.validateWalkthroughLinks(cwd)) {
+    warnings.push(issue);
+  }
 
   try {
     const findingsDir = path.join(artDir, 'changes', 'findings');

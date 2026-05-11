@@ -36,7 +36,7 @@
 
 ## CHG-ID 分配（hook reservation + 二次防御）
 
-并发派多 agent 时不能靠扫描索引分配 nn。主 session 应先运行 `node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg` 原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写进 Agent prompt。若主 session 跳过 helper，PreToolUse:Agent 会先预留编号并 deny，要求重派，这是 fallback。artifact-writer 必须优先使用 prompt 中的 hook 预留编号；不得重新扫描索引自行分配编号。
+并发派多 agent 时不能靠扫描索引分配 nn。主 session 应先运行 hook/skill 提供的 `reserve-artifact-id.js --operation create-chg` 绝对路径命令，原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写进 Agent prompt。artifact-writer 必须优先使用 prompt 中的 hook 预留编号；不得重新扫描索引自行分配编号。
 
 二次防御：
 

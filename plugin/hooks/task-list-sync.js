@@ -59,7 +59,7 @@ paceUtils.withStdinParsed((stdin) => {
     const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate');
 
     const taskActive = readActive(cwd, 'task.md');
-    // W-dry-2: 预计算桥接提示（供两处 Superpowers DENY 复用）
+    // W-dry-2: 预计算桥接提示（只作为任务列表提醒；任务列表不是 artifact 权威）
     const artDir = getArtifactDir(cwd);
     const artifactHint = paceUtils.artifactDirRuntimeHint(cwd);
     const bridgeHint = formatBridgeHint(cwd, artDir);
@@ -95,18 +95,10 @@ paceUtils.withStdinParsed((stdin) => {
       // task.md 不存在但在创建 todo
       if (isWriteOp) {
         if (paceSignal === 'superpowers' && bridgeHint) {
-          const denyOutput = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: `检测到 Superpowers 计划文件（${bridgeHint.fileList}）但 task.md 不存在。请先执行桥接：${bridgeHint.bridgeSteps}\n${artifactHint}`
-            }
-          };
-          process.stdout.write(JSON.stringify(denyOutput));
-          log(paceUtils.logEntry('TaskSync', 'DENY', { proj, tool: toolName, reason: 'superpowers bridge required (no task.md)', dur: Date.now() - t0 }));
-          return;
+          hints.push(`检测到 Superpowers 计划文件（${bridgeHint.fileList}）但 task.md 不存在；Claude 任务列表可继续作为工作记忆。真正写代码或派 artifact-writer 前，请先按 paceflow:pace-bridge 桥接计划。`);
+        } else {
+          hints.push(`未检测到 v6 artifact。请先创建 changes/ 与 v6 索引，或用 .pace/disabled 标记此项目不使用 PACE。`);
         }
-        hints.push(`未检测到 v6 artifact。请先创建 changes/ 与 v6 索引，或用 .pace/disabled 标记此项目不使用 PACE。`);
       }
     }
     }

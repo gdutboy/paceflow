@@ -544,8 +544,8 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
   assert.ok(msg.includes('AskUserQuestion'));
   assert.ok(msg.includes(getArtifactRootChoicePath(dir)));
   assert.ok(msg.includes('配置文件'), '应明确 artifact-root 是配置文件');
-  assert.ok(msg.includes('不是 artifact 根目录'), '应明确 .pace 不是 artifact 根目录');
-  assert.ok(msg.includes('不要把 task.md'), '应阻止主 session 把 artifact 写进 .pace/');
+  assert.ok(msg.includes('不是 artifact 根目录'), '应明确配置文件不是 artifact 根目录');
+  assert.ok(msg.includes('只用于 PaceFlow artifacts'), '应明确 artifact_dir 的边界');
 });
 
 test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移提示', () => {
@@ -560,7 +560,7 @@ test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移
   const msg = v5MigrationPromptMessage(dir);
   assert.ok(msg.includes('AskUserQuestion'));
   assert.ok(msg.includes('--dry-run'));
-  assert.ok(msg.includes('当前工具调用已被 hook 阻止'));
+  assert.ok(msg.includes('请先用 AskUserQuestion 询问用户是否迁移'));
   assert.ok(msg.includes('必须再次使用 AskUserQuestion'));
   assert.ok(msg.includes('重试被阻止的原始工具调用'));
   assert.ok(msg.includes('v5-migration-state'));

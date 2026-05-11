@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, CODE_EXTS, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -47,6 +47,9 @@ paceUtils.withStdinParsed((stdin) => {
   const artDir = paceSignal === 'artifact' ? getArtifactDir(cwd) : cwd;
   const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
   const fileName = artifactRel ? path.basename(artifactRel) : (filePath ? path.basename(filePath) : '');
+  const isFileMutationTool = ['Write', 'Edit', 'MultiEdit'].includes(toolName);
+  const isAgentTool = toolName === 'Agent';
+  const isCodeFile = resolvedFilePath && CODE_EXTS.some(ext => resolvedFilePath.endsWith(ext));
   const isArtifactEdit = !!artifactRel && ARTIFACT_FILES.includes(artifactRel);
   const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
   const isChangeDetailEdit = !!artifactRel && /^changes\/.+\.md$/i.test(artifactRel);
@@ -134,38 +137,45 @@ paceUtils.withStdinParsed((stdin) => {
       warnings.push(`v6 索引不一致：${mismatched.map(e => e.id).join(', ')} 未同时存在于 task.md 和 implementation_plan.md。`);
     }
 
-    for (const entry of entries) {
-      if (!entry.detail || entry.detail.missing) continue;
-      const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
-      const tasks = countDetailTasks(entry.detail.content);
-      if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
-        warnOnce(`status-mismatch-${entry.slug}`, `${entry.id} 索引 [x] 与详情 status=${status || 'missing'} 不一致，请派 update-chg action=update-status 修复。`);
-      }
-      if (status === 'completed' && !isChangeVerified(entry.detail)) {
-        warnOnce(`verify-missing-${entry.slug}`, `${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->。请先运行验证并阅读结果；确认通过后派 close-chg complete-open-tasks: true，或只记录验证暂不归档时派 update-chg action=verify。`);
-      }
-      if (status === 'completed' && isChangeVerified(entry.detail)) {
-        warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请优先派 close-chg 归档；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
-      }
-      if (tasks.blocked > 0) {
-        warnOnce(`blocked-tasks-${entry.slug}`, `${entry.id} 有 ${tasks.blocked} 个阻塞任务，请用 AskUserQuestion 询问用户如何处理。`);
+    if (!paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
+      for (const entry of entries) {
+        if (!entry.detail || entry.detail.missing) continue;
+        const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
+        const tasks = countDetailTasks(entry.detail.content);
+        if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
+          warnOnce(`status-mismatch-${entry.slug}`, `${entry.id} 索引 [x] 与详情 status=${status || 'missing'} 不一致，请派 update-chg action=update-status 修复。`);
+        }
+        if (status === 'completed' && !isChangeVerified(entry.detail)) {
+          warnOnce(`verify-missing-${entry.slug}`, `${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->。请先运行验证并阅读结果；确认通过后派 close-chg complete-open-tasks: true，或只记录验证暂不归档时派 update-chg action=verify。`);
+        }
+        if (status === 'completed' && isChangeVerified(entry.detail)) {
+          warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请优先派 close-chg 归档；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
+        }
+        if (tasks.blocked > 0) {
+          warnOnce(`blocked-tasks-${entry.slug}`, `${entry.id} 有 ${tasks.blocked} 个阻塞任务，请用 AskUserQuestion 询问用户如何处理。`);
+        }
       }
     }
 
     if (artifactRel && /^changes\/corrections\/.+\.md$/i.test(artifactRel) && newString) {
       warnings.push('检测到 correction 详情变更。请确认已同步写入 knowledge/ 或在 corrections.md 索引标注 [knowledge:: project-only]。');
     }
+    if (artifactRel === 'walkthrough.md') {
+      for (const issue of paceUtils.validateWalkthroughLinks(cwd)) {
+        warnings.push(issue);
+      }
+    }
   } else if (taskActive) {
     warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。PostToolUse 不再校验或修复 v5 活跃详情格式。迁移或桥接后仍需重试被阻止的原始代码写入；不要把迁移本身报告为代码任务完成。`);
-  } else {
-    // task.md 不存在时：v4.3 多信号检测
+  } else if ((isFileMutationTool && isCodeFile) || isAgentTool) {
+    // task.md 不存在时，只对代码写入或 Agent 流程提示，避免无关文档编辑被 PACE 提醒打扰。
     const fallbackSignal = isPaceProject(cwd);
     if (fallbackSignal === 'superpowers' || fallbackSignal === 'manual') {
-      warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
+      warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在；写代码或派 artifact-writer 前请先创建 v6 CHG。${FORMAT_SNIPPETS.skillRef}`);
     } else {
       const codeCount = countCodeFiles(cwd);
       if (codeCount >= 3) {
-        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 Artifact 文件。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
+        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 v6 CHG。${FORMAT_SNIPPETS.skillRef}`);
       }
     }
   }

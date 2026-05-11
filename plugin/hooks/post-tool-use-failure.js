@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.exit(0);
 }
 
-const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry, isArtifactWriterAgentType, releaseArtifactWriterLock } = paceUtils;
+const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry, isArtifactWriterAgentType, releaseArtifactWriterLock, CODE_EXTS } = paceUtils;
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
@@ -28,6 +28,15 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     const agentType = stdin.agentType || stdin.toolInput.subagent_type || stdin.toolInput.subagentType || '';
+    const isArtifactWriterAgent = isArtifactWriterAgentType(agentType);
+    const artDir = paceUtils.isPaceProject(cwd) === 'artifact' ? paceUtils.getArtifactDir(cwd) : cwd;
+    const resolvedFilePath = stdin.filePath ? paceUtils.resolveToolFilePath(cwd, stdin.filePath) : '';
+    const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
+    const isCodeFile = resolvedFilePath && CODE_EXTS.some(ext => resolvedFilePath.endsWith(ext));
+    const bashCommand = String(stdin.toolInput.command || '');
+    const bashLooksLikeValidation = /\b(npm|pnpm|yarn)\s+(?:test|run\s+(?:test|lint|typecheck|check|build)|exec\s+(?:tsc|eslint|vitest|jest))\b/i.test(bashCommand) ||
+      /\b(pytest|ruff|mypy|cargo\s+test|cargo\s+clippy|go\s+test|go\s+vet|mvn\s+test|gradle\s+test|tsc\b|eslint\b|vitest\b|jest\b|make\s+(?:test|check|lint))\b/i.test(bashCommand);
+
     if (toolName === 'Agent' && isArtifactWriterAgentType(agentType)) {
       const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
       const releasedResources = paceUtils.releaseArtifactResourcesForOwner(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
@@ -44,9 +53,6 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     if (['Write', 'Edit', 'MultiEdit'].includes(toolName) && isArtifactWriterAgentType(agentType) && stdin.filePath) {
-      const artDir = paceUtils.isPaceProject(cwd) === 'artifact' ? paceUtils.getArtifactDir(cwd) : cwd;
-      const resolvedFilePath = paceUtils.resolveToolFilePath(cwd, stdin.filePath);
-      const artifactRel = paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath);
       const resource = paceUtils.artifactResourceForRel(artifactRel);
       if (resource) {
         const owner = { sessionId: stdin.sessionId, agentId: stdin.agentId };
@@ -87,14 +93,18 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (stdin.isInterrupt) return;
 
+    const shouldInjectRecovery =
+      (toolName === 'Agent' && isArtifactWriterAgent) ||
+      (['Write', 'Edit', 'MultiEdit'].includes(toolName) && (artifactRel || isCodeFile)) ||
+      (toolName === 'Bash' && bashLooksLikeValidation);
+    if (!shouldInjectRecovery) return;
+
     const target = stdin.filePath ? `（目标：${stdin.filePath}）` : '';
     const reason = err ? `错误：${err}` : '错误详情见工具输出';
-    const ctx = [
-      `PACE 工具失败恢复：${toolName} 执行失败${target}。${reason}。`,
-      `${paceUtils.artifactDirRuntimeHint(cwd)}。`,
-      '不要把失败工具调用视为完成；若失败发生在 artifact 写入，请按 SessionStart 注入的 Artifact 目录重试或重新派 artifact-writer。',
-      '若失败发生在 Bash 验证，请先读取失败输出、修复后重跑；确认验证通过前不要派 verify/close-chg。',
-    ].join('');
+    const recovery = toolName === 'Bash'
+      ? '请先读取失败输出、修复后重跑；确认验证通过前不要派 verify/close-chg。'
+      : '不要把失败工具调用视为完成；artifact 写入失败时按当前 artifact_dir 重试或重新派 artifact-writer。';
+    const ctx = `PACE 工具失败恢复：${toolName} 执行失败${target}。${reason}。${paceUtils.artifactDirRuntimeHint(cwd)}。${recovery}`;
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PostToolUseFailure',

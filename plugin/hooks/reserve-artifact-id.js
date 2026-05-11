@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // Pre-reserve artifact IDs for artifact-writer prompts.
-// This avoids relying on PreToolUse additionalContext being injected into a
-// subagent's initial prompt.
 
 const fs = require('fs');
 const path = require('path');
@@ -44,7 +42,6 @@ function usage() {
     '  node hooks/reserve-artifact-id.js --operation record-correction [--new]',
     '',
     'Run this from the main session before dispatching paceflow:artifact-writer.',
-    'The command uses CLAUDE_CODE_SESSION_ID so the later Agent prompt can match the same reservation.',
   ].join('\n');
 }
 
@@ -88,8 +85,7 @@ function formatReservationBlock(artDir, operation, reservation, reused) {
   if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
   if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
   if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
-  lines.push('.pace/ 只保存配置/运行状态，不存 artifact；artifact_dir 必须指向 task.md / implementation_plan.md / changes/** 所在根目录。');
-  lines.push('把以上字段原样放到 paceflow:artifact-writer prompt 顶部；不要让 agent 自行扫描索引分配编号。');
+  lines.push('把以上字段原样放到 paceflow:artifact-writer prompt 顶部；不要让 agent 扫描索引分配编号。');
   if (reused) lines.push('已复用当前 session 尚未消费的 reservation；如确实要再创建一个新编号，请重新运行本 helper 并加 --new。');
   return lines.join('\n');
 }

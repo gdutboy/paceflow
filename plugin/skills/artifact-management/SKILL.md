@@ -11,7 +11,7 @@ description: >
 
 PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
 
-`artifact_dir` 必须指向 hook 解析出的 artifact 根目录。常规存储位置只有两类：Obsidian vault project 或本地项目根目录；`.pace/artifact-root` 是显式覆盖通道，可写入 `vault`、`local` 或自定义绝对/相对路径。选择“本地项目目录”时，这个目录是项目根目录本身；真实 git worktree 会读取宿主项目 `.pace/artifact-root` 并共用宿主 artifact；`.pace/` 只保存配置/运行态信号，不存 `task.md` / `implementation_plan.md` / `changes/**`。
+`artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
@@ -124,7 +124,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 `node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。若跳过 helper，PreToolUse 会用 deny 文案返回同样字段，作为 fallback。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 绝对路径命令，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 时原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
@@ -140,7 +140,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 先预留编号：
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation create-chg
+node "<reserve-artifact-id.js 的绝对路径>" --operation create-chg
 ```
 
 把 helper 输出放在 prompt 顶部：

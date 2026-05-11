@@ -286,9 +286,8 @@ function agentArtifactDirDenyReason(artDir, declared = '') {
     `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
     '请重派同一个 agent，并在 prompt 顶部加入：',
     `artifact_dir: ${dir}`,
-    '所有 task.md / implementation_plan.md / changes/** 读写都必须使用该目录。',
-    '不要让 artifact-writer fallback 到 cwd，也不要写到 docs/ 等子目录；cwd 可能只是代码工作目录，不是 artifact 根目录。',
-    '如果用户选择的是“本地项目目录”，artifact_dir 是项目根目录本身，不是 .pace/。.pace/ 只保存配置与运行态信号。'
+    'artifact_dir 仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。',
+    '不要让 artifact-writer 自行推断或改写 artifact_dir。'
   ].join('\n');
 }
 
@@ -356,26 +355,24 @@ function artifactWriterCreateChgHint(artDir) {
 
 function reservationRequiredReason(operation, artDir, reservation) {
   const lines = [
-    `PACE hook 已为 ${operation} 预留唯一编号，但 Claude Code 不会可靠地把 PreToolUse additionalContext 注入到 subagent 初始 prompt。`,
+    `PACEflow 已为 ${operation} 预留唯一编号。本次 Agent 已被阻止，请重派 artifact-writer 并带上以下字段：`,
     FORMAT_SNIPPETS.skillRef,
-    operation === 'create-chg' ? FORMAT_SNIPPETS.reserveHelper : '后续可先运行 Bash: node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation record-correction 预留 correction 编号。',
-    '本次 Agent 已被阻止；请重派 artifact-writer，并在 prompt 顶部原样加入以下字段：',
+    operation === 'create-chg' ? FORMAT_SNIPPETS.reserveHelper : `后续可先运行 Bash: node "${path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/')}" --operation record-correction 预留 correction 编号。`,
     `artifact_dir: ${displayDir(artDir)}`,
     `operation: ${operation}`,
   ];
   if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
   if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
   if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
-  lines.push('.pace/ 只保存配置/运行状态，不存 artifact；artifact_dir 必须指向 task.md / implementation_plan.md / changes/** 所在根目录。');
-  lines.push('不要启动不带 reserved-id 的 create-chg / record-correction agent；不要让 agent 自行扫描索引分配编号。');
+  lines.push('不要启动不带 reserved-id 的 create-chg / record-correction agent；不要让 agent 扫描索引自行分配编号。');
   return lines.join('\n');
 }
 
 function reservationExplicitMissingReason(operation, explicit) {
   return [
-    `artifact-writer prompt 声明了 ${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}，但当前 session 没有匹配的 hook reservation。`,
+    `artifact-writer prompt 中的预留字段无效或已过期，当前没有匹配的 hook reservation：${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}。`,
     FORMAT_SNIPPETS.skillRef,
-    `请先在主 session 运行 Bash: node "\${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js" --operation ${operation}，或派一次不带 reserved-id 的 ${operation} 触发 hook fallback；然后把 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
+    `请先在主 session 运行 Bash: node "${path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/')}" --operation ${operation}，然后把新的 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
     '不要手写或复用旧 session 的 reserved-id。'
   ].join('\n');
 }
@@ -514,7 +511,7 @@ function directArtifactMutationDenyReason(toolName, artifactRel) {
   return [
     `禁止主 session/非 artifact-writer 使用 ${toolName} 直接修改流程 artifact：${artifactRel}。`,
     FORMAT_SNIPPETS.skillRef,
-    'v6 流程 artifact 只能由 paceflow:artifact-writer 通过受 hook resource lock 保护的 Write/Edit/MultiEdit 路径写入。',
+    'v6 流程 artifact 只能由 paceflow:artifact-writer 通过受保护的 Write/Edit/MultiEdit 路径写入。',
     '请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。'
   ].join('\n');
 }
@@ -837,7 +834,7 @@ paceUtils.withStdinParsed((stdin) => {
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}（.pace/ 只保存配置/运行状态，不存 artifact）；artifact 写入采用 hook resource lock：读/思考可并发，真实 Write/Edit/MultiEdit 时按目标文件短暂加锁${reservationMsg}${createdMsg}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}；仅用于 task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**${reservationMsg}${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));
@@ -927,6 +924,32 @@ paceUtils.withStdinParsed((stdin) => {
   let artifactResourceLockHeld = null;
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
+      if (toolName === 'Write' && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation)) {
+        const fm = paceUtils.parseFrontmatter(content || '');
+        const status = String(fm.status || '').replace(/^["']|["']$/g, '').trim();
+        if (status && !['planned', 'in-progress', 'completed', 'archived', 'cancelled'].includes(status)) {
+          const reason = `CHG/HOTFIX 详情 frontmatter status 非法：${status}。允许值：planned / in-progress / completed / archived / cancelled。create-chg 初始状态必须是 planned。`;
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_STATUS_INVALID', {
+            proj,
+            tool: toolName,
+            file: filePath,
+            artifact: artifactRelForMutation,
+            status,
+            agent_id: stdin.agentId,
+            agent_type: stdin.agentType,
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
+      }
       let reservation = paceUtils.findArtifactReservationForRel(cwd, {
         sessionId: stdin.sessionId,
         agentId: stdin.agentId,
@@ -939,8 +962,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (writeNeedsReservation && !reservation) {
           const reason = [
             `artifact-writer 正在新建 ${artifactRelForMutation}，但当前 session/agent 没有 hook 预留编号。`,
-            '请从主 session 重新派 artifact-writer；PreToolUse:Agent 会先预留编号并用 deny 文案返回 reserved-id / reserved-file。',
-            '更好的路径是先在主 session 运行 reserve-artifact-id helper，把 helper 输出放进 artifact-writer prompt 顶部。',
+            '请从主 session 运行 reserve-artifact-id helper，把 helper 输出放进 artifact-writer prompt 顶部后重派。',
             '不要让 agent 自行扫描索引分配 CHG/HOTFIX/CORRECTION 编号。'
           ].join('\n');
           const output = {
@@ -1074,7 +1096,7 @@ paceUtils.withStdinParsed((stdin) => {
     const cwdArtifactRel = paceUtils.artifactRelativePathForFile(cwd, filePath);
     if (cwdArtifactRel) {
       const correctPath = path.join(artDir, cwdArtifactRel).replace(/\\/g, '/');
-      const reason = `artifact 文件已迁移到 Obsidian vault。请将 file_path 修改为：${correctPath}`;
+      const reason = `当前 artifact_dir 是 ${displayDir(artDir)}。请将 artifact file_path 修改为：${correctPath}`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -1189,10 +1211,8 @@ paceUtils.withStdinParsed((stdin) => {
     else if (nf.startsWith(vpSlash + 'knowledge/')) dirName = 'knowledge';
     if (dirName && path.basename(filePath) !== 'README.md') {
       const ctx = dirName === 'knowledge'
-        ? `写入 knowledge/ 笔记，必须包含以下格式：\n` +
-          `YAML frontmatter 示例：\n---\nstatus: concluded\nprojects: [项目名]\ntags: [标签1, 标签2]\nsummary: "≤80字关键结论"\ncreated: YYYY-MM-DDTHH:mm:ss+08:00\nupdated: YYYY-MM-DDTHH:mm:ss+08:00\nsources: [来源]\n---\n` +
-          `正文结构：## 摘要（L1，300-500 tokens 关键结论列表）+ ## 详情（L2，完整内容含代码示例、对比表格、### 子章节）`
-        : `写入 thoughts/ 笔记，请包含 YAML frontmatter（status/projects/tags/summary/created/updated）和 ## 摘要 + ## 详情 结构。`;
+        ? '写入 knowledge/ 笔记时请先调用 Skill(paceflow:pace-knowledge)，按该 skill 的 frontmatter 与正文结构要求组织内容。'
+        : '写入 thoughts/ 笔记时请先调用 Skill(paceflow:pace-knowledge)，按 thoughts 笔记格式组织 frontmatter 与正文。';
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
