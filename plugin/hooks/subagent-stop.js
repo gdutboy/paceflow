@@ -88,15 +88,15 @@ try {
   const status = reportStatus(stdin.lastMessage);
 
   if (!hasTitle) {
-    const ctx = `PACE artifact-writer 报告格式提醒：SubagentStop 未检测到 \`${EXPECTED_TITLE}\`。请检查 agent 实际是否完成 artifact 写入；如格式失败或状态缺失，重新派 artifact-writer 按同一指令修复，不要由主 session 手写 C/V/归档标记。`;
+    const ctx = 'PACE artifact-writer 报告未能解析：缺少标准报告标题。请检查 agent 实际是否完成 artifact 写入；如格式失败或状态缺失，重新派 artifact-writer 按同一指令修复，不要由主 session 手写 C/V/归档标记。';
     writeContext(ctx);
     log(logEntry('SubagentStop', 'WARN', { proj, agent_type: agentType, issue: 'missing-title', transcript: stdin.agentTranscriptPath || '-', dur: Date.now() - t0 }));
   } else if (first !== EXPECTED_TITLE && !allowedTimestampPrefix) {
-    const ctx = `PACE artifact-writer 报告格式提醒：检测到标题前缀或标题变体；协议标题必须是第一个非空 H2：\`${EXPECTED_TITLE}\`。请在下一次派遣时要求 agent 修正报告格式。`;
+    const ctx = 'PACE artifact-writer 报告未能解析：标题前有额外内容或使用了标题变体。请在下一次派遣时要求 agent 只输出标准报告。';
     writeContext(ctx);
     log(logEntry('SubagentStop', 'WARN', { proj, agent_type: agentType, issue: 'title-prefix', first: first.slice(0, 80), dur: Date.now() - t0 }));
   } else if (!status) {
-    const ctx = 'PACE artifact-writer 报告格式提醒：报告缺少 `**状态**：SUCCESS` 或 `**状态**：FAILED`。请确认 artifact 落盘结果；需要修复时重新派 artifact-writer，不要主 session 直接补写 artifact 状态。';
+    const ctx = 'PACE artifact-writer 报告未能解析：缺少状态行。请确认 artifact 落盘结果；需要修复时重新派 artifact-writer，不要主 session 直接补写 artifact 状态。';
     writeContext(ctx);
     log(logEntry('SubagentStop', 'WARN', { proj, agent_type: agentType, issue: 'missing-status', dur: Date.now() - t0 }));
   } else {

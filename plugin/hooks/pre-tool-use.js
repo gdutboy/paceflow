@@ -244,8 +244,7 @@ function bashShellCommandReferencesArtifact(command, cwd, artDir) {
 function bashArtifactRuntimeControlDenyReason(command) {
   return [
     '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
-    '如果看到已有锁，请等待当前 artifact 写入完成后重试；不要用 rm、重定向、touch、mv、cp、tee 或脚本写入删除/改写 .pace/locks、.pace/sequences、.pace/reservations、.pace/index-transactions 或 legacy artifact-writer.lock。',
-    `运行态目录：${paceUtils.getProjectRuntimeDir(cwd)}`,
+    '如果看到写入繁忙，请等待当前 artifact 写入完成后重试；不要用 Bash 删除或改写 PaceFlow 运行态文件。详细目标已记录到 hook 日志。',
     `被拦截的命令：${String(command || '').slice(0, 500)}`
   ].join('\n');
 }
@@ -484,18 +483,14 @@ function agentLifecyclePromptDenyReason(prompt) {
 function legacyArtifactWriterLockDenyReason(lock) {
   return [
     '检测到旧版本 artifact-writer 项目级写锁仍在当前项目中，已阻止本次派遣以避免跨版本并发写入。',
-    `当前锁：${paceUtils.formatArtifactWriterLock(lock)}`,
-    '请等待旧 artifact-writer 结束后重试；不要用 Bash 删除或改写锁文件。锁过期清理由 PaceFlow hook 按 TTL 自动处理。',
-    `锁文件：${paceUtils.getArtifactWriterLockPath(cwd)}`
+    '请等待当前 artifact-writer 结束后重试；不要用 Bash 删除或改写写锁。若长时间未恢复，请查看 pace-hooks.log。'
   ].join('\n');
 }
 
 function artifactResourceLockDenyReason(lockAttempt, resource, artifactRel) {
   return [
-    `当前 artifact resource 正被其他 artifact-writer 写入，已阻止修改 ${artifactRel}。`,
-    `资源：${resource}`,
-    lockAttempt.lock && lockAttempt.lock.ok ? `当前锁：${paceUtils.formatArtifactResourceLock(lockAttempt.lock)}` : `锁文件：${lockAttempt.path}`,
-    `hook 已等待 ${lockAttempt.waitedMs || 0}ms。不要循环重试；请等待对方写入完成后重新 Read 目标 artifact，再重试本次 artifact-writer 操作。`
+    `当前 artifact 正被其他 artifact-writer 写入，已阻止修改 ${artifactRel}。`,
+    '不要循环重试或删除运行态文件；请等待对方写入完成后重新 Read 目标 artifact，再重试本次 artifact-writer 操作。'
   ].join('\n');
 }
 
@@ -903,7 +898,7 @@ paceUtils.withStdinParsed((stdin) => {
   const normalizedCwd = paceUtils.normalizePath(cwd);
   if (isFileMutationTool(toolName) && paceUtils.isArtifactRuntimeControlPath(cwd, filePath)) {
     return hardDeny(
-      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写/删除 .pace/locks、.pace/sequences、.pace/reservations、.pace/index-transactions 或 legacy artifact-writer.lock。`,
+      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写或删除运行态文件。详细目标已记录到 hook 日志。`,
       'DENY_ARTIFACT_RUNTIME_CONTROL',
       {
         file: filePath,
@@ -1065,8 +1060,7 @@ paceUtils.withStdinParsed((stdin) => {
       const existingLock = resource ? paceUtils.readArtifactResourceLock(cwd, resource) : { ok: false };
       if (existingLock.ok) {
         const reason = [
-          `当前 artifact resource 正由 artifact-writer 写入，禁止主 session/其他 agent 同时修改 ${artifactRelForMutation}。`,
-          `当前锁：${paceUtils.formatArtifactResourceLock(existingLock)}`,
+          `当前 artifact 正由 artifact-writer 写入，禁止主 session/其他 agent 同时修改 ${artifactRelForMutation}。`,
           '请等待 artifact 写入结束后再重试。'
         ].join('\n');
         const output = {
@@ -1243,7 +1237,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
         !paceUtils.hasNonNullVerifiedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate) && !isArtifactWriterAgent(stdin)) {
-        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行 ${addedApproved ? 'update-chg action=approve 或 approve-and-start（均需 approval-confirmed/source/evidence）' : 'update-chg action=verify 或 close-chg'}。`;
+        const reason = `禁止主 session 直接写入 ${addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行对应批准或验证/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
@@ -1319,7 +1313,7 @@ paceUtils.withStdinParsed((stdin) => {
       const approvedEntries = actionableEntries.filter(e => isChangeApproved(e.detail));
       if (approvedEntries.length === 0) {
         const ids = actionableEntries.map(e => e.id).join(', ');
-        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若用户明确要求执行、已接受方案或通过 AskUserQuestion 批准，派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`;
+        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -1332,7 +1326,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准并准备开始，请派 artifact-writer update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）；若此前已批准只需开始任务，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。`;
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已批准只需恢复执行，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -1386,9 +1380,7 @@ paceUtils.withStdinParsed((stdin) => {
       const createdMsg = createdFiles.length > 0
         ? `已自动创建 v6 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
         : `${artifactRootHint}。`;
-      const syncedPlansPath = path.join(getProjectRuntimeDir(cwd), 'synced-plans').replace(/\\/g, '/');
-      const nativePlanName = path.basename(nativePlan);
-      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请执行桥接：Read ${nativePlan} → 派 artifact-writer create-chg 创建 changes/<id>.md 与 task.md / implementation_plan.md wikilink 索引；若计划已获用户确认并准备开始，再派 update-chg action=approve-and-start（需 approval-confirmed/source/evidence/task-id）；最后必须把 ${nativePlanName} 幂等追加到 ${syncedPlansPath}（worktree 也写宿主项目 .pace/synced-plans），再删除 .pace/current-native-plan。`;
+      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 v6 CHG 并记录同步标记；桥接完成后再重试本次代码写入。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(paceUtils.logEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
@@ -1476,7 +1468,7 @@ paceUtils.withStdinParsed((stdin) => {
         const createdMsg = createdFiles.length > 0
           ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
           : `${artifactRootHint}。`;
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先创建 v6 CHG，确认用户批准并执行 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）后再写代码。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
+        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先创建 v6 CHG；若用户已批准并准备开始，派 artifact-writer approve-and-start 后再写代码。字段格式见 Skill(paceflow:artifact-management)。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));

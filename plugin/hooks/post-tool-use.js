@@ -94,9 +94,9 @@ paceUtils.withStdinParsed((stdin) => {
   if (fs.existsSync(degradedFile)) {
     try {
       const degradedContent = fs.readFileSync(degradedFile, 'utf8').trim();
-      warnings.push(`Stop hook 已降级（连续阻止 3 次后不再阻止退出，但问题未修复）。未通过的检查项：\n${degradedContent}\n请逐项解决上述问题。`);
+      warnings.push(`Stop 检查仍有未解决项：\n${degradedContent}\n请逐项解决上述问题。`);
     } catch(e) {
-      warnings.push(`Stop hook 已降级，请检查 .pace/degraded 文件`);
+      warnings.push('Stop 检查仍有未解决项，请重新运行收尾检查。');
     }
   }
 
@@ -125,7 +125,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
         !paceUtils.hasNonNullVerifiedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate) && !paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
-        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的 ${addedApproved ? 'update-chg action=approve 或 approve-and-start（均需 approval-confirmed/source/evidence）' : 'update-chg action=verify 或 close-chg'}。`);
+        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的对应批准或验证/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`);
       }
     }
 

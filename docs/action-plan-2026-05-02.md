@@ -124,7 +124,7 @@
 
 ```bash
 for f in plugin/hooks/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 136/136 PASS
+node tests/test-hooks-e2e.js                         # 147/147 PASS
 node tests/test-pace-utils.js                        # 115/115 PASS
 claude plugin validate ./plugin                      # PASS
 git diff --check                                     # PASS
@@ -330,6 +330,8 @@ Claude Code 交叉审计补充（`docs/audits/audit-2026-05-11-paceflow-copy-out
 - 需同步瘦身但保留语义的项：artifact-writer 报告标题严格性仍需要保留，但 agent prompt 不应列 14 种失败标题变体；SubagentStop/测试负责反馈即可。`.pace/locks` 等 runtime-control 保护可以保留，但用户可见文案应更短，详细 owner/resource/waitedMs 放日志即可。
 - 下调或暂不作为 bug：`pace-bridge` 提到 native plan 文件名可能变化可保留为中性说明；`pace-knowledge` 的 Grep 缺失 fallback 属于工具兼容提示；agent 的 Edit-before-Read 规则是 Claude Code 工具约束，不能删除；emoji/G-9 不是功能阻断，但 G-9 章节号不应长期出现在通用 plugin 文案。
 
+以下 P1/P2 是 2026-05-11 执行前清单；当前复核状态见后续“本轮落地结果”和“复核补充”。
+
 P1 必修：
 - helper 路径口径：`pace-utils.js` 的 `FORMAT_SNIPPETS.reserveHelper`、`artifact-management/SKILL.md`、`pace-workflow/SKILL.md`、`pace-bridge/SKILL.md`、`change-lifecycle.md`、`create-chg.md` 都把 `node "${CLAUDE_PLUGIN_ROOT}/hooks/reserve-artifact-id.js"` 当作主 session Bash 命令。Smoke3 已验证 Bash 子进程可能拿不到 `CLAUDE_PLUGIN_ROOT`，应由 hook 输出绝对 helper 路径/命令，skill 只要求“运行 hook 提供的 helper 命令”。
 - artifact_dir 边界：`session-start.js`、`artifactDirRuntimeHint()`、`artifactRootChoiceMessage()`、`reserve-artifact-id.js` 输出、`artifact-management`/`pace-workflow` skill 多处只写 `task.md / changes/**`，或把 `artifact_dir` 描述成普通项目文件的写入依据。应统一写成“仅 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`”，并明确非 artifact 文件路径不由 PaceFlow 决定。
@@ -355,7 +357,7 @@ P2 可选优化：
 本轮落地结果（2026-05-11）：
 - 已将 helper 口径收敛为 SessionStart/PreToolUse 输出绝对路径命令；skills/spec 不再要求主 session 依赖 `${CLAUDE_PLUGIN_ROOT}`。
 - 已将 `artifact_dir` 文案收敛为只定义 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`；agent 不再自行 fallback cwd。
-- 已瘦身 reserved-id、v5 migration、artifact-root choice、knowledge/thoughts、PostToolUseFailure 等 hook 用户可见文案，去掉 additionalContext / PreToolUse:Agent / resource lock 等实现解释。
+- 已瘦身 reserved-id、v5 migration、artifact-root choice、knowledge/thoughts、PostToolUseFailure 等 hook 用户可见文案；写锁繁忙、runtime-control 与首次选择/迁移提示仍保留必要操作信息，作为 P2 文案债继续观察。
 - 已把 Superpowers plan + no task.md 的 `TaskCreate` / `TaskUpdate` / `TodoWrite` 从 deny 改成 additionalContext 提醒，Claude 任务列表继续作为工作记忆。
 - 已把 `PostToolUse` 无 task.md 提醒范围收窄到代码写入或 Agent 操作，普通 `docs/audits/*.md` 编辑不再触发创建 artifact 提醒。
 - 已补 AskUserQuestion 选项数量提示：需要批准确认时给 2-3 个互斥选项，不再只给单个确认选项。
@@ -364,12 +366,21 @@ P2 可选优化：
 - 已补 create-chg 详情 frontmatter `status` 机械校验，拒绝 `status: open` 等非法值。
 
 验证结果：
-- `node tests/test-hooks-e2e.js`：143/143 PASS
+- `node tests/test-hooks-e2e.js`：146/146 PASS
 - `node tests/test-pace-utils.js`：115/115 PASS
 - `claude plugin validate ./plugin`：PASS
 - `git diff --check`：PASS
 
-结论：并发 resource lock 本身通过；本轮已修 `artifact_dir` 边界文案、helper 绝对路径、walkthrough wikilink 机械校验。下一步可重跑 Smoke1/Smoke3 生产验证。
+复核补充（2026-05-11，当前 HEAD 对照 `docs/audits/audit-2026-05-11-paceflow-copy-out-of-scope.md`）：
+- 已关闭生产重试类问题：helper 绝对路径、TaskSync hard deny、PostToolUse 文档编辑噪声、PostToolUseFailure 只读 Bash 噪声、agent artifact_dir fallback、create-chg `status: open`、C→E→V 指引、walkthrough 错 slug 与缺 wikilink 机械校验。
+- 运行时验证注意：若当前会话仍在编辑 `docs/audits/*.md` 后看到旧文案“请先创建 Artifact 文件”，先检查实际加载的 plugin cache 版本。已确认源码 v6.0.50 的 `post-tool-use.js` 通过 `isCodeFile` 守门修复该问题；旧现象来自会话仍加载 `~/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.32/hooks/post-tool-use.js`。需升级/重装到 >= v6.0.50 并另开会话再做运行时验证。
+- 刻意保留的取舍：`artifactDirRuntimeHint()` 仍会出现在阻断/恢复类输出中，因为真实生产曾出现“hook 拦截但没告诉 artifact 位置”的问题；当前文案已限定为 PaceFlow artifacts，不再裁判普通项目文件路径。若后续 smoke 仍觉得吵，再按调用点进一步收窄。
+- 刻意保留的兼容说明：`pace-knowledge` 的 `Grep` fallback、`pace-bridge` 的 native plan 路径/文件名中性提示、agent 的 Edit-before-Read 规则、报告标题严格 H2 约束，均不是当前阻断 bug。
+- 2026-05-11 本轮继续修复复审 2 C/D：Stop degraded 与 SessionStart 截断/compact 恢复文案改为中性动作提示；SessionStart 去掉 `G-9` 章节号、TaskCreate/TaskUpdate/TodoWrite 工具枚举、`readActive` 内部函数名；runtime-control 与 resource lock busy deny 不再贴 `.pace/locks` 等清单或 owner/lock path/waitedMs；SubagentStop 报告提醒改为中性“报告未能解析”；native plan bridge DENY/SessionStart 提示改为指向 `Skill(paceflow:pace-bridge)`；Stop 与 PreToolUse 的 C/E 提示不再内联 schema 字段表；update/close 指令删除报告前缀失败样例清单；PostToolUseFailure 扩展识别 `bash scripts/test.sh`、`./run-tests.sh`、`python -m pytest` 等自定义验证脚本。
+- 复审 2 C/D 当前状态：二#1/二#2/二#3/二#5/二#6/二#8/二#9/一#8/三#1/三#5/三#6/四#3/四#5/四#6/四#8/四#10/D1 均已处理或下调为兼容说明；D2 仍作为生产 smoke 观察项，确认 TaskSync 从 hard deny 改为 hint 后主 session 是否会长期忽略 bridge hint；D3/D4 为正确性增强，无需跟进；D5 单行 helper 指令可接受。
+- 仍可做的 P2 结构清理：`v5MigrationPromptMessage()` 与 `artifactRootChoiceMessage()` 仍偏“教学式 deny”，但迁移和首次选择都需要用户确认，当前保留脚本命令/AskUserQuestion 指引以保证安全；若 production UX 稳定，可再拆成短提示 + skill 详情。
+
+结论：并发 resource lock 本身通过；本轮已修 `artifact_dir` 边界文案、helper 绝对路径、walkthrough wikilink 机械校验，并继续收敛复审 2 C/D 的运行时文案噪声。下一步可重跑 Smoke1/Smoke3 生产验证，同时观察 TaskSync hint 是否足够。
 
 
 #### 0.1.10b v6.0.40 production Smoke5 记录

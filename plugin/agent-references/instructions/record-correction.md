@@ -25,7 +25,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 | wrong-behavior | 派生的 title |
 |---------------|------------|
 | "起手设计 agent 时把所有规范都内嵌到 system prompt 导致 357 行..." | agent 设计内嵌规范导致 prompt 膨胀 |
-| "任务标记 [x] 后即认为完成，未执行 G-9 清单的归档步骤" | 任务完成后未主动归档 |
+| "任务标记 [x] 后即认为完成，未执行收尾检查和归档步骤" | 任务完成后未主动归档 |
 | "thinking 中已识别异常但用其他证据合理化跳过验证" | 验证异常被合理化跳过 |
 
 ## knowledge-link 输入归一

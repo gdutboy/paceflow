@@ -1033,9 +1033,9 @@ test('formatBridgeHint — 有未同步计划文件返回提示', () => {
   const result = paceUtils.formatBridgeHint(dir, dir);
   assert.ok(result !== null, '应返回非 null');
   assert.ok(result.fileList.includes('docs/plans/2026-03-09-feature.md'), 'fileList 应含完整路径');
-  assert.ok(result.bridgeSteps.includes('task.md'), 'bridgeSteps 应提到 task.md');
-  assert.ok(result.bridgeSteps.includes('artifact-writer create-chg'), 'bridgeSteps 应走 artifact writer');
-  assert.ok(result.bridgeSteps.includes(path.join(dir, '.pace', 'synced-plans').replace(/\\/g, '/')), 'bridgeSteps 应给出运行态 synced-plans 绝对路径');
+  assert.ok(result.bridgeSteps.includes('Skill(paceflow:pace-bridge)'), 'bridgeSteps 应指向 pace-bridge skill');
+  assert.ok(result.bridgeSteps.includes('v6 CHG'), 'bridgeSteps 应要求桥接为 v6 CHG');
+  assert.ok(result.bridgeSteps.includes('同步标记'), 'bridgeSteps 应提醒记录同步标记');
   assert.ok(!result.bridgeSteps.includes('Edit '), 'bridgeSteps 不应引导主 session 直接 Edit artifact');
 });
 

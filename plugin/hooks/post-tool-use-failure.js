@@ -13,6 +13,16 @@ const cwd = resolveProjectCwd();
 const proj = getProjectName(cwd);
 const RECOVERY_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'Bash', 'Agent']);
 
+function bashLooksLikeValidationCommand(command) {
+  const c = String(command || '');
+  return /\b(npm|pnpm|yarn)\s+(?:test|run\s+(?:test|lint|typecheck|check|build)|exec\s+(?:tsc|eslint|vitest|jest))\b/i.test(c) ||
+    /\b(pytest|ruff|mypy|cargo\s+test|cargo\s+clippy|go\s+test|go\s+vet|mvn\s+test|gradle\s+test|tsc\b|eslint\b|vitest\b|jest\b|make\s+(?:test|check|lint))\b/i.test(c) ||
+    /\bpython(?:3)?\s+-m\s+(?:pytest|unittest|mypy|ruff)\b/i.test(c) ||
+    /(?:^|[\s;&|()])(?:bash|sh|zsh)\s+(?:\.\/)?(?:[\w.-]+\/)*(?:run-)?(?:test|tests|check|lint|typecheck|build)(?:[-_\w.\/]*)(?:\.sh)?\b/i.test(c) ||
+    /(?:^|[\s;&|()])(?:\.\/)?(?:scripts|tools|bin)\/[\w./-]*(?:test|tests|check|lint|typecheck|build)[\w./-]*(?:\.(?:sh|js|mjs|cjs|py))?\b/i.test(c) ||
+    /(?:^|[\s;&|()])\.\/(?:run-)?(?:test|tests|check|lint|typecheck|build)(?:[-_\w.]*)(?:\.sh)?\b/i.test(c);
+}
+
 paceUtils.withStdinParsed((stdin) => {
   const t0 = Date.now();
   try {
@@ -34,8 +44,7 @@ paceUtils.withStdinParsed((stdin) => {
     const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
     const isCodeFile = resolvedFilePath && CODE_EXTS.some(ext => resolvedFilePath.endsWith(ext));
     const bashCommand = String(stdin.toolInput.command || '');
-    const bashLooksLikeValidation = /\b(npm|pnpm|yarn)\s+(?:test|run\s+(?:test|lint|typecheck|check|build)|exec\s+(?:tsc|eslint|vitest|jest))\b/i.test(bashCommand) ||
-      /\b(pytest|ruff|mypy|cargo\s+test|cargo\s+clippy|go\s+test|go\s+vet|mvn\s+test|gradle\s+test|tsc\b|eslint\b|vitest\b|jest\b|make\s+(?:test|check|lint))\b/i.test(bashCommand);
+    const bashLooksLikeValidation = bashLooksLikeValidationCommand(bashCommand);
 
     if (toolName === 'Agent' && isArtifactWriterAgentType(agentType)) {
       const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });

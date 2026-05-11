@@ -1,5 +1,4 @@
-// stop-failure.js — StopFailure hook：API 错误中断时记录事件日志（logging-only）
-// CC v2.1.78 新增事件，文档缺失(#35620)，仅做日志记录不依赖关键路径
+// stop-failure.js — StopFailure hook：错误中断时记录事件日志（logging-only）
 const path = require('path');
 let paceUtils;
 try { paceUtils = require('./pace-utils'); } catch(e) {

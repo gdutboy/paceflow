@@ -361,7 +361,7 @@ test('3. compact 恢复显示 activeChanges', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('Compact 恢复'));
   assert.ok(r.stdout.includes('活跃 CHG'));
-  assert.ok(r.stdout.includes('G-9 完成检查'));
+  assert.ok(r.stdout.includes('CHG 完成检查'));
   assert.ok(r.stdout.includes('close-chg'));
   assert.ok(!fs.existsSync(path.join(dir, '.pace', 'pre-compact-state.json')), 'compact 恢复后应消费快照');
 });
@@ -439,7 +439,7 @@ test('8. v6 in-progress → additionalContext 放行', () => {
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
-test('9. 主 session 直接写 VERIFIED → DENY verify action', () => {
+test('9. 主 session 直接写 VERIFIED → DENY artifact-writer 操作', () => {
   const dir = makeV6Project('ptu-marker');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
   const r = runHook('pre-tool-use.js', {
@@ -454,10 +454,10 @@ test('9. 主 session 直接写 VERIFIED → DENY verify action', () => {
     },
   });
   assert.ok(r.stdout.includes('deny'));
-  assert.ok(r.stdout.includes('action=verify'));
+  assert.ok(r.stdout.includes('对应批准或验证/收尾操作'));
 });
 
-test('9m. MultiEdit 直接写 VERIFIED → DENY verify action', () => {
+test('9m. MultiEdit 直接写 VERIFIED → DENY artifact-writer 操作', () => {
   const dir = makeV6Project('ptu-marker-multiedit');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
   const r = runHook('pre-tool-use.js', {
@@ -476,7 +476,7 @@ test('9m. MultiEdit 直接写 VERIFIED → DENY verify action', () => {
     },
   });
   assert.ok(r.stdout.includes('deny'));
-  assert.ok(r.stdout.includes('action=verify'));
+  assert.ok(r.stdout.includes('对应批准或验证/收尾操作'));
 });
 
 test('9m2. 非 artifact changes/ 路径写 C/V 字符串不触发 marker gate', () => {
@@ -716,8 +716,8 @@ test('9c. native plan 桥接提示走 artifact writer', () => {
   fs.writeFileSync(path.join(dir, 'plan.md'), '# Native plan\n', 'utf8');
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
   assert.ok(r.stdout.includes('deny'));
-  assert.ok(r.stdout.includes('artifact-writer create-chg'));
-  assert.ok(r.stdout.includes('synced-plans'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-bridge)'));
+  assert.ok(r.stdout.includes('同步标记'));
   assert.ok(!r.stdout.includes('Edit task.md'));
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'native plan deny 前应创建 v6 changes/ 基础目录');
 });
@@ -3066,6 +3066,23 @@ test('22e. PostToolUseFailure Bash 验证失败仍注入验证恢复提示', () 
   assert.ok(out.hookSpecificOutput.additionalContext.includes('确认验证通过前不要派 verify/close-chg'));
 });
 
+test('22e1. PostToolUseFailure 自定义 Bash 验证脚本失败仍注入验证恢复提示', () => {
+  const dir = makeV6Project('ptuf-bash-custom-validation');
+  for (const command of ['bash scripts/test.sh', './run-tests.sh', 'python -m pytest tests/unit']) {
+    const r = runHook('post-tool-use-failure.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Bash',
+        tool_input: { command },
+        error: 'tests failed',
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    const out = JSON.parse(r.stdout);
+    assert.ok(out.hookSpecificOutput.additionalContext.includes('确认验证通过前不要派 verify/close-chg'), command);
+  }
+});
+
 test('22c. PostToolUseFailure 保留未完成 index:changes 事务锁', () => {
   const dir = makeV6Project('ptuf-index-tx-open');
   const lockPath = seedArtifactResourceLock(dir, 'index:changes', {
@@ -3149,7 +3166,7 @@ test('23a. SubagentStop artifact-writer 缺报告标题时注入格式提醒', (
   assert.strictEqual(r.code, 0);
   const out = JSON.parse(r.stdout);
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'SubagentStop');
-  assert.ok(out.hookSpecificOutput.additionalContext.includes('未检测到 `## artifact-writer 报告`'));
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('报告未能解析'));
   assert.ok(out.hookSpecificOutput.additionalContext.includes('Artifact 根目录'));
 });
 

@@ -55,7 +55,7 @@ function installSessionOutputGuard() {
       sessionOutputBytes += Buffer.byteLength(prefix, 'utf8');
       realStdoutWrite(prefix);
     }
-    const notice = `\n\n=== SessionStart 输出截断 ===\n注入内容超过 ${SESSION_OUTPUT_BUDGET_BYTES} bytes，已停止继续注入以避免 Claude Code 将 hook 输出落盘。请按需 Read artifact 文件；硬上限 ${SESSION_OUTPUT_HARD_LIMIT_BYTES} bytes。\n`;
+    const notice = `\n\n=== SessionStart 输出截断 ===\n注入内容超过 ${SESSION_OUTPUT_BUDGET_BYTES} bytes，已停止继续输出。请按需 Read artifact 文件；硬上限 ${SESSION_OUTPUT_HARD_LIMIT_BYTES} bytes。\n`;
     sessionOutputBytes += Buffer.byteLength(notice, 'utf8');
     realStdoutWrite(notice);
     sessionOutputTruncated = true;
@@ -136,24 +136,20 @@ if (eventType === 'compact') {
           snap.activeChanges.forEach(c => lines.push(`  ${c.id} status=${c.status} pending=${c.pending} approved=${c.approved} verified=${c.verified}`));
         }
         if (snap.runtime?.degraded) {
-          lines.push('⚠️ Stop hook 之前已降级（本次已重置计数）');
+          lines.push('Stop 检查上次仍有未解决项；本次会话会继续检查。');
         }
         // v5.0.1: compact 后 native plan 恢复提示
-        if (snap.nativePlans && snap.nativePlans.length > 0) {
-          lines.push('');
-          lines.push('⚠️ 检测到 compact 前有未桥接的原生计划文件：');
-          snap.nativePlans.forEach(p => lines.push(`  ${p}`));
-          lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
-        }
-        // AI 主动记录的 native plan 路径（优先于扫描结果）
+        const pendingNativePlans = new Set(Array.isArray(snap.nativePlans) ? snap.nativePlans : []);
         try {
           const planPath = paceUtils.getNativePlanPath(cwd);
-          if (planPath) {
-            lines.push('');
-            lines.push(`⚠️ 你之前创建了原生计划文件：${planPath}`);
-            lines.push('请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。');
-          }
+          if (planPath) pendingNativePlans.add(planPath);
         } catch(e) {}
+        if (pendingNativePlans.size > 0) {
+          lines.push('');
+          lines.push('检测到未桥接的原生计划文件：');
+          Array.from(pendingNativePlans).forEach(p => lines.push(`  ${p}`));
+          lines.push('请调用 Skill(paceflow:pace-bridge)，按该 skill 桥接为 v6 CHG 并记录同步标记。');
+        }
         process.stdout.write(lines.join('\n') + '\n\n');
         // v5.0.2: compact 恢复后注入格式快速参考
         if (paceSignal) {
@@ -171,7 +167,7 @@ if (eventType === 'compact') {
             `验证标记：${FORMAT_SNIPPETS.verified}`,
             `impl_plan 规则：${FORMAT_SNIPPETS.implDetail}`,
             '',
-            '=== G-9 完成检查（每个 CHG/HOTFIX 最后任务代码写完后立即执行）===',
+            '=== CHG 完成检查（每个 CHG/HOTFIX 最后任务代码写完后立即执行）===',
             `1. 先运行验证并阅读结果；未读取结果前不要派 verify/close-chg`,
             `2. 通过后派 close-chg complete-open-tasks: true — 收口最后任务、写 VERIFIED、归档索引并写 walkthrough`,
             `3. 中间任务完成才用 update-status [x]；只记录验证暂不归档才用 update-chg action=verify`,
@@ -201,7 +197,7 @@ if (eventType !== 'compact') {
     if (planPath) {
       process.stdout.write(`\n=== Native Plan 桥接提醒 ===\n`);
       process.stdout.write(`检测到未桥接的原生计划文件：${planPath}\n`);
-      process.stdout.write(`请执行桥接：Read plan → 派 artifact-writer create-chg 创建 changes/<id>.md 与索引，完成后删除 .pace/current-native-plan。\n\n`);
+      process.stdout.write('请调用 Skill(paceflow:pace-bridge)，按该 skill 桥接为 v6 CHG 并记录同步标记。\n\n');
     }
   } catch(e) {}
 }
@@ -465,22 +461,22 @@ if (paceSignal && found.length > 0) {
     // W-5: 使用共享检测函数（消除与 pre-tool-use.js 的重复）
     const { hasEmoji, hasTable } = detectLegacyImplFormat(implActive);
     if (hasEmoji) {
-      formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
+      formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，当前索引解析无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
     if (hasTable) {
-      formatWarnings.push(`implementation_plan.md 使用了表格格式，hook 无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
+      formatWarnings.push(`implementation_plan.md 使用了表格格式，当前索引解析无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
     }
     // 检测 2：双 ARCHIVE 标记
     const archiveCount = (implFull.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (archiveCount > 1) {
-      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处。请删除多余的标记，只保留活跃区与归档区之间的那个`);
+      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），会导致活跃区识别错误。请删除多余的标记，只保留活跃区与归档区之间的那个`);
     }
   }
   // 检测 3：task.md 双 ARCHIVE 标记
   if (taskFullCached) {
     const taskArchiveCount = (taskFullCached.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (taskArchiveCount > 1) {
-      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），readActive 会截断到第一个标记处。请删除多余的标记，只保留活跃区与归档区之间的那个`);
+      formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），会导致活跃区识别错误。请删除多余的标记，只保留活跃区与归档区之间的那个`);
     }
   }
   if (formatWarnings.length > 0) {
@@ -532,7 +528,7 @@ if (taskFullCached) {
     const hasCompleted = activeChangeSummaries.some(s => s.category === 'closing-required');
     const hasIndexPending = /- \[[ \/!]\]/.test(active);
     if (detailPending > 0) {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n⚠️ v6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN，请为它们创建或更新对应任务列表项（交互式 TaskCreate/TaskUpdate；非交互/SDK TodoWrite）。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\nv6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN，请让 Claude 任务列表反映这些未完成任务。\n\n`);
     } else if (hasCompleted) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 close-chg，归档后再清空 Claude 任务列表；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
     } else if (hasIndexPending && paceSignal === 'artifact') {

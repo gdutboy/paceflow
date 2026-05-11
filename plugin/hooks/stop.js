@@ -97,7 +97,7 @@ if (paceSignal === 'artifact') {
 
     if (change.category === 'running') {
       if (!change.approved) {
-        warnings.push(`${change.id} 正在执行但未批准。请确认用户是否已批准；若用户明确要求执行、已接受方案或通过 AskUserQuestion 批准，派 update-chg action=approve-and-start（需 approval-confirmed: true + approval-source + approval-evidence + task-id）。${FORMAT_SNIPPETS.approveAndStartOp}`);
+        warnings.push(`${change.id} 正在执行但未批准。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`);
         continue;
       }
       if (change.tasks.pending > 0) {
@@ -112,10 +112,10 @@ if (paceSignal === 'artifact') {
 
     if (change.category === 'closing-required') {
       if (!change.verified) {
-        warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。${FORMAT_SNIPPETS.closeOp}`);
+        warnings.push(`${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。字段格式见 Skill(paceflow:artifact-management)。`);
       } else {
         requiresWalkthrough = true;
-        warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。${FORMAT_SNIPPETS.closeOp}`);
+        warnings.push(`${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。字段格式见 Skill(paceflow:artifact-management)。`);
       }
     }
   }

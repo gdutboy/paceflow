@@ -150,7 +150,7 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
    - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary 或 "无附加说明"> |`
 6. 报告 `status: SUCCESS`，`files_modified: ["changes/chg-xxx.md"]`
    - 最终回答第一行必须直接是 `## artifact-writer 报告`
-   - 禁止在报告前写"验证通过"、"最终状态验证通过"、"报告如下"等过渡句
+   - 禁止在报告前写任何过渡句或说明文字
 
 修改前：
 ```
