@@ -244,7 +244,7 @@ function bashShellCommandReferencesArtifact(command, cwd, artDir) {
 function bashArtifactRuntimeControlDenyReason(command) {
   return [
     '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
-    '如果看到写入繁忙，请等待当前 artifact 写入完成后重试；不要用 Bash 删除或改写 PaceFlow 运行态文件。详细目标已记录到 hook 日志。',
+    '如果看到写入繁忙，请等待当前 artifact 写入完成后重试；不要用 Bash 删除或改写 PaceFlow 运行态文件。',
     `被拦截的命令：${String(command || '').slice(0, 500)}`
   ].join('\n');
 }
@@ -898,7 +898,7 @@ paceUtils.withStdinParsed((stdin) => {
   const normalizedCwd = paceUtils.normalizePath(cwd);
   if (isFileMutationTool(toolName) && paceUtils.isArtifactRuntimeControlPath(cwd, filePath)) {
     return hardDeny(
-      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写或删除运行态文件。详细目标已记录到 hook 日志。`,
+      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写或删除运行态文件。`,
       'DENY_ARTIFACT_RUNTIME_CONTROL',
       {
         file: filePath,
