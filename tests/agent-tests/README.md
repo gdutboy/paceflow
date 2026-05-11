@@ -107,4 +107,4 @@ teardown:
 - `docs/agent-testing-strategy.md`：完整 5 Phase 策略 + 验收
 - `docs/v6.0.0-design.md`：架构设计
 - `plugin/agents/artifact-writer.md`：被测 agent
-- `ticket.md`：Sprint 3 实施记录
+- `internal/audit-tickets/ticket.md`：Sprint 3 实施记录

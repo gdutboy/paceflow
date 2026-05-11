@@ -286,12 +286,12 @@ cd /mnt/k/AI/paceflow-hooks/paceflow
 git log --oneline -12
 
 # 看本 ticket
-cat ticket.md
+cat internal/audit-tickets/ticket.md
 
 # 重点读 3 文档
 less docs/agent-testing-report-2026-05-03.md  # Tier 0 测试报告
 less docs/v5-archival-strategy.md              # B 方案
-less ticket.md                                  # §4 / §5 看完整进度
+less internal/audit-tickets/ticket.md           # §4 / §5 看完整进度
 
 # 启动 P1 #1：hooks v6 适配
 # 先 grep 当前 hook 中的 v5 双区结构假设：

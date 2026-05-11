@@ -45,7 +45,7 @@ PACEflow v6 的核心改变不是“换一种 artifact 格式”，而是把 art
 | 类别 | 路径 | 结论 |
 |---|---|---|
 | 历史远端基线（2026-05-04） | `origin/master` | v5.1.4，仅含 hooks/skills/templates/docs，未含当时本地 v6 agent 与测试 |
-| 本地 v6 ticket | `ticket.md` | 当前瓶颈是 hooks v6 适配、B 方案迁移、版本 bump |
+| 本地 v6 ticket | `internal/audit-tickets/ticket.md` | 历史 handoff：hooks v6 适配、B 方案迁移、版本 bump |
 | Agent prompt | `agents/artifact-writer.md` | v6-only 执行契约，禁止 v5 fallback |
 | Agent spec | `agent-references/artifact-writer-spec.md` | schema、wikilink、索引模板、验证规则 |
 | 指令规范 | `agent-references/instructions/*.md` | 6 类 operation 的实际步骤 |
