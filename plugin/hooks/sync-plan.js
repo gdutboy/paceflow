@@ -28,7 +28,7 @@ function parseArgs(argv) {
 function usage() {
   return [
     'Usage:',
-    '  node hooks/sync-plan.js --plan <bridged-plan-path> [--cwd <project-cwd>]',
+    `  node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan <bridged-plan-path> [--cwd <project-cwd>]`,
     '',
     'Run this after pace-bridge successfully creates the corresponding CHG.',
   ].join('\n');

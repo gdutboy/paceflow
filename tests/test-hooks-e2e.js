@@ -88,6 +88,12 @@ function slugFromId(id) {
   return lower;
 }
 
+function displayDirForAssert(dir, { normalized = false } = {}) {
+  let value = String(dir || '').replace(/\\/g, '/').replace(/\/?$/, '/');
+  if (normalized && process.platform === 'win32') value = value.toLowerCase();
+  return value;
+}
+
 function reservedFromStdout(stdout) {
   let text = String(stdout || '');
   try {
@@ -1148,7 +1154,7 @@ test('9hab2. artifact-root=local 但 Agent prompt 写到 docs 子目录 → DENY
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('写错当前 artifact_dir'));
   assert.ok(r.stdout.includes(`artifact_dir: ${dir.replace(/\\/g, '/')}/`));
-  assert.ok(r.stdout.includes(`${dir.replace(/\\/g, '/')}/docs/`));
+  assert.ok(r.stdout.includes(displayDirForAssert(path.join(dir, 'docs'), { normalized: true })));
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '错误 artifact_dir 时不应先创建本地模板');
 });
 
@@ -1204,6 +1210,7 @@ test('9hac2. artifact-root=vault 但 Agent prompt 写到 vault 子目录 → DEN
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('写错当前 artifact_dir'));
   assert.ok(r.stdout.includes(`artifact_dir: ${vaultDir.replace(/\\/g, '/')}/`));
+  assert.ok(r.stdout.includes(displayDirForAssert(path.join(vaultDir, 'docs'), { normalized: true })));
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '错误 artifact_dir 时不应先创建 vault 模板');
 });
 
@@ -1360,6 +1367,10 @@ test('9hc-helper5. sync-plan helper 幂等写入单个 plan basename', () => {
   const plan = path.join(dir, 'docs', 'plans', '2026-05-11-helper-smoke.md');
   fs.mkdirSync(path.dirname(plan), { recursive: true });
   fs.writeFileSync(plan, '# helper smoke\n', 'utf8');
+
+  const help = runSyncPlanHelper({ cwd: dir, args: ['--help'] });
+  assert.strictEqual(help.code, 0);
+  assert.ok(help.stdout.includes(SYNC_PLAN_HELPER.replace(/\\/g, '/')), 'help 应展示可直接运行的绝对 helper 路径');
 
   const first = runSyncPlanHelper({ cwd: dir, args: ['--plan', plan] });
   const second = runSyncPlanHelper({ cwd: dir, args: ['--plan', plan] });
