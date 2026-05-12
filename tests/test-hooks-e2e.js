@@ -2255,6 +2255,34 @@ test('9hc1a. approve-and-start 带确认字段 → 放行', () => {
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
 });
 
+test('9hc1a1. approve-and-start 证据提到 close-chg 不误判为 close', () => {
+  const dir = makeV6Project('agent-approve-evidence-close-word');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve and start',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve-and-start',
+          'task-id: T-001',
+          'approval-confirmed: true',
+          'approval-source: user-directive',
+          'approval-evidence: 用户要求 approve-and-start 后修改代码，验证通过后 close-chg 归档。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('verification-confirmed'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
 test('9hc1a2. lifecycle prompt 字段支持等号与中文逗号分隔', () => {
   const dir = makeV6Project('agent-approve-confirm-equals');
   const r = runHook('pre-tool-use.js', {
@@ -2456,6 +2484,33 @@ test('9hc4. close-chg 完整收尾 prompt → 放行', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc4a0. close-chg walkthrough 提到 approve-and-start 不误判为批准', () => {
+  const dir = makeV6Project('agent-close-summary-approve-word');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Close CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'complete-open-tasks: true',
+          'verify-summary: grep README.md PASS',
+          'walkthrough-summary: 创建 CHG 后直接写文件被阻止；执行 approve-and-start 后修改文件并验证通过。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('approval-confirmed'));
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
 });
 

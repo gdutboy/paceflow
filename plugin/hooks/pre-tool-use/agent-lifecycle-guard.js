@@ -136,16 +136,13 @@ function promptMentionsVerifyAction(prompt) {
     /\bverify\s+操作/i.test(text);
 }
 
-function promptMentionsApproveAndStart(prompt) {
-  return /\bapprove-and-start\b/i.test(String(prompt || ''));
+function promptDeclaredOperation(prompt) {
+  const value = promptFieldValue(prompt, 'operation') || promptFieldValue(prompt, '指令');
+  return value.toLowerCase();
 }
 
-function promptMentionsApproveOnly(prompt) {
-  const text = String(prompt || '');
-  return /(?:^|[\s\n])action\s*[:=]\s*approve\b(?!-and-start)/i.test(text) ||
-    /\bupdate-chg\s+action=approve\b(?!-and-start)/i.test(text) ||
-    /执行\s*approve\s*操作/i.test(text) ||
-    /action=approve(?!-and-start)/i.test(text);
+function promptDeclaredAction(prompt) {
+  return promptFieldValue(prompt, 'action').toLowerCase();
 }
 
 function promptApproveContainsStartIntent(prompt) {
@@ -157,11 +154,13 @@ function promptApproveContainsStartIntent(prompt) {
 
 function agentLifecyclePromptDenyReason(prompt) {
   const text = String(prompt || '');
-  const mentionsApproveAndStart = promptMentionsApproveAndStart(text);
-  const mentionsApproveOnly = promptMentionsApproveOnly(text);
+  const operation = promptDeclaredOperation(text);
+  const action = promptDeclaredAction(text);
+  const mentionsApproveAndStart = operation === 'update-chg' && action === 'approve-and-start';
+  const mentionsApproveOnly = operation === 'update-chg' && action === 'approve';
   const mentionsApprovalAction = mentionsApproveAndStart || mentionsApproveOnly;
-  const mentionsCloseChg = /\bclose-chg\b/i.test(text);
-  const mentionsUpdateStatus = /\bupdate-status\b/i.test(text);
+  const mentionsCloseChg = operation === 'close-chg';
+  const mentionsUpdateStatus = operation === 'update-chg' && action === 'update-status';
 
   if (mentionsApprovalAction) {
     const missing = [];

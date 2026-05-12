@@ -543,6 +543,21 @@ Smoke4 rerun 覆盖“vault 选择后是否先写 `.pace/artifact-root`，不再
 - 补 e2e：半索引状态下 artifact-writer 可补齐 `implementation_plan.md`；非 artifact-writer 仍被索引不一致阻止；artifact-writer 写 C/E marker 不被 C/E gate 自锁；外部 `/tmp/*.js` 写 artifact 被 Bash guard 拦截。
 - 补文案：索引不一致 deny 明确只能派 artifact-writer 修 artifact，禁止 Bash/临时脚本/Obsidian CLI/主 session 直接改 artifact；Smoke1/2 文档把 index mismatch 与绕过式 artifact 修复列为失败信号，Smoke2 setup 增加第三个代码文件稳定触发 PACEflow。
 
+#### 0.1.10e15 v6.0.55 focused Smoke1/2/4 复跑问题（2026-05-12）
+
+用户并发复跑 Smoke1、Smoke2、Smoke4 后，核心设计目标已达到：artifact-writer 不再被索引/C/E gate 自锁；Smoke2 未批准写 README 会被 C 阶段阻止，批准后放行；Smoke4 close 后 owner 可关闭。
+
+新增问题是 lifecycle prompt gate 的字段识别过宽：
+
+- Smoke2 close-chg prompt 完整包含 `operation: close-chg` 与验证摘要，但 `walkthrough-summary` 中提到“执行 approve-and-start 后 hook 放行”。hook 用全文 `approve-and-start` 关键词判断，误判成 C 阶段批准，要求 `approval-confirmed/source/evidence/task-id`。
+- Smoke4 approve-and-start prompt 完整包含 `operation: update-chg` / `action: approve-and-start` 与批准字段，但 `approval-evidence` 引用用户原话“验证通过后 close-chg 归档”。hook 用全文 `close-chg` 关键词判断，误判成 close-chg，要求 `verification-confirmed/verify-summary/walkthrough-summary`。
+
+修复口径：
+
+- `agentLifecyclePromptDenyReason()` 只用结构化字段 `operation:` 与 `action:` 决定当前 lifecycle 操作；摘要、证据、用户原话中的 `approve-and-start` / `close-chg` 只当普通文本。
+- `operation=update-chg + action=approve|approve-and-start` 才触发 C 阶段字段检查；`operation=close-chg` 才触发验证/归档字段检查；`operation=update-chg + action=update-status` 才检查是否把 verify 串进同一次派遣。
+- 补 e2e：approve-and-start 的 `approval-evidence` 提到 `close-chg` 仍放行；close-chg 的 `walkthrough-summary` 提到 `approve-and-start` 仍放行。
+
 
 #### 0.1.10b v6.0.40 production Smoke5 记录
 
