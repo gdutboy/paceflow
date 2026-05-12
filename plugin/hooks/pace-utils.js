@@ -3,327 +3,184 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.55';
-const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
-const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
-const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
-const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
-const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
-const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
-const ARTIFACT_WRITER_LOCK_FILE = 'artifact-writer.lock';
-const ARTIFACT_WRITER_LOCK_TTL_MS = Number(process.env.PACE_ARTIFACT_LOCK_TTL_MS || 30 * 60 * 1000);
-const ARTIFACT_RESOURCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ARTIFACT_RESOURCE_LOCK_TTL_MS || 5 * 60 * 1000) || 5 * 60 * 1000);
-const ARTIFACT_RESOURCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_RESOURCE_LOCK_WAIT_MS || 2500) || 2500);
-const ARTIFACT_SEQUENCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_TTL_MS || 30 * 1000) || 30 * 1000);
-const ARTIFACT_SEQUENCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIFACT_SEQUENCE_LOCK_WAIT_MS || 2500) || 2500);
-const PLAN_SYNC_LOCK_TTL_MS = ARTIFACT_SEQUENCE_LOCK_TTL_MS;
-const PLAN_SYNC_LOCK_WAIT_MS = ARTIFACT_SEQUENCE_LOCK_WAIT_MS;
-const CHANGE_OWNER_TTL_MS = Math.max(60 * 1000, Number(process.env.PACE_CHANGE_OWNER_TTL_MS || 30 * 60 * 1000) || 30 * 60 * 1000);
-const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
-const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/');
-const SYNC_PLAN_SCRIPT = path.resolve(__dirname, 'sync-plan.js').replace(/\\/g, '/');
-const SET_ARTIFACT_ROOT_SCRIPT = path.resolve(__dirname, 'set-artifact-root.js').replace(/\\/g, '/');
-const PACE_ARTIFACT_ROOT_CONTENT = 'task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
-
-// 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
-const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
-const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
-
-function normalizeLineEndings(content) {
-  return String(content || '').replace(/\r\n?/g, '\n');
+// pace-utils.js 是兼容门面；子模块保持可审计边界，外部仍只 require('./pace-utils')。
+for (const rel of [
+  './pace-utils/constants',
+  './pace-utils/line-endings',
+  './pace-utils/session',
+  './pace-utils/path-utils',
+  './pace-utils/logger',
+  './pace-utils/plans',
+  './pace-utils/change-id',
+  './pace-utils/change-analysis',
+  './pace-utils/locks',
+]) {
+  delete require.cache[require.resolve(rel)];
 }
 
-function hasNonNullVerifiedDate(text) {
-  const match = normalizeLineEndings(text).match(/^verified-date:[ \t]*(.*)$/m);
-  if (!match) return false;
-  const value = match[1].trim().replace(/^["']|["']$/g, '');
-  return value !== '' && value.toLowerCase() !== 'null';
-}
+const {
+  PACE_VERSION,
+  CODE_EXTS,
+  ARTIFACT_FILES,
+  MIGRATABLE_ARTIFACT_FILES,
+  VAULT_PATH,
+  ARTIFACT_ROOT_CHOICE_FILE,
+  V5_MIGRATION_STATE_FILE,
+  ARTIFACT_WRITER_LOCK_FILE,
+  ARTIFACT_WRITER_LOCK_TTL_MS,
+  ARTIFACT_RESOURCE_LOCK_TTL_MS,
+  ARTIFACT_RESOURCE_LOCK_WAIT_MS,
+  ARTIFACT_SEQUENCE_LOCK_TTL_MS,
+  ARTIFACT_SEQUENCE_LOCK_WAIT_MS,
+  PLAN_SYNC_LOCK_TTL_MS,
+  PLAN_SYNC_LOCK_WAIT_MS,
+  CHANGE_OWNER_TTL_MS,
+  ARTIFACT_ROOT_CHOICE_MAX_CHARS,
+  RESERVE_ARTIFACT_ID_SCRIPT,
+  SYNC_PLAN_SCRIPT,
+  SET_ARTIFACT_ROOT_SCRIPT,
+  PACE_ARTIFACT_ROOT_CONTENT,
+  ARCHIVE_MARKER,
+  ARCHIVE_PATTERN,
+  COMPLETION_PHRASES,
+  TODO_DRIFT_THRESHOLD,
+  SKILL_DIRS,
+  FORMAT_SNIPPETS,
+  SESSION_SCOPED_FLAGS,
+  SESSION_SCOPED_FLAG_PREFIXES,
+  PLAN_DIRS,
+} = require('./pace-utils/constants');
 
-// 交叉验证：AI 声称完成时匹配的中文短语
-const COMPLETION_PHRASES = /(?:任务完成|已完成所有|全部完成|归档完毕)/;
+const {
+  normalizeLineEndings,
+  hasNonNullVerifiedDate,
+} = require('./pace-utils/line-endings');
 
-// Claude 任务列表与详情任务数量差异阈值（超过此值触发提醒）
-const TODO_DRIFT_THRESHOLD = 3;
+const {
+  isTeammate,
+  isArtifactWriterAgentType,
+  normalizeSessionId,
+  currentSessionId,
+  parseHookStdin,
+  withStdinParsed,
+  parseStdinSync,
+} = require('./pace-utils/session');
 
-// v5.0.0: skill 目录名列表（install.js + verify.js 共用）
-const SKILL_DIRS = [
-  'pace-workflow',
-  'artifact-management',
-  'pace-knowledge',
-  'pace-bridge',
-];
+const {
+  resolveProjectCwd,
+  ts,
+  todayISO,
+  daysSinceISODate,
+  normalizePath,
+  displayDir,
+  isPortableAbsolutePath,
+  resolveToolFilePath,
+  isArtifactRelativePath,
+  artifactRelativePathForFile,
+  escapeRegex,
+  getProjectNameCandidates,
+  getProjectName,
+  getProjectStateDir,
+  getProjectRuntimeDir,
+  executionContextForCwd,
+} = require('./pace-utils/path-utils');
 
-// v6 格式示例常量——供 DENY/Stop/HINT 消息内联引用，确定性最高+零 I/O
-const FORMAT_SNIPPETS = {
-  taskEntry: '- [ ] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
-  taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
-  implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
-  implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
-  approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；approve/approve-and-start 都必须带 approval-confirmed、approval-source、approval-evidence',
-  verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；主路径是验证结果已读取后 close-chg，暂不归档时才用 update-chg action=verify',
-  // checkbox 状态说明
-  statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 阻塞 | [-] 跳过',
-  // 变更状态说明（impl_plan 专用，与 statusHelp 是独立术语）
-  changeStatusHelp: '[ ] 规划中 | [/] 进行中 | [x] 完成 | [-] 废弃 | [!] 暂停',
-  // 格式要求（E 阶段 DENY 核心信息）
-  formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
-  // 归档操作（T-441: 移动标记而非内容）
-  approveAndStartOp: '批准并开始 = 派 artifact-writer approve-and-start；字段格式见 Skill(paceflow:artifact-management)',
-  closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg；字段格式见 Skill(paceflow:artifact-management)',
-  reserveHelper: `预留编号 = 主 session 先运行 Bash: node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部`,
-  syncPlanHelper: `同步 plan = 桥接成功后运行 Bash: node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"`,
-  setArtifactRootHelper: `选择 artifact root = 用户选择后运行 Bash: node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
-  archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
-  findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
-  findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
-  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |',
-  // Skill 引用
-  skillRef: '流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)',
-};
+const {
+  createLogger,
+  logEntry,
+} = require('./pace-utils/logger');
 
-// 会话级 flag 文件集中管理（session-start 重置用）
-const SESSION_SCOPED_FLAGS = [
-  'degraded',                    // stop.js 降级标记（3 次 block 后静默放行）
-  'task-list-used',              // task-list-sync.js 标记（本会话已使用 Claude 任务列表工具）
-  'todowrite-used',              // legacy 运行态 flag，保留清理以避免旧版本残留
-  'archive-reminded',            // post-tool-use.js H3 legacy flag（task.md 归档提醒，每会话一次）
-  'findings-reminded',           // post-tool-use.js H7（findings ⚠️ 提醒，每会话一次）
-  'impl-archive-reminded',       // post-tool-use.js H10（impl_plan 归档提醒，每会话一次）
-  'cli-refresh-done',            // post-tool-use.js H12（Obsidian CLI 索引刷新标记）
-  'walkthrough-archive-reminded', // post-tool-use.js（walkthrough 详情>3 归档提醒）
-  'findings-archive-reminded',   // post-tool-use.js（findings 已解决详情归档提醒）
-];
+const {
+  normalizeChangeId,
+  detailPathForId,
+  slugForChangeId,
+} = require('./pace-utils/change-id');
 
-const SESSION_SCOPED_FLAG_PREFIXES = [
-  'archive-reminded-',           // post-tool-use.js：按 CHG slug 去重归档提醒
-  'status-mismatch-',            // post-tool-use.js：按 CHG slug 去重索引/status 不一致提醒
-  'verify-missing-',             // post-tool-use.js：按 CHG slug 去重 completed 未 verified 提醒
-  'blocked-tasks-',              // post-tool-use.js：按 CHG slug 去重 blocked task 提醒
-];
+const {
+  countByStatus,
+  extractOpenKeys,
+  normalizeFindingKey,
+  detectLegacyImplFormat,
+  parseFrontmatter,
+  validateWalkthroughLinks,
+  parseChangeIndex,
+  readChangeDetail,
+  extractTaskSection,
+  countDetailTasks,
+  classifyChange,
+  getActiveChangeEntries,
+  isChangeApproved,
+  isChangeVerified,
+  summarizeActiveChanges,
+} = require('./pace-utils/change-analysis')({
+  readActive,
+  readFull,
+  getArtifactDir,
+  escapeRegex,
+});
 
-/** 检测当前进程是否为 Agent Teams teammate（环境变量 CLAUDE_CODE_TEAM_NAME 存在即为 teammate） */
-function isTeammate() {
-  return !!process.env.CLAUDE_CODE_TEAM_NAME;
-}
+const {
+  getArtifactWriterLockPath,
+  readArtifactWriterLock,
+  acquireArtifactWriterLock,
+  artifactWriterLockMatches,
+  releaseArtifactWriterLock,
+  formatArtifactWriterLock,
+  operationFromAgentPrompt,
+  changeIdFromAgentPrompt,
+  explicitChangeTargetFromAgentPrompt,
+  artifactResourceForRel,
+  getArtifactResourceLockPath,
+  readArtifactResourceLock,
+  acquireArtifactResourceLock,
+  releaseArtifactResourceLock,
+  releaseArtifactResourcesForOwner,
+  markIndexChangesTouchedAndMaybeRelease,
+  readArtifactIndexTransaction,
+  formatArtifactResourceLock,
+  reserveArtifactId,
+  readArtifactReservation,
+  findArtifactReservationForRel,
+  clearArtifactReservation,
+  clearArtifactReservationForRel,
+  reservationMatchesArtifactRel,
+  isArtifactRuntimeControlPath,
+  getChangeOwnerPath,
+  readChangeOwner,
+  writeChangeOwner,
+  markChangeOwnerClosed,
+  touchChangeOwnersForSession,
+  changeOwnerStatus,
+  ownerTakeoverConfirmed,
+  acquireJsonLock,
+} = require('./pace-utils/locks')({
+  getProjectRuntimeDir,
+  displayDir,
+  normalizeSessionId,
+  currentSessionId,
+  executionContextForCwd,
+  normalizePath,
+  getArtifactDir,
+  todayISO,
+  CHANGE_OWNER_TTL_MS,
+});
 
-function isArtifactWriterAgentType(agentType) {
-  const type = String(agentType || '').toLowerCase();
-  return type === 'artifact-writer' || type === 'paceflow:artifact-writer' || type.endsWith(':artifact-writer');
-}
-
-let _lastHookSessionId = '';
-
-function normalizeSessionId(sessionId) {
-  return String(sessionId || '').trim();
-}
-
-function currentSessionId() {
-  return normalizeSessionId(process.env.CLAUDE_CODE_SESSION_ID || _lastHookSessionId);
-}
-
-/**
- * 获取项目根目录，优先使用 CLAUDE_PROJECT_DIR 环境变量（Claude Code hook 进程自动设置）
- * fallback 到 process.cwd()（非 hook 环境或环境变量缺失时）
- * @returns {string} 项目根目录
- */
-function resolveProjectCwd() {
-  return process.env.CLAUDE_PROJECT_DIR
-    ? path.resolve(process.env.CLAUDE_PROJECT_DIR)
-    : process.cwd();
-}
-
-/** 生成中国时区时间戳字符串 */
-function ts() {
-  return new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-}
-
-/** 返回今日 ISO 日期（YYYY-MM-DD），sv-SE locale 技巧避免手动拼接 */
-function todayISO() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-}
-
-function isoDateDayNumber(value) {
-  const m = String(value || '').trim().replace(/^["']|["']$/g, '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000);
-}
-
-function daysSinceISODate(value, todayValue = todayISO()) {
-  const start = isoDateDayNumber(value);
-  const end = isoDateDayNumber(todayValue);
-  if (start === null || end === null) return null;
-  return end - start;
-}
-
-// H-1: 跨平台路径规范化（Windows 大小写不敏感，Linux 大小写敏感）
-const isWin = process.platform === 'win32';
-/** 路径规范化：统一分隔符为 /，Windows 额外 toLowerCase */
-function normalizePath(p) {
-  const n = p.replace(/\\/g, '/');
-  return isWin ? n.toLowerCase() : n;
-}
-
-function displayDir(dir) {
-  return String(dir || '').replace(/\\/g, '/').replace(/\/?$/, '/');
-}
-
-function isPortableAbsolutePath(p) {
-  const normalized = String(p || '').replace(/\\/g, '/');
-  return path.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized);
-}
-
-/** 将 Claude tool_input.file_path 解析成当前项目下的绝对路径；绝对路径保持原样 */
-function resolveToolFilePath(cwd, filePath) {
-  const normalized = String(filePath || '').replace(/\\/g, '/');
-  if (!normalized) return '';
-  if (isPortableAbsolutePath(normalized)) return normalized;
-  return path.resolve(cwd || process.cwd(), normalized).replace(/\\/g, '/');
-}
-
-function isArtifactRelativePath(relPath) {
-  const rel = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
-  if (ARTIFACT_FILES.includes(rel)) return true;
-  return /^changes\/.+\.md$/i.test(rel);
-}
-
-/**
- * 如果 filePath 指向 baseDir 内的 v6 artifact，返回 artifact 相对路径；否则返回 null。
- * 覆盖根索引文件和 changes/ 下的 markdown 详情文件。
- */
-function artifactRelativePathForFile(baseDir, filePath) {
-  if (!baseDir || !filePath) return null;
-  const absFile = resolveToolFilePath(baseDir, filePath);
-  const normalizedBase = normalizePath(path.resolve(baseDir));
-  const normalizedFile = normalizePath(absFile);
-  const baseWithSlash = normalizedBase.endsWith('/') ? normalizedBase : normalizedBase + '/';
-  if (!normalizedFile.startsWith(baseWithSlash)) return null;
-  const rel = normalizedFile.slice(baseWithSlash.length);
-  return isArtifactRelativePath(rel) ? rel : null;
-}
-
-function sanitizeProjectName(name) {
-  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-function worktreeBaseDir(cwd) {
-  const resolved = path.resolve(cwd || '');
-  const parts = resolved.split(path.sep);
-  for (let i = parts.length - 3; i >= 0; i--) {
-    if (parts[i] !== '.claude' || parts[i + 1] !== 'worktrees') continue;
-    const baseParts = parts.slice(0, i);
-    if (baseParts.length === 0) return null;
-    return baseParts.join(path.sep) || path.sep;
-  }
-  return null;
-}
-
-function addProjectCandidate(candidates, name) {
-  const normalized = sanitizeProjectName(name);
-  if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
-}
-
-function escapeRegex(text) {
-  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function gitWorktreeMainCheckoutDir(gitDir) {
-  const marker = `${path.sep}.git${path.sep}worktrees${path.sep}`;
-  const idx = String(gitDir || '').indexOf(marker);
-  if (idx < 0) return null;
-  const mainGitDir = String(gitDir).slice(0, idx + `${path.sep}.git`.length);
-  return path.dirname(mainGitDir);
-}
-
-function getProjectNameCandidates(cwd) {
-  const candidates = [];
-  const safeCwd = cwd || '';
-  addProjectCandidate(candidates, process.env.PACE_PROJECT_NAME);
-  addProjectCandidate(candidates, process.env.PACEFLOW_PROJECT_NAME);
-
-  const wtBase = worktreeBaseDir(safeCwd);
-  if (wtBase) addProjectCandidate(candidates, path.basename(wtBase));
-
-  // Git worktree outside a conventional worktrees/ directory still exposes the
-  // main checkout through .git -> gitdir: <main>/.git/worktrees/<name>.
-  try {
-    const gitFile = path.join(safeCwd, '.git');
-    if (fs.existsSync(gitFile) && fs.statSync(gitFile).isFile()) {
-      const content = fs.readFileSync(gitFile, 'utf8');
-      const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
-      if (match) {
-        const gitDir = path.resolve(safeCwd, match[1].trim());
-        const hostDir = gitWorktreeMainCheckoutDir(gitDir);
-        if (hostDir) addProjectCandidate(candidates, path.basename(hostDir));
-      }
-    }
-  } catch(e) {}
-
-  addProjectCandidate(candidates, path.basename(safeCwd));
-  return candidates.length > 0 ? candidates : ['unknown-project'];
-}
-
-/** 从 cwd 提取项目名（小写+连字符格式）；worktree 路径归一到宿主项目名 */
-function getProjectName(cwd) {
-  // I-1: 空值/极端路径防御
-  if (!cwd || cwd === '.' || cwd === '/' || cwd === '\\') return 'unknown-project';
-  // W-code-3: Windows 盘符根路径守卫（path.basename('C:\\') 返回空字符串）
-  if (/^[A-Z]:\\\\?$/i.test(cwd)) return 'unknown-project';
-  return getProjectNameCandidates(cwd)[0] || 'unknown-project';
-}
-
-function gitWorktreeHostDir(cwd) {
-  const safeCwd = cwd || '';
-  try {
-    const gitFile = path.join(safeCwd, '.git');
-    if (!fs.existsSync(gitFile) || !fs.statSync(gitFile).isFile()) return null;
-    const content = fs.readFileSync(gitFile, 'utf8');
-    const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
-    if (!match) return null;
-    const gitDir = path.resolve(safeCwd, match[1].trim());
-    return gitWorktreeMainCheckoutDir(gitDir);
-  } catch(e) {
-    return null;
-  }
-}
-
-/** 项目级运行态目录归属；worktree 读取宿主项目 .pace。 */
-function getProjectStateDir(cwd) {
-  return worktreeBaseDir(cwd) || gitWorktreeHostDir(cwd) || cwd;
-}
-
-function getProjectRuntimeDir(cwd) {
-  return path.join(getProjectStateDir(cwd), '.pace');
-}
-
-function gitBranchName(cwd) {
-  try {
-    const { execFileSync } = require('child_process');
-    return String(execFileSync('git', ['-C', cwd || process.cwd(), 'rev-parse', '--abbrev-ref', 'HEAD'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 1000,
-    })).trim();
-  } catch(e) {
-    return '';
-  }
-}
-
-function executionContextForCwd(cwd) {
-  const resolved = path.resolve(cwd || process.cwd());
-  const stateDir = getProjectStateDir(resolved);
-  const isWorktree = normalizePath(stateDir) !== normalizePath(resolved);
-  const worktree = isWorktree ? path.basename(resolved) : 'main';
-  const branch = gitBranchName(resolved) || worktree || 'unknown';
-  return {
-    worktree,
-    branch,
-    cwd: resolved,
-    stateDir,
-    isWorktree,
-    text: `[worktree:: ${worktree}] [branch:: ${branch}]`,
-  };
-}
+const {
+  listPlanFiles,
+  hasPlanFiles,
+  hasUnsyncedPlanFiles,
+  listUnsyncedPlanFiles,
+  syncPlanFile,
+  getNativePlanPath,
+  nativePlanMatchesProject,
+  formatBridgeHint,
+} = require('./pace-utils/plans')({
+  getProjectRuntimeDir,
+  acquireJsonLock,
+  normalizePath,
+  getProjectNameCandidates,
+  escapeRegex,
+});
 
 function getArtifactRootChoicePath(cwd) {
   return path.join(getProjectRuntimeDir(cwd), ARTIFACT_ROOT_CHOICE_FILE);
@@ -356,737 +213,6 @@ function worktreeLocalArtifactRootChoiceDenyReason(cwd, extra = '') {
 
 function getV5MigrationStatePath(cwd) {
   return path.join(getProjectRuntimeDir(cwd), V5_MIGRATION_STATE_FILE);
-}
-
-function getArtifactWriterLockPath(cwd) {
-  return path.join(getProjectRuntimeDir(cwd), ARTIFACT_WRITER_LOCK_FILE);
-}
-
-function readArtifactWriterLock(cwd) {
-  const lockPath = getArtifactWriterLockPath(cwd);
-  try {
-    const raw = fs.readFileSync(lockPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return {
-      ok: true,
-      path: lockPath,
-      sessionId: normalizeSessionId(parsed.sessionId || parsed.session_id),
-      agentId: String(parsed.agentId || parsed.agent_id || '').trim(),
-      artifactDir: String(parsed.artifactDir || parsed.artifact_dir || ''),
-      cwd: String(parsed.cwd || ''),
-      operation: String(parsed.operation || ''),
-      createdAt: String(parsed.createdAt || parsed.created_at || ''),
-      timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
-      raw: parsed,
-    };
-  } catch(e) {
-    return { ok: false, path: lockPath, error: e.message };
-  }
-}
-
-function isArtifactWriterLockStale(lock, now = Date.now()) {
-  if (!lock) return false;
-  if (!lock.ok) return true;
-  if (!lock.timestampMs) return true;
-  return now - lock.timestampMs > ARTIFACT_WRITER_LOCK_TTL_MS;
-}
-
-function formatArtifactWriterLock(lock) {
-  if (!lock || !lock.ok) return 'unknown lock';
-  const ageSec = lock.timestampMs ? Math.max(0, Math.round((Date.now() - lock.timestampMs) / 1000)) : '?';
-  return `session=${lock.sessionId || '-'} agent=${lock.agentId || '-'} artifact_dir=${displayDir(lock.artifactDir)} age=${ageSec}s lock=${lock.path}`;
-}
-
-function operationFromAgentPrompt(prompt) {
-  const text = String(prompt || '');
-  const byField = text.match(/^\s*(?:operation|指令)\s*[:=]\s*([a-z0-9-]+)/mi);
-  if (byField) return byField[1].toLowerCase();
-  const known = text.match(/\b(create-chg|update-chg|archive-chg|close-chg|record-finding|record-correction)\b/i);
-  return known ? known[1].toLowerCase() : '';
-}
-
-function changeIdFromAgentPrompt(prompt) {
-  const text = String(prompt || '');
-  const target = text.match(/^\s*(?:target|change-id|chg-id)\s*[:=]\s*["']?((?:CHG|HOTFIX)-\d{8}-\d{2})["']?\s*$/mi);
-  if (target) return target[1].toUpperCase();
-  const reserved = text.match(/^\s*reserved-id\s*[:=]\s*["']?((?:CHG|HOTFIX)-\d{8}-\d{2})["']?\s*$/mi);
-  if (reserved) return reserved[1].toUpperCase();
-  const any = text.match(/\b((?:CHG|HOTFIX)-\d{8}-\d{2})\b/i);
-  return any ? any[1].toUpperCase() : '';
-}
-
-function explicitChangeTargetFromAgentPrompt(prompt) {
-  const text = String(prompt || '');
-  const target = text.match(/^\s*(?:target|change-id|chg-id)\s*[:=]\s*["']?((?:CHG|HOTFIX)-\d{8}-\d{2})["']?\s*$/mi);
-  return target ? target[1].toUpperCase() : '';
-}
-
-function acquireArtifactWriterLock(cwd, info = {}) {
-  const lockPath = getArtifactWriterLockPath(cwd);
-  const runtimeDir = path.dirname(lockPath);
-  const sessionId = normalizeSessionId(info.sessionId || currentSessionId());
-  const now = Date.now();
-  const payload = {
-    sessionId,
-    agentId: String(info.agentId || ''),
-    artifactDir: String(info.artifactDir || ''),
-    cwd: String(cwd || ''),
-    operation: String(info.operation || ''),
-    createdAt: new Date(now).toISOString(),
-    timestampMs: now,
-  };
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      fs.mkdirSync(runtimeDir, { recursive: true });
-      const fd = fs.openSync(lockPath, 'wx');
-      try { fs.writeFileSync(fd, `${JSON.stringify(payload, null, 2)}\n`, 'utf8'); }
-      finally { fs.closeSync(fd); }
-      return { acquired: true, path: lockPath, lock: { ok: true, path: lockPath, ...payload } };
-    } catch(e) {
-      if (e && e.code === 'EEXIST') {
-        const existing = readArtifactWriterLock(cwd);
-        if (isArtifactWriterLockStale(existing, now)) {
-          try {
-            fs.unlinkSync(lockPath);
-          } catch(e2) {
-            if (!e2 || e2.code !== 'ENOENT') {
-              return { acquired: false, path: lockPath, lock: existing, reason: e2 && e2.message || String(e2) };
-            }
-          }
-          continue;
-        }
-        return { acquired: false, path: lockPath, lock: existing, reason: 'locked' };
-      }
-      return { acquired: false, path: lockPath, lock: null, reason: e.message || String(e) };
-    }
-  }
-  return { acquired: false, path: lockPath, lock: readArtifactWriterLock(cwd), reason: 'locked' };
-}
-
-function artifactWriterLockMatches(cwd, sessionId) {
-  const lock = readArtifactWriterLock(cwd);
-  if (!lock.ok) return { ok: false, lock, reason: 'missing' };
-  if (isArtifactWriterLockStale(lock)) {
-    try { fs.unlinkSync(lock.path); } catch(e) {}
-    return { ok: false, lock, reason: 'stale-cleared' };
-  }
-  const sid = normalizeSessionId(sessionId || currentSessionId());
-  if (!sid || !lock.sessionId || lock.sessionId !== sid) {
-    return { ok: false, lock, reason: 'owner-mismatch' };
-  }
-  return { ok: true, lock, reason: '' };
-}
-
-function releaseArtifactWriterLock(cwd, info = {}) {
-  const lock = readArtifactWriterLock(cwd);
-  if (!lock.ok) return { released: false, lock, reason: 'missing' };
-  const sessionId = normalizeSessionId(info.sessionId || currentSessionId());
-  const agentId = String(info.agentId || '').trim();
-  const sameSession = sessionId && lock.sessionId && sessionId === lock.sessionId;
-  const sameAgent = agentId && lock.agentId && agentId === lock.agentId;
-  if (!sameSession && !sameAgent && !isArtifactWriterLockStale(lock)) {
-    return { released: false, lock, reason: 'owner-mismatch' };
-  }
-  try {
-    fs.unlinkSync(lock.path);
-    return { released: true, lock, reason: '' };
-  } catch(e) {
-    return { released: false, lock, reason: e.message || String(e) };
-  }
-}
-
-function sleepSync(ms) {
-  if (!ms || ms <= 0) return;
-  const sab = new SharedArrayBuffer(4);
-  Atomics.wait(new Int32Array(sab), 0, 0, Math.max(1, Math.floor(ms)));
-}
-
-function lockOwnerInfo(info = {}) {
-  const sessionId = normalizeSessionId(info.sessionId || currentSessionId());
-  const agentId = String(info.agentId || '').trim();
-  const ownerKey = agentId ? `agent:${agentId}` : (sessionId ? `session:${sessionId}` : '');
-  return { sessionId, agentId, ownerKey };
-}
-
-function lockMatchesOwner(lock, info = {}) {
-  if (!lock || !lock.ok) return false;
-  const owner = lockOwnerInfo(info);
-  if (owner.agentId && lock.agentId) return owner.agentId === lock.agentId;
-  if (owner.ownerKey && lock.ownerKey && owner.ownerKey === lock.ownerKey) return true;
-  return !!owner.sessionId && !!lock.sessionId && owner.sessionId === lock.sessionId;
-}
-
-function safeLockName(value) {
-  return encodeURIComponent(String(value || 'unknown')).replace(/%/g, '_');
-}
-
-function readJsonLock(lockPath) {
-  try {
-    const raw = fs.readFileSync(lockPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return {
-      ok: true,
-      path: lockPath,
-      sessionId: normalizeSessionId(parsed.sessionId || parsed.session_id),
-      agentId: String(parsed.agentId || parsed.agent_id || '').trim(),
-      ownerKey: String(parsed.ownerKey || parsed.owner_key || '').trim(),
-      resource: String(parsed.resource || ''),
-      artifactDir: String(parsed.artifactDir || parsed.artifact_dir || ''),
-      cwd: String(parsed.cwd || ''),
-      file: String(parsed.file || ''),
-      operation: String(parsed.operation || ''),
-      createdAt: String(parsed.createdAt || parsed.created_at || ''),
-      timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
-      raw: parsed,
-    };
-  } catch(e) {
-    return { ok: false, path: lockPath, error: e.message };
-  }
-}
-
-function jsonLockIsStale(lock, ttlMs, now = Date.now()) {
-  if (!lock) return false;
-  if (!lock.ok) return true;
-  if (!lock.timestampMs) return true;
-  return now - lock.timestampMs > ttlMs;
-}
-
-function acquireJsonLock(lockPath, payload, { ttlMs, waitMs } = {}) {
-  const started = Date.now();
-  const deadline = started + Math.max(0, waitMs || 0);
-  let delay = 50;
-  for (;;) {
-    const now = Date.now();
-    try {
-      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-      const fd = fs.openSync(lockPath, 'wx');
-      try { fs.writeFileSync(fd, `${JSON.stringify({ ...payload, timestampMs: now, createdAt: new Date(now).toISOString() }, null, 2)}\n`, 'utf8'); }
-      finally { fs.closeSync(fd); }
-      return { acquired: true, path: lockPath, lock: readJsonLock(lockPath), waitedMs: now - started };
-    } catch(e) {
-      if (e && e.code === 'EEXIST') {
-        const existing = readJsonLock(lockPath);
-        if (jsonLockIsStale(existing, ttlMs, now)) {
-          try {
-            fs.unlinkSync(lockPath);
-          } catch(e2) {
-            if (!e2 || e2.code !== 'ENOENT') {
-              return { acquired: false, path: lockPath, lock: existing, reason: e2 && e2.message || String(e2), waitedMs: Date.now() - started };
-            }
-          }
-          continue;
-        }
-        if (lockMatchesOwner(existing, payload)) {
-          return { acquired: true, reentrant: true, path: lockPath, lock: existing, waitedMs: now - started };
-        }
-        if (now < deadline) {
-          sleepSync(Math.min(delay, deadline - now));
-          delay = Math.min(250, delay * 2);
-          continue;
-        }
-        return { acquired: false, path: lockPath, lock: existing, reason: 'locked', waitedMs: now - started };
-      }
-      return { acquired: false, path: lockPath, lock: null, reason: e.message || String(e), waitedMs: Date.now() - started };
-    }
-  }
-}
-
-function releaseJsonLock(lockPath, info = {}, { ttlMs = ARTIFACT_RESOURCE_LOCK_TTL_MS } = {}) {
-  const lock = readJsonLock(lockPath);
-  if (!lock.ok) return { released: false, lock, reason: 'missing' };
-  if (!lockMatchesOwner(lock, info) && !jsonLockIsStale(lock, ttlMs)) {
-    return { released: false, lock, reason: 'owner-mismatch' };
-  }
-  try {
-    fs.unlinkSync(lockPath);
-    return { released: true, lock, reason: '' };
-  } catch(e) {
-    return { released: false, lock, reason: e.message || String(e) };
-  }
-}
-
-function getArtifactResourceLockDir(cwd) {
-  return path.join(getProjectRuntimeDir(cwd), 'locks', 'artifacts');
-}
-
-function getArtifactResourceLockPath(cwd, resource) {
-  return path.join(getArtifactResourceLockDir(cwd), `${safeLockName(resource)}.lock`);
-}
-
-function readArtifactResourceLock(cwd, resource) {
-  return readJsonLock(getArtifactResourceLockPath(cwd, resource));
-}
-
-function artifactResourceForRel(artifactRel) {
-  const rel = String(artifactRel || '').replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!rel || rel === 'spec.md') return '';
-  if (rel === 'task.md' || rel === 'implementation_plan.md') return 'index:changes';
-  if (rel === 'findings.md' || rel === 'corrections.md' || rel === 'walkthrough.md') return `index:${rel}`;
-  if (/^changes\/.+\.md$/i.test(rel)) return `detail:${rel}`;
-  return '';
-}
-
-function formatArtifactResourceLock(lock) {
-  if (!lock || !lock.ok) return 'unknown lock';
-  const ageSec = lock.timestampMs ? Math.max(0, Math.round((Date.now() - lock.timestampMs) / 1000)) : '?';
-  return `resource=${lock.resource || '-'} session=${lock.sessionId || '-'} agent=${lock.agentId || '-'} file=${lock.file || '-'} age=${ageSec}s lock=${lock.path}`;
-}
-
-function acquireArtifactResourceLock(cwd, resource, info = {}) {
-  if (!resource) return { acquired: true, path: '', lock: null, reason: 'no-resource' };
-  const owner = lockOwnerInfo(info);
-  const payload = {
-    version: 'resource-v1',
-    resource,
-    sessionId: owner.sessionId,
-    agentId: owner.agentId,
-    ownerKey: owner.ownerKey,
-    artifactDir: String(info.artifactDir || ''),
-    cwd: String(cwd || ''),
-    file: String(info.file || ''),
-    operation: String(info.operation || ''),
-    toolName: String(info.toolName || ''),
-  };
-  return acquireJsonLock(getArtifactResourceLockPath(cwd, resource), payload, {
-    ttlMs: ARTIFACT_RESOURCE_LOCK_TTL_MS,
-    waitMs: ARTIFACT_RESOURCE_LOCK_WAIT_MS,
-  });
-}
-
-function releaseArtifactResourceLock(cwd, resource, info = {}) {
-  if (!resource) return { released: false, lock: null, reason: 'no-resource' };
-  return releaseJsonLock(getArtifactResourceLockPath(cwd, resource), info, { ttlMs: ARTIFACT_RESOURCE_LOCK_TTL_MS });
-}
-
-function ownerScopedPath(cwd, dirName, info = {}) {
-  const owner = lockOwnerInfo(info);
-  if (!owner.ownerKey) return '';
-  return path.join(getProjectRuntimeDir(cwd), dirName, `${safeLockName(owner.ownerKey)}.json`);
-}
-
-function getArtifactReservationPath(cwd, info = {}) {
-  return ownerScopedPath(cwd, 'reservations', info);
-}
-
-function getArtifactReservationDir(cwd) {
-  return path.join(getProjectRuntimeDir(cwd), 'reservations');
-}
-
-function reservationMatchesOwner(reservation, info = {}) {
-  if (!reservation) return false;
-  const owner = lockOwnerInfo(info);
-  if (owner.agentId && reservation.agentId) return owner.agentId === reservation.agentId;
-  if (owner.ownerKey && reservation.ownerKey && owner.ownerKey === reservation.ownerKey) return true;
-  return !!owner.sessionId && !!reservation.sessionId && owner.sessionId === reservation.sessionId;
-}
-
-function readArtifactReservation(cwd, info = {}) {
-  const fp = getArtifactReservationPath(cwd, info);
-  if (fp) {
-    try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch(e) {}
-  }
-  if (info.agentId) {
-    const fallback = getArtifactReservationPath(cwd, { ...info, agentId: '' });
-    if (fallback && fallback !== fp) {
-      try { return JSON.parse(fs.readFileSync(fallback, 'utf8')); } catch(e) {}
-    }
-  }
-  return null;
-}
-
-function writeArtifactReservation(cwd, info = {}, reservation = {}) {
-  const fp = getArtifactReservationPath(cwd, info);
-  if (!fp) return { ok: false, reason: 'missing-owner' };
-  try {
-    const data = { ...reservation, ...lockOwnerInfo(info), createdAt: new Date().toISOString(), timestampMs: Date.now() };
-    fs.mkdirSync(path.dirname(fp), { recursive: true });
-    fs.writeFileSync(fp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-    const uniqueKey = reservation.id || reservation.fileRel || reservation.filePrefix || '';
-    if (uniqueKey) {
-      const uniquePath = path.join(getArtifactReservationDir(cwd), `${safeLockName(`${data.ownerKey}:${uniqueKey}`)}.json`);
-      if (uniquePath !== fp) fs.writeFileSync(uniquePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-    }
-    return { ok: true, path: fp };
-  } catch(e) {
-    return { ok: false, reason: e.message || String(e) };
-  }
-}
-
-function clearArtifactReservation(cwd, info = {}) {
-  const fp = getArtifactReservationPath(cwd, info);
-  let cleared = false;
-  if (fp) {
-    try { fs.unlinkSync(fp); cleared = true; } catch(e) {}
-  }
-  let files = [];
-  try { files = fs.readdirSync(getArtifactReservationDir(cwd)); } catch(e) { files = []; }
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue;
-    const target = path.join(getArtifactReservationDir(cwd), file);
-    let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(target, 'utf8')); } catch(e) {}
-    const shouldClear = info.agentId
-      ? (String(parsed && parsed.agentId || '').trim() === String(info.agentId).trim())
-      : reservationMatchesOwner(parsed, info);
-    if (shouldClear) {
-      try { fs.unlinkSync(target); cleared = true; } catch(e) {}
-    }
-  }
-  return cleared;
-}
-
-function clearArtifactReservationForRel(cwd, info = {}, artifactRel = '') {
-  const rel = String(artifactRel || '').replace(/\\/g, '/');
-  if (!rel) return false;
-  let cleared = false;
-  let files = [];
-  try { files = fs.readdirSync(getArtifactReservationDir(cwd)); } catch(e) { files = []; }
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue;
-    const target = path.join(getArtifactReservationDir(cwd), file);
-    let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(target, 'utf8')); } catch(e) {}
-    if (!reservationMatchesOwner(parsed, info)) continue;
-    if (!reservationMatchesArtifactRel(parsed, rel).ok) continue;
-    try { fs.unlinkSync(target); cleared = true; } catch(e) {}
-  }
-  return cleared;
-}
-
-function findArtifactReservationForRel(cwd, info = {}, artifactRel = '') {
-  const candidates = [];
-  const direct = readArtifactReservation(cwd, info);
-  if (direct) candidates.push(direct);
-  let files = [];
-  try { files = fs.readdirSync(getArtifactReservationDir(cwd)); } catch(e) { files = []; }
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue;
-    try { candidates.push(JSON.parse(fs.readFileSync(path.join(getArtifactReservationDir(cwd), file), 'utf8'))); } catch(e) {}
-  }
-  const seen = new Set();
-  for (const candidate of candidates) {
-    const key = `${candidate && candidate.ownerKey}:${candidate && (candidate.fileRel || candidate.filePrefix || candidate.id)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (candidate && candidate.timestampMs && Date.now() - candidate.timestampMs > ARTIFACT_WRITER_LOCK_TTL_MS) continue;
-    if (!reservationMatchesOwner(candidate, info)) continue;
-    if (reservationMatchesArtifactRel(candidate, artifactRel).ok) return candidate;
-  }
-  return null;
-}
-
-function releaseArtifactResourcesForOwner(cwd, info = {}) {
-  const owner = lockOwnerInfo(info);
-  const released = [];
-  const dirs = [
-    getArtifactResourceLockDir(cwd),
-    path.join(getProjectRuntimeDir(cwd), 'locks', 'sequences'),
-  ];
-  for (const dir of dirs) {
-    let files = [];
-    try { files = fs.readdirSync(dir); } catch(e) { continue; }
-    for (const file of files) {
-      if (!file.endsWith('.lock')) continue;
-      const fp = path.join(dir, file);
-      const lock = readJsonLock(fp);
-      if (lockMatchesOwner(lock, owner) || jsonLockIsStale(lock, ARTIFACT_RESOURCE_LOCK_TTL_MS)) {
-        try {
-          fs.unlinkSync(fp);
-          released.push(fp);
-        } catch(e) {}
-      }
-    }
-  }
-  clearArtifactReservation(cwd, owner);
-  const txPath = ownerScopedPath(cwd, 'index-transactions', owner);
-  try { fs.unlinkSync(txPath); } catch(e) {}
-  return released;
-}
-
-function normalizeChangeId(id) {
-  const match = String(id || '').trim().toUpperCase().match(/^(CHG|HOTFIX)-\d{8}-\d{2}$/);
-  return match ? match[0] : '';
-}
-
-function getChangeOwnerDir(cwd) {
-  return path.join(getProjectRuntimeDir(cwd), 'change-owners');
-}
-
-function getChangeOwnerPath(cwd, changeId) {
-  const id = normalizeChangeId(changeId);
-  if (!id) return '';
-  return path.join(getChangeOwnerDir(cwd), `${slugForChangeId(id)}.json`);
-}
-
-function readChangeOwner(cwd, changeId) {
-  const fp = getChangeOwnerPath(cwd, changeId);
-  if (!fp) return { ok: false, path: '', reason: 'invalid-id' };
-  try {
-    const parsed = JSON.parse(fs.readFileSync(fp, 'utf8'));
-    return {
-      ok: true,
-      path: fp,
-      changeId: normalizeChangeId(parsed.changeId || parsed.change_id || changeId),
-      sessionId: normalizeSessionId(parsed.sessionId || parsed.session_id),
-      agentId: String(parsed.agentId || parsed.agent_id || '').trim(),
-      ownerKey: String(parsed.ownerKey || parsed.owner_key || '').trim(),
-      state: String(parsed.state || 'active'),
-      cwd: String(parsed.cwd || ''),
-      worktree: String(parsed.worktree || ''),
-      branch: String(parsed.branch || ''),
-      operation: String(parsed.operation || ''),
-      createdAt: String(parsed.createdAt || parsed.created_at || ''),
-      updatedAt: String(parsed.updatedAt || parsed.updated_at || ''),
-      timestampMs: Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0,
-      raw: parsed,
-    };
-  } catch(e) {
-    return { ok: false, path: fp, reason: e.message || String(e) };
-  }
-}
-
-function writeChangeOwner(cwd, changeId, info = {}) {
-  const id = normalizeChangeId(changeId);
-  const fp = getChangeOwnerPath(cwd, id);
-  if (!id || !fp) return { ok: false, reason: 'invalid-id' };
-  const owner = lockOwnerInfo(info);
-  if (!owner.sessionId && !owner.agentId) return { ok: false, reason: 'missing-owner' };
-  const existing = readChangeOwner(cwd, id);
-  const context = executionContextForCwd(cwd);
-  const now = Date.now();
-  const payload = {
-    version: 'change-owner-v1',
-    changeId: id,
-    sessionId: owner.sessionId,
-    agentId: owner.agentId,
-    ownerKey: owner.ownerKey,
-    state: String(info.state || 'active'),
-    cwd: context.cwd,
-    stateDir: context.stateDir,
-    worktree: context.worktree,
-    branch: context.branch,
-    executionContext: context.text,
-    operation: String(info.operation || ''),
-    createdAt: existing.ok && existing.createdAt ? existing.createdAt : new Date(now).toISOString(),
-    updatedAt: new Date(now).toISOString(),
-    timestampMs: now,
-  };
-  try {
-    fs.mkdirSync(path.dirname(fp), { recursive: true });
-    fs.writeFileSync(fp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-    return { ok: true, path: fp, owner: payload };
-  } catch(e) {
-    return { ok: false, path: fp, reason: e.message || String(e) };
-  }
-}
-
-function markChangeOwnerClosed(cwd, changeId, info = {}) {
-  const current = readChangeOwner(cwd, changeId);
-  if (!current.ok) return { ok: false, reason: 'missing' };
-  const owner = lockOwnerInfo(info);
-  if (!lockMatchesOwner({ ok: true, ...current }, owner) && !jsonLockIsStale(current, CHANGE_OWNER_TTL_MS)) {
-    return { ok: false, reason: 'owner-mismatch', owner: current };
-  }
-  return writeChangeOwner(cwd, changeId, { ...info, state: 'closed', operation: info.operation || current.operation || 'close' });
-}
-
-function touchChangeOwnersForSession(cwd, info = {}) {
-  const sid = normalizeSessionId(info.sessionId || info.session_id || currentSessionId());
-  if (!sid) return [];
-  const states = Array.isArray(info.states) && info.states.length > 0 ? new Set(info.states) : null;
-  const dir = getChangeOwnerDir(cwd);
-  let files = [];
-  try { files = fs.readdirSync(dir); } catch(e) { return []; }
-  const context = executionContextForCwd(cwd);
-  const now = Date.now();
-  const touched = [];
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue;
-    const fp = path.join(dir, file);
-    let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch(e) { continue; }
-    const ownerSid = normalizeSessionId(parsed.sessionId || parsed.session_id);
-    const state = String(parsed.state || 'active');
-    if (ownerSid !== sid || state === 'closed') continue;
-    if (states && !states.has(state)) continue;
-    const next = {
-      ...parsed,
-      cwd: context.cwd,
-      stateDir: context.stateDir,
-      worktree: context.worktree,
-      branch: context.branch,
-      executionContext: context.text,
-      updatedAt: new Date(now).toISOString(),
-      timestampMs: now,
-    };
-    try {
-      fs.writeFileSync(fp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-      touched.push(normalizeChangeId(parsed.changeId || parsed.change_id || file.replace(/\.json$/, '')) || file.replace(/\.json$/, ''));
-    } catch(e) {}
-  }
-  return touched;
-}
-
-function changeOwnerStatus(cwd, changeId, sessionId = currentSessionId()) {
-  const owner = readChangeOwner(cwd, changeId);
-  if (!owner.ok) return { disposition: 'unknown', owner, current: false, fresh: false, stale: false };
-  const sid = normalizeSessionId(sessionId || currentSessionId());
-  const current = !!sid && !!owner.sessionId && sid === owner.sessionId;
-  const stale = jsonLockIsStale(owner, CHANGE_OWNER_TTL_MS);
-  const closed = owner.state === 'closed';
-  if (current) return { disposition: closed ? 'current-closed' : 'current', owner, current: true, fresh: true, stale: false };
-  if (closed) return { disposition: 'closed', owner, current: false, fresh: true, stale: false };
-  if (stale) return { disposition: 'foreign-stale', owner, current: false, fresh: false, stale: true };
-  return { disposition: 'foreign-fresh', owner, current: false, fresh: true, stale: false };
-}
-
-function ownerTakeoverConfirmed(prompt) {
-  return /^\s*owner-takeover-confirmed\s*[:=]\s*true\b/mi.test(String(prompt || ''));
-}
-
-function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
-  const rel = String(artifactRel || '').replace(/\\/g, '/');
-  if (rel !== 'task.md' && rel !== 'implementation_plan.md') {
-    return releaseArtifactResourceLock(cwd, artifactResourceForRel(rel), info);
-  }
-  const txPath = ownerScopedPath(cwd, 'index-transactions', info);
-  if (!txPath) return { released: false, reason: 'missing-owner' };
-  let tx = { touched: [] };
-  try { tx = JSON.parse(fs.readFileSync(txPath, 'utf8')); } catch(e) {}
-  const touched = new Set(Array.isArray(tx.touched) ? tx.touched : []);
-  touched.add(rel);
-  tx = { ...lockOwnerInfo(info), touched: [...touched].sort(), updatedAt: new Date().toISOString(), timestampMs: Date.now() };
-  try {
-    fs.mkdirSync(path.dirname(txPath), { recursive: true });
-    fs.writeFileSync(txPath, `${JSON.stringify(tx, null, 2)}\n`, 'utf8');
-  } catch(e) {}
-  if (touched.has('task.md') && touched.has('implementation_plan.md')) {
-    const release = releaseArtifactResourceLock(cwd, 'index:changes', info);
-    try { fs.unlinkSync(txPath); } catch(e) {}
-    return release;
-  }
-  return { released: false, reason: 'index-transaction-open', touched: [...touched].sort() };
-}
-
-function readArtifactIndexTransaction(cwd, info = {}) {
-  const txPath = ownerScopedPath(cwd, 'index-transactions', info);
-  if (!txPath) return { ok: false, path: '', touched: [], reason: 'missing-owner' };
-  try {
-    const parsed = JSON.parse(fs.readFileSync(txPath, 'utf8'));
-    const touched = Array.isArray(parsed.touched) ? parsed.touched : [];
-    return { ok: true, path: txPath, touched, raw: parsed };
-  } catch(e) {
-    return { ok: false, path: txPath, touched: [], reason: e.message || String(e) };
-  }
-}
-
-function scanMaxNumberInDir(dir, re) {
-  let max = 0;
-  let files = [];
-  try { files = fs.readdirSync(dir); } catch(e) { return 0; }
-  for (const file of files) {
-    const m = String(file).match(re);
-    if (m) max = Math.max(max, Number(m[1]) || 0);
-  }
-  return max;
-}
-
-function nextSequenceNumber(cwd, sequenceName, existingMax) {
-  const runtime = getProjectRuntimeDir(cwd);
-  const lockPath = path.join(runtime, 'locks', 'sequences', `${safeLockName(sequenceName)}.lock`);
-  const counterPath = path.join(runtime, 'sequences', `${safeLockName(sequenceName)}.counter`);
-  const owner = lockOwnerInfo({ sessionId: currentSessionId() });
-  const lock = acquireJsonLock(lockPath, {
-    version: 'sequence-v1',
-    resource: `sequence:${sequenceName}`,
-    sessionId: owner.sessionId,
-    ownerKey: owner.ownerKey,
-  }, { ttlMs: ARTIFACT_SEQUENCE_LOCK_TTL_MS, waitMs: ARTIFACT_SEQUENCE_LOCK_WAIT_MS });
-  if (!lock.acquired) return { ok: false, reason: 'sequence-locked', lock: lock.lock };
-  try {
-    let current = 0;
-    try { current = Number(fs.readFileSync(counterPath, 'utf8').trim()) || 0; } catch(e) {}
-    // 并发下编号允许跳号：counter 一旦分配不回滚，优先保证 artifact ID 不复用。
-    const next = Math.max(current, existingMax || 0) + 1;
-    fs.mkdirSync(path.dirname(counterPath), { recursive: true });
-    fs.writeFileSync(counterPath, `${next}\n`, 'utf8');
-    return { ok: true, number: next, counterPath };
-  } finally {
-    try { fs.unlinkSync(lockPath); } catch(e) {}
-  }
-}
-
-function inferChangeKindFromPrompt(prompt) {
-  const text = String(prompt || '');
-  if (/^\s*type\s*[:=]\s*["']?hotfix["']?\s*$/mi.test(text) || /["']type["']\s*:\s*["']hotfix["']/i.test(text)) {
-    return 'HOTFIX';
-  }
-  return 'CHG';
-}
-
-function reserveArtifactId(cwd, info = {}) {
-  const operation = String(info.operation || operationFromAgentPrompt(info.prompt)).toLowerCase();
-  const artDir = info.artifactDir || getArtifactDir(cwd);
-  const owner = lockOwnerInfo(info);
-  if (!owner.ownerKey) return { reserved: false, reason: 'missing-owner' };
-
-  if (operation === 'create-chg') {
-    const kind = inferChangeKindFromPrompt(info.prompt);
-    const dateCompact = todayISO().replace(/-/g, '');
-    const lower = kind.toLowerCase();
-    const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes'), new RegExp(`^${lower}-${dateCompact}-(\\d{2})\\.md$`, 'i'));
-    const seq = nextSequenceNumber(cwd, `${lower}-${dateCompact}`, existingMax);
-    if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock };
-    const nn = String(seq.number).padStart(2, '0');
-    const id = `${kind}-${dateCompact}-${nn}`;
-    const fileRel = `changes/${lower}-${dateCompact}-${nn}.md`;
-    const written = writeArtifactReservation(cwd, owner, { operation, kind, id, fileRel });
-    return { reserved: true, operation, kind, id, fileRel, path: written.path };
-  }
-
-  if (operation === 'record-correction') {
-    const date = todayISO();
-    const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes', 'corrections'), new RegExp(`^correction-${date}-(\\d{2})-.+\\.md$`, 'i'));
-    const seq = nextSequenceNumber(cwd, `correction-${date}`, existingMax);
-    if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock };
-    const nn = String(seq.number).padStart(2, '0');
-    const id = `CORRECTION-${date}-${nn}`;
-    const filePrefix = `changes/corrections/correction-${date}-${nn}-`;
-    const written = writeArtifactReservation(cwd, owner, { operation, id, filePrefix });
-    return { reserved: true, operation, id, filePrefix, path: written.path };
-  }
-
-  return { reserved: false, reason: 'operation-no-reservation', operation };
-}
-
-function reservationMatchesArtifactRel(reservation, artifactRel) {
-  if (!reservation || !artifactRel) return { ok: true };
-  const rel = String(artifactRel || '').replace(/\\/g, '/');
-  if (reservation.fileRel && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(rel)) {
-    return rel === reservation.fileRel
-      ? { ok: true }
-      : { ok: false, expected: reservation.fileRel, actual: rel };
-  }
-  if (reservation.filePrefix && /^changes\/corrections\/correction-\d{4}-\d{2}-\d{2}-\d{2}-.+\.md$/i.test(rel)) {
-    return rel.startsWith(reservation.filePrefix) && rel.endsWith('.md')
-      ? { ok: true }
-      : { ok: false, expected: `${reservation.filePrefix}<slug>.md`, actual: rel };
-  }
-  return { ok: true };
-}
-
-function isArtifactRuntimeControlPath(cwd, targetPath) {
-  const fp = normalizePath(path.resolve(String(targetPath || '')));
-  const runtime = normalizePath(getProjectRuntimeDir(cwd));
-  const runtimeSlash = runtime.endsWith('/') ? runtime : `${runtime}/`;
-  const rel = fp.startsWith(runtimeSlash) ? fp.slice(runtimeSlash.length) : '';
-  if (!rel) return false;
-  return rel === ARTIFACT_WRITER_LOCK_FILE ||
-    /^locks\//.test(rel) ||
-    /^sequences\//.test(rel) ||
-    /^reservations\//.test(rel) ||
-    /^index-transactions\//.test(rel) ||
-    /^change-owners\//.test(rel);
 }
 
 function normalizeArtifactRootChoice(choice) {
@@ -1363,138 +489,6 @@ function countCodeFiles(cwd) {
   } catch(e) { return 0; }
 }
 
-// Superpowers 计划文件扫描目录（v4.x: docs/plans/, v5.0.0+: docs/superpowers/plans/）
-const PLAN_DIRS = ['docs/plans', 'docs/superpowers/plans'];
-
-// 模块级缓存，避免同一 hook 进程内重复 readdirSync（pre-tool-use 热路径最多 3 次调用）
-let _planFilesCache = { cwd: null, result: [] };
-
-/**
- * 列出所有 Superpowers 计划文件（按日期降序），扫描 PLAN_DIRS 双路径
- * @param {string} cwd - 项目根目录
- * @returns {{name: string, dir: string}[]} 文件信息列表（name=文件名, dir=所在相对目录路径，同名文件旧路径优先）
- */
-function listPlanFiles(cwd) {
-  if (_planFilesCache.cwd === cwd) return _planFilesCache.result;
-  const results = [];
-  const seen = new Set();
-  for (const rel of PLAN_DIRS) {
-    const dir = path.join(cwd, rel);
-    try {
-      for (const f of fs.readdirSync(dir)) {
-        if (/^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) && !seen.has(f)) {
-          seen.add(f);
-          results.push({ name: f, dir: rel });
-        }
-      }
-    } catch(e) {}
-  }
-  const sorted = results.sort((a, b) => b.name.localeCompare(a.name));
-  _planFilesCache = { cwd, result: sorted };
-  return sorted;
-}
-
-/** W-dry-3: 检测是否有 plan 文件（复用 listPlanFiles 消除双重 readdirSync） */
-function hasPlanFiles(cwd) {
-  return listPlanFiles(cwd).length > 0;
-}
-
-/**
- * 检测是否有未同步到 task.md 的 plan 文件
- * 通过 .pace/synced-plans 状态文件追踪已桥接的 plan 文件名
- * @returns {boolean}
- */
-function hasUnsyncedPlanFiles(cwd) {
-  return listUnsyncedPlanFiles(cwd).length > 0;
-}
-
-/**
- * 列出未同步到 task.md 的 plan 文件（按日期降序）
- * @returns {{name: string, dir: string}[]} 未同步的文件信息列表
- */
-function listUnsyncedPlanFiles(cwd) {
-  const plans = listPlanFiles(cwd);
-  if (plans.length === 0) return [];
-  const syncedPath = path.join(getProjectRuntimeDir(cwd), 'synced-plans');
-  let synced = [];
-  try { synced = fs.readFileSync(syncedPath, 'utf8').split('\n').filter(Boolean); } catch(e) {}
-  // Superpowers 固定产出主文件 + -design.md 伴随文件，主文件已同步时伴随文件也视为已同步
-  const syncedSet = new Set(synced);
-  for (const f of synced) {
-    syncedSet.add(f.replace(/\.md$/, '-design.md'));
-  }
-  return plans.filter(p => !syncedSet.has(p.name));
-}
-
-function expandHomePath(value) {
-  const raw = String(value || '').trim();
-  if (raw === '~') return process.env.HOME || raw;
-  if (raw.startsWith('~/') || raw.startsWith('~\\')) {
-    const home = process.env.HOME || '';
-    return home ? path.join(home, raw.slice(2)) : raw;
-  }
-  return raw;
-}
-
-function normalizePlanSyncTarget(cwd, planPath) {
-  const raw = String(planPath || '').trim();
-  if (!raw) return { ok: false, reason: 'missing-plan' };
-  const resolved = path.resolve(cwd || process.cwd(), expandHomePath(raw));
-  const name = path.basename(resolved);
-  if (!/\.md$/i.test(name)) return { ok: false, reason: 'plan-not-markdown', planPath: resolved, name };
-  try {
-    const stat = fs.statSync(resolved);
-    if (!stat.isFile()) return { ok: false, reason: 'plan-not-file', planPath: resolved, name };
-  } catch(e) {
-    return { ok: false, reason: 'plan-not-found', planPath: resolved, name, error: e.message || String(e) };
-  }
-  return { ok: true, planPath: resolved, name };
-}
-
-function syncPlanFile(cwd, planPath) {
-  const target = normalizePlanSyncTarget(cwd, planPath);
-  if (!target.ok) return { ok: false, ...target };
-
-  const runtimeDir = getProjectRuntimeDir(cwd);
-  const syncedPath = path.join(runtimeDir, 'synced-plans');
-  const lockPath = path.join(runtimeDir, 'locks', 'synced-plans.lock');
-  const lock = acquireJsonLock(lockPath, {
-    version: 'plan-sync-v1',
-    resource: 'synced-plans',
-    cwd: String(cwd || ''),
-    file: syncedPath,
-    operation: 'sync-plan',
-  }, { ttlMs: PLAN_SYNC_LOCK_TTL_MS, waitMs: PLAN_SYNC_LOCK_WAIT_MS });
-  if (!lock.acquired) {
-    return {
-      ok: false,
-      reason: 'synced-plans-locked',
-      lock: lock.lock,
-      waitedMs: lock.waitedMs,
-      planPath: target.planPath,
-      name: target.name,
-      syncedPath,
-      runtimeDir,
-    };
-  }
-
-  try {
-    fs.mkdirSync(runtimeDir, { recursive: true });
-    let content = '';
-    try { content = fs.readFileSync(syncedPath, 'utf8'); } catch(e) {}
-    const normalized = normalizeLineEndings(content);
-    const names = normalized.split('\n').map(line => line.trim()).filter(Boolean);
-    if (names.includes(target.name)) {
-      return { ok: true, already: true, planPath: target.planPath, name: target.name, syncedPath, runtimeDir };
-    }
-    const prefix = normalized && !normalized.endsWith('\n') ? '\n' : '';
-    fs.appendFileSync(syncedPath, `${prefix}${target.name}\n`, 'utf8');
-    return { ok: true, already: false, planPath: target.planPath, name: target.name, syncedPath, runtimeDir };
-  } finally {
-    try { fs.unlinkSync(lockPath); } catch(e) {}
-  }
-}
-
 /**
  * 多信号 PACE 激活判断
  * @param {string} cwd - 当前工作目录
@@ -1630,60 +624,6 @@ function createTemplates(cwd) {
   return created;
 }
 
-// I-opt-1: 预编译正则（避免每次调用重新编译）
-const COUNT_RE_PENDING = /- \[[ \/!]\]/g;
-const COUNT_RE_PENDING_TOP = /^- \[[ \/!]\]/gm;
-const COUNT_RE_DONE = /- \[x\]|- \[-\]/g;
-const COUNT_RE_DONE_TOP = /^- \[x\]|^- \[-\]/gm;
-
-/**
- * W2+O5: 统一任务状态统计（集中管理正则，消除跨文件不一致）
- * @param {string} text - 待统计的文本（通常是 task.md 活跃区）
- * @param {object} opts - 选项
- * @param {boolean} opts.topLevelOnly - true 时仅匹配行首顶层任务（^锚定），false 含子任务
- * @returns {{pending: number, done: number, total: number}}
- */
-function countByStatus(text, { topLevelOnly = false } = {}) {
-  const pending = (text.match(topLevelOnly ? COUNT_RE_PENDING_TOP : COUNT_RE_PENDING) || []).length;
-  const done = (text.match(topLevelOnly ? COUNT_RE_DONE_TOP : COUNT_RE_DONE) || []).length;
-  return { pending, done, total: pending + done };
-}
-
-/**
- * 读取 AI 记录的 native plan 文件路径
- * @param {string} cwd - 项目根目录
- * @returns {string|null} plan 文件路径或 null
- */
-function getNativePlanPath(cwd) {
-  const fp = path.join(getProjectRuntimeDir(cwd), 'current-native-plan');
-  try {
-    const planPath = fs.readFileSync(fp, 'utf8').trim();
-    if (!planPath || !nativePlanMatchesProject(planPath, cwd)) return null;
-    return planPath;
-  } catch(e) { return null; }
-}
-
-function nativePlanMatchesProject(planPath, cwd) {
-  const normalizedPlanPath = normalizePath(path.resolve(cwd || process.cwd(), String(planPath || '')));
-  const normalizedCwd = normalizePath(path.resolve(cwd || process.cwd()));
-  const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
-  if (normalizedPlanPath.startsWith(cwdWithSlash)) return true;
-
-  let content = '';
-  try { content = fs.readFileSync(normalizedPlanPath, 'utf8').slice(0, 65536); } catch(e) { return false; }
-  const normalizedContent = content.replace(/\\/g, '/').toLowerCase();
-  if (normalizedContent.includes(normalizedCwd.toLowerCase())) return true;
-
-  const candidates = new Set(getProjectNameCandidates(cwd)
-    .map(name => String(name || '').toLowerCase())
-    .filter(name => name.length >= 3));
-  for (const name of candidates) {
-    const re = new RegExp(`(^|[^a-z0-9_-])${escapeRegex(name)}([^a-z0-9_-]|$)`, 'i');
-    if (re.test(normalizedContent)) return true;
-  }
-  return false;
-}
-
 /**
  * 扫描 thoughts/ 和 knowledge/ 中与指定项目相关的笔记
  * 解析 frontmatter 的 projects/summary/status 字段，返回 L0 摘要
@@ -1723,460 +663,6 @@ function scanRelatedNotes(projectName) {
     } catch(e) { /* 目录不可读静默跳过 */ }
   }
   return results;
-}
-
-// 1MB：全覆盖日志（ENTRY+SKIP+PASS）后每 session ~50KB，1MB 可保留 ~20 session / 7-10 天
-const MAX_LOG_SIZE = 1024 * 1024;
-const LOGGER_LOCK_STALE_MS = 30 * 1000;
-/**
- * 创建带日志轮转的 logger 函数（1MB 上限，超过截断保留后半）
- * @param {string} logPath - 日志文件路径
- * @returns {function(string): void}
- */
-function createLogger(logPath) {
-  return (msg) => {
-    let lockFd = null;
-    const lockPath = `${logPath}.lock`;
-    try {
-      try {
-        lockFd = fs.openSync(lockPath, 'wx');
-      } catch(e) {
-        try {
-          const stat = fs.statSync(lockPath);
-          if (Date.now() - stat.mtimeMs > LOGGER_LOCK_STALE_MS) {
-            fs.unlinkSync(lockPath);
-            lockFd = fs.openSync(lockPath, 'wx');
-          }
-        } catch(e2) {}
-      }
-      if (lockFd === null) {
-        fs.appendFileSync(logPath, msg);
-        return;
-      }
-      try {
-        const stat = fs.statSync(logPath);
-        if (stat.size > MAX_LOG_SIZE) {
-          // W-code-2: 使用 Buffer 直接操作字节，避免字节/字符混淆
-          const buf = fs.readFileSync(logPath);
-          // 截断保留后半部分，从第一个换行符之后开始（防止 UTF-8 多字节字符被截断）
-          const half = buf.slice(buf.length >> 1);
-          const nlIdx = half.indexOf(10); // 0x0A = \n
-          fs.writeFileSync(logPath, nlIdx >= 0 ? half.slice(nlIdx + 1) : half);
-        }
-      } catch(e) {}
-      fs.appendFileSync(logPath, msg);
-    } catch(e) {
-    } finally {
-      if (lockFd !== null) {
-        try { fs.closeSync(lockFd); } catch(e) {}
-        try { fs.unlinkSync(lockPath); } catch(e) {}
-      }
-    }
-  };
-}
-
-/**
- * 格式化结构化日志条目（act=/proj=/dur= 字段格式，便于 grep/awk 分析）
- * @param {string} hook - Hook 名称（自动 padEnd(11) 对齐）
- * @param {string} action - Action 名称（ENTRY/SKIP/PASS/DENY 等）
- * @param {Object} [fields={}] - 可选字段键值对（跳过 undefined/null/空字符串）
- * @returns {string} 格式化的日志行（含换行符）
- */
-function logEntry(hook, action, fields = {}) {
-  const parts = [`[${ts()}] ${hook.padEnd(11)} | act=${action}`];
-  const merged = { sid: currentSessionId(), ...fields };
-  for (const [k, v] of Object.entries(merged)) {
-    if (v === undefined || v === null || v === '') continue;
-    let value = String(v)
-      .replace(/\r/g, '\\r')
-      .replace(/\n/g, '\\n')
-      .replace(/\t/g, ' ')
-      .replace(/\|/g, '/');
-    if (value.length > 1000) value = value.slice(0, 997) + '...';
-    parts.push(`${k}=${value}`);
-  }
-  return parts.join(' | ') + '\n';
-}
-
-/**
- * W-dry-2: 格式化 Superpowers 桥接提示（消除 4 处重复的 listPlanFiles + fileList 格式化）
- * @param {string} cwd - 项目根目录
- * @param {string} artDir - artifact 目录
- * @returns {{ fileList: string, bridgeSteps: string } | null} null 表示无计划文件
- */
-function formatBridgeHint(cwd, artDir) {
-  // 仅显示未同步的 plan 文件（已同步的不再提示桥接）
-  const planFiles = listUnsyncedPlanFiles(cwd);
-  if (planFiles.length === 0) return null;
-  const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
-  const bridgeSteps = `调用 Skill(paceflow:pace-bridge)，按该 skill 读取计划、创建 v6 CHG、必要时 approve-and-start；bridge 成功后运行 plan 同步 helper：node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"。`;
-  return { fileList, bridgeSteps };
-}
-
-/**
- * 从 findings 活跃区提取开放项（[ ]）的完整标题，用于详情段落匹配
- * @param {string} text - findings.md 活跃区文本
- * @returns {string[]} key 数组，每个为索引标题全文（去空格）
- */
-function extractOpenKeys(text) {
-  const keys = [];
-  (text.match(/^- \[ \] ([^—\n]+)/gm) || []).forEach(line => {
-    keys.push(normalizeFindingKey(line.replace(/^- \[ \] /, '').trim()));
-  });
-  return keys;
-}
-
-function normalizeFindingKey(value) {
-  let text = String(value || '').trim();
-  const wikilink = text.match(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/);
-  if (wikilink) text = (wikilink[2] || wikilink[1]).trim();
-  return text.replace(/\s+/g, ' ').toLowerCase();
-}
-
-/** W-5: 检测 impl_plan 活跃区的旧格式（emoji 状态标记或纯表格格式） */
-function detectLegacyImplFormat(text) {
-  const hasEmoji = /^- \[.\].*[✅❌📋🔄⏳]/m.test(text);
-  const hasTable = /^\|.+\|$/m.test(text) && !/^- \[.\]/m.test(text);
-  return { hasEmoji, hasTable };
-}
-
-/** 解析 v6 frontmatter 为普通对象 */
-function parseFrontmatter(content) {
-  const match = content && content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return {};
-  const out = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (m) out[m[1]] = m[2].trim();
-  }
-  return out;
-}
-
-/** 将 CHG/HOTFIX id 转成 v6 详情文件名 */
-function detailPathForId(artDir, id) {
-  if (!id) return null;
-  const lower = id.toLowerCase();
-  if (/^chg-\d{8}-\d{2}$/.test(lower) || /^hotfix-\d{8}-\d{2}$/.test(lower)) {
-    return path.join(artDir, 'changes', `${lower}.md`);
-  }
-  return null;
-}
-
-function slugForChangeId(id) {
-  const lower = String(id || '').toLowerCase();
-  if (lower.startsWith('chg-') || lower.startsWith('hotfix-')) return lower;
-  if (/^chg-\d{8}-\d{2}$/i.test(lower)) return lower;
-  if (/^hotfix-\d{8}-\d{2}$/i.test(lower)) return lower;
-  return '';
-}
-
-function contextMarkerSpecsFromLine(line) {
-  const specs = [];
-  const seen = new Set();
-  const re = /\[(worktree|branch)\s*::\s*([^\]\r\n]+?)\s*\]/gi;
-  let m;
-  while ((m = re.exec(String(line || ''))) !== null) {
-    const kind = String(m[1] || '').toLowerCase();
-    const value = String(m[2] || '').trim().replace(/\s+/g, ' ');
-    if (!kind || !value || seen.has(kind)) continue;
-    seen.add(kind);
-    specs.push({ kind, value, marker: `[${kind}:: ${value}]` });
-  }
-  return specs.sort((a, b) => ['worktree', 'branch'].indexOf(a.kind) - ['worktree', 'branch'].indexOf(b.kind));
-}
-
-function lineReferencesChangeId(line, id, slug) {
-  const text = String(line || '');
-  const expectedId = normalizeChangeId(id);
-  const expectedSlug = String(slug || slugForChangeId(expectedId)).toLowerCase();
-  if (!expectedId || !expectedSlug) return false;
-  const slugRe = new RegExp(`\\[\\[${escapeRegex(expectedSlug)}(?:\\|[^\\]]+)?\\]\\]`, 'i');
-  const idRe = new RegExp(`\\b${escapeRegex(expectedId)}\\b`, 'i');
-  return slugRe.test(text) || idRe.test(text);
-}
-
-function walkthroughContextForChange(cwd, id) {
-  const expectedId = normalizeChangeId(id);
-  const expectedSlug = slugForChangeId(expectedId);
-  if (!expectedId || !expectedSlug) return [];
-  const byKind = new Map();
-  for (const file of ['task.md', 'implementation_plan.md']) {
-    const full = readFull(cwd, file) || '';
-    for (const line of String(full || '').split(/\r?\n/)) {
-      if (!lineReferencesChangeId(line, expectedId, expectedSlug)) continue;
-      for (const spec of contextMarkerSpecsFromLine(line)) {
-        if (!byKind.has(spec.kind)) byKind.set(spec.kind, spec);
-      }
-    }
-  }
-  return ['worktree', 'branch'].map(kind => byKind.get(kind)).filter(Boolean);
-}
-
-function textHasContextMarker(text, spec) {
-  if (!spec || !spec.kind || !spec.value) return true;
-  const valuePattern = escapeRegex(spec.value).replace(/\\ /g, '\\s+');
-  const re = new RegExp(`\\[${escapeRegex(spec.kind)}\\s*::\\s*${valuePattern}\\s*\\]`, 'i');
-  return re.test(String(text || ''));
-}
-
-function validateWalkthroughLinks(cwd) {
-  const artDir = getArtifactDir(cwd);
-  const active = readActive(cwd, 'walkthrough.md');
-  if (active === null) return [];
-  const issues = [];
-  for (const line of String(active || '').split(/\r?\n/)) {
-    if (!/^\|\s*\d{4}-\d{2}-\d{2}\s*\|/.test(line)) continue;
-    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
-    if (cells.length < 3) continue;
-    const summaryCell = cells[1] || '';
-    const id = (cells[2] || '').match(/\b(CHG|HOTFIX)-\d{8}-\d{2}\b/i);
-    if (!id) continue;
-    const expectedId = id[0].toUpperCase();
-    const expectedSlug = slugForChangeId(expectedId);
-    const link = summaryCell.match(/\[\[([^|\]#]+)(?:#[^|\]]+)?(?:\|[^\]]+)?\]\]/);
-    if (!link) {
-      issues.push(`walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedSlug}]]。`);
-      continue;
-    }
-    const target = String(link[1] || '').trim().toLowerCase();
-    if (target !== expectedSlug) {
-      issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedSlug}]]，当前为 [[${target}]]。`);
-      continue;
-    }
-    const detailPath = detailPathForId(artDir, expectedId);
-    if (detailPath && !fs.existsSync(detailPath)) {
-      issues.push(`walkthrough.md 行 ${expectedId} 指向 [[${expectedSlug}]]，但详情文件不存在：changes/${expectedSlug}.md。`);
-    }
-    const expectedContext = walkthroughContextForChange(cwd, expectedId);
-    const missingContext = expectedContext.filter(spec => !textHasContextMarker(summaryCell, spec));
-    if (missingContext.length > 0) {
-      issues.push(`walkthrough.md 行 ${expectedId} 缺少执行上下文 ${missingContext.map(spec => spec.marker).join(' ')}，应与 task.md / implementation_plan.md 索引行一致；请派 artifact-writer close-chg 或 archive-chg 补齐。`);
-    }
-  }
-  return issues;
-}
-
-/** 从 v6 索引活跃区提取 CHG/HOTFIX wikilink 行 */
-function parseChangeIndex(activeText) {
-  const entries = [];
-  const re = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/gmi;
-  let m;
-  while ((m = re.exec(activeText || '')) !== null) {
-    const slug = m[2].toLowerCase();
-    const id = slug.startsWith('chg-')
-      ? `CHG-${slug.slice(4).toUpperCase()}`
-      : `HOTFIX-${slug.slice(7).toUpperCase()}`;
-    entries.push({ checkbox: m[1], slug, id, rest: (m[3] || '').trim(), line: m[0] });
-  }
-  return entries;
-}
-
-/** 读取并解析 CHG/HOTFIX 详情文件 */
-function readChangeDetail(cwd, idOrSlug) {
-  const artDir = getArtifactDir(cwd);
-  const fp = detailPathForId(artDir, idOrSlug);
-  if (!fp) return null;
-  try {
-    const content = fs.readFileSync(fp, 'utf8');
-    return { path: fp, content, frontmatter: parseFrontmatter(content) };
-  } catch(e) {
-    return { path: fp, missing: true, content: '', frontmatter: {} };
-  }
-}
-
-/** 提取详情文件 ## 任务清单 段落 */
-function extractTaskSection(content) {
-  const text = content || '';
-  const header = text.match(/^## 任务清单\r?\n/m);
-  if (!header) return '';
-  const start = header.index + header[0].length;
-  const rest = text.slice(start);
-  const next = rest.search(/^## /m);
-  return next >= 0 ? rest.slice(0, next) : rest;
-}
-
-/** 统计详情任务状态 */
-function countDetailTasks(content) {
-  const section = extractTaskSection(content);
-  const pending = (section.match(/^- \[[ \/!]\]\s+T-\d{3}\b/gm) || []).length;
-  const done = (section.match(/^- \[(?:x|-)\]\s+T-\d{3}\b/gm) || []).length;
-  const inProgress = (section.match(/^- \[\/\]\s+T-\d{3}\b/gm) || []).length;
-  const blocked = (section.match(/^- \[!\]\s+T-\d{3}\b/gm) || []).length;
-  return { pending, done, total: pending + done, inProgress, blocked };
-}
-
-function normalizeFrontmatterStatus(value) {
-  return String(value || '').replace(/^["']|["']$/g, '').trim();
-}
-
-/**
- * 将 v6 CHG/HOTFIX 活跃项机械分类，供 Stop / SessionStart / Claude 任务列表同步复用。
- * 分类只基于索引 checkbox、frontmatter、APPROVED/VERIFIED 标记和任务清单状态。
- */
-function classifyChange(entry) {
-  const detail = entry && entry.detail;
-  const status = normalizeFrontmatterStatus(detail && detail.frontmatter && detail.frontmatter.status);
-  const tasks = detail && !detail.missing ? countDetailTasks(detail.content) : { pending: 0, done: 0, total: 0, inProgress: 0, blocked: 0 };
-  const approved = isChangeApproved(detail);
-  const verified = isChangeVerified(detail);
-  const taskCheckbox = entry && entry.taskCheckbox;
-  const implCheckbox = entry && entry.implCheckbox;
-  const base = {
-    id: entry && entry.id,
-    slug: entry && entry.slug,
-    status,
-    tasks,
-    approved,
-    verified,
-    taskCheckbox,
-    implCheckbox,
-    detail,
-    category: 'backlog',
-    reason: '',
-  };
-
-  if (!entry || !entry.task || !entry.impl) {
-    return { ...base, category: 'inconsistent', reason: 'index-missing' };
-  }
-  if (!detail || detail.missing) {
-    return { ...base, category: 'inconsistent', reason: 'detail-missing' };
-  }
-  if (taskCheckbox && implCheckbox && taskCheckbox !== implCheckbox) {
-    return { ...base, category: 'inconsistent', reason: 'index-mismatch' };
-  }
-  if ((taskCheckbox === 'x' || implCheckbox === 'x') && tasks.pending > 0) {
-    return { ...base, category: 'inconsistent', reason: 'index-completed-with-pending-tasks' };
-  }
-  if ((taskCheckbox === 'x' || implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
-    return { ...base, category: 'inconsistent', reason: 'index-completed-status-mismatch' };
-  }
-  if ((['in-progress', 'completed'].includes(status) || taskCheckbox === '/' || implCheckbox === '/') && tasks.total === 0) {
-    return { ...base, category: 'inconsistent', reason: 'task-list-empty' };
-  }
-
-  if (status === 'archived') return { ...base, category: 'inconsistent', reason: 'active-archived' };
-  if (status === 'cancelled' || taskCheckbox === '-' || implCheckbox === '-') return { ...base, category: 'inconsistent', reason: 'active-cancelled' };
-  if (taskCheckbox === '!' || implCheckbox === '!' || tasks.blocked > 0) return { ...base, category: 'blocked' };
-  if (status === 'completed' || taskCheckbox === 'x' || implCheckbox === 'x') return { ...base, category: 'closing-required' };
-  if (status === 'in-progress' || taskCheckbox === '/' || implCheckbox === '/') return { ...base, category: 'running' };
-  if (status === 'planned' && approved) return { ...base, category: 'ready' };
-  if (status === 'planned' || status === '') return { ...base, category: 'backlog' };
-  return { ...base, category: 'inconsistent', reason: 'unknown-status' };
-}
-
-/** 返回 task.md 与 implementation_plan.md 活跃索引的交叉信息 */
-function getActiveChangeEntries(cwd) {
-  const taskEntries = parseChangeIndex(readActive(cwd, 'task.md') || '');
-  const implEntries = parseChangeIndex(readActive(cwd, 'implementation_plan.md') || '');
-  const taskBySlug = new Map(taskEntries.map(e => [e.slug, e]));
-  const implBySlug = new Map(implEntries.map(e => [e.slug, e]));
-  const slugs = new Set([...taskBySlug.keys(), ...implBySlug.keys()]);
-  const entries = [];
-  for (const slug of slugs) {
-    const task = taskBySlug.get(slug) || null;
-    const impl = implBySlug.get(slug) || null;
-    const base = task || impl;
-    const detail = readChangeDetail(cwd, slug);
-    entries.push({
-      slug,
-      id: base.id,
-      task,
-      impl,
-      taskCheckbox: task && task.checkbox,
-      implCheckbox: impl && impl.checkbox,
-      detail,
-    });
-  }
-  return entries;
-}
-
-/** v6 详情是否已批准 */
-function isChangeApproved(detail) {
-  if (!detail || detail.missing) return false;
-  return /<!-- APPROVED -->/.test(detail.content);
-}
-
-/** v6 详情是否已验证 */
-function isChangeVerified(detail) {
-  if (!detail || detail.missing) return false;
-  const verifiedDate = (detail.frontmatter['verified-date'] || '').trim();
-  return verifiedDate && verifiedDate !== 'null' && /<!-- VERIFIED -->/.test(detail.content);
-}
-
-/** 生成 compact/session-start 用的活跃 CHG 摘要 */
-function summarizeActiveChanges(cwd) {
-  return getActiveChangeEntries(cwd).map(entry => {
-    const fm = entry.detail && entry.detail.frontmatter || {};
-    const classified = classifyChange(entry);
-    const tasks = entry.detail && !entry.detail.missing ? classified.tasks : null;
-    return {
-      id: entry.id,
-      slug: entry.slug,
-      taskCheckbox: entry.taskCheckbox || null,
-      implCheckbox: entry.implCheckbox || null,
-      status: fm.status || (entry.detail && entry.detail.missing ? 'missing-detail' : 'unknown'),
-      category: classified.category,
-      approved: isChangeApproved(entry.detail),
-      verified: isChangeVerified(entry.detail),
-      pending: tasks ? tasks.pending : null,
-      done: tasks ? tasks.done : null,
-      path: entry.detail && entry.detail.path,
-    };
-  });
-}
-
-// S-1: 统一 stdin 解析 — 替换 6 个 hook 的重复 JSON.parse 模板
-/**
- * 解析 hook stdin 原始输入，返回统一结构（内部 try-catch，永不抛异常）
- * @param {string} rawInput - stdin 原始文本
- * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, agentTranscriptPath: string, error: string, isInterrupt: boolean, durationMs: number, raw: object }}
- */
-function parseHookStdin(rawInput) {
-  let parsed = {};
-  let ok = false;
-  try { parsed = JSON.parse(rawInput); ok = true; } catch(e) {}
-  const sessionId = normalizeSessionId(parsed.session_id || parsed.sessionId || process.env.CLAUDE_CODE_SESSION_ID || '');
-  if (sessionId) _lastHookSessionId = sessionId;
-  return {
-    ok,
-    sessionId,
-    toolName: parsed.tool_name || '',
-    filePath: (parsed.tool_input?.file_path || '').replace(/\\/g, '/'),
-    oldString: parsed.tool_input?.old_string || '',
-    newString: parsed.tool_input?.new_string || '',
-    content: parsed.tool_input?.content || '',
-    toolInput: parsed.tool_input || {},
-    // HOTFIX-20260315-05: CC SessionStart stdin 用 `source` 字段（非 `type`）传递事件类型
-    type: parsed.source || parsed.type || '',
-    agentId: parsed.agent_id || parsed.subagent_id || '',
-    agentType: parsed.agent_type || parsed.subagent_type || parsed.tool_input?.subagent_type || '',
-    lastMessage: parsed.last_assistant_message || parsed.last_message || parsed.message || '',
-    agentTranscriptPath: parsed.agent_transcript_path || parsed.transcript_path || '',
-    error: parsed.error || parsed.error_type || '',
-    isInterrupt: parsed.is_interrupt === true || parsed.is_interrupt === 'true' || parsed.isInterrupt === true,
-    durationMs: Number(parsed.duration_ms || parsed.durationMs || 0) || 0,
-    raw: parsed
-  };
-}
-
-/**
- * 异步 stdin 解析 wrapper — 替代 4 个 hook 的 3 行流模板
- * @param {function} callback - (stdin, rawInput) => void
- */
-function withStdinParsed(callback) {
-  let input = '';
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => { input += chunk; });
-  process.stdin.on('end', () => { callback(parseHookStdin(input), input); });
-}
-
-/**
- * 同步 stdin 解析 — 替代 session-start/stop 的 readFileSync(0) 模板
- * @returns {{ ok: boolean, toolName: string, filePath: string, oldString: string, newString: string, content: string, toolInput: object, type: string, agentId: string, agentType: string, lastMessage: string, agentTranscriptPath: string, error: string, isInterrupt: boolean, durationMs: number, raw: object }}
- */
-function parseStdinSync() {
-  try { return parseHookStdin(fs.readFileSync(0, 'utf8')); }
-  catch(e) { return parseHookStdin(''); }
 }
 
 // I-04: 多行格式按功能分组，便于 diff 审阅
