@@ -89,8 +89,9 @@
 - Read `implementation_plan.md` 同上
 - Read `walkthrough.md`
   - `<slug>` 必须是目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`。禁止用标题 slug。
-  - 若今日或历史已有包含 `[[<slug>]]` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加
-  - 否则在 `## 最近工作` 表格活跃区追加：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> | <CHG-ID> |`
+  - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。不要写 session id、owner state 或 lock 信息。
+  - 若今日或历史已有包含 `[[<slug>]]` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加；若该行缺少索引行已有的执行上下文，则 Edit 该行补齐。
+  - 否则在 `## 最近工作` 表格活跃区追加：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`（没有上下文时省略 `[worktree:: ...] [branch:: ...]`）
 
 ### 4. 归档详情状态
 

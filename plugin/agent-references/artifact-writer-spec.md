@@ -173,10 +173,12 @@ schema-version: "6.0"
 ### 5.3 walkthrough.md（表格行）
 
 ```
-| <YYYY-MM-DD> | [[chg-yyyymmdd-nn]] <one-line summary> | <CHG-ID> |
+| <YYYY-MM-DD> | [[chg-yyyymmdd-nn]] <one-line summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |
 ```
 
-例：`| 2026-05-02 | [[chg-20260502-01]] hooks.json if 条件优化（T-498-T-500） | CHG-20260502-01 |`
+例：`| 2026-05-02 | [[chg-20260502-01]] hooks.json if 条件优化（T-498-T-500） [worktree:: smoke] [branch:: feature-x] | CHG-20260502-01 |`
+
+当 task.md / implementation_plan.md 的目标索引行含 `[worktree:: ...] [branch:: ...]` 时，walkthrough 完成内容列也必须保留同一组字段；没有上下文时省略。session id、owner state、lock 信息只属于 `.pace/` 运行态，不写入 artifact。
 
 ### 5.4 findings.md
 

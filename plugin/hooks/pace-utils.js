@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.53';
+const PACE_VERSION = 'v6.0.54';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -75,7 +75,7 @@ const FORMAT_SNIPPETS = {
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
-  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 | CHG-YYYYMMDD-NN |',
+  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |',
   // Skill 引用
   skillRef: '流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)',
 };
@@ -1841,6 +1841,55 @@ function slugForChangeId(id) {
   return '';
 }
 
+function contextMarkerSpecsFromLine(line) {
+  const specs = [];
+  const seen = new Set();
+  const re = /\[(worktree|branch)\s*::\s*([^\]\r\n]+?)\s*\]/gi;
+  let m;
+  while ((m = re.exec(String(line || ''))) !== null) {
+    const kind = String(m[1] || '').toLowerCase();
+    const value = String(m[2] || '').trim().replace(/\s+/g, ' ');
+    if (!kind || !value || seen.has(kind)) continue;
+    seen.add(kind);
+    specs.push({ kind, value, marker: `[${kind}:: ${value}]` });
+  }
+  return specs.sort((a, b) => ['worktree', 'branch'].indexOf(a.kind) - ['worktree', 'branch'].indexOf(b.kind));
+}
+
+function lineReferencesChangeId(line, id, slug) {
+  const text = String(line || '');
+  const expectedId = normalizeChangeId(id);
+  const expectedSlug = String(slug || slugForChangeId(expectedId)).toLowerCase();
+  if (!expectedId || !expectedSlug) return false;
+  const slugRe = new RegExp(`\\[\\[${escapeRegex(expectedSlug)}(?:\\|[^\\]]+)?\\]\\]`, 'i');
+  const idRe = new RegExp(`\\b${escapeRegex(expectedId)}\\b`, 'i');
+  return slugRe.test(text) || idRe.test(text);
+}
+
+function walkthroughContextForChange(cwd, id) {
+  const expectedId = normalizeChangeId(id);
+  const expectedSlug = slugForChangeId(expectedId);
+  if (!expectedId || !expectedSlug) return [];
+  const byKind = new Map();
+  for (const file of ['task.md', 'implementation_plan.md']) {
+    const full = readFull(cwd, file) || '';
+    for (const line of String(full || '').split(/\r?\n/)) {
+      if (!lineReferencesChangeId(line, expectedId, expectedSlug)) continue;
+      for (const spec of contextMarkerSpecsFromLine(line)) {
+        if (!byKind.has(spec.kind)) byKind.set(spec.kind, spec);
+      }
+    }
+  }
+  return ['worktree', 'branch'].map(kind => byKind.get(kind)).filter(Boolean);
+}
+
+function textHasContextMarker(text, spec) {
+  if (!spec || !spec.kind || !spec.value) return true;
+  const valuePattern = escapeRegex(spec.value).replace(/\\ /g, '\\s+');
+  const re = new RegExp(`\\[${escapeRegex(spec.kind)}\\s*::\\s*${valuePattern}\\s*\\]`, 'i');
+  return re.test(String(text || ''));
+}
+
 function validateWalkthroughLinks(cwd) {
   const artDir = getArtifactDir(cwd);
   const active = readActive(cwd, 'walkthrough.md');
@@ -1868,6 +1917,11 @@ function validateWalkthroughLinks(cwd) {
     const detailPath = detailPathForId(artDir, expectedId);
     if (detailPath && !fs.existsSync(detailPath)) {
       issues.push(`walkthrough.md 行 ${expectedId} 指向 [[${expectedSlug}]]，但详情文件不存在：changes/${expectedSlug}.md。`);
+    }
+    const expectedContext = walkthroughContextForChange(cwd, expectedId);
+    const missingContext = expectedContext.filter(spec => !textHasContextMarker(summaryCell, spec));
+    if (missingContext.length > 0) {
+      issues.push(`walkthrough.md 行 ${expectedId} 缺少执行上下文 ${missingContext.map(spec => spec.marker).join(' ')}，应与 task.md / implementation_plan.md 索引行一致；请派 artifact-writer close-chg 或 archive-chg 补齐。`);
     }
   }
   return issues;

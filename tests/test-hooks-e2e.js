@@ -2811,6 +2811,27 @@ test('14k1. Stop 机械检查 walkthrough 行必须含详情 wikilink', () => {
   assert.ok(r.stderr.includes('缺少 wikilink，应为 [[chg-20260504-01]]'));
 });
 
+test('14k2. Stop 机械检查 walkthrough 同步 worktree/branch 上下文', () => {
+  const dir = makeV6Project('stop-walkthrough-missing-context', { withIndex: false });
+  const indexRow = '- [x] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001] [worktree:: smoke] [branch:: feature-x]';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n${indexRow}\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n<!-- ARCHIVE -->\n${indexRow}\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'walkthrough.md'), [
+    '# 工作记录',
+    '',
+    '## 最近工作',
+    '',
+    '| 日期 | 完成内容 | 关联变更 |',
+    '| --- | --- | --- |',
+    `| ${today()} | [[chg-20260504-01]] smoke | CHG-20260504-01 |`,
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('缺少执行上下文 [worktree:: smoke] [branch:: feature-x]'));
+});
+
 console.log('\n--- post-tool-use.js ---');
 
 test('15. v6 schema 缺 verified-date → warning', () => {
@@ -3085,6 +3106,40 @@ test('15g1. walkthrough 行缺少 wikilink 时 PostToolUse 提醒', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('缺少 wikilink，应为 [[chg-20260504-01]]'));
+});
+
+test('15g2. walkthrough 缺少 worktree/branch 上下文时 PostToolUse 提醒', () => {
+  const dir = makeV6Project('post-walkthrough-missing-context', { withIndex: false });
+  const indexRow = '- [x] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001] [worktree:: smoke] [branch:: feature-x]';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n${indexRow}\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n<!-- ARCHIVE -->\n${indexRow}\n`, 'utf8');
+  const fp = path.join(dir, 'walkthrough.md');
+  fs.writeFileSync(fp, [
+    '# 工作记录',
+    '',
+    '## 最近工作',
+    '',
+    '| 日期 | 完成内容 | 关联变更 |',
+    '| --- | --- | --- |',
+    `| ${today()} | [[chg-20260504-01]] smoke | CHG-20260504-01 |`,
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-walkthrough',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: 'smoke',
+        new_string: 'smoke',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('缺少执行上下文 [worktree:: smoke] [branch:: feature-x]'));
 });
 
 test('16. correction 详情变更 → knowledge 提醒', () => {
