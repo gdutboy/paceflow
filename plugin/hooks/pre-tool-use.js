@@ -20,6 +20,7 @@ const {
   bashCommandLooksMutating,
   bashCommandRedirectsToArtifact,
   bashShellCommandRedirectsToArtifact,
+  bashCommandEmbedsArtifactWriteScript,
   bashCommandMutatesArtifactRuntimeControl,
   bashCommandReferencesArtifact,
   bashShellCommandReferencesArtifact,
@@ -554,6 +555,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
       const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
         bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
+        bashCommandEmbedsArtifactWriteScript(bashCommand, cwd, artDir) ||
         (bashCommandLooksMutating(bashCommand) &&
           (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
@@ -1026,15 +1028,21 @@ paceUtils.withStdinParsed((stdin) => {
       const ownerStatus = paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId);
       return ownerStatus.current && ownerStatus.disposition !== 'current-closed';
     });
-    const projectMutationNeedsGate = isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0));
+    const currentToolIsArtifactWriter = isArtifactWriterAgent(stdin);
+    const artifactWriterArtifactMutation = currentToolIsArtifactWriter && !!artifactRelForMutation;
+    const projectMutationNeedsGate = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0));
     const gatedEntries = isCodeFile ? actionableEntries : currentOwnedActionableEntries;
-    const structuralCheckNeeded = isInsideProject && (isCodeFile || isFileMutationTool(toolName));
+    const structuralCheckNeeded = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 
     if (structuralCheckNeeded) {
       const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
       if (mismatched.length > 0) {
         const ids = mismatched.map(e => e.id).join(', ');
-        const reason = `v6 索引不一致：${ids} 必须同时存在于 task.md 与 implementation_plan.md 活跃区。请派 artifact-writer 修复索引。`;
+        const reason = [
+          `v6 索引不一致：${ids} 必须同时存在于 task.md 与 implementation_plan.md 活跃区。`,
+          '请派 artifact-writer 修复索引；不要用 Bash、临时脚本、Obsidian CLI 或主 session 直接改 artifact。',
+          '如果 artifact-writer 修复索引也被同一检查阻止，请停止重试并报告 hook 日志。'
+        ].join('\n');
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));

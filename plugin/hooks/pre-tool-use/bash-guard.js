@@ -1,4 +1,5 @@
 // Bash guard helpers for PreToolUse.
+const fs = require('fs');
 const path = require('path');
 const paceUtils = require('../pace-utils');
 
@@ -22,6 +23,33 @@ function commandTextLooksMutating(c) {
     /(^|[;&|]\s*)npx\b[\s\S]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
     /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
     /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+}
+
+function commandTextContainsWriteApi(c) {
+  return /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rmSync|renameSync|mkdirSync|write_text|write_bytes)\b/i.test(c) ||
+    /\bopen\s*\([^)]*,\s*['"][wax+]/i.test(c);
+}
+
+function bashCommandRunsScriptEngine(command) {
+  return /(^|[\n;&|]\s*)(?:node|python\d*)\b/i.test(String(command || ''));
+}
+
+function bashScriptExecutionTargets(command, cwd) {
+  const targets = [];
+  const re = /(^|[\n;&|]\s*)(?:node|python\d*)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi;
+  let match;
+  while ((match = re.exec(String(command || ''))) !== null) {
+    const args = bashCommandPathTokens(match[2] || '');
+    for (const arg of args) {
+      if (!arg || arg.startsWith('-')) continue;
+      if (!/\.(?:[cm]?js|py)$/i.test(arg)) continue;
+      try {
+        targets.push(paceUtils.resolveToolFilePath(cwd, arg));
+      } catch(e) {}
+      break;
+    }
+  }
+  return targets;
 }
 
 function bashCommandLooksMutating(command) {
@@ -199,6 +227,32 @@ function bashShellCommandReferencesArtifact(command, cwd, artDir) {
   return shellCommandScripts(command).some(script => bashCommandReferencesArtifact(script, cwd, artDir));
 }
 
+function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir) {
+  const c = bashSearchText(command);
+  if (commandTextContainsWriteApi(c) &&
+      bashCommandRunsScriptEngine(c) &&
+      (bashCommandReferencesArtifact(c, cwd, artDir) || bashShellCommandReferencesArtifact(c, cwd, artDir))) {
+    return true;
+  }
+  for (const target of bashScriptExecutionTargets(command, cwd)) {
+    try {
+      const stat = fsStat(target);
+      if (!stat || !stat.isFile() || stat.size > 256 * 1024) continue;
+      const script = fsRead(target);
+      if (commandTextContainsWriteApi(script) && bashCommandReferencesArtifact(script, cwd, artDir)) return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+function fsStat(file) {
+  try { return fs.statSync(file); } catch(e) { return null; }
+}
+
+function fsRead(file) {
+  return fs.readFileSync(file, 'utf8');
+}
+
 function bashArtifactRuntimeControlDenyReason(command) {
   return [
     '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
@@ -220,6 +274,7 @@ module.exports = {
   bashCommandLooksMutating,
   bashCommandRedirectsToArtifact,
   bashShellCommandRedirectsToArtifact,
+  bashCommandEmbedsArtifactWriteScript,
   bashCommandMutatesArtifactRuntimeControl,
   bashCommandReferencesArtifact,
   bashShellCommandReferencesArtifact,

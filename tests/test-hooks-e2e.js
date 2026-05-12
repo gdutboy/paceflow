@@ -541,6 +541,34 @@ test('8a. 当前 session owner 的非代码写入也必须先通过 C 阶段', (
   assert.ok(r.stdout.includes('C 阶段未完成'));
 });
 
+test('8a2. artifact-writer 写普通项目文件不能绕过 C 阶段', () => {
+  const dir = makeV6Project('ptu-artifact-writer-non-artifact-unapproved', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-agent-non-artifact',
+    agentId: 'agent-non-artifact',
+    state: 'active',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-non-artifact',
+      agent_id: 'agent-non-artifact',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, 'README.md'),
+        content: 'docs\n',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('C 阶段未完成'));
+});
+
 test('8b. 当前 session owner 的 in-progress 非代码写入放行并注入 CHG 摘要', () => {
   const dir = makeV6Project('ptu-current-owner-non-code-pass');
   seedChangeOwner(dir, 'CHG-20260504-01', {
@@ -2097,6 +2125,84 @@ test('9hc0d. artifact-writer 持有写锁时可 Edit 索引 artifact', () => {
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
+test('9hc0e. artifact-writer 可修复半写索引不一致', () => {
+  const dir = makeV6Project('agent-index-mismatch-repair-pass', { implIndex: '' });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-index-repair',
+      agent_id: 'agent-index-repair',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'implementation_plan.md'),
+        old_string: '<!-- ARCHIVE -->',
+        new_string: '- [/] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n<!-- ARCHIVE -->',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('索引不一致'));
+});
+
+test('9hc0f. 非 artifact-writer 仍不能在索引不一致时写项目文件', () => {
+  const dir = makeV6Project('direct-index-mismatch-still-deny', { implIndex: '' });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: codeEditStdin(dir),
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('索引不一致'));
+});
+
+test('9hc0g. artifact-writer 写 C/E 阶段 artifact 不被项目执行 gate 自锁', () => {
+  const cDir = makeV6Project('agent-c-phase-artifact-pass', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  const c = runHook('pre-tool-use.js', {
+    cwd: cDir,
+    stdin: {
+      session_id: 'sid-c-phase',
+      agent_id: 'agent-c-phase',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(cDir, 'changes', 'chg-20260504-01.md'),
+        old_string: '- [ ] T-001 测试任务',
+        new_string: '- [/] T-001 测试任务\n\n<!-- APPROVED -->',
+      },
+    },
+  });
+  assert.strictEqual(c.code, 0);
+  assert.ok(!c.stdout.includes('"deny"'));
+  assert.ok(!c.stdout.includes('C 阶段未完成'));
+
+  const eDir = makeV6Project('agent-e-phase-artifact-pass', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: true }),
+  });
+  const e = runHook('pre-tool-use.js', {
+    cwd: eDir,
+    stdin: {
+      session_id: 'sid-e-phase',
+      agent_id: 'agent-e-phase',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(eDir, 'changes', 'chg-20260504-01.md'),
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.strictEqual(e.code, 0);
+  assert.ok(!e.stdout.includes('"deny"'));
+  assert.ok(!e.stdout.includes('E 阶段未就绪'));
+});
+
 test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
   const dir = makeV6Project('agent-approve-confirm-missing');
   const r = runHook('pre-tool-use.js', {
@@ -2581,6 +2687,7 @@ test('9hgc. Bash shell wrapper / package runner 修改 artifact 被拒绝', () =
   const commands = [
     `bash -c 'node -e "require(\\"fs\\").writeFileSync(\\"task.md\\",\\"x\\")"'`,
     `bash -c 'cat > task.md <<EOF\nx\nEOF'`,
+    `cat > /tmp/pace-artifact-bypass.js <<'SCRIPT'\nconst fs = require('fs');\nfs.writeFileSync('${path.join(dir, 'task.md').replace(/\\/g, '/')}', 'x');\nSCRIPT\nnode /tmp/pace-artifact-bypass.js`,
     'npx prettier --write task.md',
     'npm run fix -- task.md',
   ];
@@ -2596,6 +2703,23 @@ test('9hgc. Bash shell wrapper / package runner 修改 artifact 被拒绝', () =
     assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
     assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
   }
+});
+
+test('9hgd. Bash 执行已存在外部脚本写 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-existing-script-artifact');
+  const script = path.join(os.tmpdir(), `pace-bypass-${Date.now()}.js`);
+  fs.writeFileSync(script, `const fs = require('fs');\nfs.writeFileSync(${JSON.stringify(path.join(dir, 'task.md'))}, 'x');\n`, 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: `node ${script}` },
+    },
+  });
+  try { fs.rmSync(script, { force: true }); } catch(e) {}
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
 });
 
 test('9hh. 懒创建模板写入 LF', () => {
