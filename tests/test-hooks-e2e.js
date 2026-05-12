@@ -11,6 +11,7 @@ const HOOKS_DIR = path.join(__dirname, '..', 'plugin', 'hooks');
 const MIGRATE_SCRIPT = path.join(__dirname, '..', 'plugin', 'migrate', 'batch-archive-v5.js');
 const RESERVE_HELPER = path.join(HOOKS_DIR, 'reserve-artifact-id.js');
 const SYNC_PLAN_HELPER = path.join(HOOKS_DIR, 'sync-plan.js');
+const SET_ARTIFACT_ROOT_HELPER = path.join(HOOKS_DIR, 'set-artifact-root.js');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;
@@ -68,6 +69,16 @@ function runReserveHelper({ cwd, args = [], env = {} }) {
 
 function runSyncPlanHelper({ cwd, args = [], env = {} }) {
   const r = spawnSync('node', [SYNC_PLAN_HELPER, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
+  });
+  return { code: r.status || 0, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+function runSetArtifactRootHelper({ cwd, args = [], env = {} }) {
+  const r = spawnSync('node', [SET_ARTIFACT_ROOT_HELPER, ...args], {
     cwd,
     encoding: 'utf8',
     timeout: 10000,
@@ -960,6 +971,7 @@ test('9c1. 首次启用且 vault/local 都无 artifact → DENY 要求选择 art
   assert.ok(r.stdout.includes('artifact-root'));
   assert.ok(r.stdout.includes('配置文件'), '应把 .pace/artifact-root 描述为配置文件');
   assert.ok(r.stdout.includes('不是 artifact 根目录'), '应明确配置文件不是 artifact 根目录');
+  assert.ok(r.stdout.includes('set-artifact-root.js'), '应给出 artifact-root helper 绝对路径');
   assert.ok(r.stdout.includes('不要直接重试代码写入'), '代码写入被拦后应先 create-chg + approve-and-start');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应在本地懒创建 changes/');
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), '选择前不应在 vault 懒创建 changes/');
@@ -1011,6 +1023,7 @@ test('9c3. SessionStart 首次启用只提示 skill，不询问、不自动创�
   assert.ok(!r.stdout.includes('Artifact 目录选择'), 'SessionStart 不应主动要求选择 artifact root');
 	  assert.ok(!r.stdout.includes('AskUserQuestion'), '选择应推迟到 PreToolUse 阶段');
 	  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'), 'SessionStart 应提示主 session 先读取 Paceflow workflow skill');
+	  assert.ok(r.stdout.includes('set-artifact-root.js'), '首次 root-choice 提示也应给出 artifact-root helper 绝对路径');
 	  assert.ok(r.stdout.includes('reserve-artifact-id.js'), '首次 root-choice 提示也应给出当前版本 reserve helper 绝对路径');
 	  assert.ok(r.stdout.includes('不要搜索 plugin cache'), '首次 root-choice 不应让模型搜索旧 plugin cache 猜版本');
 	  assert.strictEqual(r.stderr, '', '非 git 项目不应泄漏 git fatal stderr');
@@ -1588,6 +1601,19 @@ test('9hc-helper2. reserve-artifact-id helper 默认复用未消费 reservation�
   assert.ok(third.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-02`));
 });
 
+test('9hc-helper2a. reserve-artifact-id helper 支持 HOTFIX 类型且 --new 避免复用普通 CHG', () => {
+  const dir = makeV6Project('agent-reserve-helper-hotfix', { withIndex: false, detail: false });
+  const env = { CLAUDE_CODE_SESSION_ID: 'sid-helper-hotfix' };
+  const chg = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg'], env });
+  const hotfix = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg', '--type', 'hotfix', '--new'], env });
+  assert.strictEqual(chg.code, 0);
+  assert.strictEqual(hotfix.code, 0);
+  const compact = today().replace(/-/g, '');
+  assert.ok(chg.stdout.includes(`reserved-id: CHG-${compact}-01`));
+  assert.ok(hotfix.stdout.includes(`reserved-id: HOTFIX-${compact}-01`));
+  assert.ok(hotfix.stdout.includes(`reserved-file: changes/hotfix-${compact}-01.md`));
+});
+
 test('9hc-helper3. reserve-artifact-id helper 支持 record-correction prefix', () => {
   const dir = makeV6Project('agent-reserve-helper-correction', { withIndex: false, detail: false });
   const helper = runReserveHelper({
@@ -1627,6 +1653,75 @@ test('9hc-helper4. reserve-artifact-id helper 在 root 未选择时只提示选�
   assert.ok(helper.stdout.includes('AskUserQuestion'));
   assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'root 选择前 helper 不应创建项目 .pace/');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'root 选择前 helper 不应懒创建 changes/');
+});
+
+test('9hc-helper4a. set-artifact-root helper 在 git worktree 写宿主 artifact-root', () => {
+  const root = makeTmpDir('set-root-helper-worktree-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+
+  const setRoot = runSetArtifactRootHelper({ cwd: worktree, args: ['--choice', 'local'] });
+  assert.strictEqual(setRoot.code, 0);
+  assert.ok(setRoot.stdout.includes(`config-file: ${path.join(host, '.pace', 'artifact-root').replace(/\\/g, '/')}`));
+  assert.ok(setRoot.stdout.includes('choice: local'));
+  assert.ok(setRoot.stdout.includes('execution-context: [worktree:: project-a-wt]'));
+  assert.ok(setRoot.stdout.includes('不要在当前 worktree 另写 .pace/artifact-root'));
+  assert.ok(setRoot.stdout.includes('reserve-artifact-id.js'));
+  assert.strictEqual(fs.readFileSync(path.join(host, '.pace', 'artifact-root'), 'utf8'), 'local\n');
+  assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'artifact-root')), '不应写 worktree 本地 artifact-root');
+
+  const reserve = runReserveHelper({
+    cwd: worktree,
+    args: ['--operation', 'create-chg'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-set-root-worktree' },
+  });
+  assert.strictEqual(reserve.code, 0);
+  assert.ok(reserve.stdout.includes(`artifact_dir: ${host.replace(/\\/g, '/')}/`));
+  assert.ok(reserve.stdout.includes('execution-context: [worktree:: project-a-wt]'));
+  assert.ok(fs.existsSync(path.join(host, 'changes')), 'reserve helper 应在宿主 artifact root 懒创建 changes/');
+  assert.ok(!fs.existsSync(path.join(worktree, 'changes')), 'worktree 分支目录不应创建 artifact changes/');
+});
+
+test('9hc-helper4b. worktree 本地 .pace/artifact-root 写入被提示改用 helper', () => {
+  const root = makeTmpDir('set-root-helper-worktree-deny-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+
+  const write = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(worktree, '.pace', 'artifact-root'),
+        content: 'local\n',
+      },
+    },
+  });
+  assert.strictEqual(write.code, 0);
+  assert.ok(write.stdout.includes('"deny"'));
+  assert.ok(write.stdout.includes('DENY_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE') || write.stdout.includes('git worktree'));
+  assert.ok(write.stdout.includes('set-artifact-root.js'));
+  assert.ok(write.stdout.includes(path.join(host, '.pace', 'artifact-root').replace(/\\/g, '/')));
+
+  const bash = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: {
+        command: 'mkdir -p .pace && echo local > .pace/artifact-root',
+      },
+    },
+  });
+  assert.strictEqual(bash.code, 0);
+  assert.ok(bash.stdout.includes('"deny"'));
+  assert.ok(bash.stdout.includes('set-artifact-root.js'));
+  assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'artifact-root')), '被拦截后不应产生 worktree 本地配置');
 });
 
 test('9hc-helper5. sync-plan helper 幂等写入单个 plan basename', () => {

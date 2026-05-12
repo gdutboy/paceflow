@@ -13,7 +13,9 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
-如果用户已明确选择 vault/local 但配置文件还不存在，先按 hook 提示写 `.pace/artifact-root`（纯文本 `vault` 或 `local`），再从目标项目 cwd 运行 reserve helper。reserve helper 不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化只可用 `--cwd`；不要搜索旧 plugin cache 路径。
+如果用户已明确选择 vault/local 但 artifact-root 配置还不存在，先运行 hook 提示的 `set-artifact-root` helper（`--choice vault` 或 `--choice local`），再从目标项目 cwd 运行 reserve helper。不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件；helper 会写入权威 runtime 配置位置。reserve helper 不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化只可用 `--cwd`；不要搜索旧 plugin cache 路径。
+
+Helper 命令来源：优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，不要搜索 `~/.claude/plugins/cache` 猜版本；以当前 skill base directory 为基准拼成同版本绝对路径：`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若无法确定 skill base directory，先触发/等待 hook 提供 helper 命令，不要自行扫描 cache。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
@@ -126,7 +128,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；不要搜索 `~/.claude/plugins/cache` 猜版本。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill base directory 拼出同版本绝对路径；不要搜索 `~/.claude/plugins/cache` 猜版本。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 时原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
@@ -143,6 +145,18 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 ```bash
 <运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg 命令>
+```
+
+HOTFIX 预留：
+
+```bash
+<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix 命令>
+```
+
+若同一 session 已有未消费的普通 CHG reservation，但现在要创建 HOTFIX，或确实要新编号：
+
+```bash
+<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new 命令>
 ```
 
 把 helper 输出放在 prompt 顶部：

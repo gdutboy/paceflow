@@ -22,6 +22,7 @@ const CHANGE_OWNER_TTL_MS = Math.max(60 * 1000, Number(process.env.PACE_CHANGE_O
 const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(__dirname, 'reserve-artifact-id.js').replace(/\\/g, '/');
 const SYNC_PLAN_SCRIPT = path.resolve(__dirname, 'sync-plan.js').replace(/\\/g, '/');
+const SET_ARTIFACT_ROOT_SCRIPT = path.resolve(__dirname, 'set-artifact-root.js').replace(/\\/g, '/');
 const PACE_ARTIFACT_ROOT_CONTENT = 'task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
 
 // 归档标记常量——所有 hook 必须引用此常量，禁止硬编码字符串
@@ -72,6 +73,7 @@ const FORMAT_SNIPPETS = {
   closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg；字段格式见 Skill(paceflow:artifact-management)',
   reserveHelper: `预留编号 = 主 session 先运行 Bash: node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部`,
   syncPlanHelper: `同步 plan = 桥接成功后运行 Bash: node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"`,
+  setArtifactRootHelper: `选择 artifact root = 用户选择后运行 Bash: node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
@@ -325,6 +327,31 @@ function executionContextForCwd(cwd) {
 
 function getArtifactRootChoicePath(cwd) {
   return path.join(getProjectRuntimeDir(cwd), ARTIFACT_ROOT_CHOICE_FILE);
+}
+
+function isWorktreeLocalArtifactRootChoicePath(cwd, filePath) {
+  if (!cwd || !filePath) return false;
+  const context = executionContextForCwd(cwd);
+  if (!context.isWorktree) return false;
+  const target = normalizePath(path.resolve(filePath));
+  const localChoicePath = normalizePath(path.join(path.resolve(cwd), '.pace', ARTIFACT_ROOT_CHOICE_FILE));
+  const authoritativeChoicePath = normalizePath(getArtifactRootChoicePath(cwd));
+  return target === localChoicePath && target !== authoritativeChoicePath;
+}
+
+function worktreeLocalArtifactRootChoiceDenyReason(cwd, extra = '') {
+  const context = executionContextForCwd(cwd);
+  const choicePath = getArtifactRootChoicePath(cwd).replace(/\\/g, '/');
+  const lines = [
+    '当前 cwd 是 git worktree，PaceFlow artifact-root 配置必须写入共享 runtime，不写当前 worktree 的 .pace/artifact-root。',
+    `当前 cwd: ${path.resolve(cwd || process.cwd()).replace(/\\/g, '/')}`,
+    `配置文件: ${choicePath}`,
+    `execution-context: ${context.text}`,
+    `请运行 artifact-root helper：node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
+    'helper 会写入正确的共享 runtime 配置位置；不要在当前 worktree 另写 .pace/artifact-root。'
+  ];
+  if (extra) lines.push(extra);
+  return lines.join('\n');
 }
 
 function getV5MigrationStatePath(cwd) {
@@ -1250,10 +1277,11 @@ function artifactRootChoiceMessage(cwd) {
     `Obsidian vault artifact 根目录: ${displayDir(vaultDir)}`,
     `本地项目 artifact 根目录: ${displayDir(stateDir)}`,
     '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"（至少两个选项）。',
-    `用户选择后，只把选择结果写入配置文件 ${choicePath}：vault 或 local，纯文本、无引号。`,
+    `用户选择后，运行 artifact-root helper 写入配置：node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
+    `配置文件: ${choicePath}`,
     '该配置文件不是 artifact 根目录。',
     `artifact_dir 只用于 PaceFlow artifacts：${PACE_ARTIFACT_ROOT_CONTENT}。`,
-    `配置写入后再从目标项目 cwd 运行 helper：node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
+    `配置写入后再从目标项目 cwd 运行 reserve helper：node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     'reserve helper 不接受 --artifact-dir / --artifact-root / --project-dir；自动化只可用 --cwd。',
     '写入配置后，不要直接重试代码写入；先创建/批准 CHG，再重试被阻止的代码写入。若被阻止的是 artifact-writer Agent，则按提示重派同一操作。'
   ].join('\n');
@@ -2158,7 +2186,7 @@ module.exports = {
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
-  RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT,
+  RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
@@ -2168,6 +2196,7 @@ module.exports = {
   isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
   getArtifactDir, getProjectStateDir, getProjectRuntimeDir,
   getArtifactRootChoicePath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
+  isWorktreeLocalArtifactRootChoicePath, worktreeLocalArtifactRootChoiceDenyReason,
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
   getArtifactWriterLockPath, readArtifactWriterLock, acquireArtifactWriterLock,
   artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock,

@@ -95,6 +95,7 @@ function writeWorkflowEntrySection(reason) {
     `信号: ${reason}`,
     '收到实现、迁移、CHG、验证或归档任务时，先调用 Skill(paceflow:pace-workflow)。',
     '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
+    `artifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
     `预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     'reserve helper 从当前项目 cwd 和 .pace/artifact-root 解析 artifact_dir；不要搜索 plugin cache，也不要传 --artifact-dir / --artifact-root / --project-dir。',
     '',
@@ -246,7 +247,8 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
     '本项目已触发 PACEflow 信号；收到代码修改任务时先调用 Skill(paceflow:pace-workflow)。',
     '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
     '首次写代码或派 artifact-writer 时，PreToolUse 会要求选择 artifact root；选择前不会创建 .pace/、changes/ 或 Obsidian 空项目目录。',
-    `若用户已明确选择 vault/local，先写 ${paceUtils.getArtifactRootChoicePath(cwd)}，再从当前项目 cwd 运行：node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
+    `若用户已明确选择 vault/local，先从当前项目 cwd 运行：node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
+    `配置写入后再运行：node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     'reserve helper 不接受 --artifact-dir / --artifact-root / --project-dir；不要搜索 plugin cache 猜版本。',
     '',
   ].join('\n') + '\n');
@@ -276,7 +278,7 @@ function writeArtifactDirSection() {
     const vaultRoot = paceUtils.normalizePath(path.resolve(paceUtils.VAULT_PATH, 'projects'));
     if (normalizedArtDir.startsWith(`${vaultRoot}/`)) mode = 'Obsidian vault project';
   }
-  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。\nartifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
 }
 
 function enrichSummaryOwner(summary) {

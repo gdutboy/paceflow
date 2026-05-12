@@ -558,6 +558,37 @@ Smoke4 rerun 覆盖“vault 选择后是否先写 `.pace/artifact-root`，不再
 - `operation=update-chg + action=approve|approve-and-start` 才触发 C 阶段字段检查；`operation=close-chg` 才触发验证/归档字段检查；`operation=update-chg + action=update-status` 才检查是否把 verify 串进同一次派遣。
 - 补 e2e：approve-and-start 的 `approval-evidence` 提到 `close-chg` 仍放行；close-chg 的 `walkthrough-summary` 提到 `approve-and-start` 仍放行。
 
+#### 0.1.10e16 v6.0.55 focused Smoke3 worktree artifact-root 缺口（2026-05-12）
+
+用户复跑 Smoke3 后，核心 worktree owner 目标通过：
+
+- worktree session 创建并 `approve-and-start` 后，owner 写入宿主 runtime：`.pace/change-owners/chg-20260512-01.json` 记录 `cwd=/mnt/k/AI/paceflow-smoke-655-wt-branch`、`worktree=paceflow-smoke-655-wt-branch`、`branch=smoke-branch`。
+- 主 session 写 `/mnt/k/AI/paceflow-smoke-655-wt/README.md` 正常放行，日志为 `PASS_V6_NON_CODE`。
+- 主 session Stop 对 worktree owner 的活跃 CHG 记录 `SKIP_FOREIGN_CHANGE_OWNER ... owner_worktree=paceflow-smoke-655-wt-branch ... category=running`，随后 `Stop PASS`。
+
+新增入口缺口：
+
+- 项目最初没有 `.pace/`。worktree 模型根据当前 cwd 手写了 `/mnt/k/AI/paceflow-smoke-655-wt-branch/.pace/artifact-root=local`。
+- PACEflow 对真实 git worktree 的运行态归一到宿主项目，因此权威配置应为 `/mnt/k/AI/paceflow-smoke-655-wt/.pace/artifact-root`。`reserve-artifact-id.js --cwd /mnt/k/AI/paceflow-smoke-655-wt-branch --operation create-chg` 未读到宿主配置，正确返回 `DENY_ARTIFACT_ROOT_CHOICE`，并提示把选择写入宿主 `.pace/artifact-root`。
+- 模型随后按提示写入宿主 `.pace/artifact-root=local`，reserve/create/approve-and-start 回到正常轨迹。最终功能正确，但 worktree 本地残留了无效的 `.pace/artifact-root`，说明“让模型手写配置路径”在 worktree 首次启用场景下仍不稳定。
+- 追加确认：这不是 skill 没加载。worktree 会话已经调用 `paceflow:pace-workflow` / `paceflow:artifact-management`，但 SessionStart 当时 `signal=none`，只输出 Git 状态，没有注入 `reserve-artifact-id.js` 或 artifact-root helper 的完整命令；skill 又只说“使用 hook 提供的 helper，勿搜索 cache”，导致模型知道需要 helper 但没有确定路径，最后违背指令去 `find ~/.claude/plugins/cache/...`。根因是 helper 入口不够确定，skill 能降低流程错误但不能保证模型不 improvisation。
+
+修复方案记录：
+
+- 新增 `set-artifact-root` helper，例如 `node ".../hooks/set-artifact-root.js" --choice local [--cwd <target-cwd>]`。交互选择仍保留；helper 只负责把 `local|vault|custom path` 写到正确 runtime 配置位置。
+- helper 必须复用 `getProjectRuntimeDir()` / artifact root 解析逻辑：当前 cwd 是 git worktree 时，写宿主项目 `.pace/artifact-root`，不写 worktree 分支目录本地 `.pace/artifact-root`。
+- helper 成功输出需明确解释 worktree 共享 runtime，避免模型误以为“写错目录”并自行补写 cwd-relative `.pace/artifact-root`。输出至少包含 `config-file`、`choice`、`current-cwd`、`execution-context`，并说明“这是 git worktree 共享的 PaceFlow runtime 配置位置；不要在当前 worktree 另写 `.pace/artifact-root`；下一步从当前 cwd 运行 reserve helper”。
+- root-choice deny / SessionStart helper hint / `pace-workflow` / `artifact-management` 文案应改为优先运行 `set-artifact-root` helper，而不是指导模型 `mkdir -p .pace && echo local > .pace/artifact-root`。
+- 如果当前上下文没有完整 helper 命令，skill 必须明确：不要搜索 plugin cache；以当前 skill base directory 为基准拼出同版本绝对路径 `../../hooks/set-artifact-root.js` / `../../hooks/reserve-artifact-id.js`，或先触发/等待 hook 提供 helper 命令。
+- 机械兜底：当 cwd 是 git worktree 且模型尝试写 worktree 本地 `.pace/artifact-root`，如果宿主 runtime 是权威位置，应拒绝或强提示改用 `set-artifact-root` helper。该 guard 只针对 PaceFlow runtime config，不扩展为普通项目文件路径裁判。
+- 后续测试：e2e 覆盖 worktree cwd 下 `set-artifact-root --choice local` 写宿主 `.pace/artifact-root`；`reserve-artifact-id.js --cwd <worktree>` 随后成功；误写 worktree 本地 `.pace/artifact-root` 被提示；production Smoke3 增加“新项目无 `.pace/` + worktree 首次选择 local”复测。
+
+#### 0.1.10e17 HOTFIX reserve helper skill 缺口（2026-05-12）
+
+- 实现层已支持 `reserve-artifact-id.js --operation create-chg --type hotfix` 生成 `HOTFIX-YYYYMMDD-NN` 与 `changes/hotfix-yyyymmdd-nn.md`，但主 skill 只写了通用 `--operation create-chg` 示例，未明确 HOTFIX 预留命令。
+- 同一 session 默认复用尚未消费的 `create-chg` reservation；如果先预留普通 CHG 后又要创建 HOTFIX，不加 `--new` 可能复用旧 CHG reservation。skill 必须明确 HOTFIX 场景使用 `--type hotfix`，需要新编号时使用 `--type hotfix --new`。
+- 修复范围：`pace-workflow`、`artifact-management`、`pace-bridge`、`change-lifecycle` 同步 HOTFIX helper 示例；e2e 覆盖先预留普通 CHG 后用 `--type hotfix --new` 生成 HOTFIX。
+
 
 #### 0.1.10b v6.0.40 production Smoke5 记录
 

@@ -18,15 +18,27 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；不要搜索 `~/.claude/plugins/cache` 猜版本：
+ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill base directory 为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`，不要搜索 `~/.claude/plugins/cache` 猜版本：
 
 ```bash
 <运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg 命令>
 ```
 
+HOTFIX 预留必须加类型：
+
+```bash
+<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix 命令>
+```
+
+同一 session 默认复用尚未消费的 `create-chg` reservation。若已预留普通 CHG 后要创建 HOTFIX，或确实需要第二个新编号，加 `--new`：
+
+```bash
+<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new 命令>
+```
+
 再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
 
-reserve helper 从目标项目 cwd 与 `.pace/artifact-root` 解析 artifact_dir，不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化场景只可用 `--cwd` 指定项目 cwd。
+reserve helper 从目标项目 cwd 与 artifact-root 配置解析 artifact_dir，不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化场景只可用 `--cwd` 指定项目 cwd。若用户已明确选择 vault/local 但配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper；不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。
 
 `T-NNN` 是单个 CHG/HOTFIX 内的局部任务编号。不同 CHG 可以都从 `T-001` 开始；所有状态更新必须同时带 `target: CHG-...` 和 `task-id: T-...`，避免多 worktree / 多 CHG 并发时产生歧义。
 

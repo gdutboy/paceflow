@@ -22,6 +22,7 @@ const {
   bashShellCommandRedirectsToArtifact,
   bashCommandEmbedsArtifactWriteScript,
   bashCommandMutatesArtifactRuntimeControl,
+  bashCommandMutatesWorktreeLocalArtifactRootChoice,
   bashCommandReferencesArtifact,
   bashShellCommandReferencesArtifact,
   bashArtifactRuntimeControlDenyReason,
@@ -590,6 +591,26 @@ paceUtils.withStdinParsed((stdin) => {
   // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
   const normalizedFile = paceUtils.normalizePath(filePath);
   const normalizedCwd = paceUtils.normalizePath(cwd);
+  if (isFileMutationTool(toolName) && paceUtils.isWorktreeLocalArtifactRootChoicePath(cwd, filePath)) {
+    return hardDeny(
+      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd),
+      'DENY_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      {
+        file: filePath,
+        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+      }
+    );
+  }
+  if (isBashTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+    return hardDeny(
+      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+      'DENY_BASH_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      {
+        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+      }
+    );
+  }
   if (isFileMutationTool(toolName) && paceUtils.isArtifactRuntimeControlPath(cwd, filePath)) {
     return hardDeny(
       `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写或删除运行态文件。`,

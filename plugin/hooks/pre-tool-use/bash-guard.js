@@ -209,6 +209,47 @@ function bashCommandMutatesArtifactRuntimeControl(command, cwd) {
       (bashCommandReferencesArtifactRuntimeControl(command, cwd) || bashShellCommandReferencesArtifactRuntimeControl(command, cwd)));
 }
 
+function bashPathLooksWorktreeLocalArtifactRootChoice(target, cwd) {
+  const raw = String(target || '').trim().replace(/\\/g, '/').replace(/^['"]|['"]$/g, '');
+  if (!raw || /^&\d+$/.test(raw)) return false;
+  try {
+    const resolved = paceUtils.resolveToolFilePath(cwd, raw);
+    return paceUtils.isWorktreeLocalArtifactRootChoicePath(cwd, resolved);
+  } catch(e) {
+    return false;
+  }
+}
+
+function bashCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) {
+  return bashOutputRedirectTargets(command).some(target => bashPathLooksWorktreeLocalArtifactRootChoice(target, cwd));
+}
+
+function bashShellCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) {
+  return shellCommandScripts(command).some(script => bashCommandRedirectsToWorktreeLocalArtifactRootChoice(script, cwd));
+}
+
+function bashCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd) {
+  const context = paceUtils.executionContextForCwd(cwd);
+  if (!context.isWorktree) return false;
+  const c = bashSearchText(command);
+  const localChoicePath = path.join(path.resolve(cwd || process.cwd()), '.pace', 'artifact-root').replace(/\\/g, '/');
+  return bashTextReferencesPathOrChild(c, localChoicePath) ||
+    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-root(?=$|[\s"'`;|&<>])/.test(c) ||
+    bashCommandPathTokens(c).some(target => bashPathLooksWorktreeLocalArtifactRootChoice(target, cwd));
+}
+
+function bashShellCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd) {
+  return shellCommandScripts(command).some(script => bashCommandReferencesWorktreeLocalArtifactRootChoice(script, cwd));
+}
+
+function bashCommandMutatesWorktreeLocalArtifactRootChoice(command, cwd) {
+  return bashCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) ||
+    bashShellCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) ||
+    (bashCommandLooksMutating(command) &&
+      (bashCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd) ||
+        bashShellCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd)));
+}
+
 function bashCommandReferencesArtifact(command, cwd, artDir) {
   const c = bashSearchText(command);
   if (bashCommandPathTokens(c).some(target => bashPathLooksArtifact(target, cwd, artDir))) return true;
@@ -276,6 +317,7 @@ module.exports = {
   bashShellCommandRedirectsToArtifact,
   bashCommandEmbedsArtifactWriteScript,
   bashCommandMutatesArtifactRuntimeControl,
+  bashCommandMutatesWorktreeLocalArtifactRootChoice,
   bashCommandReferencesArtifact,
   bashShellCommandReferencesArtifact,
   bashArtifactRuntimeControlDenyReason,

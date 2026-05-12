@@ -23,7 +23,7 @@ Expected:
 
 ## Smoke 1: Root-Choice Helper Command
 
-Goal: first-time enablement exposes the current reserve helper command and does not make the model search old plugin cache versions or pass unsupported helper arguments.
+Goal: first-time enablement exposes the current artifact-root and reserve helper commands and does not make the model search old plugin cache versions or pass unsupported helper arguments.
 
 Setup:
 
@@ -49,8 +49,8 @@ artifact 选择 Obsidian vault project。
 
 Expected:
 
-- SessionStart/root-choice hint includes the current runtime `reserve-artifact-id.js` absolute command.
-- Main session writes `.pace/artifact-root` as `vault` before running the helper.
+- SessionStart/root-choice hint includes the current runtime `set-artifact-root.js` and `reserve-artifact-id.js` absolute commands.
+- Main session runs `set-artifact-root.js --choice vault` before running the reserve helper.
 - Main session does not search `~/.claude/plugins/cache` to guess a helper path.
 - Main session does not pass `--project-dir`, `--artifact-root`, or `--artifact-dir`.
 - Final artifacts are in the vault project, not the local project root.
@@ -68,6 +68,7 @@ tail -n 300 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'ReserveID|PASS_AGENT_ARTIFA
 Failure signals:
 
 - The session runs `find ~/.claude/plugins/cache/... -name reserve-artifact-id*`.
+- The session hand-writes `.pace/artifact-root` instead of running `set-artifact-root.js`.
 - The session runs helper with `--project-dir`, `--artifact-root`, or `--artifact-dir`.
 - Local `changes/` or root artifact files are created despite choosing vault.
 - Any `DENY_V6_INDEX_MISMATCH` appears during create-chg or close-chg. This smoke should not require index repair.
@@ -164,6 +165,7 @@ Session B, cwd `/mnt/k/AI/paceflow-smoke-655-wt`:
 
 Expected:
 
+- Session A uses `set-artifact-root.js --choice local`; it does not hand-write `$WT/.pace/artifact-root`.
 - Session B is not blocked merely because Session A owns a fresh worktree CHG.
 - Session B does not try to close or update Session A's CHG.
 - SessionStart/Stop may summarize the foreign CHG, but it should not count it as current session work.
@@ -178,6 +180,8 @@ cd "$HOST"
 
 rg 'host write while worktree owner fresh' README.md
 rg 'worktree owner running|\\[worktree::|\\[branch::' task.md implementation_plan.md changes
+test "$(tr -d '\r\n' < "$HOST/.pace/artifact-root")" = "local"
+test ! -f "$WT/.pace/artifact-root"
 tail -n 300 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'FOREIGN_CHANGE_OWNER|PASS_V6_NON_CODE|DENY_AGENT_CHANGE_OWNER|CHANGE_OWNER'
 ```
 
@@ -185,6 +189,11 @@ Optional structural check:
 
 - Manually remove the CHG detail file or create a task/implementation index mismatch, then try a normal non-code write from another session.
 - Expected: structure damage is still blocked globally with detail-missing or index-mismatch messaging.
+
+Failure signals:
+
+- Session A writes `$WT/.pace/artifact-root` in the worktree branch directory.
+- Session A searches `~/.claude/plugins/cache` to locate helpers after loading the PaceFlow skills.
 
 ## Smoke 4: Close Owner Cleanup
 

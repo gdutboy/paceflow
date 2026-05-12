@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -567,8 +567,18 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
   assert.ok(msg.includes('配置文件'), '应明确 artifact-root 是配置文件');
   assert.ok(msg.includes('不是 artifact 根目录'), '应明确配置文件不是 artifact 根目录');
 	  assert.ok(msg.includes('只用于 PaceFlow artifacts'), '应明确 artifact_dir 的边界');
+  assert.ok(msg.includes('set-artifact-root.js'), '应给出 artifact-root helper 路径');
 	  assert.ok(msg.includes('reserve-artifact-id.js'), '应给出当前 helper 路径');
   assert.ok(msg.includes('不接受 --artifact-dir / --artifact-root / --project-dir'), '应明确 helper 不接受自造 artifact/root/project 参数');
+});
+
+test('helper 脚本常量使用绝对当前 runtime 路径', () => {
+  assert.ok(path.isAbsolute(SET_ARTIFACT_ROOT_SCRIPT));
+  assert.ok(path.isAbsolute(RESERVE_ARTIFACT_ID_SCRIPT));
+  assert.ok(path.isAbsolute(SYNC_PLAN_SCRIPT));
+  assert.ok(SET_ARTIFACT_ROOT_SCRIPT.endsWith('/plugin/hooks/set-artifact-root.js'));
+  assert.ok(RESERVE_ARTIFACT_ID_SCRIPT.endsWith('/plugin/hooks/reserve-artifact-id.js'));
+  assert.ok(SYNC_PLAN_SCRIPT.endsWith('/plugin/hooks/sync-plan.js'));
 });
 
 test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移提示', () => {
@@ -1442,6 +1452,21 @@ test('plugin runtime 文档不保留 create-chg 扫描分配旧语义', () => {
   }
   walk(pluginRoot);
   assert.deepStrictEqual(stale.sort(), [], `plugin runtime 文档仍含旧编号语义: ${stale.join(', ')}`);
+});
+
+test('skills 明确 HOTFIX reserve helper 用法与 --new 边界', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const files = [
+    'plugin/skills/pace-workflow/SKILL.md',
+    'plugin/skills/artifact-management/SKILL.md',
+    'plugin/skills/pace-bridge/SKILL.md',
+    'plugin/skills/artifact-management/references/change-lifecycle.md',
+  ];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    assert.ok(text.includes('--operation create-chg --type hotfix'), `${rel} 应明确 HOTFIX 预留命令`);
+    assert.ok(text.includes('--type hotfix --new'), `${rel} 应明确 HOTFIX 新编号复用边界`);
+  }
 });
 
 test('v5 migration script 使用共享 artifact 常量', () => {
