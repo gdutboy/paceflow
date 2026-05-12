@@ -566,8 +566,9 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
   assert.ok(msg.includes(getArtifactRootChoicePath(dir)));
   assert.ok(msg.includes('配置文件'), '应明确 artifact-root 是配置文件');
   assert.ok(msg.includes('不是 artifact 根目录'), '应明确配置文件不是 artifact 根目录');
-  assert.ok(msg.includes('只用于 PaceFlow artifacts'), '应明确 artifact_dir 的边界');
-  assert.ok(msg.includes('reserve-artifact-id.js'), '应给出当前 helper 路径');
+	  assert.ok(msg.includes('只用于 PaceFlow artifacts'), '应明确 artifact_dir 的边界');
+	  assert.ok(msg.includes('reserve-artifact-id.js'), '应给出当前 helper 路径');
+  assert.ok(msg.includes('不接受 --artifact-dir / --artifact-root / --project-dir'), '应明确 helper 不接受自造 artifact/root/project 参数');
 });
 
 test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移提示', () => {

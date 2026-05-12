@@ -107,7 +107,7 @@ function main() {
     return;
   }
   if (args.unknown.length > 0) {
-    fail(args.cwd, 'DENY_UNKNOWN_OPTION', `reserve-artifact-id 不支持参数：${args.unknown.join(', ')}。\n本 helper 只从当前 Claude Code 项目的 artifact-root 配置解析 artifact_dir；不要传 --artifact-dir。\n\n${usage()}`, { options: args.unknown.join(',') });
+    fail(args.cwd, 'DENY_UNKNOWN_OPTION', `reserve-artifact-id 不支持参数：${args.unknown.join(', ')}。\n本 helper 从目标项目 cwd 和 .pace/artifact-root 配置解析 artifact_dir；不要传 --artifact-dir / --artifact-root / --project-dir。\n请在目标项目 cwd 中运行；自动化场景只可用 --cwd 明确项目 cwd。\n\n${usage()}`, { options: args.unknown.join(',') });
     return;
   }
   if (!['create-chg', 'record-correction'].includes(args.operation)) {

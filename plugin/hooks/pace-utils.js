@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.54';
+const PACE_VERSION = 'v6.0.55';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -1253,7 +1253,8 @@ function artifactRootChoiceMessage(cwd) {
     `用户选择后，只把选择结果写入配置文件 ${choicePath}：vault 或 local，纯文本、无引号。`,
     '该配置文件不是 artifact 根目录。',
     `artifact_dir 只用于 PaceFlow artifacts：${PACE_ARTIFACT_ROOT_CONTENT}。`,
-    `配置写入后再运行 helper：node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
+    `配置写入后再从目标项目 cwd 运行 helper：node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
+    'reserve helper 不接受 --artifact-dir / --artifact-root / --project-dir；自动化只可用 --cwd。',
     '写入配置后，不要直接重试代码写入；先创建/批准 CHG，再重试被阻止的代码写入。若被阻止的是 artifact-writer Agent，则按提示重派同一操作。'
   ].join('\n');
 }

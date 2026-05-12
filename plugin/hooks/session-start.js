@@ -89,6 +89,24 @@ if (rootConfigError) {
 const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
 const artifactRootChoice = paceUtils.readArtifactRootChoice(cwd) || 'auto';
 
+function writeWorkflowEntrySection(reason) {
+  const lines = [
+    '=== PACEflow 工作流入口 ===',
+    `信号: ${reason}`,
+    '收到实现、迁移、CHG、验证或归档任务时，先调用 Skill(paceflow:pace-workflow)。',
+    '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
+    `预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
+    'reserve helper 从当前项目 cwd 和 .pace/artifact-root 解析 artifact_dir；不要搜索 plugin cache，也不要传 --artifact-dir / --artifact-root / --project-dir。',
+    '',
+  ];
+  process.stdout.write(lines.join('\n') + '\n');
+}
+
+if (paceSignal && !rootChoicePending && eventType !== 'compact') {
+  const reason = v5MigrationInfo.detected ? 'legacy-v5' : String(paceSignal);
+  writeWorkflowEntrySection(reason);
+}
+
 // v4: PACE 项目才创建/重置运行态 .pace 文件；首次 root 选择前保持 SessionStart 零写入。
 if (paceSignal && !rootChoicePending) {
   try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
@@ -228,6 +246,8 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
     '本项目已触发 PACEflow 信号；收到代码修改任务时先调用 Skill(paceflow:pace-workflow)。',
     '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
     '首次写代码或派 artifact-writer 时，PreToolUse 会要求选择 artifact root；选择前不会创建 .pace/、changes/ 或 Obsidian 空项目目录。',
+    `若用户已明确选择 vault/local，先写 ${paceUtils.getArtifactRootChoicePath(cwd)}，再从当前项目 cwd 运行：node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
+    'reserve helper 不接受 --artifact-dir / --artifact-root / --project-dir；不要搜索 plugin cache 猜版本。',
     '',
   ].join('\n') + '\n');
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板

@@ -36,7 +36,7 @@ flowchart TD
 
 Artifact 根目录以 hook 注入或 PreToolUse 提示为准。`artifact_dir` 仅用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
-若用户已经明确选择 Obsidian vault 或本地项目目录，但 `.pace/artifact-root` 尚未写入，先按 hook 提示把纯文本 `vault` 或 `local` 写入该配置文件，再运行 reserve helper。不要先运行 helper，也不要传自造的 `--artifact-dir` 参数。
+若用户已经明确选择 Obsidian vault 或本地项目目录，但 `.pace/artifact-root` 尚未写入，先按 hook 提示把纯文本 `vault` 或 `local` 写入该配置文件，再从目标项目 cwd 运行 reserve helper。不要先运行 helper，也不要传自造的 `--artifact-dir` / `--artifact-root` / `--project-dir` 参数；自动化只可用 helper 的 `--cwd`。
 
 ---
 

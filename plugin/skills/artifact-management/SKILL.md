@@ -13,7 +13,7 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
-如果用户已明确选择 vault/local 但配置文件还不存在，先按 hook 提示写 `.pace/artifact-root`（纯文本 `vault` 或 `local`），再运行 reserve helper。reserve helper 不接受 `--artifact-dir`；不要搜索旧 plugin cache 路径。
+如果用户已明确选择 vault/local 但配置文件还不存在，先按 hook 提示写 `.pace/artifact-root`（纯文本 `vault` 或 `local`），再从目标项目 cwd 运行 reserve helper。reserve helper 不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化只可用 `--cwd`；不要搜索旧 plugin cache 路径。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`

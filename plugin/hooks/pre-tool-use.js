@@ -1022,18 +1022,15 @@ paceUtils.withStdinParsed((stdin) => {
       );
     }
 
-    if (isCodeFile && isInsideProject) {
-      if (actionableEntries.length === 0) {
-        const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
-        const reason = doneEntries.length > 0
-          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
-          : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`;
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
-        return;
-      }
+    const currentOwnedActionableEntries = actionableEntries.filter(e => {
+      const ownerStatus = paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId);
+      return ownerStatus.current && ownerStatus.disposition !== 'current-closed';
+    });
+    const projectMutationNeedsGate = isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0));
+    const gatedEntries = isCodeFile ? actionableEntries : currentOwnedActionableEntries;
+    const structuralCheckNeeded = isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 
+    if (structuralCheckNeeded) {
       const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
       if (mismatched.length > 0) {
         const ids = mismatched.map(e => e.id).join(', ');
@@ -1053,10 +1050,23 @@ paceUtils.withStdinParsed((stdin) => {
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
+    }
 
-      const approvedEntries = actionableEntries.filter(e => isChangeApproved(e.detail));
+    if (projectMutationNeedsGate) {
+      if (gatedEntries.length === 0) {
+        const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
+        const reason = doneEntries.length > 0
+          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
+          : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`;
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
+        return;
+      }
+
+      const approvedEntries = gatedEntries.filter(e => isChangeApproved(e.detail));
       if (approvedEntries.length === 0) {
-        const ids = actionableEntries.map(e => e.id).join(', ');
+        const ids = gatedEntries.map(e => e.id).join(', ');
         const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
