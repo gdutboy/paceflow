@@ -125,6 +125,21 @@ paceUtils.withStdinParsed((stdin) => {
     log(paceUtils.logEntry('PreToolUse', action, { proj, tool: toolName, file: filePath, ...fields, dur: Date.now() - t0 }));
     return output;
   }
+  function heartbeatChangeOwners(reason) {
+    if (paceSignal !== 'artifact' || !stdin.sessionId) return;
+    const touched = paceUtils.touchChangeOwnersForSession(cwd, {
+      sessionId: stdin.sessionId,
+      states: ['active', 'closing'],
+    });
+    if (touched.length > 0) {
+      log(paceUtils.logEntry('PreToolUse', 'CHANGE_OWNER_HEARTBEAT', {
+        proj,
+        reason,
+        changes: touched.join(','),
+        dur: Date.now() - t0,
+      }));
+    }
+  }
   const teammateTag = isTeammate() ? '_TEAMMATE' : '';
 
   // W-3: 缓存 isPaceProject 结果（避免多次调用）
@@ -145,6 +160,9 @@ paceUtils.withStdinParsed((stdin) => {
     legacy_v5: v5MigrationInfo.detected,
     migration_state: v5MigrationInfo.state || '',
   }));
+  if (paceSignal === 'artifact' && (isFileMutationTool(toolName) || isBashTool(toolName))) {
+    heartbeatChangeOwners(toolName);
+  }
   const taskFp = path.join(artDir, 'task.md');
   const taskFileExists = fs.existsSync(taskFp);
   function ensureArtifactWriterBase() {
@@ -397,9 +415,32 @@ paceUtils.withStdinParsed((stdin) => {
           }
           reservation = { reserved: true, ...reservation };
         }
+        const explicitTargetChangeId = paceUtils.explicitChangeTargetFromAgentPrompt(stdin.toolInput.prompt);
+        if (['update-chg', 'close-chg', 'archive-chg'].includes(operation) && !explicitTargetChangeId) {
+          const reason = [
+            `派 artifact-writer 执行 ${operation} 时缺少明确 target。`,
+            '请在 prompt 顶部加入：target: CHG-YYYYMMDD-NN 或 target: HOTFIX-YYYYMMDD-NN。',
+            '不要只在正文或摘要里提到 CHG-ID；hook 不会用正文中随便出现的 ID 判断 owner。'
+          ].join('\n');
+          const output = {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          };
+          process.stdout.write(JSON.stringify(output));
+          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_TARGET_REQUIRED', {
+            proj,
+            agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+            operation,
+            dur: Date.now() - t0,
+          }));
+          return;
+        }
         const targetChangeId = operation === 'create-chg'
           ? (reservation && reservation.id || paceUtils.changeIdFromAgentPrompt(stdin.toolInput.prompt))
-          : paceUtils.changeIdFromAgentPrompt(stdin.toolInput.prompt);
+          : explicitTargetChangeId;
         if (targetChangeId && ['update-chg', 'close-chg', 'archive-chg'].includes(operation)) {
           const ownerStatus = paceUtils.changeOwnerStatus(cwd, targetChangeId, stdin.sessionId);
           if (ownerStatus.disposition === 'foreign-fresh') {

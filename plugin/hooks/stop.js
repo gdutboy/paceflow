@@ -66,13 +66,16 @@ if (paceSignal === 'artifact') {
   for (const change of classifiedEntries) {
     if (['backlog', 'ready'].includes(change.category)) continue;
     const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, stdin.sessionId);
-    if (ownerStatus.disposition === 'foreign-fresh') {
-      log(paceUtils.logEntry('Stop', 'SKIP_FOREIGN_CHANGE_OWNER', {
+    const isForeignOwner = ownerStatus.disposition === 'foreign-fresh' || ownerStatus.disposition === 'foreign-stale';
+    const isProgressState = ['running', 'blocked', 'closing-required'].includes(change.category);
+    if (isForeignOwner && isProgressState) {
+      log(paceUtils.logEntry('Stop', ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER', {
         proj,
         change: change.id,
         owner_state: ownerStatus.owner.state || '',
         owner_worktree: ownerStatus.owner.worktree || '',
         owner_branch: ownerStatus.owner.branch || '',
+        category: change.category,
       }));
       continue;
     }

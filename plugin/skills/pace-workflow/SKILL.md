@@ -132,13 +132,13 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 
 | 场景 | agent 操作 |
 |------|------------|
-| 批准并开始当前 CHG | `update-chg action=approve-and-start ... task-id=T-NNN` |
-| 连续执行完成且验证已通过 | `close-chg verification-confirmed=true complete-open-tasks=true` |
-| 暂停/跨 session 前记录已完成任务 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[x]` |
-| 已批准但暂不开始，后来单独开始某任务 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[/]` |
-| 任务跳过 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[-]` |
-| 任务阻塞 | `update-chg section=tasks action=update-status task-id=T-NNN new-status=[!]` |
-| 补充实施说明 | `update-chg section=implementation action=append` |
+| 批准并开始当前 CHG | `update-chg target=CHG-... action=approve-and-start ... task-id=T-NNN` |
+| 连续执行完成且验证已通过 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true` |
+| 暂停/跨 session 前记录已完成任务 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[x]` |
+| 已批准但暂不开始，后来单独开始某任务 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[/]` |
+| 任务跳过 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[-]` |
+| 任务阻塞 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!]` |
+| 补充实施说明 | `update-chg target=CHG-... section=implementation action=append` |
 | 记录执行过程 | `update-chg section=work-record action=append` |
 
 `update-status [x]` 是暂停/阻塞/跨 session/非连续任务记录的例外路径，不是连续执行中的默认路径。最后一个任务代码写完后不要先派 `update-status` 再验证；先运行验证并读取结果，验证通过后用 `close-chg complete-open-tasks=true` 一次收口。若暂时不准备验证或必须把进度留给后续 session，才用 `update-status [x]` 把进度停在 completed 待验证状态。

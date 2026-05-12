@@ -54,22 +54,47 @@ paceUtils.withStdinParsed((stdin) => {
   const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
   const isChangeDetailEdit = !!artifactRel && /^changes\/.+\.md$/i.test(artifactRel);
   const isV6ArtifactEdit = isArtifactEdit || isChangeDetailEdit;
-  if (isAgentTool && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
-    const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt || '');
-    const target = paceUtils.changeIdFromAgentPrompt(stdin.toolInput.prompt || '');
-    if (target && ['close-chg', 'archive-chg'].includes(operation)) {
-      const closed = paceUtils.markChangeOwnerClosed(cwd, target, {
-        sessionId: stdin.sessionId,
-        agentId: stdin.agentId,
-        operation,
-      });
-      log(paceUtils.logEntry('PostToolUse', closed.ok ? 'CHANGE_OWNER_CLOSED' : 'CHANGE_OWNER_CLOSE_SKIPPED', {
+  if (paceSignal === 'artifact' && stdin.sessionId && ((isFileMutationTool && isCodeFile && !isV6ArtifactEdit) || toolName === 'Bash')) {
+    const touched = paceUtils.touchChangeOwnersForSession(cwd, {
+      sessionId: stdin.sessionId,
+      states: ['active', 'closing'],
+    });
+    if (touched.length > 0) {
+      log(paceUtils.logEntry('PostToolUse', 'CHANGE_OWNER_HEARTBEAT', {
         proj,
-        target,
-        operation,
-        reason: closed.reason || '',
+        tool: toolName,
+        changes: touched.join(','),
         dur: Date.now() - t0,
       }));
+    }
+  }
+  if (isAgentTool && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
+    const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt || '');
+    const target = paceUtils.explicitChangeTargetFromAgentPrompt(stdin.toolInput.prompt || '');
+    if (target && ['close-chg', 'archive-chg'].includes(operation)) {
+      const stillActive = getActiveChangeEntries(cwd).some(entry => entry.id === target);
+      if (stillActive) {
+        log(paceUtils.logEntry('PostToolUse', 'CHANGE_OWNER_CLOSE_SKIPPED', {
+          proj,
+          target,
+          operation,
+          reason: 'target-still-active',
+          dur: Date.now() - t0,
+        }));
+      } else {
+        const closed = paceUtils.markChangeOwnerClosed(cwd, target, {
+          sessionId: stdin.sessionId,
+          agentId: stdin.agentId,
+          operation,
+        });
+        log(paceUtils.logEntry('PostToolUse', closed.ok ? 'CHANGE_OWNER_CLOSED' : 'CHANGE_OWNER_CLOSE_SKIPPED', {
+          proj,
+          target,
+          operation,
+          reason: closed.reason || '',
+          dur: Date.now() - t0,
+        }));
+      }
     }
   }
   if (artifactRel && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {

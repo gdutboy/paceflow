@@ -217,6 +217,32 @@ function seedArtifactResourceLock(dir, resource, { sessionId = 'sid-resource-own
   return lockPath;
 }
 
+function seedChangeOwner(dir, changeId, {
+  sessionId = 'sid-other-owner',
+  agentId = 'agent-other-owner',
+  state = 'active',
+  worktree = 'worktree-a',
+  branch = 'branch-a',
+  timestampMs = Date.now(),
+} = {}) {
+  const ownerDir = path.join(dir, '.pace', 'change-owners');
+  fs.mkdirSync(ownerDir, { recursive: true });
+  const fp = path.join(ownerDir, `${slugFromId(changeId)}.json`);
+  fs.writeFileSync(fp, JSON.stringify({
+    version: 'change-owner-v1',
+    changeId,
+    sessionId,
+    agentId,
+    ownerKey: agentId ? `agent:${agentId}` : `session:${sessionId}`,
+    state,
+    worktree,
+    branch,
+    timestampMs,
+    updatedAt: new Date(timestampMs).toISOString(),
+  }, null, 2) + '\n', 'utf8');
+  return fp;
+}
+
 function makeVaultBackedWorktree(label) {
   const root = makeTmpDir(`${label}-root`);
   const projectName = `pace-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -361,6 +387,39 @@ test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
   assert.ok(!r.stdout.includes('| 2026-05-01 | smoke 01 | CHG-20260504-01 |'));
   assert.ok(!r.stdout.includes('| 2026-05-02 | smoke 02 | CHG-20260504-01 |'));
   assert.ok(r.stdout.indexOf('2026-05-12') < r.stdout.indexOf('2026-05-11'));
+});
+
+test('2f. SessionStart owner-aware：foreign running CHG 不计入当前任务列表', () => {
+  const dir = makeV6ProjectWithChanges('ss-owner-aware-foreign-running', [{
+    id: 'CHG-20260504-02',
+    title: '外部 worktree 任务标题',
+    indexMark: '[/]',
+    status: 'in-progress',
+    task: '[/]',
+    approved: true,
+  }]);
+  seedChangeOwner(dir, 'CHG-20260504-02', {
+    sessionId: 'sid-other-session',
+    state: 'active',
+    worktree: 'wt-a',
+    branch: 'feature-a',
+  });
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), fs.readFileSync(path.join(dir, 'implementation_plan.md'), 'utf8').replace(
+    '<!-- ARCHIVE -->',
+    '## 活跃变更详情\n\n### [[chg-20260504-02|外部详情别名]]\n\nforeign detail body\n\n<!-- ARCHIVE -->'
+  ), 'utf8');
+  const r = runHook('session-start.js', {
+    cwd: dir,
+    stdin: { type: 'startup', session_id: 'sid-current-session' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('owner=foreign-fresh'));
+  assert.ok(r.stdout.includes('其他 worktree/session 活跃 CHG'));
+  assert.ok(r.stdout.includes('CHG-20260504-02'));
+  assert.ok(r.stdout.includes('已折叠 1 个其他 worktree/session owner 的 CHG'));
+  assert.ok(!r.stdout.includes('外部 worktree 任务标题'));
+  assert.ok(!r.stdout.includes('foreign detail body'));
+  assert.ok(!r.stdout.includes('当前执行中的 CHG 有 1 个未完成 T-NNN'));
 });
 
 test('3. compact 恢复显示 activeChanges', () => {
@@ -2193,18 +2252,7 @@ test('9hc4. close-chg 完整收尾 prompt → 放行', () => {
 
 test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', () => {
   const dir = makeV6Project('agent-close-foreign-owner');
-  fs.mkdirSync(path.join(dir, '.pace', 'change-owners'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json'), JSON.stringify({
-    version: 'change-owner-v1',
-    changeId: 'CHG-20260504-01',
-    sessionId: 'sid-other-owner',
-    agentId: 'agent-other-owner',
-    ownerKey: 'agent:agent-other-owner',
-    state: 'active',
-    worktree: 'worktree-a',
-    branch: 'branch-a',
-    timestampMs: Date.now(),
-  }, null, 2) + '\n', 'utf8');
+  seedChangeOwner(dir, 'CHG-20260504-01');
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
@@ -2228,6 +2276,58 @@ test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', ()
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('另一个 Claude Code session'));
+});
+
+test('9hc4b. update/close/archive 必须显式 target，不能从正文 CHG-ID 推断 owner', () => {
+  const dir = makeV6Project('agent-target-required');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-target-required',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Update CHG without target',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'action: update-status',
+          'task-id: T-001',
+          'status: in-progress',
+          'notes: 这里提到 CHG-20260504-01，但没有 target 字段。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('缺少明确 target'));
+});
+
+test('9hc4c. 代码阶段工具调用刷新当前 session change owner heartbeat', () => {
+  const dir = makeV6Project('owner-heartbeat-code-tool');
+  const ownerPath = seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-heartbeat-code',
+    agentId: 'agent-heartbeat-code',
+    timestampMs: Date.now() - 60 * 60 * 1000,
+  });
+  const before = JSON.parse(fs.readFileSync(ownerPath, 'utf8')).timestampMs;
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-heartbeat-code',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'src.js'),
+        old_string: 'a',
+        new_string: 'b',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  const after = JSON.parse(fs.readFileSync(ownerPath, 'utf8')).timestampMs;
+  assert.ok(after > before, 'owner timestamp should be refreshed by code-stage tool activity');
 });
 
 test('9hd. 非 artifact-writer Agent 不受 artifact_dir 约束', () => {
@@ -2493,24 +2593,52 @@ test('12a. Stop 跳过其他 fresh session owner 的待归档 CHG', () => {
     approved: true,
     verified: true,
   }], { walkToday: false });
-  fs.mkdirSync(path.join(dir, '.pace', 'change-owners'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-02.json'), JSON.stringify({
-    version: 'change-owner-v1',
-    changeId: 'CHG-20260504-02',
-    sessionId: 'sid-other-owner',
-    agentId: 'agent-other-owner',
-    ownerKey: 'agent:agent-other-owner',
-    state: 'closing',
-    worktree: 'worktree-a',
-    branch: 'branch-a',
-    timestampMs: Date.now(),
-  }, null, 2) + '\n', 'utf8');
+  seedChangeOwner(dir, 'CHG-20260504-02', { state: 'closing' });
   const r = runHook('stop.js', {
     cwd: dir,
     stdin: { session_id: 'sid-current-owner-check' },
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stderr.includes('CHG-20260504-02'));
+});
+
+test('12b. Stop 对其他 stale session owner 的 running CHG 也不硬阻断当前 session', () => {
+  const dir = makeV6ProjectWithChanges('stop-foreign-stale-running', [{
+    id: 'CHG-20260504-03',
+    indexMark: '[/]',
+    status: 'in-progress',
+    task: '[/]',
+    approved: true,
+  }], { walkToday: false });
+  seedChangeOwner(dir, 'CHG-20260504-03', {
+    state: 'active',
+    timestampMs: Date.now() - 60 * 60 * 1000,
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current-owner-check' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stderr.includes('CHG-20260504-03'));
+});
+
+test('12c. Stop 不跳过其他 owner 的结构不一致 CHG', () => {
+  const dir = makeV6ProjectWithChanges('stop-foreign-inconsistent', [{
+    id: 'CHG-20260504-04',
+    indexMark: '[/]',
+    status: 'archived',
+    task: '[x]',
+    approved: true,
+    verified: true,
+  }], { walkToday: false });
+  seedChangeOwner(dir, 'CHG-20260504-04', { state: 'active' });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current-owner-check' },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('CHG-20260504-04'));
+  assert.ok(r.stderr.includes('索引仍在活跃区'));
 });
 
 test('13. v6 索引不一致 → exit 2', () => {
@@ -2862,6 +2990,41 @@ test('15f1. artifact-writer 多步收尾中间态不输出状态类 warning', ()
   assert.ok(!r.stdout.includes('缺少 verified-date'));
 });
 
+test('15f2. PostToolUse:Agent close/archive 只有目标已离开活跃索引才标记 owner closed', () => {
+  const dir = makeV6Project('post-agent-close-owner-still-active', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true }),
+  });
+  const ownerPath = seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-close-owner',
+    agentId: 'agent-close-owner',
+    state: 'closing',
+  });
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-close-owner',
+      agent_id: 'agent-close-owner',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        prompt: [
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'complete-open-tasks: true',
+          'verify-summary: pass',
+          'walkthrough-summary: done',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  assert.strictEqual(owner.state, 'closing');
+});
+
 test('15g. walkthrough wikilink 必须指向 CHG/HOTFIX 详情 slug', () => {
   const dir = makeV6Project('post-walkthrough-bad-link', { withIndex: false });
   const fp = path.join(dir, 'walkthrough.md');
@@ -3159,16 +3322,18 @@ test('19. PreCompact 写 activeChanges 快照', () => {
   const dir = makeV6Project('pc-v6');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.pace', 'stop-block-count'), '2', 'utf8');
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-precompact', agentId: 'agent-precompact' });
   fs.writeFileSync(
     path.join(dir, 'findings.md'),
     '# 调研记录\n\n## 摘要索引\n\n- [ ] [[finding-2026-05-07-test]] — open finding [date:: 2026-05-07] [impact:: P1]\n\n<!-- ARCHIVE -->\n',
     'utf8'
   );
-  const r = runHook('pre-compact.js', { cwd: dir });
+  const r = runHook('pre-compact.js', { cwd: dir, stdin: { session_id: 'sid-precompact' } });
   assert.strictEqual(r.code, 0);
   const snap = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'pre-compact-state.json'), 'utf8'));
   assert.ok(Array.isArray(snap.activeChanges));
   assert.strictEqual(snap.activeChanges[0].id, 'CHG-20260504-01');
+  assert.strictEqual(snap.activeChanges[0].ownerDisposition, 'current');
   assert.strictEqual(snap.runtime.blockCount, 2);
   assert.strictEqual(snap.findings.openCount, 1);
   assert.strictEqual(snap.walkthrough.hasTodayEntry, true);

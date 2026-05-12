@@ -16,6 +16,7 @@ const proj = getProjectName(cwd);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 try {
+  const hookInput = paceUtils.parseStdinSync();
   const paceSignal = isPaceProject(cwd);
   if (!paceSignal) {
     log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: 'non-pace' }));
@@ -34,7 +35,16 @@ try {
   const snapshot = { timestamp: new Date().toISOString(), artifacts: {} };
 
   if (paceSignal === 'artifact') {
-    snapshot.activeChanges = summarizeActiveChanges(cwd);
+    snapshot.activeChanges = summarizeActiveChanges(cwd).map(change => {
+      const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, hookInput.sessionId);
+      return {
+        ...change,
+        ownerDisposition: ownerStatus.disposition,
+        ownerWorktree: ownerStatus.owner && ownerStatus.owner.worktree || '',
+        ownerBranch: ownerStatus.owner && ownerStatus.owner.branch || '',
+        ownerState: ownerStatus.owner && ownerStatus.owner.state || '',
+      };
+    });
   }
 
   // 收集 task.md 状态

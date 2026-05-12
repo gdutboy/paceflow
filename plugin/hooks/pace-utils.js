@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PACE_VERSION = 'v6.0.52';
+const PACE_VERSION = 'v6.0.53';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -386,6 +386,12 @@ function changeIdFromAgentPrompt(prompt) {
   if (reserved) return reserved[1].toUpperCase();
   const any = text.match(/\b((?:CHG|HOTFIX)-\d{8}-\d{2})\b/i);
   return any ? any[1].toUpperCase() : '';
+}
+
+function explicitChangeTargetFromAgentPrompt(prompt) {
+  const text = String(prompt || '');
+  const target = text.match(/^\s*(?:target|change-id|chg-id)\s*[:=]\s*["']?((?:CHG|HOTFIX)-\d{8}-\d{2})["']?\s*$/mi);
+  return target ? target[1].toUpperCase() : '';
 }
 
 function acquireArtifactWriterLock(cwd, info = {}) {
@@ -855,6 +861,43 @@ function markChangeOwnerClosed(cwd, changeId, info = {}) {
     return { ok: false, reason: 'owner-mismatch', owner: current };
   }
   return writeChangeOwner(cwd, changeId, { ...info, state: 'closed', operation: info.operation || current.operation || 'close' });
+}
+
+function touchChangeOwnersForSession(cwd, info = {}) {
+  const sid = normalizeSessionId(info.sessionId || info.session_id || currentSessionId());
+  if (!sid) return [];
+  const states = Array.isArray(info.states) && info.states.length > 0 ? new Set(info.states) : null;
+  const dir = getChangeOwnerDir(cwd);
+  let files = [];
+  try { files = fs.readdirSync(dir); } catch(e) { return []; }
+  const context = executionContextForCwd(cwd);
+  const now = Date.now();
+  const touched = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const fp = path.join(dir, file);
+    let parsed = null;
+    try { parsed = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch(e) { continue; }
+    const ownerSid = normalizeSessionId(parsed.sessionId || parsed.session_id);
+    const state = String(parsed.state || 'active');
+    if (ownerSid !== sid || state === 'closed') continue;
+    if (states && !states.has(state)) continue;
+    const next = {
+      ...parsed,
+      cwd: context.cwd,
+      stateDir: context.stateDir,
+      worktree: context.worktree,
+      branch: context.branch,
+      executionContext: context.text,
+      updatedAt: new Date(now).toISOString(),
+      timestampMs: now,
+    };
+    try {
+      fs.writeFileSync(fp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+      touched.push(normalizeChangeId(parsed.changeId || parsed.change_id || file.replace(/\.json$/, '')) || file.replace(/\.json$/, ''));
+    } catch(e) {}
+  }
+  return touched;
 }
 
 function changeOwnerStatus(cwd, changeId, sessionId = currentSessionId()) {
@@ -2077,8 +2120,8 @@ module.exports = {
   acquireArtifactResourceLock, releaseArtifactResourceLock, releaseArtifactResourcesForOwner,
   markIndexChangesTouchedAndMaybeRelease, readArtifactIndexTransaction, formatArtifactResourceLock,
   reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
-  isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt,
-  getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, changeOwnerStatus, ownerTakeoverConfirmed,
+  isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt, explicitChangeTargetFromAgentPrompt,
+  getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, touchChangeOwnersForSession, changeOwnerStatus, ownerTakeoverConfirmed,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,

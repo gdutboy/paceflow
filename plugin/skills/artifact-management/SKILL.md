@@ -65,13 +65,13 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 目标 | 操作 |
 |------|------|
 | 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
-| 仅批准 C 阶段，暂不开始 | operation=`update-chg`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
-| 批准并开始首个任务 | operation=`update-chg`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
-| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，section=`tasks`，action=`update-status` |
-| 追加工作记录/实施说明 | operation=`update-chg`，section=`work-record` / `implementation`，action=`append` |
-| 只记录 V 阶段暂不归档 | operation=`update-chg`，action=`verify` |
-| 归档 CHG/HOTFIX | operation=`archive-chg` |
-| 最后任务验证后完成并归档 | operation=`close-chg`，需要 `verification-confirmed: true` + `complete-open-tasks: true` |
+| 仅批准 C 阶段，暂不开始 | operation=`update-chg`，target=`CHG-...`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
+| 批准并开始首个任务 | operation=`update-chg`，target=`CHG-...`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
+| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status` |
+| 追加工作记录/实施说明 | operation=`update-chg`，target=`CHG-...`，section=`work-record` / `implementation`，action=`append` |
+| 只记录 V 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`verify` |
+| 归档 CHG/HOTFIX | operation=`archive-chg`，target=`CHG-...` |
+| 最后任务验证后完成并归档 | operation=`close-chg`，target=`CHG-...`，需要 `verification-confirmed: true` + `complete-open-tasks: true` |
 | 记录 finding | operation=`record-finding` |
 | 记录 correction | operation=`record-correction` |
 

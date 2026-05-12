@@ -66,7 +66,8 @@ function installSessionOutputGuard() {
 installSessionOutputGuard();
 
 // S-1: 统一 stdin 解析
-const eventType = paceUtils.parseStdinSync().type || 'startup';
+const hookInput = paceUtils.parseStdinSync();
+const eventType = hookInput.type || 'startup';
 
 // H-3: 顶层 try-catch 安全网（内部 try-catch 保留不变）
 try {
@@ -133,7 +134,12 @@ if (eventType === 'compact') {
         }
         if (snap.activeChanges && snap.activeChanges.length > 0) {
           lines.push('活跃 CHG:');
-          snap.activeChanges.forEach(c => lines.push(`  ${c.id} status=${c.status} pending=${c.pending} approved=${c.approved} verified=${c.verified}`));
+          snap.activeChanges.forEach(c => {
+            const owner = c.ownerDisposition
+              ? ` owner=${[c.ownerDisposition, c.ownerWorktree ? `worktree=${c.ownerWorktree}` : '', c.ownerBranch ? `branch=${c.ownerBranch}` : '', c.ownerState ? `state=${c.ownerState}` : ''].filter(Boolean).join(' ')}`
+              : '';
+            lines.push(`  ${c.id} status=${c.status}${owner} pending=${c.pending} approved=${c.approved} verified=${c.verified}`);
+          });
         }
         if (snap.runtime?.degraded) {
           lines.push('Stop 检查上次仍有未解决项；本次会话会继续检查。');
@@ -253,6 +259,79 @@ function writeArtifactDirSection() {
   process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
 }
 
+function enrichSummaryOwner(summary) {
+  const ownerStatus = paceUtils.changeOwnerStatus(cwd, summary.id, hookInput.sessionId);
+  return {
+    ...summary,
+    ownerDisposition: ownerStatus.disposition,
+    ownerWorktree: ownerStatus.owner && ownerStatus.owner.worktree || '',
+    ownerBranch: ownerStatus.owner && ownerStatus.owner.branch || '',
+    ownerState: ownerStatus.owner && ownerStatus.owner.state || '',
+  };
+}
+
+function ownerDisplay(summary) {
+  const parts = [summary.ownerDisposition || 'unknown'];
+  if (summary.ownerWorktree) parts.push(`worktree=${summary.ownerWorktree}`);
+  if (summary.ownerBranch) parts.push(`branch=${summary.ownerBranch}`);
+  if (summary.ownerState) parts.push(`state=${summary.ownerState}`);
+  return parts.join(' ');
+}
+
+function isForeignSummary(summary) {
+  return summary.ownerDisposition === 'foreign-fresh' || summary.ownerDisposition === 'foreign-stale';
+}
+
+function foreignOwnedSummariesForInjection(summaries) {
+  return summaries.filter(s => isForeignSummary(s) && s.category !== 'inconsistent');
+}
+
+function lineReferencesChangeId(line, ids) {
+  if (!line || !ids || ids.size === 0) return false;
+  const re = /(?:\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]*)?\]\]|((?:CHG|HOTFIX)-\d{8}-\d{2}))/gi;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    const id = String(m[1] || m[2] || '').toUpperCase();
+    if (ids.has(id)) return true;
+  }
+  return false;
+}
+
+function appendForeignFoldNote(output, count) {
+  if (count <= 0) return output;
+  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要，需要接手时显式确认 owner takeover。）\n`;
+}
+
+function foldForeignOwnedArtifactOutput(file, output, summaries) {
+  const foreignSummaries = foreignOwnedSummariesForInjection(summaries);
+  if (foreignSummaries.length === 0) return output;
+  const ids = new Set(foreignSummaries.map(s => s.id).filter(Boolean));
+  if (ids.size === 0) return output;
+  if (file === 'task.md') {
+    const filtered = output.split('\n').filter(line => !lineReferencesChangeId(line, ids)).join('\n');
+    return appendForeignFoldNote(filtered, ids.size);
+  }
+  if (file === 'implementation_plan.md') {
+    const result = [];
+    let skipping = false;
+    for (const line of output.split('\n')) {
+      const detail = line.match(/^###\s+(?:\[\[)?((?:CHG|HOTFIX)-\d{8}-\d{2})(?:\|[^\]]*)?(?:\]\])?(?=[\s:|-]|$)/i);
+      if (detail && ids.has(detail[1].toUpperCase())) {
+        skipping = true;
+        continue;
+      }
+      if (skipping && /^(?:###\s+|##\s+|<!--\s*ARCHIVE\s*-->)/i.test(line)) {
+        skipping = false;
+      }
+      if (skipping) continue;
+      if (/^-\s+\[.\]/.test(line) && lineReferencesChangeId(line, ids)) continue;
+      result.push(line);
+    }
+    return appendForeignFoldNote(result.join('\n'), ids.size);
+  }
+  return output;
+}
+
 let artifactDirInjected = false;
 if (paceSignal && fs.existsSync(path.join(artDir, 'task.md'))) {
   writeArtifactDirSection();
@@ -262,7 +341,9 @@ if (paceSignal && fs.existsSync(path.join(artDir, 'task.md'))) {
 // 提取活跃区注入上下文（缓存 task.md 全文供后续复用）
 const found = [];
 let taskFullCached = null;
-let activeChangeSummaries = [];
+let activeChangeSummaries = paceSignal === 'artifact'
+  ? summarizeActiveChanges(cwd).map(enrichSummaryOwner)
+  : [];
 
 for (const file of ARTIFACT_FILES) {
   const fp = path.join(artDir, file);
@@ -426,6 +507,7 @@ for (const file of ARTIFACT_FILES) {
     }
   }
 
+  output = foldForeignOwnedArtifactOutput(file, output, activeChangeSummaries);
   if (archiveMatch) output += ARCHIVE_MARKER + '\n';
   process.stdout.write(output);
   process.stdout.write('\n\n');
@@ -433,12 +515,12 @@ for (const file of ARTIFACT_FILES) {
 }
 
 if (paceSignal === 'artifact') {
-  const summaries = summarizeActiveChanges(cwd);
+  const summaries = activeChangeSummaries;
   activeChangeSummaries = summaries;
   if (summaries.length > 0) {
     process.stdout.write(`=== 活跃 CHG 摘要 ===\n`);
     for (const s of summaries) {
-      process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
+      process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
     }
     process.stdout.write('\n');
   }
@@ -522,11 +604,27 @@ if (taskFullCached) {
 
     // v4.3.6 方案 A + v6 修正：Claude 任务列表同步以详情 T-NNN 为权威，task.md 只是索引。
     const currentCategories = new Set(['running', 'blocked']);
+    const currentSessionSummaries = activeChangeSummaries.filter(s => !isForeignSummary(s));
+    const foreignProgressSummaries = foreignOwnedSummariesForInjection(activeChangeSummaries);
     const detailPending = activeChangeSummaries
+      .filter(s => !isForeignSummary(s))
       .filter(s => currentCategories.has(s.category))
       .reduce((sum, s) => sum + (Number.isFinite(s.pending) ? s.pending : 0), 0);
-    const hasCompleted = activeChangeSummaries.some(s => s.category === 'closing-required');
-    const hasIndexPending = /- \[[ \/!]\]/.test(active);
+    const hasCompleted = currentSessionSummaries.some(s => s.category === 'closing-required');
+    const hasIndexPending = currentSessionSummaries.some(s => ['backlog', 'ready', 'running', 'blocked', 'closing-required'].includes(s.category));
+    if (foreignProgressSummaries.length > 0) {
+      process.stdout.write(`\n=== 其他 worktree/session 活跃 CHG ===\n`);
+      for (const s of foreignProgressSummaries.slice(0, 5)) {
+        process.stdout.write(`- ${s.id} category=${s.category} owner=${ownerDisplay(s)} pending=${s.pending ?? '?'}\n`);
+      }
+      if (foreignProgressSummaries.length > 5) process.stdout.write(`- ... 另有 ${foreignProgressSummaries.length - 5} 个\n`);
+      process.stdout.write('这些 CHG 不计入当前 session 的 Claude 任务列表；如需接手，必须显式确认 owner takeover。\n\n');
+      log(paceUtils.logEntry('SessionStart', 'FOREIGN_CHANGE_OWNER_SUMMARY', {
+        cwd,
+        count: foreignProgressSummaries.length,
+        changes: foreignProgressSummaries.slice(0, 5).map(s => s.id).join(','),
+      }));
+    }
     if (detailPending > 0) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\nv6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN，请让 Claude 任务列表反映这些未完成任务。\n\n`);
     } else if (hasCompleted) {
