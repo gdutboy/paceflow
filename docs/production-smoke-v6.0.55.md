@@ -1,6 +1,6 @@
 # PACEflow v6.0.55 Production Smoke
 
-> Focus: verify v6.0.55 follow-ups from Smoke3/Smoke4: root-choice helper command visibility, helper argument fail-fast wording, current-owner non-code C/E gate, worktree foreign-owner boundary, and SubagentStop owner cleanup.
+> Focus: verify v6.0.55 follow-ups from Smoke3/Smoke4: root-choice helper command visibility, helper argument fail-fast wording, current-owner non-code C/E gate, worktree foreign-owner boundary, SubagentStop owner cleanup, and the later deferred Stop reminder semantics.
 > Run in real Claude Code sessions after installing/updating PaceFlow from marketplace and running `/reload plugin`.
 
 ## Preconditions
@@ -179,7 +179,7 @@ WT=/mnt/k/AI/paceflow-smoke-655-wt-branch
 cd "$HOST"
 
 rg 'host write while worktree owner fresh' README.md
-rg 'worktree owner running|\\[worktree::|\\[branch::' task.md implementation_plan.md changes
+rg 'worktree owner running|\[worktree::|\[branch::' task.md implementation_plan.md changes
 test "$(tr -d '\r\n' < "$HOST/.pace/artifact-root")" = "local"
 test ! -f "$WT/.pace/artifact-root"
 tail -n 300 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'FOREIGN_CHANGE_OWNER|PASS_V6_NON_CODE|DENY_AGENT_CHANGE_OWNER|CHANGE_OWNER'
@@ -253,3 +253,263 @@ Run in this order:
 4. Smoke 3: worktree foreign owner boundary
 
 Smoke 3 is the widest worktree regression and is best run after the first three pass.
+
+## Smoke 5: Ready Deferred Stop Reminder
+
+Goal: approving a CHG without starting it leaves the CHG in `ready/deferred`. Stop must allow exit, but the user must see a Stop `systemMessage`. `APPROVED` alone must not permit project file writes.
+
+Setup:
+
+```bash
+cd /mnt/k/AI
+rm -rf paceflow-smoke-655-ready
+mkdir paceflow-smoke-655-ready
+cd paceflow-smoke-655-ready
+printf 'console.log("ready smoke")\n' > index.js
+printf '# ready smoke\n' > README.md
+printf 'module.exports = 1\n' > helper.js
+printf 'console.log("test ok")\n' > test.js
+```
+
+Start Claude Code in `/mnt/k/AI/paceflow-smoke-655-ready`.
+
+Prompt:
+
+```text
+做 PACEflow deferred smoke：
+artifact 选择本地项目目录。
+创建一个 CHG，目标是把 README.md 追加一行 "ready deferred should not write yet"。
+只批准这个 CHG，不要 approve-and-start，不要修改 README.md。
+批准后直接停止，让 Stop hook 展示提醒。
+```
+
+Optional follow-up in a new session in the same cwd:
+
+```text
+不要开始 CHG，直接尝试把 README.md 追加一行 "ready write attempt"。观察 hook 是否阻止。
+```
+
+Expected:
+
+- The CHG detail contains `<!-- APPROVED -->`.
+- Root indexes remain `[ ]`; detail frontmatter remains `status: planned`.
+- Stop exits successfully and the TUI shows a visible message containing `PACEflow: 仍有 deferred CHG` and `ready`.
+- The optional README write is denied with an E phase message until the CHG enters `[/]`.
+
+Verify:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-655-ready
+rg '<!-- APPROVED -->|status: planned' changes/chg-*.md
+rg '^- \[ \] \[\[chg-' task.md implementation_plan.md
+! rg 'ready deferred should not write yet|ready write attempt' README.md
+tail -n 300 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'SOFT_DEFERRED_CHANGE|SOFT_DEFERRED_PASS|DENY_V6_E_PHASE|CHANGE_OWNER_SET'
+```
+
+Failure signals:
+
+- Stop blocks instead of showing a soft visible reminder.
+- Stop silently exits with no visible reminder in TUI.
+- README is modified while the CHG is only `planned + APPROVED`.
+- `approve` writes owner state as `active` instead of `ready`.
+
+## Smoke 6: Backlog Deferred Stop Reminder
+
+Goal: a created but unapproved CHG is `backlog/deferred`. Stop must allow exit with visible reminder and must not consume or poison the hard-block downgrade counter.
+
+Setup:
+
+```bash
+cd /mnt/k/AI
+rm -rf paceflow-smoke-655-backlog
+mkdir paceflow-smoke-655-backlog
+cd paceflow-smoke-655-backlog
+printf 'console.log("backlog smoke")\n' > index.js
+printf '# backlog smoke\n' > README.md
+printf 'module.exports = 1\n' > helper.js
+printf 'console.log("test ok")\n' > test.js
+```
+
+Start Claude Code in `/mnt/k/AI/paceflow-smoke-655-backlog`.
+
+Prompt:
+
+```text
+做 PACEflow deferred backlog smoke：
+artifact 选择本地项目目录。
+创建一个 CHG，目标是把 README.md 追加一行 "backlog deferred later"。
+创建后不要批准、不要开始、不要修改 README.md，直接停止。
+```
+
+Expected:
+
+- Root indexes contain one `[ ] [[chg-...]]` active line.
+- Detail frontmatter is `status: planned`.
+- Detail does not contain `<!-- APPROVED -->`.
+- Stop exits successfully and the TUI shows a visible message containing `PACEflow: 仍有 deferred CHG` and `backlog`.
+- `.pace/stop-block-count` is absent or reset to `0`.
+
+Verify:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-655-backlog
+rg '^- \[ \] \[\[chg-' task.md implementation_plan.md
+rg 'status: planned' changes/chg-*.md
+! rg '<!-- APPROVED -->' changes/chg-*.md
+test ! -f .pace/stop-block-count || test "$(cat .pace/stop-block-count)" = "0"
+tail -n 300 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'SOFT_DEFERRED_CHANGE|SOFT_DEFERRED_PASS'
+```
+
+Failure signals:
+
+- Stop hard-blocks only because the CHG is backlog.
+- Stop exits silently without the visible deferred reminder.
+- The hard-block counter increments for a deferred-only Stop.
+
+## Smoke 7: Blocked Deferred Stop And Resume Gate
+
+Goal: `[!]` is the pause/blocked state. It allows Stop with a visible deferred reminder, but it is not a write permission and not an invitation for another worktree to take over.
+
+Setup:
+
+```bash
+cd /mnt/k/AI
+rm -rf paceflow-smoke-655-blocked
+mkdir paceflow-smoke-655-blocked
+cd paceflow-smoke-655-blocked
+printf 'console.log("blocked smoke")\n' > index.js
+printf '# blocked smoke\n' > README.md
+printf 'module.exports = 1\n' > helper.js
+printf 'console.log("test ok")\n' > test.js
+```
+
+Start Claude Code in `/mnt/k/AI/paceflow-smoke-655-blocked`.
+
+Prompt:
+
+```text
+做 PACEflow blocked deferred smoke：
+artifact 选择本地项目目录。
+创建一个 CHG，目标是把 README.md 追加一行 "blocked resume gate ok"。
+approve-and-start 后不要修改 README.md，立刻暂停这个任务，原因是“用户要求稍后继续”。
+暂停后直接停止。
+```
+
+Follow-up in a new session in the same cwd:
+
+```text
+不要恢复 CHG，直接尝试把 README.md 追加一行 "blocked write attempt"。观察 hook 是否阻止。
+```
+
+Then resume and finish:
+
+```text
+现在恢复这个 CHG，把暂停的任务重新标为进行中，然后追加 README.md 行 "blocked resume gate ok"。
+用 grep README.md 验证，通过后 close-chg 归档。
+```
+
+Expected:
+
+- Pause uses `update-chg action=update-status new-status=[!]` with a reason field.
+- Root indexes become `[!]`; detail task becomes `[!]`.
+- Owner state becomes `blocked`.
+- Stop exits successfully and the TUI shows a deferred/blocked reminder.
+- Direct README write while blocked is denied with E phase messaging.
+- After restoring the task to `[/]`, README write is allowed and close-chg archives the CHG.
+
+Verify:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-655-blocked
+rg '^- \[!\] \[\[chg-' task.md implementation_plan.md || true
+rg '\[!\] T-001|用户要求稍后继续' changes/chg-*.md || true
+find .pace/change-owners -maxdepth 1 -type f -print -exec cat {} \;
+tail -n 500 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'CHANGE_OWNER_SET.*blocked|SOFT_DEFERRED_PASS|DENY_V6_E_PHASE|close-chg'
+```
+
+Final verify after resume/close:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-655-blocked
+rg 'blocked resume gate ok' README.md
+rg 'status: archived|<!-- VERIFIED -->|archived-date: [0-9]' changes/chg-*.md
+find .pace/change-owners -maxdepth 1 -type f -exec rg '"state": "closed"' {} \;
+```
+
+Failure signals:
+
+- `[!]` can be set without `status-reason`, `block-reason`, or `pause-reason`.
+- Stop hard-blocks only because the CHG is blocked.
+- README is modified while the CHG is blocked.
+- Another worktree/session is encouraged to take over a fresh blocked owner without explicit user instruction.
+
+## Smoke 8: Same Worktree Reopen Owner Continuity
+
+Goal: owner is worktree-affine. Reopening Claude Code in the same `cwd/worktree/branch` must not turn the CHG into a foreign owner or require owner takeover.
+
+Setup:
+
+```bash
+cd /mnt/k/AI
+rm -rf paceflow-smoke-655-reopen
+mkdir paceflow-smoke-655-reopen
+cd paceflow-smoke-655-reopen
+git init
+printf 'console.log("reopen smoke")\n' > index.js
+printf '# reopen smoke\n' > README.md
+printf 'module.exports = 1\n' > helper.js
+printf 'console.log("test ok")\n' > test.js
+git add .
+git -c user.name="PACEflow Smoke" -c user.email="paceflow-smoke@example.local" commit -m init
+```
+
+Session A, cwd `/mnt/k/AI/paceflow-smoke-655-reopen`:
+
+```text
+做 PACEflow same-worktree reopen smoke：
+artifact 选择本地项目目录。
+创建一个 CHG，目标是把 README.md 追加一行 "same worktree reopen ok"。
+只批准这个 CHG，不要开始，不要修改 README.md，然后停止。
+```
+
+Session B, same cwd `/mnt/k/AI/paceflow-smoke-655-reopen`:
+
+```text
+继续刚才同一个 worktree 的 ready CHG。
+不要 owner takeover；直接 approve-and-start 或恢复到进行中，然后修改 README.md，grep 验证，通过后 close-chg 归档。
+```
+
+Expected:
+
+- Session B treats the CHG as `current-worktree`, not `foreign-fresh`.
+- Session B is not asked for `owner-takeover-confirmed`.
+- Owner JSON session id may refresh to Session B after the update/close path.
+- Final owner state is `closed`.
+
+Verify:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-655-reopen
+rg 'same worktree reopen ok' README.md
+rg 'status: archived|<!-- VERIFIED -->|archived-date: [0-9]' changes/chg-*.md
+find .pace/change-owners -maxdepth 1 -type f -print -exec cat {} \;
+find .pace/change-owners -maxdepth 1 -type f -exec rg '"state": "closed"' {} \;
+tail -n 500 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'current-worktree|CHANGE_OWNER_SET|DENY_AGENT_CHANGE_OWNER|close-chg'
+```
+
+Failure signals:
+
+- Session B is blocked as `foreign-fresh`.
+- Session B must provide `owner-takeover-confirmed` even though cwd/worktree/branch are unchanged.
+- Stop or SessionStart loses the CHG after reopening the same worktree.
+
+## Deferred Smoke Priority
+
+After Smoke 1-4 pass, run the deferred-focused set in this order:
+
+1. Smoke 5: ready/deferred Stop visible reminder and write gate.
+2. Smoke 6: backlog/deferred Stop visible reminder and hard-block counter reset.
+3. Smoke 7: blocked/deferred Stop, write denial, then resume and close.
+4. Smoke 8: same worktree reopen owner continuity.
+
+Optional cross-worktree check: leave a deferred or running CHG in worktree A, then in host/worktree B modify an unrelated ordinary project file. Expected: foreign progress/deferred CHG does not block ordinary current-session work, but artifact structure damage still blocks globally.

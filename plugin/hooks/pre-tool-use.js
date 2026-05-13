@@ -423,6 +423,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (['update-chg', 'close-chg', 'archive-chg'].includes(operation) && !explicitTargetChangeId) {
           const reason = [
             `派 artifact-writer 执行 ${operation} 时缺少明确 target。`,
+            FORMAT_SNIPPETS.skillRef,
             '请在 prompt 顶部加入：target: CHG-YYYYMMDD-NN 或 target: HOTFIX-YYYYMMDD-NN。',
             '不要只在正文或摘要里提到 CHG-ID；hook 不会用正文中随便出现的 ID 判断 owner。'
           ].join('\n');

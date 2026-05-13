@@ -50,10 +50,10 @@ function isForeignOwnerStatus(ownerStatus) {
 }
 
 function deferredNextAction(change) {
-  if (change.category === 'backlog') return '先确认用户批准；若准备执行，派 approve-and-start。';
-  if (change.category === 'ready') return '已批准但未开始；执行前派 approve-and-start 或 update-status 将当前任务恢复为 [/]。';
-  if (change.category === 'blocked') return '已暂停/阻塞；恢复前确认用户意图，并派 update-status 将当前任务恢复为 [/]。';
-  return '继续前确认下一步状态。';
+  if (change.category === 'backlog') return '先确认用户批准；若准备执行，派 approve-and-start';
+  if (change.category === 'ready') return '已批准但未开始；执行前派 approve-and-start 或 update-status 将当前任务恢复为 [/]';
+  if (change.category === 'blocked') return '已暂停/阻塞；恢复前确认用户意图，并派 update-status 将当前任务恢复为 [/]';
+  return '继续前确认下一步状态';
 }
 
 function resetHardBlockRuntime() {
@@ -145,7 +145,6 @@ if (paceSignal === 'artifact') {
 
     if (isDeferredCategory(change.category)) {
       const pending = Number(change.tasks && change.tasks.pending || 0);
-      completionPending += pending;
       softReminders.push(`${change.id} ${change.category}: ${deferredNextAction(change)}`);
       log(paceUtils.logEntry('Stop', 'SOFT_DEFERRED_CHANGE', {
         proj,

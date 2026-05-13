@@ -58,7 +58,9 @@ module.exports = function createLockUtils(ctx) {
     const byField = text.match(/^\s*(?:operation|指令)\s*[:=]\s*([a-z0-9-]+)/mi);
     if (byField) return byField[1].toLowerCase();
     const known = text.match(/\b(create-chg|update-chg|archive-chg|close-chg|record-finding|record-correction)\b/i);
-    return known ? known[1].toLowerCase() : '';
+    if (known) return known[1].toLowerCase();
+    if (/(?:^|[\s\n,，;；])(approve-and-start|approve|update-status|verify)(?=$|[\s\n,，;；:：])/i.test(text)) return 'update-chg';
+    return '';
   }
 
   function changeIdFromAgentPrompt(prompt) {

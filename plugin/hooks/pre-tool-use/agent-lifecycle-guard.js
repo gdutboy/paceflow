@@ -33,6 +33,7 @@ function agentArtifactDirDenyReason(artDir, declared = '') {
   const declaredLine = declared ? `\n当前 prompt 中的 artifact_dir 是：${displayDir(declared)}` : '';
   return [
     `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
+    FORMAT_SNIPPETS.skillRef,
     '请重派同一个 agent，并在 prompt 顶部加入：',
     `artifact_dir: ${dir}`,
     `artifact_dir 仅用于 PaceFlow artifacts：${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}。`,
@@ -137,12 +138,16 @@ function promptMentionsVerifyAction(prompt) {
 }
 
 function promptDeclaredOperation(prompt) {
-  const value = promptFieldValue(prompt, 'operation') || promptFieldValue(prompt, '指令');
+  const value = promptFieldValue(prompt, 'operation') || promptFieldValue(prompt, '指令') || paceUtils.operationFromAgentPrompt(prompt);
   return value.toLowerCase();
 }
 
 function promptDeclaredAction(prompt) {
-  return promptFieldValue(prompt, 'action').toLowerCase();
+  const value = promptFieldValue(prompt, 'action');
+  if (value) return value.toLowerCase();
+  const text = String(prompt || '');
+  const m = text.match(/(?:^|[\s\n,，;；])(approve-and-start|update-status|approve|verify)(?=$|[\s\n,，;；:：])/i);
+  return m ? m[1].toLowerCase() : '';
 }
 
 function promptApproveContainsStartIntent(prompt) {
@@ -185,6 +190,15 @@ function agentLifecyclePromptDenyReason(prompt) {
   const mentionsApprovalAction = mentionsApproveAndStart || mentionsApproveOnly;
   const mentionsCloseChg = operation === 'close-chg';
   const mentionsUpdateStatus = operation === 'update-chg' && action === 'update-status';
+
+  if (!operation) {
+    return [
+      '派 artifact-writer 时缺少明确 operation。',
+      FORMAT_SNIPPETS.skillRef,
+      '请在 prompt 顶部加入 operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction。',
+      '执行 approve / approve-and-start / update-status / verify 时，operation 必须为 update-chg，并同时提供 action。'
+    ].join('\n');
+  }
 
   if (mentionsApprovalAction) {
     const missing = [];
