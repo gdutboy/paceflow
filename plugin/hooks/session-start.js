@@ -321,7 +321,7 @@ function lineReferencesChangeId(line, ids) {
 
 function appendForeignFoldNote(output, count) {
   if (count <= 0) return output;
-  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要，需要接手时显式确认 owner takeover。）\n`;
+  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要。优先回到原 worktree/session；接手必须有用户明确指令与证据。）\n`;
 }
 
 function foldForeignOwnedArtifactOutput(file, output, summaries) {
@@ -625,8 +625,9 @@ if (taskFullCached) {
     }
 
     // v4.3.6 方案 A + v6 修正：Claude 任务列表同步以详情 T-NNN 为权威，task.md 只是索引。
-    const currentCategories = new Set(['running', 'blocked']);
+    const currentCategories = new Set(['running']);
     const currentSessionSummaries = activeChangeSummaries.filter(s => !isForeignSummary(s));
+    const blockedSessionSummaries = currentSessionSummaries.filter(s => s.category === 'blocked');
     const foreignProgressSummaries = foreignOwnedSummariesForInjection(activeChangeSummaries);
     const detailPending = activeChangeSummaries
       .filter(s => !isForeignSummary(s))
@@ -640,11 +641,24 @@ if (taskFullCached) {
         process.stdout.write(`- ${s.id} category=${s.category} owner=${ownerDisplay(s)} pending=${s.pending ?? '?'}\n`);
       }
       if (foreignProgressSummaries.length > 5) process.stdout.write(`- ... 另有 ${foreignProgressSummaries.length - 5} 个\n`);
-      process.stdout.write('这些 CHG 不计入当前 session 的 Claude 任务列表；如需接手，必须显式确认 owner takeover。\n\n');
+      process.stdout.write('这些 CHG 不计入当前 session 的 Claude 任务列表；优先回到原 worktree/session，接手必须有用户明确指令与证据。\n\n');
       log(paceUtils.logEntry('SessionStart', 'FOREIGN_CHANGE_OWNER_SUMMARY', {
         cwd,
         count: foreignProgressSummaries.length,
         changes: foreignProgressSummaries.slice(0, 5).map(s => s.id).join(','),
+      }));
+    }
+    if (blockedSessionSummaries.length > 0) {
+      process.stdout.write(`\n=== 暂停/阻塞 CHG ===\n`);
+      for (const s of blockedSessionSummaries.slice(0, 5)) {
+        process.stdout.write(`- ${s.id} owner=${ownerDisplay(s)} blocked=${s.blocked ?? '?'} pending=${s.pending ?? '?'}\n`);
+      }
+      if (blockedSessionSummaries.length > 5) process.stdout.write(`- ... 另有 ${blockedSessionSummaries.length - 5} 个\n`);
+      process.stdout.write('这些 CHG 不计入当前 session 的 Claude 任务列表；恢复前先确认用户意图，必要时派 update-status 将任务重新标为 [/]。\n\n');
+      log(paceUtils.logEntry('SessionStart', 'BLOCKED_CHANGE_SUMMARY', {
+        cwd,
+        count: blockedSessionSummaries.length,
+        changes: blockedSessionSummaries.slice(0, 5).map(s => s.id).join(','),
       }));
     }
     if (detailPending > 0) {
@@ -652,7 +666,7 @@ if (taskFullCached) {
     } else if (hasCompleted) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 close-chg，归档后再清空 Claude 任务列表；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
     } else if (hasIndexPending && paceSignal === 'artifact') {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；planned backlog 不需要按索引行创建任务列表项。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；planned/blocked backlog 不需要按索引行创建任务列表项。\n\n`);
     } else {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前无活跃 CHG。如 Claude 任务列表仍有残留项，请清空。\n\n`);
     }

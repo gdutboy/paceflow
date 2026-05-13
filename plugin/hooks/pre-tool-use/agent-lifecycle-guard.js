@@ -152,6 +152,30 @@ function promptApproveContainsStartIntent(prompt) {
     /(?:开始实施|开始执行|立即开始|启动任务|标记为\s*\[\/\]|标记.*进行中)/i.test(text);
 }
 
+function normalizeTaskStatusValue(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  const checkbox = raw.match(/^\[([ x\/!\-])\]$/);
+  if (checkbox) return checkbox[1];
+  if ([' ', '/', 'x', '!', '-'].includes(raw)) return raw;
+  if (['pending', 'todo', 'open', '未开始'].includes(raw)) return ' ';
+  if (['in-progress', 'running', 'active', '进行中'].includes(raw)) return '/';
+  if (['done', 'completed', 'complete', '完成', '已完成'].includes(raw)) return 'x';
+  if (['blocked', 'paused', 'pause', 'hold', '阻塞', '暂停'].includes(raw)) return '!';
+  if (['skipped', 'skip', 'cancelled', 'canceled', '跳过', '取消'].includes(raw)) return '-';
+  return '';
+}
+
+function promptUpdateStatusValue(prompt) {
+  if (promptDeclaredAction(prompt) !== 'update-status') return '';
+  return normalizeTaskStatusValue(promptFieldValue(prompt, 'new-status') || promptFieldValue(prompt, 'new_status'));
+}
+
+function promptHasPauseOrBlockReason(prompt) {
+  return promptHasNonEmptyField(prompt, 'status-reason') ||
+    promptHasNonEmptyField(prompt, 'block-reason') ||
+    promptHasNonEmptyField(prompt, 'pause-reason');
+}
+
 function agentLifecyclePromptDenyReason(prompt) {
   const text = String(prompt || '');
   const operation = promptDeclaredOperation(text);
@@ -207,6 +231,18 @@ function agentLifecyclePromptDenyReason(prompt) {
     ].join('\n');
   }
 
+  if (mentionsUpdateStatus && promptUpdateStatusValue(text) === '!' && !promptHasPauseOrBlockReason(text)) {
+    return [
+      '派 artifact-writer 将任务标记为 [!] 暂停/阻塞时缺少原因字段。',
+      FORMAT_SNIPPETS.skillRef,
+      '[!] 表示当前 CHG 暂停或阻塞，不是完成，也不是让其他 worktree 自动接手的信号。',
+      '请重派同一 update-status，并加入以下任一字段：',
+      'status-reason: <用户要求暂停、等待外部信息、环境阻塞或其他原因>',
+      'block-reason: <阻塞原因>',
+      'pause-reason: <暂停原因>'
+    ].join('\n');
+  }
+
   if (mentionsCloseChg) {
     const missing = [];
     if (!promptHasTrueField(text, 'verification-confirmed')) missing.push('verification-confirmed: true');
@@ -259,6 +295,7 @@ module.exports = {
   promptHasExactArtifactDir,
   promptHasTrueField,
   explicitReservationFromPrompt,
+  promptUpdateStatusValue,
   reservationRelForLookup,
   reservationMatchesExplicit,
   artifactWriterCreateChgHint,

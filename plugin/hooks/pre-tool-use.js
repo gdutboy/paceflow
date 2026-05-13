@@ -33,6 +33,7 @@ const {
   extractPromptArtifactDir,
   promptHasExactArtifactDir,
   promptHasTrueField,
+  promptUpdateStatusValue,
   explicitReservationFromPrompt,
   reservationRelForLookup,
   reservationMatchesExplicit,
@@ -449,7 +450,7 @@ paceUtils.withStdinParsed((stdin) => {
             const reason = [
               `${targetChangeId} 正由另一个 Claude Code session 负责，当前 session 不应接手更新或收尾。`,
               `owner: worktree=${ownerStatus.owner.worktree || '-'} branch=${ownerStatus.owner.branch || '-'} state=${ownerStatus.owner.state || '-'}`,
-              '请等待对方完成；若确认原 session 已失效，稍后重试并在 prompt 中加入 owner-takeover-confirmed: true。'
+              '请回到该 worktree/session 完成、暂停或取消；当前 fresh owner 仍有效时，不要由本 session 接手。'
             ].join('\n');
             const output = {
               hookSpecificOutput: {
@@ -473,7 +474,10 @@ paceUtils.withStdinParsed((stdin) => {
           if (ownerStatus.disposition === 'foreign-stale' && !paceUtils.ownerTakeoverConfirmed(stdin.toolInput.prompt)) {
             const reason = [
               `${targetChangeId} 的 owner 记录已过期，但属于另一个 session。`,
-              '若确认需要由当前 session 接手，请重派同一 artifact-writer，并加入 owner-takeover-confirmed: true。'
+              '优先回到原 worktree/session 继续处理。若用户明确要求由当前 checkout 接手，请重派同一 artifact-writer，并加入：',
+              'owner-takeover-confirmed: true',
+              'owner-takeover-source: user-directive',
+              'owner-takeover-evidence: <用户明确要求当前 session 接手的原话>'
             ].join('\n');
             const output = {
               hookSpecificOutput: {
@@ -494,7 +498,12 @@ paceUtils.withStdinParsed((stdin) => {
           }
         }
         if (targetChangeId && ['create-chg', 'update-chg', 'close-chg', 'archive-chg'].includes(operation)) {
-          const ownerState = ['close-chg', 'archive-chg'].includes(operation) ? 'closing' : 'active';
+          const updateStatusValue = operation === 'update-chg' ? promptUpdateStatusValue(stdin.toolInput.prompt) : '';
+          const ownerState = ['close-chg', 'archive-chg'].includes(operation)
+            ? 'closing'
+            : updateStatusValue === '!'
+              ? 'blocked'
+              : 'active';
           const ownerWrite = paceUtils.writeChangeOwner(cwd, targetChangeId, {
             sessionId: stdin.sessionId,
             agentId: stdin.agentId,
@@ -1105,11 +1114,12 @@ paceUtils.withStdinParsed((stdin) => {
 
       const runnableEntries = approvedEntries.filter(e => {
         const fmStatus = (e.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
-        return e.taskCheckbox === '/' && e.implCheckbox === '/' && fmStatus === 'in-progress';
+        const tasks = paceUtils.countDetailTasks(e.detail.content);
+        return e.taskCheckbox === '/' && e.implCheckbox === '/' && fmStatus === 'in-progress' && tasks.blocked === 0;
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入 in-progress。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已批准只需恢复执行，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter status。字段格式见 Skill(paceflow:artifact-management)。`;
+        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
         log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));

@@ -67,7 +67,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (paceSignal === 'artifact') {
       const changes = getActiveChangeEntries(cwd).map(e => classifyChange(e));
-      const currentChanges = changes.filter(c => ['running', 'blocked'].includes(c.category));
+      const currentChanges = changes.filter(c => c.category === 'running');
       const activeTaskCount = currentChanges.reduce((sum, c) => sum + c.tasks.pending, 0);
       const completedActiveChanges = changes.filter(c => c.category === 'closing-required').length;
 

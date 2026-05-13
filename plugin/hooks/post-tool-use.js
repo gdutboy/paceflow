@@ -197,7 +197,7 @@ paceUtils.withStdinParsed((stdin) => {
           warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请优先派 close-chg 归档；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
         }
         if (tasks.blocked > 0) {
-          warnOnce(`blocked-tasks-${entry.slug}`, `${entry.id} 有 ${tasks.blocked} 个阻塞任务，请用 AskUserQuestion 询问用户如何处理。`);
+          warnOnce(`blocked-tasks-${entry.slug}`, `${entry.id} 有 ${tasks.blocked} 个暂停/阻塞任务；不计入当前连续执行。恢复前先确认用户意图，必要时派 update-status 将任务重新标为 [/]。`);
         }
       }
     }

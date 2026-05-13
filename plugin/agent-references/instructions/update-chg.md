@@ -37,6 +37,7 @@ Read + Edit 整个 section 替换为 content
 ### action=update-status
 
 - 仅适用于 `section=tasks`
+- `new-status=[!]` 表示暂停/阻塞，必须带 `status-reason` / `block-reason` / `pause-reason` 之一；原因写入 `## 工作记录`。`[!]` 不是完成，也不是让其他 worktree 自动接手的信号。
 - 子流程：
   1. Read changes/chg-xxx.md 找到 `- [<old>] T-NNN`
   2. Edit 改 `<old>` 为 `<new-status>`（参考 spec §4 状态映射）
@@ -46,8 +47,10 @@ Read + Edit 整个 section 替换为 content
      - 仍有 `[/]` 但 frontmatter `status: planned` → Edit frontmatter `status` → `in-progress`
      - 否则 frontmatter 不变
      - **datetime 格式强制**：`YYYY-MM-DDTHH:mm:ss+08:00`（含日期+时间+时区，如 `2026-05-03T03:05:13+08:00`），**禁止仅写 date** 如 `2026-05-03`。可用 `Bash: date -Iseconds` 或 `date '+%Y-%m-%dT%H:%M:%S+08:00'` 生成
-  4. **根索引 checkbox 联动**（frontmatter status 变化时必执行）：
-     - 若 step 3 改了 frontmatter `status`，按 spec §4 映射推算根索引 checkbox：
+  4. **根索引 checkbox 联动**（frontmatter status 变化或暂停/恢复时必执行）：
+     - 若 `new-status=[!]`，根索引 checkbox 改为 `[!]`
+     - 若 `new-status=[/]` 且根索引当前为 `[!]`，根索引 checkbox 改回 `[/]`
+     - 否则若 step 3 改了 frontmatter `status`，按 spec §4 映射推算根索引 checkbox：
        - `planned` → `[ ]`
        - `in-progress` → `[/]`
        - `completed`（活跃区） → `[x]`
@@ -56,7 +59,7 @@ Read + Edit 整个 section 替换为 content
      - Read + Edit `implementation_plan.md` 同上
      - 若 frontmatter status 未变（如多个 [x] 但仍有 [/]），跳过此步
 
-连续执行的同一 CHG 不需要每完成一个 T-NNN 就派 `update-status [x]`。CHG 是连续执行、可验证、可关闭的最小变更单元；若主 session 正在同一执行流里继续完成剩余任务，应继续写代码/测试，最后验证通过后直接派 `close-chg complete-open-tasks: true`，由 close-chg 一次完成 open tasks 收口、completed、VERIFIED、归档和 walkthrough。`update-status [x]` 只用于暂停、阻塞、跳过、跨 session、长任务进度可见性，或最后任务暂不验证/暂不收尾时停在 completed。
+连续执行的同一 CHG 不需要每完成一个 T-NNN 就派 `update-status [x]`。CHG 是连续执行、可验证、可关闭的最小变更单元；若主 session 正在同一执行流里继续完成剩余任务，应继续写代码/测试，最后验证通过后直接派 `close-chg complete-open-tasks: true`，由 close-chg 一次完成 open tasks 收口、completed、VERIFIED、归档和 walkthrough。`update-status [!]` 只用于暂停/阻塞；`update-status [x]` 只用于跨 session、长任务进度可见性，或最后任务暂不验证/暂不收尾时停在 completed。
 
 ### action=approve
 

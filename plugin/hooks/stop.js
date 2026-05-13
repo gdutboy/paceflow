@@ -80,7 +80,7 @@ if (paceSignal === 'artifact') {
       continue;
     }
     const ownerPrefix = ownerStatus.disposition === 'foreign-stale'
-      ? `${change.id} 的 owner 记录已过期；若确认原 session 已失效，可由当前 session 接手。`
+      ? `${change.id} 的 owner 记录已过期；优先回到原 worktree/session 处理。若用户明确要求当前 session 修复或接手，请在 artifact-writer prompt 中带 owner-takeover-source 与 owner-takeover-evidence。`
       : '';
 
     if (change.category === 'inconsistent') {
@@ -109,7 +109,13 @@ if (paceSignal === 'artifact') {
     totalPending += change.tasks.pending;
 
     if (change.category === 'blocked') {
-      warnings.push(`${ownerPrefix}${change.id} 有阻塞任务（[!]），请用 AskUserQuestion 询问用户如何处理，或派 update-chg action=update-status 标记完成/跳过。`);
+      log(paceUtils.logEntry('Stop', 'SOFT_BLOCKED_CHANGE', {
+        proj,
+        change: change.id,
+        pending: change.tasks.pending,
+        blocked: change.tasks.blocked,
+        owner: ownerStatus.disposition,
+      }));
       continue;
     }
 

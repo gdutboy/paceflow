@@ -592,7 +592,10 @@ module.exports = function createLockUtils(ctx) {
   }
 
   function ownerTakeoverConfirmed(prompt) {
-    return /^\s*owner-takeover-confirmed\s*[:=]\s*true\b/mi.test(String(prompt || ''));
+    const text = String(prompt || '');
+    return /^\s*owner-takeover-confirmed\s*[:=]\s*true\b/mi.test(text) &&
+      /^\s*owner-takeover-source\s*[:=]\s*user-directive\b/mi.test(text) &&
+      /^\s*owner-takeover-evidence\s*[:=]\s*\S+/mi.test(text);
   }
 
   function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {

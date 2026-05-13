@@ -287,6 +287,7 @@ module.exports = function createChangeAnalysis(ctx) {
         verified: isChangeVerified(entry.detail),
         pending: tasks ? tasks.pending : null,
         done: tasks ? tasks.done : null,
+        blocked: tasks ? tasks.blocked : null,
         path: entry.detail && entry.detail.path,
       };
     });

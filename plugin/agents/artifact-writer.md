@@ -172,13 +172,13 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 6 个子操作：
 - `action=append` — 追加 section 内容
 - `action=replace` — 替换 section 内容
-- `action=update-status` — 变更任务状态 + frontmatter status + 索引 checkbox 联动（暂停、阻塞、跳过、跨 session、长任务进度或暂不验证时使用；连续执行默认由 close-chg 收口）
+- `action=update-status` — 变更任务状态 + frontmatter status + 索引 checkbox 联动（暂停/阻塞用 `new-status=[!]` 且必须带原因；跳过、跨 session、长任务进度或暂不验证时使用；连续执行默认由 close-chg 收口）
 - `action=approve` — 已确认批准但暂不开始时插入 `<!-- APPROVED -->`（C 阶段元操作，幂等）
 - `action=approve-and-start` — 已确认批准且准备开始后一次性插入 `<!-- APPROVED -->`、标记首个任务 `[/]`、推 `status: in-progress`（幂等）
 - `action=verify` — 写 `verified-date` + 插入 `<!-- VERIFIED -->` + 追加工作记录（只记录 V 阶段、暂不归档时使用，幂等）
 
 **必填**：`target` / `action`
-**条件必填**：`section`（action=append/replace/update-status 时）；`task-id` + `new-status`（action=update-status 时）；`approval-confirmed: true` + `approval-source` + `approval-evidence`（action=approve / approve-and-start 时）；`task-id`（action=approve-and-start 时）
+**条件必填**：`section`（action=append/replace/update-status 时）；`task-id` + `new-status`（action=update-status 时）；`new-status=[!]` 时还必须有 `status-reason` / `block-reason` / `pause-reason`；`approval-confirmed: true` + `approval-source` + `approval-evidence`（action=approve / approve-and-start 时）；`task-id`（action=approve-and-start 时）
 **可选**：`content`（action=append/replace 时）；`verify-summary`（action=verify 时）
 **错误码边界**：`operation=update-chg` 已识别但 `action` 不在上述枚举内时，属于字段值非法，必须报告 `format-violation`；只有未知 `operation` 才报告 `out-of-scope`。
 

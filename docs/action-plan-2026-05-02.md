@@ -656,6 +656,20 @@ Smoke4（Non-Code C/E Gate，sid=`bf861b9e-a078-491a-82c2-058bbed0720b`）：
 - Smoke4 close agent 仍触发已知 `SubagentStop WARN issue=title-prefix`，报告正文第一行是“全部操作完成。生成报告。”再跟 `## artifact-writer 报告`。该问题已在 action book 既有 `artifact-writer 报告标题` 项下跟踪，不作为本轮新缺口。
 - 两个 PreToolUse Agent hint 的 artifact root 文案仍未包含 `spec.md`，与 `0.1.10e19` 的 `spec.md` v5.1.4 语义继承缺口一致，后续按该项统一修。
 
+#### 0.1.10e22 暂停/阻塞语义落地方案（2026-05-13）
+
+`0.1.10e18` 的待评估项确认进入实现：`[/]` 只表示当前 owner 正在执行；用户明确要求“暂停/先停/等我后续处理”时，应改用 `[!]` 表示暂停/阻塞。暂停不是完成，也不是允许其他 worktree 自动接手的信号。
+
+落地范围：
+
+- `update-chg action=update-status new-status=[!]` 必须带 `status-reason` / `block-reason` / `pause-reason` 之一，说明用户要求暂停、外部信息等待或环境阻塞等原因。
+- PreToolUse 在派 `[!]` update-status 时把 `.pace/change-owners/<chg>.json` 的 `state` 写成 `blocked`；其他 update-status 仍保持 `active`，close/archive 仍为 `closing`。
+- Stop 对当前 session 已明确 `[!]` 的 CHG 只记录软提示，不再 hard block；若同一轮最后消息声称“完成”，但仍存在 `[!]` / pending，则仍按虚假完成声明阻止。
+- SessionStart 与 TaskSync 不把 blocked CHG 计入当前 Claude 任务列表同步；SessionStart 单独展示“暂停/阻塞 CHG”，提示恢复前确认用户意图。
+- foreign fresh owner 不再提示加 `owner-takeover-confirmed`；fresh owner 只能回原 worktree/session 完成、暂停或取消。
+- foreign stale owner 接手必须同时具备 `owner-takeover-confirmed: true`、`owner-takeover-source: user-directive`、`owner-takeover-evidence: <用户原话>`，并优先建议回到原 worktree/session。
+- skill / agent 指令同步：暂停用 `[!]`，跨 session 进度可见性才用 `[x]` 或 `[/]`；blocked 不参与 close-chg，恢复前需先 update-status 回 `[/]` 或按用户决策跳过/取消。
+
 
 #### 0.1.10b v6.0.40 production Smoke5 记录
 

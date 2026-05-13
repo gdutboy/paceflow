@@ -434,6 +434,21 @@ test('2f. SessionStart owner-aware：foreign running CHG 不计入当前任务�
   assert.ok(!r.stdout.includes('当前执行中的 CHG 有 1 个未完成 T-NNN'));
 });
 
+test('2g. SessionStart 将当前 blocked CHG 单独展示且不计入任务列表同步', () => {
+  const dir = makeV6Project('ss-blocked-not-current-todo', {
+    indexMark: '[!]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  const r = runHook('session-start.js', {
+    cwd: dir,
+    stdin: { type: 'startup', session_id: 'sid-blocked-current' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('=== 暂停/阻塞 CHG ==='));
+  assert.ok(r.stdout.includes('CHG-20260504-01'));
+  assert.ok(!r.stdout.includes('当前执行中的 CHG 有 1 个未完成 T-NNN'));
+});
+
 test('3. compact 恢复显示 activeChanges', () => {
   const dir = makeV6Project('ss-compact', {
     paceRuntime: {
@@ -525,6 +540,17 @@ test('8. v6 in-progress → additionalContext 放行', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('additionalContext'));
   assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('8z. 详情存在 [!] 暂停/阻塞任务时即使根索引仍 [/] 也不放行代码写入', () => {
+  const dir = makeV6Project('ptu-blocked-detail-deny', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('[!] 暂停/阻塞任务'));
 });
 
 test('8a. 当前 session owner 的非代码写入也必须先通过 C 阶段', () => {
@@ -2524,6 +2550,92 @@ test('9hc2. update-status 与 verify 串联 → DENY', () => {
   assert.ok(r.stdout.includes('close-chg complete-open-tasks: true'));
 });
 
+test('9hc2a. update-status [!] 缺少暂停/阻塞原因 → DENY', () => {
+  const dir = makeV6Project('agent-update-status-blocked-missing-reason');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Pause task',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: update-status',
+          'section: tasks',
+          'task-id: T-001',
+          'new-status: [!]',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('缺少原因字段'));
+});
+
+test('9hc2b. update-status [!] 带原因时 owner state 记录为 blocked', () => {
+  const dir = makeV6Project('agent-update-status-blocked-owner-state');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-block-owner-state',
+      agent_id: 'agent-block-owner-state',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Pause task',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: update-status',
+          'section: tasks',
+          'task-id: T-001',
+          'new-status: [!]',
+          'status-reason: 用户要求暂停，稍后回到原 worktree 继续。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  assert.strictEqual(owner.state, 'blocked');
+});
+
+test('9hc2c. 非 update-status 文本提到 new-status [!] 不误标 owner blocked', () => {
+  const dir = makeV6Project('agent-append-mentions-blocked-status');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-append-owner-state',
+      agent_id: 'agent-append-owner-state',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Append work record',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: append',
+          'section: work-record',
+          'content: 记录示例字段 new-status: [!]，但本次不是状态更新。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  assert.strictEqual(owner.state, 'active');
+});
+
 test('9hc3. close-chg 缺验证摘要字段 → DENY', () => {
   const dir = makeV6Project('agent-close-missing-fields');
   const r = runHook('pre-tool-use.js', {
@@ -2653,6 +2765,7 @@ test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', ()
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('另一个 Claude Code session'));
+  assert.ok(!r.stdout.includes('owner-takeover-confirmed'));
 });
 
 test('9hc4b. update/close/archive 必须显式 target，不能从正文 CHG-ID 推断 owner', () => {
@@ -2679,6 +2792,74 @@ test('9hc4b. update/close/archive 必须显式 target，不能从正文 CHG-ID �
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('缺少明确 target'));
+});
+
+test('9hc4b1. stale foreign owner takeover 必须带用户证据', () => {
+  const dir = makeV6Project('agent-owner-stale-takeover-evidence-required');
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-stale-owner',
+    state: 'active',
+    timestampMs: Date.now() - 60 * 60 * 1000,
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-takeover-new',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Take over stale owner',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: update-status',
+          'section: tasks',
+          'task-id: T-001',
+          'new-status: [/]',
+          'owner-takeover-confirmed: true',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('owner-takeover-source: user-directive'));
+  assert.ok(r.stdout.includes('owner-takeover-evidence'));
+});
+
+test('9hc4b2. stale foreign owner 带完整用户证据才允许接手', () => {
+  const dir = makeV6Project('agent-owner-stale-takeover-evidence-pass');
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-stale-owner',
+    state: 'active',
+    timestampMs: Date.now() - 60 * 60 * 1000,
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-takeover-new',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Take over stale owner',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: update-status',
+          'section: tasks',
+          'task-id: T-001',
+          'new-status: [/]',
+          'owner-takeover-confirmed: true',
+          'owner-takeover-source: user-directive',
+          'owner-takeover-evidence: 用户明确要求当前 session 接手继续。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
 });
 
 test('9hc4c. 代码阶段工具调用刷新当前 session change owner heartbeat', () => {
@@ -3034,6 +3215,34 @@ test('12c. Stop 不跳过其他 owner 的结构不一致 CHG', () => {
   assert.strictEqual(r.code, 2);
   assert.ok(r.stderr.includes('CHG-20260504-04'));
   assert.ok(r.stderr.includes('索引仍在活跃区'));
+});
+
+test('12d. Stop 对当前 session 已明确 blocked 的 CHG 软通过', () => {
+  const dir = makeV6Project('stop-current-blocked-pass', {
+    indexMark: '[!]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-current-blocked', state: 'blocked' });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current-blocked' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stderr, '');
+});
+
+test('12e. Stop 对 blocked CHG 的完成声明仍阻止', () => {
+  const dir = makeV6Project('stop-current-blocked-claim-complete', {
+    indexMark: '[!]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-current-blocked-claim', state: 'blocked' });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current-blocked-claim', last_assistant_message: '任务完成' },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('AI 声称完成'));
 });
 
 test('13. v6 索引不一致 → exit 2', () => {
@@ -3718,6 +3927,19 @@ test('18c. TodoWrite 不把 planned backlog 计入当前任务数', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('当前执行中的 CHG 有 2 个未完成 T-NNN'));
+});
+
+test('18c1. TodoWrite 不把 blocked CHG 计入当前任务数', () => {
+  const dir = makeV6Project('tw-blocked-only', {
+    indexMark: '[!]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  const r = runHook('task-list-sync.js', {
+    cwd: dir,
+    stdin: { tool_name: 'TodoWrite', tool_input: { todos: [{ content: 'paused task' }] } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('当前执行中的 CHG 有 1 个未完成 T-NNN'));
 });
 
 test('18a. TaskCreate 走 Claude 任务列表同步提示', () => {
