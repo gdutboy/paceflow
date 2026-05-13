@@ -694,6 +694,13 @@ test('change owner runtime: 当前 session / foreign fresh 可区分', () => {
   assert.strictEqual(owner.ok, true);
   assert.strictEqual(owner.sessionId, 'sid-owner');
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-owner').disposition, 'current');
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-other').disposition, 'current-worktree');
+  const foreign = JSON.parse(fs.readFileSync(written.path, 'utf8'));
+  foreign.cwd = path.join(dir, 'other-checkout');
+  foreign.stateDir = path.join(dir, 'other-checkout');
+  foreign.worktree = 'other-checkout';
+  foreign.branch = 'other-branch';
+  fs.writeFileSync(written.path, `${JSON.stringify(foreign, null, 2)}\n`, 'utf8');
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-other').disposition, 'foreign-fresh');
 });
 
@@ -708,13 +715,17 @@ test('change owner heartbeat: 当前 session 工具活动刷新 owner timestamp'
   assert.strictEqual(written.ok, true);
   const fp = written.path;
   const old = JSON.parse(fs.readFileSync(fp, 'utf8'));
+  old.cwd = path.join(dir, 'other-checkout');
+  old.stateDir = path.join(dir, 'other-checkout');
+  old.worktree = 'other-checkout';
+  old.branch = 'other-branch';
   old.timestampMs = Date.now() - 60 * 60 * 1000;
   old.updatedAt = new Date(old.timestampMs).toISOString();
   fs.writeFileSync(fp, `${JSON.stringify(old, null, 2)}\n`, 'utf8');
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-02', 'sid-other').disposition, 'foreign-stale');
   const touched = touchChangeOwnersForSession(dir, { sessionId: 'sid-heartbeat' });
   assert.deepStrictEqual(touched, ['CHG-20260512-02']);
-  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-02', 'sid-other').disposition, 'foreign-fresh');
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-02', 'sid-other').disposition, 'current-worktree');
 });
 
 test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {

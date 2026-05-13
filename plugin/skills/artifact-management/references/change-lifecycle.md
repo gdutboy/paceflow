@@ -58,6 +58,8 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 | E 跨 session 进度留存 | `in-progress` 或 `completed` | `[/]` 或 `[x]` | `update-chg action=update-status` |
 | V 只记录验证暂不归档 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg action=verify` |
 | 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg` |
+
+`[ ] planned`（未批准 backlog 或已批准 ready）与 `[!] blocked` 都属于 Stop/调度层的 deferred：不改 artifact 状态机，允许 Stop 但会显示提醒；恢复执行前必须进入 `[/]`。
 | 默认 V+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg verification-confirmed=true complete-open-tasks=true` |
 | 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 按 agent 规范处理 |
 

@@ -483,6 +483,7 @@ module.exports = function createLockUtils(ctx) {
         ownerKey: String(parsed.ownerKey || parsed.owner_key || '').trim(),
         state: String(parsed.state || 'active'),
         cwd: String(parsed.cwd || ''),
+        stateDir: String(parsed.stateDir || parsed.state_dir || ''),
         worktree: String(parsed.worktree || ''),
         branch: String(parsed.branch || ''),
         operation: String(parsed.operation || ''),
@@ -582,11 +583,20 @@ module.exports = function createLockUtils(ctx) {
     const owner = readChangeOwner(cwd, changeId);
     if (!owner.ok) return { disposition: 'unknown', owner, current: false, fresh: false, stale: false };
     const sid = ctx.normalizeSessionId(sessionId || ctx.currentSessionId());
-    const current = !!sid && !!owner.sessionId && sid === owner.sessionId;
+    const sameSession = !!sid && !!owner.sessionId && sid === owner.sessionId;
+    const context = ctx.executionContextForCwd(cwd);
+    const sameCwd = !!owner.cwd && ctx.normalizePath(path.resolve(owner.cwd)) === ctx.normalizePath(context.cwd);
+    const sameStateDir = !!owner.stateDir && ctx.normalizePath(path.resolve(owner.stateDir)) === ctx.normalizePath(context.stateDir);
+    const sameWorktreeName = !!owner.worktree && owner.worktree === context.worktree;
+    const sameBranch = !!owner.branch && owner.branch === context.branch;
+    const sameCheckout = sameCwd ||
+      (sameStateDir && sameWorktreeName && sameBranch) ||
+      (!owner.cwd && !owner.stateDir && sameWorktreeName && sameBranch);
     const stale = jsonLockIsStale(owner, ctx.CHANGE_OWNER_TTL_MS);
     const closed = owner.state === 'closed';
-    if (current) return { disposition: closed ? 'current-closed' : 'current', owner, current: true, fresh: true, stale: false };
+    if (sameSession) return { disposition: closed ? 'current-closed' : 'current', owner, current: true, sameSession: true, sameCheckout, fresh: true, stale: false };
     if (closed) return { disposition: 'closed', owner, current: false, fresh: true, stale: false };
+    if (sameCheckout) return { disposition: 'current-worktree', owner, current: true, sameSession: false, sameCheckout: true, fresh: !stale, stale };
     if (stale) return { disposition: 'foreign-stale', owner, current: false, fresh: false, stale: true };
     return { disposition: 'foreign-fresh', owner, current: false, fresh: true, stale: false };
   }

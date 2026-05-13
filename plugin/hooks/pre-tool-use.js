@@ -33,6 +33,7 @@ const {
   extractPromptArtifactDir,
   promptHasExactArtifactDir,
   promptHasTrueField,
+  promptDeclaredAction,
   promptUpdateStatusValue,
   explicitReservationFromPrompt,
   reservationRelForLookup,
@@ -498,9 +499,14 @@ paceUtils.withStdinParsed((stdin) => {
           }
         }
         if (targetChangeId && ['create-chg', 'update-chg', 'close-chg', 'archive-chg'].includes(operation)) {
+          const action = operation === 'update-chg' ? promptDeclaredAction(stdin.toolInput.prompt) : '';
           const updateStatusValue = operation === 'update-chg' ? promptUpdateStatusValue(stdin.toolInput.prompt) : '';
           const ownerState = ['close-chg', 'archive-chg'].includes(operation)
             ? 'closing'
+            : operation === 'create-chg'
+              ? 'backlog'
+            : action === 'approve'
+              ? 'ready'
             : updateStatusValue === '!'
               ? 'blocked'
               : 'active';

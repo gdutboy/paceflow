@@ -232,6 +232,8 @@ function seedChangeOwner(dir, changeId, {
   sessionId = 'sid-other-owner',
   agentId = 'agent-other-owner',
   state = 'active',
+  cwd = '',
+  stateDir = '',
   worktree = 'worktree-a',
   branch = 'branch-a',
   timestampMs = Date.now(),
@@ -246,6 +248,8 @@ function seedChangeOwner(dir, changeId, {
     agentId,
     ownerKey: agentId ? `agent:${agentId}` : `session:${sessionId}`,
     state,
+    cwd,
+    stateDir,
     worktree,
     branch,
     timestampMs,
@@ -653,6 +657,36 @@ test('8c. foreign fresh owner 不阻断当前 session 普通非代码写入', ()
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('8c1. 同 worktree 新 session 继承 owner 并继续执行非代码 C/E gate', () => {
+  const dir = makeV6Project('ptu-same-worktree-owner-non-code-gate', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-previous-session',
+    agentId: 'agent-previous-session',
+    state: 'ready',
+    cwd: dir,
+    stateDir: dir,
+    worktree: 'main',
+    branch: 'main',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-new-same-worktree',
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, 'README.md'),
+        content: 'docs\n',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('E 阶段未就绪'));
 });
 
 test('8d. foreign owner 的结构损坏仍全局阻断非代码写入', () => {
@@ -2470,6 +2504,36 @@ test('9hc1b. approve 缺 approval-confirmed/source/evidence → DENY', () => {
   assert.ok(r.stdout.includes('approval-evidence'));
 });
 
+test('9hc1b1. approve-only owner state 记录为 ready', () => {
+  const dir = makeV6Project('agent-approve-owner-ready');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-approve-ready',
+      agent_id: 'agent-approve-ready',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Approve only',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve',
+          'approval-confirmed: true',
+          'approval-source: user-directive',
+          'approval-evidence: 用户只批准，暂不开始。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  assert.strictEqual(owner.state, 'ready');
+});
+
 test('9hc1c. approve 带开始语义 → DENY 要求 approve-and-start', () => {
   const dir = makeV6Project('agent-approve-start-intent');
   const r = runHook('pre-tool-use.js', {
@@ -2605,6 +2669,47 @@ test('9hc2b. update-status [!] 带原因时 owner state 记录为 blocked', () =
   const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
   const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
   assert.strictEqual(owner.state, 'blocked');
+});
+
+test('9hc2b1. 同 worktree 新 session 可接续 update-chg 并刷新 owner session', () => {
+  const dir = makeV6Project('agent-same-worktree-owner-refresh');
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-previous-same-worktree',
+    agentId: 'agent-previous-same-worktree',
+    state: 'ready',
+    cwd: dir,
+    stateDir: dir,
+    worktree: 'main',
+    branch: 'main',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-new-same-worktree-agent',
+      agent_id: 'agent-new-same-worktree',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Start task',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: approve-and-start',
+          'approval-confirmed: true',
+          'approval-source: user-directive',
+          'approval-evidence: 用户要求同 worktree 新 session 继续执行。',
+          'task-id: T-001',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  assert.strictEqual(owner.sessionId, 'sid-new-same-worktree-agent');
+  assert.strictEqual(owner.state, 'active');
 });
 
 test('9hc2c. 非 update-status 文本提到 new-status [!] 不误标 owner blocked', () => {
@@ -3229,6 +3334,7 @@ test('12d. Stop 对当前 session 已明确 blocked 的 CHG 软通过', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.strictEqual(r.stderr, '');
+  assert.ok(JSON.parse(r.stdout).systemMessage.includes('deferred'));
 });
 
 test('12e. Stop 对 blocked CHG 的完成声明仍阻止', () => {
@@ -3300,8 +3406,14 @@ test('14c. 多 CHG backlog 不阻止 Stop', () => {
     { id: 'CHG-20260504-02', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
     { id: 'CHG-20260504-03', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
   ]);
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'stop-block-count'), '2', 'utf8');
   const r = runHook('stop.js', { cwd: dir });
   assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.systemMessage.includes('deferred'));
+  assert.ok(out.systemMessage.includes('CHG-20260504-01 backlog'));
+  assert.strictEqual(fs.readFileSync(path.join(dir, '.pace', 'stop-block-count'), 'utf8'), '0');
 });
 
 test('14d. 多 CHG 中仅 running 阻止，planned backlog 不阻止', () => {
@@ -3337,6 +3449,20 @@ test('14f. approved planned backlog 不阻止 Stop', () => {
   ]);
   const r = runHook('stop.js', { cwd: dir });
   assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.systemMessage.includes('CHG-20260504-01 ready'));
+});
+
+test('14f1. deferred CHG 存在时声称完成仍阻止', () => {
+  const dir = makeV6ProjectWithChanges('stop-ready-claim-complete', [
+    { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: true },
+  ]);
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { last_assistant_message: '任务完成' },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('AI 声称完成'));
 });
 
 test('14g. 索引 [x] 但 status in-progress → inconsistent 阻止修复', () => {

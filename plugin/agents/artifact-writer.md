@@ -173,7 +173,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 - `action=append` — 追加 section 内容
 - `action=replace` — 替换 section 内容
 - `action=update-status` — 变更任务状态 + frontmatter status + 索引 checkbox 联动（暂停/阻塞用 `new-status=[!]` 且必须带原因；跳过、跨 session、长任务进度或暂不验证时使用；连续执行默认由 close-chg 收口）
-- `action=approve` — 已确认批准但暂不开始时插入 `<!-- APPROVED -->`（C 阶段元操作，幂等）
+- `action=approve` — 已确认批准但暂不开始时插入 `<!-- APPROVED -->`（C 阶段元操作，幂等；结果是 ready/deferred，不是写项目文件许可）
 - `action=approve-and-start` — 已确认批准且准备开始后一次性插入 `<!-- APPROVED -->`、标记首个任务 `[/]`、推 `status: in-progress`（幂等）
 - `action=verify` — 写 `verified-date` + 插入 `<!-- VERIFIED -->` + 追加工作记录（只记录 V 阶段、暂不归档时使用，幂等）
 

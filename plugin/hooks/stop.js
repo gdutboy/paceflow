@@ -17,6 +17,7 @@ const proj = getProjectName(cwd);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
+const softReminders = [];
 
 const paceSignal = isPaceProject(cwd);
 
@@ -40,6 +41,43 @@ function setBlockCount(n, { ensure = false } = {}) {
   } catch(e) {}
 }
 
+function isDeferredCategory(category) {
+  return ['backlog', 'ready', 'blocked'].includes(category);
+}
+
+function isForeignOwnerStatus(ownerStatus) {
+  return ownerStatus.disposition === 'foreign-fresh' || ownerStatus.disposition === 'foreign-stale';
+}
+
+function deferredNextAction(change) {
+  if (change.category === 'backlog') return '先确认用户批准；若准备执行，派 approve-and-start。';
+  if (change.category === 'ready') return '已批准但未开始；执行前派 approve-and-start 或 update-status 将当前任务恢复为 [/]。';
+  if (change.category === 'blocked') return '已暂停/阻塞；恢复前确认用户意图，并派 update-status 将当前任务恢复为 [/]。';
+  return '继续前确认下一步状态。';
+}
+
+function resetHardBlockRuntime() {
+  if (fs.existsSync(PACE_RUNTIME)) setBlockCount(0);
+  const degradedFile = path.join(PACE_RUNTIME, 'degraded');
+  try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
+}
+
+function emitSoftReminders(reminders, t0) {
+  if (reminders.length === 0) return false;
+  resetHardBlockRuntime();
+  const shown = reminders.slice(0, 5);
+  const more = reminders.length > shown.length ? `；另有 ${reminders.length - shown.length} 个` : '';
+  const systemMessage = `PACEflow: 仍有 deferred CHG 可后续处理（已允许结束）：${shown.join('；')}${more}。`;
+  process.stdout.write(JSON.stringify({ systemMessage }) + '\n');
+  log(paceUtils.logEntry('Stop', 'SOFT_DEFERRED_PASS', {
+    proj,
+    count: reminders.length,
+    changes: reminders.map(r => (r.match(/^(CHG|HOTFIX)-\d{8}-\d{2}/) || [''])[0]).filter(Boolean).join(','),
+    dur: Date.now() - t0,
+  }));
+  return true;
+}
+
 try {
 const t0 = Date.now();
 // S-1: 统一 stdin 解析
@@ -61,14 +99,13 @@ if (paceSignal === 'artifact') {
 
   const classifiedEntries = getActiveChangeEntries(cwd).map(e => classifyChange(e));
 
-  let totalPending = 0;
+  let completionPending = 0;
   let requiresWalkthrough = false;
   for (const change of classifiedEntries) {
-    if (['backlog', 'ready'].includes(change.category)) continue;
     const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, stdin.sessionId);
-    const isForeignOwner = ownerStatus.disposition === 'foreign-fresh' || ownerStatus.disposition === 'foreign-stale';
+    const isForeignOwner = isForeignOwnerStatus(ownerStatus);
     const isProgressState = ['running', 'blocked', 'closing-required'].includes(change.category);
-    if (isForeignOwner && isProgressState) {
+    if (isForeignOwner && (isProgressState || isDeferredCategory(change.category))) {
       log(paceUtils.logEntry('Stop', ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER', {
         proj,
         change: change.id,
@@ -106,18 +143,22 @@ if (paceSignal === 'artifact') {
       continue;
     }
 
-    totalPending += change.tasks.pending;
-
-    if (change.category === 'blocked') {
-      log(paceUtils.logEntry('Stop', 'SOFT_BLOCKED_CHANGE', {
+    if (isDeferredCategory(change.category)) {
+      const pending = Number(change.tasks && change.tasks.pending || 0);
+      completionPending += pending;
+      softReminders.push(`${change.id} ${change.category}: ${deferredNextAction(change)}`);
+      log(paceUtils.logEntry('Stop', 'SOFT_DEFERRED_CHANGE', {
         proj,
         change: change.id,
-        pending: change.tasks.pending,
+        category: change.category,
+        pending,
         blocked: change.tasks.blocked,
         owner: ownerStatus.disposition,
       }));
       continue;
     }
+
+    completionPending += change.tasks.pending;
 
     if (change.category === 'running') {
       if (!change.approved) {
@@ -170,8 +211,8 @@ if (paceSignal === 'artifact') {
     if (aged > 0) warnings.push(`changes/findings/ 有 ${aged} 个 open finding 超过 14 天未流转，请询问用户采纳、否定或保持开放。`);
   } catch(e) {}
 
-  if (lastMessage && COMPLETION_PHRASES.test(lastMessage) && totalPending > 0) {
-    warnings.push(`AI 声称完成，但 v6 详情文件中仍有 ${totalPending} 个未完成任务。请继续执行或用 update-chg action=update-status 标记 [-] 跳过；若验证已通过并准备收尾，可派 close-chg complete-open-tasks: true。`);
+  if (lastMessage && COMPLETION_PHRASES.test(lastMessage) && completionPending > 0) {
+    warnings.push(`AI 声称完成，但 v6 详情文件中仍有 ${completionPending} 个未完成任务。请继续执行、明确暂停/阻塞，或用 update-chg action=update-status 标记 [-] 跳过；若验证已通过并准备收尾，可派 close-chg complete-open-tasks: true。`);
   }
 
 } else if (taskActive) {
@@ -259,9 +300,8 @@ if (warnings.length > 0) {
   } // 关闭 isTeammate else
 } else {
   // 检查全部通过，重置计数器 + 清除降级标记
-    if (fs.existsSync(PACE_RUNTIME)) setBlockCount(0);
-  const degradedFile = path.join(PACE_RUNTIME, 'degraded');
-  try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
+  if (emitSoftReminders(softReminders, t0)) process.exit(0);
+  resetHardBlockRuntime();
   log(paceUtils.logEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));
   process.exit(0);
 }

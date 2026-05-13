@@ -666,7 +666,7 @@ if (taskFullCached) {
     } else if (hasCompleted) {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 close-chg，归档后再清空 Claude 任务列表；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
     } else if (hasIndexPending && paceSignal === 'artifact') {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；planned/blocked backlog 不需要按索引行创建任务列表项。\n\n`);
+      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；backlog / ready / blocked 属于 deferred，不需要按索引行创建任务列表项。Stop 会用可见提醒提示这些 deferred CHG。\n\n`);
     } else {
       process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前无活跃 CHG。如 Claude 任务列表仍有残留项，请清空。\n\n`);
     }

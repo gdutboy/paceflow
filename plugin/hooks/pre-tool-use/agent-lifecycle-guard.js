@@ -294,6 +294,7 @@ module.exports = {
   extractPromptArtifactDir,
   promptHasExactArtifactDir,
   promptHasTrueField,
+  promptDeclaredAction,
   explicitReservationFromPrompt,
   promptUpdateStatusValue,
   reservationRelForLookup,

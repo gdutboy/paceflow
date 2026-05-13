@@ -69,7 +69,7 @@ C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED --
 - `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。禁止由 agent 自行推断用户已批准。
 - `approval-source` 必填，推荐枚举：`user-directive` / `ask-user-question` / `accepted-plan` / `prior-approved-plan`。
 - `approval-evidence` 必填，写一句用户原话或已确认方案摘要。agent 不验证证据真伪，但报告中必须保留，方便审计。
-- `action=approve` 只能表示“已批准但暂不开始”。若 prompt 同时要求 `status: in-progress`、标记 `[/]` 或“开始执行”，必须报告 `format-violation`，提示改用 `action=approve-and-start`。
+- `action=approve` 只能表示“已批准但暂不开始”，即 ready/deferred；它不是项目文件写入许可。若 prompt 同时要求 `status: in-progress`、标记 `[/]` 或“开始执行”，必须报告 `format-violation`，提示改用 `action=approve-and-start`。
 
 子流程：
 1. Read changes/chg-xxx.md

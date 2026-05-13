@@ -670,6 +670,42 @@ Smoke4（Non-Code C/E Gate，sid=`bf861b9e-a078-491a-82c2-058bbed0720b`）：
 - foreign stale owner 接手必须同时具备 `owner-takeover-confirmed: true`、`owner-takeover-source: user-directive`、`owner-takeover-evidence: <用户原话>`，并优先建议回到原 worktree/session。
 - skill / agent 指令同步：暂停用 `[!]`，跨 session 进度可见性才用 `[x]` 或 `[/]`；blocked 不参与 close-chg，恢复前需先 update-status 回 `[/]` 或按用户决策跳过/取消。
 
+#### 0.1.10e23 Stop 可见提醒与多 CHG backlog/ready 边界（2026-05-13）
+
+复查 v5.1.4（commit `6854a2d`）后确认：v5 的 Stop 语义把活跃区 `[ ]` / `[/]` / `[!]` 都计入 pending，`pending > 0` 会阻止 Stop；`[!]` 不是静默放行状态，而是要求用户决策。v6 为支持大计划拆多 CHG，引入 `backlog`（`[ ] planned`）和 `ready`（`[ ] planned + APPROVED`）后，当前 Stop 放行这些状态，和 v5 的“活跃区就是未完成工作”语义出现偏差。
+
+新的边界应区分“结构位置”和“人可见通知”：
+
+- 多 CHG 必须支持：中大型 plan 可以创建并批量批准多个 CHG，但只有进入 E 阶段的 CHG 是当前执行流。
+- 不改现有稳定状态机：frontmatter 仍是 `planned` / `in-progress` / `completed` / `archived` / `cancelled`；checkbox 仍是 `[ ]` / `[/]` / `[!]` / `[x]`；`APPROVED` / `VERIFIED` 仍是 marker，不新增人工维护字段。
+- 只新增 Stop/调度层派生大类 `deferred`，用于统一处理“未闭环但可搁置”的 CHG。`deferred` 包含：
+  - `backlog`：`[ ]` + `planned` + 无 `APPROVED`，已计划但未批准。
+  - `ready`：`[ ]` + `planned` + 有 `APPROVED`，已批准但未开始。
+  - `blocked`：`[!]`，已开始但暂停/阻塞。
+- `APPROVED` 只代表 C 阶段批准完成，不是写文件放行信号；写项目文件仍要求 CHG 进入 E 阶段（`status: in-progress` + 索引 `[/]`）。
+- `approve-only` 不应写 `owner state=active`；更合适是 `ready` / `approved`，避免把“已批准但未开始”表达成正在执行。只有 `approve-and-start` / `update-status [/]` 才进入 running/active。
+- `[/] running`、`completed/verified active`、artifact 结构不一致、虚假完成声明仍是 hard block，继续使用现有 3 次降级作为故障保护。
+- `deferred` 允许 Stop，但必须人可见提醒；不污染 hard block 计数，也不静默消失。
+- 写入 gate 不放宽：`backlog` / `ready` / `blocked` 都不能作为项目文件写入许可；必须进入 `[/] running` 才能执行代码/普通项目文件修改。foreign fresh owner 的 `deferred` 不阻断当前 session 普通工作；结构损坏仍是全局 hard block。
+- owner 归属不能只绑定 `session_id`。同一个 `cwd` / `worktree` / `branch` 重新打开 Claude Code session 是常用操作，不能因此把本 worktree 的 CHG 变成 foreign 并丢失提醒/接续权。目标语义应改为 worktree-affine：`session_id` 用于 heartbeat 与并发判断；`cwd` / `worktree` / `branch` 用于判断是否仍属于当前 checkout。新 session 在同一 worktree 中应能继承 `deferred` CHG 的 Stop 提醒和 start/resume 权限；真正不同 worktree/session 的 CHG 才折叠为 foreign。
+- 并发前提仍是“每个 worktree 单写 session”。同 worktree/branch 的多 session 只作为恢复、重开或人工诊断场景处理，不作为常规并发执行模型；因此当前实现允许同 checkout 接续 owner。若未来确需收紧，可只对 fresh `running` / `closing` 的同 checkout 非同 session 输出 Stop `systemMessage` 提醒“已有 live session owner，是否接手”，但不把它升级为 hard block，也不影响同 worktree 重开 session 的恢复路径。
+
+关于“人如何看到”：SessionStart 注入主要给模型，不是可靠的人可见渠道；把 CHG 移到 `Backlog/Ready` 区也只改善 artifact 结构，人仍需主动打开文件才看得到。官方 Claude Code hook 文档说明通用 JSON 字段 `systemMessage` 是“shown to the user”的 warning message；Stop hook 省略 `decision: "block"` 时允许 Claude 停止。因此优先验证并采用：
+
+```json
+{
+  "systemMessage": "PACEflow: 仍有 deferred CHG-...（backlog/ready/blocked），已允许结束；后续执行前请 approve-and-start、start 或恢复为 [/]."
+}
+```
+
+Claude Code TUI 实测 `systemMessage` 在 Stop 放行时可见，因此 `deferred` 使用 `exit 0 + systemMessage`；hard warnings 继续 `decision:block`/exit 2。one-time Stop ack 作为备用方案保留：仅当未来版本 TUI 不再展示或展示过弱时，首次 block 展示提醒，写 `.pace/stop-acks/<chg>.json`，同状态第二次 Stop 放行。
+
+实现边界：`deferred` 是分类器/Stop 层概念，不写入 artifact frontmatter，不要求用户维护新字段，不影响 close/archive 的既有条件。SessionStart 可以继续展示 backlog/ready/blocked 明细给模型，但人可见性以 Stop `systemMessage` 为准。owner 判定需要从纯 `current-session` 扩展出 `current-worktree`；同 worktree 新 session 可以刷新 owner session/heartbeat，其他 checkout 继续按 foreign fresh/stale 处理，跨 worktree 接手仍需用户明确指令与证据。
+
+测试记录：本机 Claude Code `2.1.138` 用临时 Stop hook 输出 `{"systemMessage":"PACEflow soft reminder test"}`，`claude -p --include-hook-events --output-format stream-json` 可正常结束，Stop hook response 中保留该 `systemMessage` 且没有 `decision:block`。随后在 `/mnt/k/AI/paceflow-smoke-utils-wt` 做 TUI smoke，界面明确显示 `Stop says: PACEflow Stop systemMessage test: ...`，验证“允许 Stop + 人可见软提醒”可用。
+
+Claude Code `2.1.139` hook 文档新增项也记录到后续候选优化：`args: string[]` exec form 可让 `command: "node"` 与 `args: ["${CLAUDE_PLUGIN_ROOT}/hooks/xxx.js", ...]` 直接 spawn，避免 Windows / 空格路径 / 引号拼接问题，适合后续批量替换 plugin hook 配置中的 shell-form `node "${CLAUDE_PLUGIN_ROOT}/..."`。`continueOnBlock` 目前仅对 prompt/agent 型 `PostToolUse` hook 更有意义；PaceFlow 当前主路径是 command hook，短期不作为 P1。
+
 
 #### 0.1.10b v6.0.40 production Smoke5 记录
 
