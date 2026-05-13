@@ -11,7 +11,7 @@ description: >
 
 PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
 
-`artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
+`artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
 如果用户已明确选择 vault/local 但 artifact-root 配置还不存在，先运行 hook 提示的 `set-artifact-root` helper（`--choice vault` 或 `--choice local`），再从目标项目 cwd 运行 reserve helper。不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件；helper 会写入权威 runtime 配置位置。reserve helper 不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化只可用 `--cwd`；不要搜索旧 plugin cache 路径。
 
@@ -48,6 +48,8 @@ changes/
 ```
 
 `task.md`、`implementation_plan.md`、`walkthrough.md`、`findings.md`、`corrections.md` 只保留索引。任务清单、实施详情、工作记录、finding 详情、correction 详情都写入 `changes/**`。
+
+`spec.md` 是项目事实文件，不是 artifact-writer 管理对象。技术栈、依赖、配置、目录结构或编码约定变化时，由主 session 用 `Edit` 同步；不要用 `Write` 覆盖已有 `spec.md`。它不含 `ARCHIVE` / `APPROVED` / `VERIFIED` 标记，也不被 `close-chg` 或 `archive-chg` 修改。
 
 ---
 

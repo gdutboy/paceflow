@@ -35,7 +35,7 @@ function agentArtifactDirDenyReason(artDir, declared = '') {
     `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
     '请重派同一个 agent，并在 prompt 顶部加入：',
     `artifact_dir: ${dir}`,
-    'artifact_dir 仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。',
+    `artifact_dir 仅用于 PaceFlow artifacts：${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}。`,
     '不要让 artifact-writer 自行推断或改写 artifact_dir。'
   ].join('\n');
 }

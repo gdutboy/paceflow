@@ -10,6 +10,7 @@
 
 ```
 projects/<project>/
+├── spec.md
 ├── task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md
 └── changes/
     ├── chg-yyyymmdd-nn.md
@@ -30,7 +31,9 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 
 `changes/findings/` 和 `changes/corrections/` 子目录在首次操作时**懒创建**（`mkdir -p`），但前提是 base `changes/` 已存在。
 
-`$ARTIFACT_DIR` 必须由主 session / hook 在 prompt 中显式传入，agent 不自行推断到 cwd 或改写到其他目录。`artifact_dir` 仅用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
+`$ARTIFACT_DIR` 必须由主 session / hook 在 prompt 中显式传入，agent 不自行推断到 cwd 或改写到其他目录。`artifact_dir` 仅用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
+
+`spec.md` 是 artifact root 内的项目事实文件，但不属于 artifact-writer 工作范围；技术栈、依赖、配置、目录结构和编码约定由主 session 直接 `Edit` 维护。
 
 注意：`.pace-enabled` 是 PaceFlow 手动激活信号，`.pace/disabled` 是显式豁免；运行态 `.pace/` 目录本身不等于启用信号，也不等于 artifact 根目录。若 cwd 已启用 PaceFlow 但 `$ARTIFACT_DIR/changes` 缺失，不能在报告中写“项目未启用 PACE”；应说明“当前 artifact_dir 无 changes marker”，并要求主 session 重派时显式提供正确的 `artifact_dir: <path>`。
 

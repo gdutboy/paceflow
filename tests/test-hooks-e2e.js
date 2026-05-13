@@ -336,6 +336,7 @@ test('2. v6 artifact 注入 + 活跃 CHG 摘要', () => {
   assert.ok(r.stdout.includes('=== task.md ==='));
   assert.ok(r.stdout.includes('=== corrections.md ==='));
   assert.ok(r.stdout.includes('=== 活跃 CHG 摘要 ==='));
+  assert.ok(r.stdout.includes('spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**'));
   assert.ok(r.stdout.includes('CHG-20260504-01'));
 });
 
@@ -1481,6 +1482,7 @@ test('9hb. artifact-writer Agent 未带 vault artifact_dir → DENY 重派', () 
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('artifact_dir'));
+  assert.ok(r.stdout.includes('spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**'));
   assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
 });
 
@@ -1519,6 +1521,7 @@ test('9hc. artifact-writer create-chg 带 vault artifact_dir + reserved-id → �
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+  assert.ok(r.stdout.includes('spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**'));
 });
 
 test('9hc-helper. reserve-artifact-id helper 预留 create-chg 后 Agent 首派即放行', () => {
@@ -2056,6 +2059,7 @@ test('9hc0b1. 主 session 不得用 Edit/MultiEdit 直接修改 artifact', () =>
 
 test('9hc0b1a. spec.md 不是 artifact-writer 管理对象，主 session 可 Edit', () => {
   const dir = makeV6Project('direct-spec-edit-pass');
+  fs.writeFileSync(path.join(dir, 'spec.md'), '# [项目名称] 规格说明\n', 'utf8');
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
@@ -2069,6 +2073,20 @@ test('9hc0b1a. spec.md 不是 artifact-writer 管理对象，主 session 可 Edi
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
+
+  const write = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(dir, 'spec.md'),
+        content: '# overwritten\n',
+      },
+    },
+  });
+  assert.strictEqual(write.code, 0);
+  assert.ok(write.stdout.includes('"deny"'));
+  assert.ok(write.stdout.includes('禁止使用 Write 覆盖已有 artifact：spec.md'));
 });
 
 test('9hc0b2. Bash 不得删除或重定向写入 artifact-writer.lock', () => {

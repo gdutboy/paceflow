@@ -6,6 +6,12 @@
 
 ## 索引文件
 
+### spec.md
+
+`spec.md` 是 artifact root 内的项目事实文件，记录项目目标、技术栈、依赖、配置、目录结构和编码约定。它由主 session 直接 `Edit` 维护，不由 `artifact-writer` 创建 CHG 生命周期记录；已有文件禁止用 `Write` 覆盖。
+
+`spec.md` 不含 `<!-- ARCHIVE -->` / `<!-- APPROVED -->` / `<!-- VERIFIED -->`，也不参与 `close-chg` / `archive-chg` 的索引归档。
+
 ### task.md
 
 ```markdown

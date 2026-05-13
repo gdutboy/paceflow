@@ -278,7 +278,7 @@ function writeArtifactDirSection() {
     const vaultRoot = paceUtils.normalizePath(path.resolve(paceUtils.VAULT_PATH, 'projects'));
     if (normalizedArtDir.startsWith(`${vaultRoot}/`)) mode = 'Obsidian vault project';
   }
-  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**。\nartifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}。\nartifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
 }
 
 function enrichSummaryOwner(summary) {

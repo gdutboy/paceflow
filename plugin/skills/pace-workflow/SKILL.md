@@ -34,7 +34,9 @@ flowchart TD
 
 在已触发 PACEflow 信号的项目中，代码修改任务即使只涉及 1-2 个文件，也先按本 skill 判断流程；不要等第一次 Edit 被 hook 拦截后才进入 PACE。
 
-Artifact 根目录以 hook 注入或 PreToolUse 提示为准。`artifact_dir` 仅用于 PaceFlow artifacts：`task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
+Artifact 根目录以 hook 注入或 PreToolUse 提示为准。`artifact_dir` 仅用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
+
+`spec.md` 是 artifact root 内的项目事实文件，用于记录技术栈、依赖、配置、目录结构和编码约定等长期事实。它由主 session 按需要直接 `Edit` 维护，不派 `artifact-writer`，也不参与 CHG/HOTFIX 的批准、验证或归档流程。
 
 若用户已经明确选择 Obsidian vault 或本地项目目录，但 artifact-root 配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper（`--choice vault` 或 `--choice local`），再从目标项目 cwd 运行 reserve helper。不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件；helper 会写入权威 runtime 配置位置。不要传自造的 `--artifact-dir` / `--artifact-root` / `--project-dir` 参数；自动化只可用 helper 的 `--cwd`。
 

@@ -499,7 +499,7 @@ Smoke6（native `/plan` bridge + sync-plan helper）真实运行结论（sid=5a6
 
 Smoke3 rerun（host sid=10c020d3-37c7-41b1-8d24-0304924381f0；worktree sid=54b77603-9324-4898-8350-2d46e671d31e）最终 artifact 状态正确：`CHG-20260512-03` / `CHG-20260512-04` 均已归档，`walkthrough.md` 同步保留 `[worktree:: ...] [branch:: ...]`，Stop clean pass。但本轮暴露两个需要继续跟踪的语义/入口问题：
 
-- `approve-and-start` 复验观察：v6.0.52 已把 `task-id` 文案收敛为 first task anchor，并修复“连续 CHG 被模型拆成逐个 update-status”的体验问题；本轮 Smoke3 没有再出现逐任务 update-status 跑偏，最终用 `close-chg complete-open-tasks:true` 收口。当前仍只把 anchor task 标成 `[/]`、其余任务保持 `[ ]`，这是设计取舍，不是待修 bug；后续仅继续观察 artifact-writer 报告是否仍用“继续执行剩余任务 T-002”这类容易误读的表述。
+- `approve-and-start` 复验观察：v6.0.52 已把 `task-id` 文案收敛为 first task anchor，并修复“连续 CHG 被模型拆成逐个 update-status”的体验问题；本轮 Smoke3 没有实际落盘逐任务 update-status，最终用 `close-chg complete-open-tasks:true` 收口。当前仍只把 anchor task 标成 `[/]`、其余任务保持 `[ ]`，这是设计取舍；后续仅继续观察 artifact-writer 报告是否仍用“继续执行剩余任务 T-002”这类容易误读的表述。
 - Paceflow skill activation 不能当确定性保障：host 主 session JSONL 只有初始 `skill_listing`，thinking 中提到“应该调用 pace-workflow”，但没有实际 `Skill(paceflow:pace-workflow)` tool_use；后续 hook 在 `reserved-id`、`verify-summary/walkthrough-summary` 缺失时提示先调用 skill，模型仍直接重试 Agent。worktree session 则实际调用了 `Skill(paceflow:pace-workflow)`，后续消息带 `attributionSkill`。结论：skill 是降低重试和解释流程的 advisory layer，关键正确性必须下沉到 hook/agent 机械约束，不能依赖模型一定会调用 skill。
 - Smoke5 同类证据：v5 migration rerun（sid=90b7b09f-b26f-47b3-9651-ed308cde02d8）也没有实际 `Skill(paceflow:pace-workflow)` tool_use。SessionStart 已识别 `signal=legacy`，但主 session 没有主动进入 Paceflow workflow；它先直接 Edit `index.js`，被 `DENY_LEGACY_ACTIVE` 拦截后才 dry-run、AskUserQuestion、正式迁移。这里的拦截后指向 dry-run 是合理兜底，不是问题。真正问题是：有明确 Paceflow/legacy 信号时仍未调用 skill，迁移完成后又直接重试 Edit，被 `DENY_V6_NO_ACTIVE` 拦截后才 create CHG；最后 `close-chg` 首次缺 `verify-summary` / `walkthrough-summary`，再次说明模型没有读取或遵循 workflow/artifact-management 的 close 规范。后续修复方向：SessionStart 对 `signal=legacy` 和已有 artifact 信号应给更明确的“先调用 Skill(paceflow:pace-workflow)”短入口提示；`close-chg` 缺 summary 仍由 PreToolUse hard deny 保底。
 - 设计边界确认：hook 不能替主 session 发起 `Skill(...)` tool call，也不能把“已调用 skill”当成可靠硬状态来建核心状态机；从 JSONL transcript best-effort 检测 skill 调用会受 transcript path、刷新时机和 Claude Code 版本影响，只适合作诊断/审计信号，不适合作硬门。推荐策略是三层：SessionStart 在明确 Paceflow/legacy 信号时把“先调用 `Skill(paceflow:pace-workflow)`；涉及 CHG/artifact 字段再调用 `Skill(paceflow:artifact-management)`”放到更靠前、更短的位置；关键 Paceflow 写入/Agent 派遣前可做 one-shot skill reminder，避免重复 nag 或循环；真正正确性继续由 reserved-id、C/E gate、legacy migration gate、close summary、owner/worktree gate 等机械约束兜底。换句话说，目标不是强制模型调用 skill，而是让“不调用 skill”也不能越过流程不变量。
@@ -588,6 +588,73 @@ Smoke4 rerun 覆盖“vault 选择后是否先写 `.pace/artifact-root`，不再
 - 实现层已支持 `reserve-artifact-id.js --operation create-chg --type hotfix` 生成 `HOTFIX-YYYYMMDD-NN` 与 `changes/hotfix-yyyymmdd-nn.md`，但主 skill 只写了通用 `--operation create-chg` 示例，未明确 HOTFIX 预留命令。
 - 同一 session 默认复用尚未消费的 `create-chg` reservation；如果先预留普通 CHG 后又要创建 HOTFIX，不加 `--new` 可能复用旧 CHG reservation。skill 必须明确 HOTFIX 场景使用 `--type hotfix`，需要新编号时使用 `--type hotfix --new`。
 - 修复范围：`pace-workflow`、`artifact-management`、`pace-bridge`、`change-lifecycle` 同步 HOTFIX helper 示例；e2e 覆盖先预留普通 CHG 后用 `--type hotfix --new` 生成 HOTFIX。
+
+#### 0.1.10e18 暂停/阻塞语义与 worktree owner 边界（2026-05-13）
+
+Smoke3 测试中用户要求 worktree session “创建并 approve-and-start 后暂停，不要 close-chg”，用于验证 foreign owner 不阻断主 session 普通工作。讨论确认：暂停不应被解释成“其他 worktree 可以接手继续做”。换 worktree 会丢失代码上下文、未提交状态、临时验证信息与模型工作记忆，不能保证质量；owner 机制的目的应是防误操作，而不是任务转派。
+
+语义原则：
+
+- `[/]` 表示当前 owner 正在执行；它不应长期作为“人离开但任务暂存”的默认状态。
+- `[!]` 应承载阻塞/暂停语义：等待用户、外部信息、环境恢复，或用户明确要求先停。
+- planned backlog 与 blocked backlog 不应阻止其他 session 的普通工作；结构损坏、当前 session 正在执行的 running、completed 未收尾仍应阻止。
+- foreign owner 即使 stale，也不应默认允许另一个 worktree 接手。只有用户明确要求在当前 checkout 重新开始，或取消旧 CHG 后另建新 CHG，才允许改变执行归属。
+- 暂停是例外路径，不是常规流程。默认仍是 CHG 连续执行、验证、`close-chg` 归档。
+
+待评估修复方向：
+
+- 当用户明确说“暂停/先停/等我后续处理”时，主 session 应派 `artifact-writer update-chg section=tasks action=update-status ... new-status=[!]`，并记录 pause/block reason；而不是只留下普通 `in-progress`。
+- Stop 对当前 session 已明确 `[!]` 的 CHG 不应继续硬卡退出；SessionStart 只提示存在 blocked CHG，等待原 worktree/session 恢复或用户明确重新开启。
+- owner takeover 口径需要收紧：不把 stale owner 当作默认可接手信号；接手必须有用户显式确认，并优先建议回到原 worktree/session。
+
+#### 0.1.10e19 `spec.md` v5.1.4 语义继承与 v6 文案边界（2026-05-13）
+
+pace-utils 拆分后 production Smoke1 通过，但 artifact root 初始化生成了 `spec.md`；复查 v5.1.4 提交 `6854a2d` 后确认，`spec.md` 在 v5.1.4 中是核心 Artifact 文件之一，语义是“项目元数据与技术栈”，由主 session 在项目事实变化时直接维护，且是唯一不含 `<!-- ARCHIVE -->`、不参与归档的项目级规格文件。
+
+当前 v6 是半继承状态：
+
+- `ARTIFACT_FILES` 与模板仍包含 `spec.md`，`artifact-management` 文件模型表也写了 `spec.md`。
+- 但 `artifact_dir` 用户可见提示、`PACE_ARTIFACT_ROOT_CONTENT`、`artifact-writer-spec` 顶部结构、`pace-workflow` / `artifact-management` 的 artifact root 文案只列 `task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**`，漏掉 `spec.md`。
+- `artifact-writer.md` 正确排除 `spec.md`，但没有解释：`spec.md` 仍是 PaceFlow artifact root 的一部分，只是不归 artifact-writer 指令集管理。
+
+修复口径：
+
+- 统一 artifact root 内容文案为：`spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**`。
+- 明确 `spec.md` 是项目级规格 artifact：项目元数据、技术栈、依赖、配置、目录结构、编码规范等项目事实。
+- 明确 `spec.md` 由主 session 直接 `Edit` 维护；`Write` 覆盖仍禁止；不由 `artifact-writer` 管理，不参与 CHG/HOTFIX `close-chg` / `archive-chg`，不写 `APPROVED` / `VERIFIED` / `ARCHIVE`。
+- 同步范围：`plugin/hooks/pace-utils/constants.js`、`session-start.js`、`pre-tool-use.js`、`pre-tool-use/agent-lifecycle-guard.js`、`skills/artifact-management/SKILL.md`、`skills/artifact-management/references/format-reference.md`、`skills/pace-workflow/SKILL.md`、`agent-references/artifact-writer-spec.md`、`agents/artifact-writer.md`。
+- 回归测试：单元/e2e 覆盖 `spec.md` 属于 artifact root 但不进入 artifact-writer managed rel；主 session `Edit spec.md` 可通过，`Write spec.md` 覆盖仍拒绝；SessionStart / PreToolUse 文案包含 `spec.md`；Smoke1 中生成 `spec.md` 不再与 artifact_dir 提示矛盾。
+
+#### 0.1.10e20 pace-utils refactor Smoke2 worktree 观察校正（2026-05-13）
+
+`docs/production-smoke-pace-utils-refactor.md` 的 Smoke2（Worktree Owner Boundary）中，worktree session 写完 `branch-note.md` 后模型一度想再派 `update-status [x]`。补充确认：这是用户主动 ESC 截断的未完成意图，没有实际落盘、没有触发 artifact-writer，也没有形成 hook/agent 产品缺陷；仅作为模型倾向观察保留，不进入待修清单。
+
+该观察属于 pace-utils 拆分后的当前 smoke，不属于 v6.0.52/6.0.54 Smoke3 历史问题。
+
+#### 0.1.10e21 pace-utils refactor Smoke3/4 复跑结论（2026-05-13）
+
+`docs/production-smoke-pace-utils-refactor.md` 的 Smoke3/4 均通过，未发现 split `pace-utils` 后的模块加载、helper 路径或 lifecycle operation 误判问题。
+
+Smoke3（Vault Artifact Full Flow，sid=`8137a2bf-4d19-417a-ab47-340061d6f6f5`）：
+
+- SessionStart 已注入当前 6.0.55 的 `set-artifact-root.js` 与 `reserve-artifact-id.js` 绝对命令；主 session 使用 `set-artifact-root --choice vault`，未搜索旧 plugin cache。
+- reserve helper 预留 `CHG-20260513-01`；artifact-writer 完成 create / approve-and-start / close；`node index.js` 输出 `vault smoke ok`。
+- Artifact 全部落在 Obsidian vault 项目 `/mnt/c/Users/Xiao/OneDrive/Documents/Obsidian/projects/paceflow-smoke-utils-vault/`，local 项目目录只保留 `.pace/artifact-root=vault` 与运行态。
+- `task.md` / `implementation_plan.md` 活跃区无残留，ARCHIVE 下有 `[x] [[chg-20260513-01]] ... [worktree:: main] [branch:: master]`；详情 `status: archived` 且有 `<!-- APPROVED -->` / `<!-- VERIFIED -->`；`walkthrough.md` 保留同一 worktree/branch context。
+- `.pace/change-owners/chg-20260513-01.json` 最终为 `state: closed`；Stop hook PASS；locks / reservations / index-transactions 无残留文件。
+
+Smoke4（Non-Code C/E Gate，sid=`bf861b9e-a078-491a-82c2-058bbed0720b`）：
+
+- 主 session 调用 `paceflow:pace-workflow`，使用 `set-artifact-root --choice local --cwd ...` 与 `reserve-artifact-id --cwd ...`，未搜索旧 cache。
+- create 后按测试要求直接 Edit `README.md`，PreToolUse 返回 `DENY_V6_C_PHASE`：planned CHG 缺 `<!-- APPROVED -->` 且没有 `[/]` 任务，未批准非代码写入被正确阻止。
+- 随后 approve-and-start 成功，第二次 Edit `README.md` 放行；`grep -n "noncode gate ok"` 返回第 3 行；close-chg 成功归档。
+- `README.md` 已追加目标文本；索引均归档到 ARCHIVE；详情 `status: archived`、T-001 `[x]`、`<!-- APPROVED -->` / `<!-- VERIFIED -->` 完整；walkthrough 保留 `[worktree:: main] [branch:: master]`。
+- `.pace/change-owners/chg-20260513-01.json` 最终为 `state: closed`；Stop hook PASS；locks / reservations / index-transactions 无残留文件。
+
+残留观察：
+
+- Smoke4 close agent 仍触发已知 `SubagentStop WARN issue=title-prefix`，报告正文第一行是“全部操作完成。生成报告。”再跟 `## artifact-writer 报告`。该问题已在 action book 既有 `artifact-writer 报告标题` 项下跟踪，不作为本轮新缺口。
+- 两个 PreToolUse Agent hint 的 artifact root 文案仍未包含 `spec.md`，与 `0.1.10e19` 的 `spec.md` v5.1.4 语义继承缺口一致，后续按该项统一修。
 
 
 #### 0.1.10b v6.0.40 production Smoke5 记录

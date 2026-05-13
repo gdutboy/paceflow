@@ -523,7 +523,7 @@ paceUtils.withStdinParsed((stdin) => {
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}；仅用于 task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**；execution-context: ${paceUtils.executionContextForCwd(cwd).text}${reservationMsg}${createdMsg}`
+            additionalContext: `artifact-writer ARTIFACT_DIR 已确认：${displayDir(artDir)}；仅用于 ${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}；execution-context: ${paceUtils.executionContextForCwd(cwd).text}${reservationMsg}${createdMsg}`
           }
         };
         process.stdout.write(JSON.stringify(output));

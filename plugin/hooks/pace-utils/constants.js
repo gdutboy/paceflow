@@ -22,7 +22,7 @@ const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(HOOKS_DIR, 'reserve-artifact-id.js').replace(/\\/g, '/');
 const SYNC_PLAN_SCRIPT = path.resolve(HOOKS_DIR, 'sync-plan.js').replace(/\\/g, '/');
 const SET_ARTIFACT_ROOT_SCRIPT = path.resolve(HOOKS_DIR, 'set-artifact-root.js').replace(/\\/g, '/');
-const PACE_ARTIFACT_ROOT_CONTENT = 'task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
+const PACE_ARTIFACT_ROOT_CONTENT = 'spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
 
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
 const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
