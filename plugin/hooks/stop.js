@@ -292,7 +292,8 @@ if (warnings.length > 0) {
       setBlockCount(blockCount + 1, { ensure: true });
       // T-330: stderr 编号列表 + 降级递进式消息
       const stderrLines = warnings.map((w, i) => `[${i+1}] ${w}`);
-      if (blockCount >= 1) stderrLines.push(`[提示] 这是第 ${blockCount + 1} 次阻止，请逐项处理上述问题后再结束会话。${FORMAT_SNIPPETS.skillRef}`);
+      stderrLines.push(`[提示] 处理上述 PACEflow 检查前，${FORMAT_SNIPPETS.skillRef}。`);
+      if (blockCount >= 1) stderrLines.push(`[提示] 这是第 ${blockCount + 1} 次阻止，请逐项处理上述问题后再结束会话。`);
       if (blockCount >= 2) stderrLines.push(`[警告] 下次将降级为软提醒不再阻止，但问题仍需处理。`);
       // HOTFIX-20260314-02: 场景感知前缀——区分"用户决策"/"继续执行"/"收尾修复"
       const hasUserActionWarning = warningTypes.includes('user-action');

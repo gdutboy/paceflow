@@ -38,6 +38,7 @@ const {
   explicitReservationFromPrompt,
   reservationRelForLookup,
   reservationMatchesExplicit,
+  promptTemplateForOperation,
   artifactWriterCreateChgHint,
   reservationRequiredReason,
   reservationExplicitMissingReason,
@@ -252,7 +253,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
       if (isArtifactWriterAgentTool(stdin) && !promptHasExactArtifactDir(stdin.toolInput.prompt, artDir)) {
         const declaredArtifactDir = extractPromptArtifactDir(stdin.toolInput.prompt);
-        const reason = agentArtifactDirDenyReason(artDir, declaredArtifactDir);
+        const reason = agentArtifactDirDenyReason(artDir, declaredArtifactDir, stdin.toolInput.prompt);
         const output = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
@@ -271,7 +272,7 @@ paceUtils.withStdinParsed((stdin) => {
         return;
       }
       if (isArtifactWriterAgentTool(stdin)) {
-        const lifecycleReason = agentLifecyclePromptDenyReason(stdin.toolInput.prompt);
+        const lifecycleReason = agentLifecyclePromptDenyReason(stdin.toolInput.prompt, artDir);
         if (lifecycleReason) {
           const output = {
             hookSpecificOutput: {
@@ -428,7 +429,8 @@ paceUtils.withStdinParsed((stdin) => {
           const reason = [
             `派 artifact-writer 执行 ${operation} 时缺少明确 target。`,
             FORMAT_SNIPPETS.skillRef,
-            '请在 prompt 顶部加入：target: CHG-YYYYMMDD-NN 或 target: HOTFIX-YYYYMMDD-NN。',
+            '请重派同一个 agent，并在 prompt 顶部使用完整模板：',
+            promptTemplateForOperation({ prompt: stdin.toolInput.prompt, artDir, operation }),
             '不要只在正文或摘要里提到 CHG-ID；hook 不会用正文中随便出现的 ID 判断 owner。'
           ].join('\n');
           const output = {

@@ -28,14 +28,144 @@ function promptHasExactArtifactDir(prompt, dir) {
   return declared && declared === normalizeArtifactDirValue(dir);
 }
 
-function agentArtifactDirDenyReason(artDir, declared = '') {
+function artifactDirField(artDir) {
+  return artDir ? `artifact_dir: ${displayDir(artDir)}` : 'artifact_dir: <hook 解析出的 artifact 目录>';
+}
+
+function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', action = '', target = '' } = {}) {
+  const op = String(operation || promptDeclaredOperation(prompt) || '').toLowerCase();
+  const act = String(action || promptDeclaredAction(prompt) || '').toLowerCase();
+  const id = target || paceUtils.explicitChangeTargetFromAgentPrompt(prompt) || 'CHG-YYYYMMDD-NN';
+  const lines = [artifactDirField(artDir)];
+
+  if (op === 'create-chg') {
+    return [
+      ...lines,
+      'operation: create-chg',
+      'execution-context: <helper 输出>',
+      'reserved-id: <helper 输出或 hook deny 输出>',
+      'reserved-file: <helper 输出或 hook deny 输出>',
+      'title: <变更标题>',
+      'tasks:',
+      '  - T-001: <任务标题与验收>',
+      'background: <Why>',
+      'scope: <What>',
+      'technical-decision: <How>',
+    ].join('\n');
+  }
+
+  if (op === 'update-chg' && act === 'approve') {
+    return [
+      ...lines,
+      'operation: update-chg',
+      `target: ${id}`,
+      'action: approve',
+      'approval-confirmed: true',
+      'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
+      'approval-evidence: <用户原话或已确认方案摘要>',
+    ].join('\n');
+  }
+
+  if (op === 'update-chg' && act === 'approve-and-start') {
+    return [
+      ...lines,
+      'operation: update-chg',
+      `target: ${id}`,
+      'action: approve-and-start',
+      'task-id: T-NNN',
+      'approval-confirmed: true',
+      'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
+      'approval-evidence: <用户原话或已确认方案摘要>',
+    ].join('\n');
+  }
+
+  if (op === 'update-chg' && act === 'update-status') {
+    return [
+      ...lines,
+      'operation: update-chg',
+      `target: ${id}`,
+      'section: tasks',
+      'action: update-status',
+      'task-id: T-NNN',
+      'new-status: [/] | [!] | [x] | [-]',
+      'status-reason: <new-status=[!] 时必填；其他状态按需说明>',
+    ].join('\n');
+  }
+
+  if (op === 'update-chg' && act === 'verify') {
+    return [
+      ...lines,
+      'operation: update-chg',
+      `target: ${id}`,
+      'action: verify',
+      'verify-summary: <已运行并读取的验证结果>',
+    ].join('\n');
+  }
+
+  if (op === 'close-chg') {
+    return [
+      ...lines,
+      'operation: close-chg',
+      `target: ${id}`,
+      'verification-confirmed: true',
+      'complete-open-tasks: true',
+      'verify-summary: <已运行并读取的验证结果>',
+      'walkthrough-summary: <完成摘要>',
+    ].join('\n');
+  }
+
+  if (op === 'archive-chg') {
+    return [
+      ...lines,
+      'operation: archive-chg',
+      `target: ${id}`,
+      'walkthrough-summary: <完成摘要>',
+    ].join('\n');
+  }
+
+  if (op === 'record-finding') {
+    return [
+      ...lines,
+      'operation: record-finding',
+      'title: <finding 标题>',
+      'summary: <≤200 字摘要>',
+      'type: research | observation | comparison | bug-report',
+      'impact: P0 | P1 | P2 | P3',
+      'body: <完整 Markdown 正文>',
+    ].join('\n');
+  }
+
+  if (op === 'record-correction') {
+    return [
+      ...lines,
+      'operation: record-correction',
+      'reserved-id: <helper 输出>',
+      'reserved-file-prefix: <helper 输出>',
+      'trigger-quote: <用户纠正原话>',
+      'wrong-behavior: <错误行为，至少 20 字>',
+      'correct-behavior: <正确行为，至少 20 字>',
+      'trigger-scenario: <触发场景>',
+      'root-cause: <根因>',
+      'knowledge-link: [[note]] 或 project-scope: project-only',
+    ].join('\n');
+  }
+
+  return [
+    ...lines,
+    'operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction',
+    'target: CHG-YYYYMMDD-NN 或 HOTFIX-YYYYMMDD-NN（create-chg / record-finding / record-correction 除外）',
+    'action: <operation=update-chg 时必填>',
+  ].join('\n');
+}
+
+function agentArtifactDirDenyReason(artDir, declared = '', prompt = '') {
   const dir = displayDir(artDir);
   const declaredLine = declared ? `\n当前 prompt 中的 artifact_dir 是：${displayDir(declared)}` : '';
   return [
     `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
     FORMAT_SNIPPETS.skillRef,
-    '请重派同一个 agent，并在 prompt 顶部加入：',
-    `artifact_dir: ${dir}`,
+    '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+    promptTemplateForOperation({ prompt, artDir }),
     `artifact_dir 仅用于 PaceFlow artifacts：${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}。`,
     '不要让 artifact-writer 自行推断或改写 artifact_dir。'
   ].join('\n');
@@ -181,7 +311,7 @@ function promptHasPauseOrBlockReason(prompt) {
     promptHasNonEmptyField(prompt, 'pause-reason');
 }
 
-function agentLifecyclePromptDenyReason(prompt) {
+function agentLifecyclePromptDenyReason(prompt, artDir = '') {
   const text = String(prompt || '');
   const operation = promptDeclaredOperation(text);
   const action = promptDeclaredAction(text);
@@ -195,7 +325,8 @@ function agentLifecyclePromptDenyReason(prompt) {
     return [
       '派 artifact-writer 时缺少明确 operation。',
       FORMAT_SNIPPETS.skillRef,
-      '请在 prompt 顶部加入 operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction。',
+      '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+      promptTemplateForOperation({ prompt, artDir }),
       '执行 approve / approve-and-start / update-status / verify 时，operation 必须为 update-chg，并同时提供 action。'
     ].join('\n');
   }
@@ -211,11 +342,9 @@ function agentLifecyclePromptDenyReason(prompt) {
         `派 artifact-writer 执行 C 阶段批准时缺少必填字段：${missing.join(', ')}。`,
         FORMAT_SNIPPETS.skillRef,
         'C 阶段批准是确认边界：主 session 可以基于用户明确执行指令、已接受方案或 AskUserQuestion 设置 approval-confirmed: true，但必须写明确认来源与证据。',
-        '示例：',
-        'approval-confirmed: true',
-        'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
-        'approval-evidence: <用户原话或已确认方案摘要>',
-        mentionsApproveAndStart ? 'task-id: T-NNN' : '若批准后立即开始，请改用 action=approve-and-start 并提供 task-id。'
+        '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+        promptTemplateForOperation({ prompt, artDir, operation, action }),
+        mentionsApproveAndStart ? '' : '若批准后立即开始，请改用 action=approve-and-start 并提供 task-id。'
       ].join('\n');
     }
   }
@@ -225,12 +354,8 @@ function agentLifecyclePromptDenyReason(prompt) {
       '不要用 action=approve 同时表达开始执行或 in-progress 状态。',
       FORMAT_SNIPPETS.skillRef,
       'action=approve 只插入 APPROVED，适用于“先批准但暂不执行”。',
-      '若用户已明确批准并准备开始，请改派 approve-and-start：',
-      'action: approve-and-start',
-      'approval-confirmed: true',
-      'approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan',
-      'approval-evidence: <用户原话或已确认方案摘要>',
-      'task-id: T-NNN'
+      '若用户已明确批准并准备开始，请重派同一个 agent，并使用完整 prompt 顶部模板：',
+      promptTemplateForOperation({ prompt, artDir, operation: 'update-chg', action: 'approve-and-start' })
     ].join('\n');
   }
 
@@ -241,7 +366,8 @@ function agentLifecyclePromptDenyReason(prompt) {
       '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
       '如果同一 CHG 会继续连续执行：不要为中间任务单独派 update-status，继续完成剩余代码/测试。',
       '只有暂停、阻塞、跳过、跨 session 或长任务进度可见性需要时，才派 update-chg action=update-status。',
-      '如果这是最后任务且验证已通过：直接派 close-chg complete-open-tasks: true，合并完成状态、VERIFIED、归档和 walkthrough。'
+      '如果这是最后任务且验证已通过，请使用完整 close-chg 模板：',
+      promptTemplateForOperation({ prompt, artDir, operation: 'close-chg' })
     ].join('\n');
   }
 
@@ -250,10 +376,8 @@ function agentLifecyclePromptDenyReason(prompt) {
       '派 artifact-writer 将任务标记为 [!] 暂停/阻塞时缺少原因字段。',
       FORMAT_SNIPPETS.skillRef,
       '[!] 表示当前 CHG 暂停或阻塞，不是完成，也不是让其他 worktree 自动接手的信号。',
-      '请重派同一 update-status，并加入以下任一字段：',
-      'status-reason: <用户要求暂停、等待外部信息、环境阻塞或其他原因>',
-      'block-reason: <阻塞原因>',
-      'pause-reason: <暂停原因>'
+      '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+      promptTemplateForOperation({ prompt, artDir, operation, action })
     ].join('\n');
   }
 
@@ -268,12 +392,8 @@ function agentLifecyclePromptDenyReason(prompt) {
         `派 artifact-writer 执行 close-chg 时缺少必填字段：${missing.join(', ')}。`,
         FORMAT_SNIPPETS.skillRef,
         'close-chg 只能在主 session 已运行并读取验证结果、确认通过后调用；agent 不得自行判断验证是否通过。',
-        '最后任务收尾主路径：',
-        'operation: close-chg',
-        'verification-confirmed: true',
-        'complete-open-tasks: true',
-        'verify-summary: <已运行并读取的验证结果>',
-        'walkthrough-summary: <完成摘要>'
+        '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+        promptTemplateForOperation({ prompt, artDir, operation: 'close-chg' })
       ].join('\n');
     }
   }
@@ -313,6 +433,7 @@ module.exports = {
   promptUpdateStatusValue,
   reservationRelForLookup,
   reservationMatchesExplicit,
+  promptTemplateForOperation,
   artifactWriterCreateChgHint,
   reservationRequiredReason,
   reservationExplicitMissingReason,

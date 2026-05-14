@@ -199,6 +199,135 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 **必填**：`trigger-quote` / `wrong-behavior`（≥20）/ `correct-behavior`（≥20）/ `trigger-scenario` / `root-cause`
 **必填二选一**：`knowledge-link` 或 `project-scope: project-only`
 
+## 正向输入模板
+
+主 session prompt 顶部应使用结构化字段。缺字段时报告 `missing-fields`，不要从正文散文里补猜。
+
+### create-chg
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: create-chg
+execution-context: <reserve helper 输出>
+reserved-id: <reserve helper 输出>
+reserved-file: <reserve helper 输出>
+title: <变更标题>
+tasks:
+  - T-001: <任务标题与验收>
+background: <Why>
+scope: <What>
+technical-decision: <How>
+```
+
+### approve only
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
+```
+
+### approve-and-start
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve-and-start
+task-id: T-001
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
+```
+
+### resume blocked/deferred task
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+section: tasks
+action: update-status
+task-id: T-001
+new-status: [/]
+status-reason: <用户要求恢复或阻塞已解除>
+```
+
+### pause/block task
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+section: tasks
+action: update-status
+task-id: T-001
+new-status: [!]
+status-reason: <暂停或阻塞原因>
+```
+
+### close-chg
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: close-chg
+target: CHG-YYYYMMDD-NN
+verification-confirmed: true
+complete-open-tasks: true
+verify-summary: <已运行并读取的验证结果>
+walkthrough-summary: <完成摘要>
+```
+
+### verify only
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: verify
+verify-summary: <已运行并读取的验证结果>
+```
+
+### archive-chg
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: archive-chg
+target: CHG-YYYYMMDD-NN
+walkthrough-summary: <完成摘要>
+```
+
+### record-finding
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: record-finding
+title: <finding 标题>
+summary: <≤200 字摘要>
+type: research | observation | comparison | bug-report
+impact: P0 | P1 | P2 | P3
+body: <完整 Markdown 正文>
+```
+
+### record-correction
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: record-correction
+reserved-id: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出>
+trigger-quote: <用户纠正原话>
+wrong-behavior: <错误行为，至少 20 字>
+correct-behavior: <正确行为，至少 20 字>
+trigger-scenario: <触发场景>
+root-cause: <根因>
+knowledge-link: [[note]] 或 project-scope: project-only
+```
+
 ## 工作流程
 
 每次任务：

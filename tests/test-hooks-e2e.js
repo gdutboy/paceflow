@@ -1590,6 +1590,35 @@ test('9hb. artifact-writer Agent 未带 vault artifact_dir → DENY 重派', () 
   assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
 });
 
+test('9hb1. record-finding 缺 artifact_dir 时 DENY 返回对应完整模板', () => {
+  const { worktree } = makeVaultBackedWorktree('agent-artdir-finding-template');
+  const prompt = [
+    'operation: record-finding',
+    'title: 测试 finding',
+    'summary: 摘要',
+    'type: observation',
+    'impact: P2',
+    'body: 正文',
+  ].join('\n');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      session_id: 'sid-agent-artdir-finding-template',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Record finding',
+        prompt,
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('operation: record-finding'));
+  assert.ok(r.stdout.includes('title: <finding 标题>'));
+  assert.ok(r.stdout.includes('body: <完整 Markdown 正文>'));
+});
+
 test('9hc. artifact-writer create-chg 带 vault artifact_dir + reserved-id → 放行', () => {
   const { worktree, vaultDir } = makeVaultBackedWorktree('agent-artdir-pass');
   const prompt = `artifact_dir: ${vaultDir.replace(/\\/g, '/')}/\n使用 create-chg 流程创建一个新的变更记录。`;
@@ -2673,7 +2702,8 @@ test('9hc2. update-status 与 verify 串联 → DENY', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('不要把 update-status'));
-  assert.ok(r.stdout.includes('close-chg complete-open-tasks: true'));
+  assert.ok(r.stdout.includes('operation: close-chg'));
+  assert.ok(r.stdout.includes('complete-open-tasks: true'));
 });
 
 test('9hc2a. update-status [!] 缺少暂停/阻塞原因 → DENY', () => {
@@ -4534,6 +4564,22 @@ test('22b. hooks.json 为 PostToolUseFailure 注册 Agent matcher', () => {
     entries.some(e => String(e.matcher || '').split('|').includes('Agent')),
     'PostToolUseFailure matcher 必须包含 Agent，否则 Agent 失败不能触发锁释放'
   );
+});
+
+test('22c. hooks.json 使用 exec-form args 避免 shell quoting', () => {
+  const hooksConfig = JSON.parse(fs.readFileSync(path.join(HOOKS_DIR, 'hooks.json'), 'utf8'));
+  for (const [eventName, entries] of Object.entries(hooksConfig.hooks || {})) {
+    for (const entry of entries || []) {
+      for (const hook of entry.hooks || []) {
+        assert.strictEqual(hook.type, 'command', `${eventName} hook type`);
+        assert.strictEqual(hook.command, 'node', `${eventName} 应使用 command=node`);
+        assert.ok(Array.isArray(hook.args), `${eventName} 应使用 args 数组`);
+        assert.strictEqual(hook.args.length, 1, `${eventName} args 只应包含脚本路径`);
+        assert.ok(hook.args[0].startsWith('${CLAUDE_PLUGIN_ROOT}/hooks/'), `${eventName} args 应使用 CLAUDE_PLUGIN_ROOT 占位`);
+        assert.ok(hook.args[0].endsWith('.js'), `${eventName} args 应指向 .js hook`);
+      }
+    }
+  }
 });
 
 test('23. SubagentStop artifact-writer 合规报告记录 transcript 且不注入提示', () => {

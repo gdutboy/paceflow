@@ -2,9 +2,8 @@
 name: artifact-management
 effort: medium
 description: >
-  PACEflow v6 artifact 格式与变更管理规则。涉及 task.md、implementation_plan.md、
-  walkthrough.md、findings.md、corrections.md、changes/ 详情文件、T-NNN、
-  CHG/HOTFIX/FINDING/CORRECTION 编号、APPROVED/VERIFIED/ARCHIVE 标记时自动激活。
+  Use for PACEflow artifact fields and formats: task indexes, CHG/HOTFIX
+  lifecycle operations, artifact-writer prompts, approvals, verification, and archive.
 ---
 
 # Artifact 文件管理规则
@@ -13,9 +12,9 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
-如果用户已明确选择 vault/local 但 artifact-root 配置还不存在，先运行 hook 提示的 `set-artifact-root` helper（`--choice vault` 或 `--choice local`），再从目标项目 cwd 运行 reserve helper。不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件；helper 会写入权威 runtime 配置位置。reserve helper 不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化只可用 `--cwd`；不要搜索旧 plugin cache 路径。
+如果用户已明确选择 vault/local 但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault` 或 `--choice local`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
 
-Helper 命令来源：优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，不要搜索 `~/.claude/plugins/cache` 猜版本；以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令，不要自行扫描 cache。
+Helper 命令来源：正确做法是优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令。禁止搜索 `~/.claude/plugins/cache` 猜版本。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
@@ -87,6 +86,122 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 - 在 `task.md` 或 `implementation_plan.md` 写 CHG 三级标题详情段
 - 在 `findings.md` 写 finding 详情段
 - 用移动 `<!-- ARCHIVE -->` 标记的方式归档 CHG 详情
+
+### 最小字段模板
+
+复制模板时保留字段名，不要只在正文里提到 CHG-ID 或 task-id。
+
+创建 CHG/HOTFIX：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: create-chg
+execution-context: <reserve helper 输出>
+reserved-id: <reserve helper 输出>
+reserved-file: <reserve helper 输出>
+title: <变更标题>
+tasks:
+  - T-001: <任务标题与验收>
+background: <Why>
+scope: <What>
+technical-decision: <How>
+```
+
+仅批准，暂不开始：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
+```
+
+批准并开始：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve-and-start
+task-id: T-001
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
+```
+
+恢复暂停/阻塞任务：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+section: tasks
+action: update-status
+task-id: T-001
+new-status: [/]
+status-reason: <用户要求恢复或当前阻塞已解除>
+```
+
+验证后收尾归档：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: close-chg
+target: CHG-YYYYMMDD-NN
+verification-confirmed: true
+complete-open-tasks: true
+verify-summary: <已运行并读取的验证结果>
+walkthrough-summary: <完成摘要>
+```
+
+只记录验证，暂不归档：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: verify
+verify-summary: <已运行并读取的验证结果>
+```
+
+只归档已验证 CHG：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: archive-chg
+target: CHG-YYYYMMDD-NN
+walkthrough-summary: <完成摘要>
+```
+
+记录 finding：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: record-finding
+title: <finding 标题>
+summary: <≤200 字摘要>
+type: research | observation | comparison | bug-report
+impact: P0 | P1 | P2 | P3
+body: <完整 Markdown 正文>
+```
+
+记录 correction：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: record-correction
+reserved-id: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出>
+trigger-quote: <用户纠正原话>
+wrong-behavior: <错误行为，至少 20 字>
+correct-behavior: <正确行为，至少 20 字>
+trigger-scenario: <触发场景>
+root-cause: <根因>
+knowledge-link: [[note]] 或 project-scope: project-only
+```
 
 ---
 
