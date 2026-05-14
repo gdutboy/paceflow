@@ -196,8 +196,8 @@ operation: record-correction
 reserved-id: <reserve helper 输出>
 reserved-file-prefix: <reserve helper 输出>
 trigger-quote: <用户纠正原话>
-wrong-behavior: <错误行为，至少 20 字>
-correct-behavior: <正确行为，至少 20 字>
+wrong-behavior: <错误行为，至少 20 字符>
+correct-behavior: <正确行为，至少 20 字符>
 trigger-scenario: <触发场景>
 root-cause: <根因>
 knowledge-link: [[note]] 或 project-scope: project-only

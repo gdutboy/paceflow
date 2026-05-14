@@ -552,3 +552,225 @@ Failure signals:
 - `verify-summary` is interpreted as `action=verify`.
 - `approve-and-start ...` without `task-id` reaches a running artifact-writer agent instead of immediate PreToolUse deny.
 - `close-chg ...` without `verify-summary` / `walkthrough-summary` reaches a running artifact-writer agent instead of immediate PreToolUse deny.
+
+## Post-3f479c7 Prompt Surface Regression
+
+Use this set after changes that touch hook prompt wording, skill descriptions, artifact-writer templates, `CLAUDE.md`, `agent-references`, internal audit prompts, or `hooks[].args` registration.
+
+Required automated checks from the repo root:
+
+```bash
+git diff --check
+node tests/test-hooks-e2e.js              # expected: 207/207 PASS
+node tests/test-pace-utils.js             # expected: 128/128 PASS
+node tests/test-install.js                # expected: 26/26 PASS
+node tests/agent-tests/run-tests.js dummy # expected: PASS
+claude plugin validate ./plugin           # expected: PASS
+```
+
+Static prompt-surface checks:
+
+```bash
+for f in plugin/agent-references/instructions/*.md; do
+  rg '^## When To Use$' "$f"
+  rg '^## Correct Prompt Example' "$f"
+done
+
+rg 'Phase 1 不预筛选|防 stall|未覆盖/未验证' internal/skills/audit
+rg '## 正向输入模板|operation: close-chg|operation: record-finding' plugin/agents/artifact-writer.md
+rg '最小字段模板|operation: close-chg|operation: record-correction' plugin/skills/artifact-management/SKILL.md
+```
+
+Expected:
+
+- Every `plugin/agent-references/instructions/*.md` file has `When To Use` and `Correct Prompt Example(s)`.
+- Internal audit prompt explicitly says Phase 1 reports all suspicious findings before Phase 2 verification.
+- Artifact-writer and artifact-management both expose copyable operation templates.
+
+### Smoke 9: Installed `hooks[].args` Exec Form
+
+Goal: on Claude Code `2.1.139+`, installed plugin hooks using `command: "node"` + `args: ["${CLAUDE_PLUGIN_ROOT}/hooks/*.js"]` run exactly like the previous shell-form hooks.
+
+Setup:
+
+```bash
+claude --version
+PLUGIN_DIR="$(find "$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)"
+node -e 'const p=require(process.argv[1]); console.log(p.version)' "$PLUGIN_DIR/.claude-plugin/plugin.json"
+node -e 'const h=require(process.argv[1]).hooks; for (const [evt, entries] of Object.entries(h)) for (const e of entries) for (const hook of e.hooks || []) { if (hook.type === "command") console.log(evt, hook.command, JSON.stringify(hook.args || [])); }' "$PLUGIN_DIR/hooks/hooks.json"
+```
+
+Expected:
+
+- Claude Code version is `2.1.139` or newer.
+- Installed PaceFlow version includes commit `3f479c7` or later release.
+- Every command hook prints `node` as `command` and a non-empty `args` array containing `${CLAUDE_PLUGIN_ROOT}/hooks/...`.
+
+Runtime check:
+
+Use Smoke 1 or Smoke 2 after `/reload plugin`.
+
+Expected:
+
+- SessionStart, PreToolUse, PostToolUse, Stop, SubagentStop, and PostToolUseFailure hooks all still run.
+- Hook stdin/exit/stdout semantics are unchanged.
+- No shell quoting/path placeholder failure appears in the TUI or `pace-hooks.log`.
+
+Failure signals:
+
+- Hook command path is treated as a literal `${CLAUDE_PLUGIN_ROOT}` string.
+- Hook does not receive stdin or silently stops firing after moving to `args`.
+- Windows/space-containing paths fail only in installed runtime.
+
+### Smoke 10: Missing-Field Deny Gives Full Template
+
+Goal: when a main session omits artifact-writer fields, PreToolUse denies before a long-running agent starts and returns a complete operation template plus skill reference.
+
+Setup:
+
+```bash
+cd /mnt/k/AI
+rm -rf paceflow-smoke-655-prompt-template
+mkdir paceflow-smoke-655-prompt-template
+cd paceflow-smoke-655-prompt-template
+printf 'console.log("prompt template smoke")\n' > index.js
+printf '# prompt template smoke\n' > README.md
+printf 'module.exports = 1\n' > helper.js
+printf 'console.log("test ok")\n' > test.js
+```
+
+Start Claude Code in `/mnt/k/AI/paceflow-smoke-655-prompt-template`.
+
+Prompt A:
+
+```text
+这是 Prompt Surface smoke。artifact 选择本地项目目录。
+先创建一个 CHG：目标是把 README.md 追加一行 "prompt template ok"。
+创建后不要修复，故意派 artifact-writer 执行 approve-and-start，但 prompt 里不要写 task-id，用来观察 hook 是否在 Agent 启动前拒绝并返回完整模板。
+```
+
+Expected A:
+
+- The first malformed `approve-and-start` agent attempt is denied before a long-running artifact-writer run.
+- Deny text includes `Skill(paceflow:pace-workflow)`.
+- Deny text includes a complete template with:
+  - `operation: update-chg`
+  - `target: CHG-YYYYMMDD-NN`
+  - `action: approve-and-start`
+  - `task-id: T-NNN`
+  - `approval-confirmed: true`
+  - `approval-source`
+  - `approval-evidence`
+
+Prompt B:
+
+```text
+继续同一个 smoke。现在故意派 artifact-writer 执行 close-chg，但只给 target 和 complete-open-tasks，不给 verify-summary / walkthrough-summary，用来观察 hook 是否在 Agent 启动前拒绝并返回完整 close-chg 模板。不要修改 README.md。
+```
+
+Expected B:
+
+- The malformed `close-chg` attempt is denied before a long-running artifact-writer run.
+- Deny text includes:
+  - `operation: close-chg`
+  - `target: CHG-YYYYMMDD-NN`
+  - `verification-confirmed: true`
+  - `complete-open-tasks: true`
+  - `verify-summary`
+  - `walkthrough-summary`
+
+Verify:
+
+```bash
+cd /mnt/k/AI/paceflow-smoke-655-prompt-template
+tail -n 500 "$PLUGIN_DIR/hooks/pace-hooks.log" | rg 'DENY_AGENT_LIFECYCLE_PROMPT|DENY_AGENT_TARGET_REQUIRED|DENY_AGENT_ARTIFACT_DIR'
+! rg 'prompt template ok' README.md
+```
+
+Failure signals:
+
+- A malformed prompt reaches a long-running artifact-writer agent before PreToolUse denial.
+- The hook only says “missing task-id” or “missing summary” without a complete copyable template.
+- The deny text does not include the skill reference.
+
+### Smoke 11: `record-finding` Artifact-Dir Template
+
+Goal: non-CHG operations also receive operation-specific templates, not the generic CHG template.
+
+Use any PaceFlow-enabled local project, then intentionally ask for a malformed finding dispatch:
+
+```text
+这是 Prompt Surface smoke。故意派 artifact-writer 执行 record-finding，但不要在 prompt 顶部写 artifact_dir，用来观察 hook deny。不要自动补字段。
+字段如下：
+operation: record-finding
+title: 测试 finding
+summary: 摘要
+type: observation
+impact: P2
+body: 正文
+```
+
+Expected:
+
+- PreToolUse denies before artifact-writer starts.
+- Deny text includes `operation: record-finding`.
+- Deny text includes `title`, `summary`, `type`, `impact`, and `body`.
+- Deny text does not incorrectly show a `create-chg` or `close-chg` template.
+
+### Smoke 12: Skill Trigger Advisory
+
+Goal: explicit PACEflow signal should strongly guide the model to call skills, while correctness remains enforced by hooks if the model skips the skill.
+
+Use Smoke 1, Smoke 2, or Smoke 7 and observe the transcript:
+
+Expected preferred path:
+
+- The main session calls `Skill(paceflow:pace-workflow)` before creating or updating CHG artifacts.
+- The main session calls `Skill(paceflow:artifact-management)` before artifact field-heavy operations such as `approve-and-start`, `update-status`, `close-chg`, or `record-correction`.
+
+Allowed fallback path:
+
+- If the model skips skill calls, the first relevant hook deny still includes the skill reference and a complete operation template.
+- The model cannot bypass reserved-id, C/E gate, owner gate, verification summary, or artifact_dir requirements.
+
+Failure signals:
+
+- There is a clear PACEflow signal, the model skips skills, and the hook rejection also lacks skill guidance.
+- The model succeeds in writing project or artifact state without satisfying the structured lifecycle fields.
+
+### Smoke 13: Internal Audit Prompt Surface
+
+Goal: audit prompt changes produce complete findings rather than over-filtered summaries, and avoid large-diff stalls.
+
+Run on a small recent range:
+
+```text
+使用 internal audit 流程审计最近 2 个 commit。重点验证：
+1. Phase 1 不要预筛选低严重度发现；
+2. 每个 agent 输出 Findings / Evidence / Tests Checked / Open Questions / Health Score；
+3. 大文件不要直接无界 git diff，先用 git log --stat 定位；
+4. 最终报告必须列出误报分析、验证矩阵、证据来源和未覆盖/未验证范围。
+```
+
+Expected:
+
+- Phase 1 output contains low-severity W/I findings when present, not only C/H.
+- Any C/H claim references code/tests/logs/session evidence.
+- Large files are inspected by commit/file slices, not by unbounded range diff.
+- Final report explicitly lists remaining unverified areas.
+
+Failure signals:
+
+- Agent stalls on a large file diff.
+- Report omits evidence paths or verification matrix.
+- Low-severity but real prompt/doc findings are silently dropped before Phase 2.
+
+## Prompt Surface Smoke Priority
+
+After `f541959` / `3f479c7` or any follow-up prompt-surface change, run:
+
+1. Automated checks and static prompt-surface checks.
+2. Smoke 9 on Claude Code `2.1.139+` if installed runtime changed.
+3. Smoke 10 and Smoke 11 to verify copyable hook templates.
+4. Smoke 12 during the next ordinary PACEflow runtime smoke.
+5. Smoke 13 only when internal audit prompts changed.

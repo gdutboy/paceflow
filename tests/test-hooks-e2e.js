@@ -2490,6 +2490,8 @@ test('9hc1. approve-and-start 缺 approval-confirmed → DENY', () => {
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
   assert.ok(r.stdout.includes('approval-confirmed: true'));
+  const reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  assert.ok(!reason.endsWith('\n'), 'approve-and-start 缺字段提示不应保留尾部空行');
 });
 
 test('9hc1a. approve-and-start 带确认字段 → 放行', () => {
@@ -2961,6 +2963,53 @@ test('9hc4a0. close-chg walkthrough 提到 approve-and-start 不误判为批准'
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(!r.stdout.includes('approval-confirmed'));
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc4a1. update-chg action=verify 缺 verify-summary 在 Agent 启动前 DENY', () => {
+  const dir = makeV6Project('agent-verify-missing-summary');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Verify CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: verify',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('verify-summary'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
+});
+
+test('9hc4a2. archive-chg 缺 walkthrough-summary 在 Agent 启动前 DENY', () => {
+  const dir = makeV6Project('agent-archive-missing-summary');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Archive CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: archive-chg',
+          'target: CHG-20260504-01',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('walkthrough-summary'));
+  assert.ok(r.stdout.includes('operation: archive-chg'));
 });
 
 test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', () => {

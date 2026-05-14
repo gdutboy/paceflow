@@ -646,6 +646,10 @@ paceUtils.withStdinParsed((stdin) => {
   }
   const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
   const artifactRelForMutation = getArtifactRelIfRelevant(toolName, paceSignal, artDir, filePath);
+  // Artifact paths are part of the guarded project surface even when vault/local routing
+  // puts them outside the current worktree cwd. Ordinary host-checkout files from a
+  // worktree get a soft note only; PaceFlow hard-gates artifact semantics, not generic
+  // edits to every path the user may explicitly request.
   const isInsideProject = normalizedFile.startsWith(cwdWithSlash) || !!artifactRelForMutation;
   const hostNonArtifactWriteNote = isFileMutationTool(toolName) && paceSignal
     ? worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRelForMutation)

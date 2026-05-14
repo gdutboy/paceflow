@@ -40,6 +40,20 @@ function usage() {
   ].join('\n');
 }
 
+function choiceLooksAbsolute(choice) {
+  const normalized = String(choice || '').replace(/\\/g, '/');
+  return path.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized);
+}
+
+function comparableArtifactRootChoice(choice, cwd) {
+  const raw = paceUtils.normalizeArtifactRootChoice(choice);
+  const keyword = raw.toLowerCase();
+  if (keyword === 'local' || keyword === 'vault') return keyword;
+  const base = paceUtils.getProjectStateDir(cwd);
+  const resolved = (choiceLooksAbsolute(raw) ? path.resolve(raw) : path.resolve(base, raw)).replace(/\\/g, '/');
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 function fail(cwd, action, message, fields = {}) {
   log(paceUtils.logEntry('SetArtifactRoot', action, { proj: paceUtils.getProjectName(cwd), ...fields }));
   process.stdout.write(`${message}\n`);
@@ -93,7 +107,7 @@ function main() {
   const rawEnvChoice = paceUtils.normalizeArtifactRootChoice(process.env.PACE_ARTIFACT_ROOT || process.env.PACEFLOW_ARTIFACT_ROOT || '');
   const envKeywordChoice = rawEnvChoice.toLowerCase();
   const envChoice = envKeywordChoice === 'local' || envKeywordChoice === 'vault' ? envKeywordChoice : rawEnvChoice;
-  if (envChoice && envChoice !== args.choice) {
+  if (envChoice && comparableArtifactRootChoice(envChoice, args.cwd) !== comparableArtifactRootChoice(args.choice, args.cwd)) {
     fail(args.cwd, 'DENY_ENV_CHOICE_CONFLICT', [
       `当前环境变量 PACE_ARTIFACT_ROOT/PACEFLOW_ARTIFACT_ROOT=${envChoice}，会覆盖 .pace/artifact-root。`,
       `本次请求写入 choice=${args.choice}，两者不一致，已停止以避免显示的 artifact_dir 与实际生效位置不一致。`,

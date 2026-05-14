@@ -59,7 +59,7 @@ module.exports = function createLockUtils(ctx) {
     if (byField) return byField[1].toLowerCase();
     const known = text.match(/\b(create-chg|update-chg|archive-chg|close-chg|record-finding|record-correction)\b/i);
     if (known) return known[1].toLowerCase();
-    if (/(?:^|[\n,，;；])\s*(approve-and-start|approve|update-status|verify)(?=$|[\s,，;；:：])/i.test(text)) return 'update-chg';
+    if (/(?:^|[\n,，;；])\s*(approve-and-start|approve|update-status)(?=$|[\s,，;；:：])/i.test(text)) return 'update-chg';
     return '';
   }
 

@@ -32,6 +32,8 @@ function artifactDirField(artDir) {
   return artDir ? `artifact_dir: ${displayDir(artDir)}` : 'artifact_dir: <hook 解析出的 artifact 目录>';
 }
 
+// Keep these recovery templates aligned with plugin/agents/artifact-writer.md and
+// artifact-management skill examples when adding or changing an operation.
 function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', action = '', target = '' } = {}) {
   const op = String(operation || promptDeclaredOperation(prompt) || '').toLowerCase();
   const act = String(action || promptDeclaredAction(prompt) || '').toLowerCase();
@@ -142,8 +144,8 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
       'reserved-id: <helper 输出>',
       'reserved-file-prefix: <helper 输出>',
       'trigger-quote: <用户纠正原话>',
-      'wrong-behavior: <错误行为，至少 20 字>',
-      'correct-behavior: <正确行为，至少 20 字>',
+      'wrong-behavior: <错误行为，至少 20 字符>',
+      'correct-behavior: <正确行为，至少 20 字符>',
       'trigger-scenario: <触发场景>',
       'root-cause: <根因>',
       'knowledge-link: [[note]] 或 project-scope: project-only',
@@ -276,7 +278,7 @@ function promptDeclaredAction(prompt) {
   const value = promptFieldValue(prompt, 'action');
   if (value) return value.toLowerCase();
   const text = String(prompt || '');
-  const m = text.match(/(?:^|[\n,，;；])\s*(approve-and-start|update-status|approve|verify)(?=$|[\s,，;；:：])/i);
+  const m = text.match(/(?:^|[\n,，;；])\s*(approve-and-start|update-status|approve)(?=$|[\s,，;；:：])/i);
   return m ? m[1].toLowerCase() : '';
 }
 
@@ -319,7 +321,9 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
   const mentionsApproveOnly = operation === 'update-chg' && action === 'approve';
   const mentionsApprovalAction = mentionsApproveAndStart || mentionsApproveOnly;
   const mentionsCloseChg = operation === 'close-chg';
+  const mentionsArchiveChg = operation === 'archive-chg';
   const mentionsUpdateStatus = operation === 'update-chg' && action === 'update-status';
+  const mentionsVerifyOnly = operation === 'update-chg' && action === 'verify';
 
   if (!operation) {
     return [
@@ -345,7 +349,7 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
         '请重派同一个 agent，并使用完整 prompt 顶部模板：',
         promptTemplateForOperation({ prompt, artDir, operation, action }),
         mentionsApproveAndStart ? '' : '若批准后立即开始，请改用 action=approve-and-start 并提供 task-id。'
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     }
   }
 
@@ -381,6 +385,16 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     ].join('\n');
   }
 
+  if (mentionsVerifyOnly && !promptHasNonEmptyField(text, 'verify-summary')) {
+    return [
+      '派 artifact-writer 执行 update-chg action=verify 时缺少必填字段：verify-summary。',
+      FORMAT_SNIPPETS.skillRef,
+      '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
+      '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+      promptTemplateForOperation({ prompt, artDir, operation, action })
+    ].join('\n');
+  }
+
   if (mentionsCloseChg) {
     const missing = [];
     if (!promptHasTrueField(text, 'verification-confirmed')) missing.push('verification-confirmed: true');
@@ -396,6 +410,16 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
         promptTemplateForOperation({ prompt, artDir, operation: 'close-chg' })
       ].join('\n');
     }
+  }
+
+  if (mentionsArchiveChg && !promptHasNonEmptyField(text, 'walkthrough-summary')) {
+    return [
+      '派 artifact-writer 执行 archive-chg 时缺少必填字段：walkthrough-summary。',
+      FORMAT_SNIPPETS.skillRef,
+      'archive-chg 只用于已完成且已验证的 CHG/HOTFIX 归档或索引修复；仍需由主 session 提供完成摘要写入 walkthrough.md。',
+      '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+      promptTemplateForOperation({ prompt, artDir, operation: 'archive-chg' })
+    ].join('\n');
   }
 
   return '';

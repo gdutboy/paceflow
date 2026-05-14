@@ -161,7 +161,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 | record-finding | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/record-finding.md` |
 | record-correction | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/record-correction.md` |
 
-输入字段速查（详细见各 instruction 文件）：
+输入字段速查（详细见各 instruction 文件；可复制模板见下方 §正向输入模板）：
 
 ### 1. create-chg
 **必填**：`title` / `tasks`
@@ -178,8 +178,8 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 - `action=verify` — 写 `verified-date` + 插入 `<!-- VERIFIED -->` + 追加工作记录（只记录 V 阶段、暂不归档时使用，幂等）
 
 **必填**：`target` / `action`
-**条件必填**：`section`（action=append/replace/update-status 时）；`task-id` + `new-status`（action=update-status 时）；`new-status=[!]` 时还必须有 `status-reason` / `block-reason` / `pause-reason`；`approval-confirmed: true` + `approval-source` + `approval-evidence`（action=approve / approve-and-start 时）；`task-id`（action=approve-and-start 时）
-**可选**：`content`（action=append/replace 时）；`verify-summary`（action=verify 时）
+**条件必填**：`section`（action=append/replace/update-status 时）；`task-id` + `new-status`（action=update-status 时）；`new-status=[!]` 时还必须有 `status-reason` / `block-reason` / `pause-reason`；`approval-confirmed: true` + `approval-source` + `approval-evidence`（action=approve / approve-and-start 时）；`task-id`（action=approve-and-start 时）；`verify-summary`（action=verify 时）
+**可选**：`content`（action=append/replace 时）
 **错误码边界**：`operation=update-chg` 已识别但 `action` 不在上述枚举内时，属于字段值非法，必须报告 `format-violation`；只有未知 `operation` 才报告 `out-of-scope`。
 
 详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/update-chg.md`。
@@ -196,7 +196,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 **可选**：`related-changes` / `merges` / `status`
 
 ### 6. record-correction
-**必填**：`trigger-quote` / `wrong-behavior`（≥20）/ `correct-behavior`（≥20）/ `trigger-scenario` / `root-cause`
+**必填**：`trigger-quote` / `wrong-behavior`（≥20 字符）/ `correct-behavior`（≥20 字符）/ `trigger-scenario` / `root-cause`
 **必填二选一**：`knowledge-link` 或 `project-scope: project-only`
 
 ## 正向输入模板
@@ -292,6 +292,16 @@ action: verify
 verify-summary: <已运行并读取的验证结果>
 ```
 
+### stale owner takeover
+
+仅当 hook 指出目标 CHG 属于 stale foreign owner，且用户明确要求当前 session 接手时，在原本要执行的 update/close/archive prompt 中追加这三项。fresh foreign owner 不得接手。
+
+```text
+owner-takeover-confirmed: true
+owner-takeover-source: user-directive
+owner-takeover-evidence: <用户明确要求当前 session 接手的原话>
+```
+
 ### archive-chg
 
 ```text
@@ -321,8 +331,8 @@ operation: record-correction
 reserved-id: <reserve helper 输出>
 reserved-file-prefix: <reserve helper 输出>
 trigger-quote: <用户纠正原话>
-wrong-behavior: <错误行为，至少 20 字>
-correct-behavior: <正确行为，至少 20 字>
+wrong-behavior: <错误行为，至少 20 字符>
+correct-behavior: <正确行为，至少 20 字符>
 trigger-scenario: <触发场景>
 root-cause: <根因>
 knowledge-link: [[note]] 或 project-scope: project-only

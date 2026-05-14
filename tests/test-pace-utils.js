@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
+const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
 const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
@@ -959,6 +960,24 @@ test('getNativePlanPath: 过滤不属于当前项目的 current-native-plan', ()
   assert.strictEqual(paceUtils.getNativePlanPath(dir), local.replace(/\\/g, '/'));
 });
 
+test('getNativePlanPath: 返回显示路径不复用 Windows 小写 normalizer', () => {
+  const base = makeTmpDir('native-plan-display-case');
+  const dir = path.join(base, 'MixedCaseProject');
+  const runtime = path.join(dir, '.pace');
+  const local = path.join(dir, 'Docs', 'Plan.md');
+  fs.mkdirSync(path.dirname(local), { recursive: true });
+  fs.mkdirSync(runtime, { recursive: true });
+  fs.writeFileSync(local, '# local plan\n', 'utf8');
+  fs.writeFileSync(path.join(runtime, 'current-native-plan'), local, 'utf8');
+
+  const utils = createPlanUtils({
+    ...paceUtils,
+    getProjectRuntimeDir: () => runtime,
+    normalizePath: value => String(value || '').replace(/\\/g, '/').toLowerCase(),
+  });
+  assert.strictEqual(utils.getNativePlanPath(dir), local.replace(/\\/g, '/'));
+});
+
 // ============================================================
 // 9. hasUnsyncedPlanFiles() / listUnsyncedPlanFiles() — 4 个测试
 // ============================================================
@@ -1406,7 +1425,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 7 个测试
+// 18. release sanity — 9 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1504,10 +1523,23 @@ test('skills lifecycle 示例不遗漏 target/task-id 且表格不断裂', () =>
   const repoRoot = path.join(__dirname, '..');
   const workflow = fs.readFileSync(path.join(repoRoot, 'plugin/skills/pace-workflow/SKILL.md'), 'utf8');
   assert.ok(!workflow.includes('update-chg section=work-record action=append'), 'work-record 示例必须带 target');
+  assert.ok(!workflow.includes('skill base directory'), 'workflow skill 应统一使用中文“skill 根目录”');
 
   const lifecycle = fs.readFileSync(path.join(repoRoot, 'plugin/skills/artifact-management/references/change-lifecycle.md'), 'utf8');
   assert.ok(lifecycle.includes('update-chg target=CHG-... action=update-status task-id=T-NNN new-status=[!]'), '[!] 示例必须带 target/task-id');
   assert.ok(lifecycle.indexOf('| 取消 |') < lifecycle.indexOf('[ ] planned'), 'deferred 说明不应插入生命周期表格中间');
+
+  const bridge = fs.readFileSync(path.join(repoRoot, 'plugin/skills/pace-bridge/SKILL.md'), 'utf8');
+  assert.ok(!bridge.includes('skill base directory'), 'bridge skill 应统一使用中文“skill 根目录”');
+});
+
+test('artifact-writer prompt surface 覆盖 owner takeover 与 correction 字符口径', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const writer = fs.readFileSync(path.join(repoRoot, 'plugin/agents/artifact-writer.md'), 'utf8');
+  assert.ok(writer.includes('owner-takeover-confirmed: true'), 'artifact-writer 应提供 owner takeover 正向模板');
+  assert.ok(writer.includes('owner-takeover-source: user-directive'));
+  assert.ok(writer.includes('owner-takeover-evidence:'));
+  assert.ok(!writer.includes('至少 20 字>'), 'record-correction 模板应统一为 20 字符');
 });
 
 test('pace-utils 子模块可直接 require 且导出关键符号', () => {

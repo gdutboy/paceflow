@@ -54,7 +54,7 @@ verify-summary: <已运行并读取的验证结果>
 - `task-id` + `new-status`（action=update-status 时必填）
 - `approval-confirmed: true` + `approval-source` + `approval-evidence`（action=approve / approve-and-start 时必填）
 - `task-id`（action=approve-and-start 时必填）
-- `verify-summary`（action=verify 时可选，写入 `## 工作记录` 单元格）
+- `verify-summary`（action=verify 时必填，写入 `## 工作记录` 单元格）
 
 ## 操作步骤
 
@@ -192,7 +192,7 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
 5. **写入**（按顺序，原子语义）：
    - Edit frontmatter：`verified-date: <date '+%Y-%m-%dT%H:%M:%S+08:00' 输出>`，置于 `completed-date` 与 `archived-date` 之间
    - Edit 详情正文：在 `<!-- APPROVED -->` 行之后、紧邻插入 `<!-- VERIFIED -->`（不空行间隔）
-   - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary 或 "无附加说明"> |`
+   - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary> |`
 6. 报告 `status: SUCCESS`，`files_modified: ["changes/chg-xxx.md"]`
    - 最终回答第一行必须直接是 `## artifact-writer 报告`
    - 禁止在报告前写任何过渡句或说明文字

@@ -299,7 +299,9 @@ if (warnings.length > 0) {
       const hasUserActionWarning = warningTypes.includes('user-action');
       const hasExecutionWarning = warningTypes.includes('execution');
       let prefix;
-      if (hasUserActionWarning && !hasExecutionWarning) {
+      if (hasUserActionWarning && hasExecutionWarning) {
+        prefix = 'PACE 检查未通过，请继续执行任务并处理以下问题；其中部分问题需要用户决策：';
+      } else if (hasUserActionWarning) {
         prefix = 'PACE 检查未通过，以下问题需要用户决策：';
       } else if (hasExecutionWarning) {
         prefix = 'PACE 检查未通过，请继续执行任务并处理以下问题：';

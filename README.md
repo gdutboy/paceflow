@@ -89,6 +89,8 @@ node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR"
 
 ## 安装
 
+当前版本的 hook 注册使用 Claude Code `2.1.139` 新增的 `hooks[].args` exec form。请使用 Claude Code `2.1.139` 或更高版本；`2.1.138` 及更早版本不支持该字段，可能只执行 `command: "node"` 而不传脚本路径，导致 hook 没有实际运行。
+
 ```bash
 # 在 Claude Code 中执行（2 条命令）
 /plugin marketplace add paceaitian/paceflow

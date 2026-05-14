@@ -138,8 +138,8 @@
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 205/205 PASS
-node tests/test-pace-utils.js                        # 126/126 PASS
+node tests/test-hooks-e2e.js                         # 207/207 PASS
+node tests/test-pace-utils.js                        # 128/128 PASS
 node tests/test-install.js                           # 26/26 PASS
 node tests/agent-tests/run-tests.js dummy            # PASS
 claude plugin validate ./plugin                      # PASS
@@ -581,7 +581,7 @@ Smoke4 rerun 覆盖“vault 选择后是否先写 `.pace/artifact-root`，不再
 - helper 必须复用 `getProjectRuntimeDir()` / artifact root 解析逻辑：当前 cwd 是 git worktree 时，写宿主项目 `.pace/artifact-root`，不写 worktree 分支目录本地 `.pace/artifact-root`。
 - helper 成功输出需明确解释 worktree 共享 runtime，避免模型误以为“写错目录”并自行补写 cwd-relative `.pace/artifact-root`。输出至少包含 `config-file`、`choice`、`current-cwd`、`execution-context`，并说明“这是 git worktree 共享的 PaceFlow runtime 配置位置；不要在当前 worktree 另写 `.pace/artifact-root`；下一步从当前 cwd 运行 reserve helper”。
 - root-choice deny / SessionStart helper hint / `pace-workflow` / `artifact-management` 文案应改为优先运行 `set-artifact-root` helper，而不是指导模型 `mkdir -p .pace && echo local > .pace/artifact-root`。
-- 如果当前上下文没有完整 helper 命令，skill 必须明确：不要搜索 plugin cache；以当前 skill base directory 为基准拼出同版本绝对路径 `../../hooks/set-artifact-root.js` / `../../hooks/reserve-artifact-id.js`，或先触发/等待 hook 提供 helper 命令。
+- 如果当前上下文没有完整 helper 命令，skill 必须明确：不要搜索 plugin cache；以当前 skill 根目录为基准拼出同版本绝对路径 `../../hooks/set-artifact-root.js` / `../../hooks/reserve-artifact-id.js`，或先触发/等待 hook 提供 helper 命令。
 - 机械兜底：当 cwd 是 git worktree 且模型尝试写 worktree 本地 `.pace/artifact-root`，如果宿主 runtime 是权威位置，应拒绝或强提示改用 `set-artifact-root` helper。该 guard 只针对 PaceFlow runtime config，不扩展为普通项目文件路径裁判。
 - 后续测试：e2e 覆盖 worktree cwd 下 `set-artifact-root --choice local` 写宿主 `.pace/artifact-root`；`reserve-artifact-id.js --cwd <worktree>` 随后成功；误写 worktree 本地 `.pace/artifact-root` 被提示；production Smoke3 增加“新项目无 `.pace/` + worktree 首次选择 local”复测。
 
@@ -728,7 +728,7 @@ Smoke8 额外缺口：
 
 - 第二 session 仍未实际调用 `Skill(paceflow:pace-workflow)` / `Skill(paceflow:artifact-management)`，继续依靠 SessionStart 注入与 hook/agent 失败重试推进。该问题与 Smoke7 一致，不能把 skill 调用当作核心不变量。
 - 两条恢复型 block 仍缺 skill 指向：首次 `DENY_AGENT_ARTIFACT_DIR` 只提示补 `artifact_dir`；第二次 `DENY_AGENT_TARGET_REQUIRED` 只提示补 `target`。已修复：两条 deny 都追加 `FORMAT_SNIPPETS.skillRef`。
-- 更严重的 token 浪费点：主 session 第三次 prompt 写成 `approve-and-start approval-confirmed...`，没有结构化 `operation:` / `action:`，PreToolUse 未识别 lifecycle action，放行 agent；agent 读规范后才报告缺 `task-id`，未写文件但浪费一次 agent。第四次 `close-chg verification-confirmed... verification-evidence...` 有 `close-chg` token，PreToolUse 能识别 operation 并写 owner `closing`，但 lifecycle 校验函数只看 `operation:` 字段，未在派 agent 前拦缺 `verify-summary` / `walkthrough-summary`，agent 读规范后才失败。已修复：`operationFromAgentPrompt` 对独立的 `approve` / `approve-and-start` / `update-status` / `verify` token 推断为 `update-chg`；`agentLifecyclePromptDenyReason` 复用同一 operation 解析，并从独立 action token 推断 action，确保 shorthand prompt 也能在 Agent 启动前被 `DENY_AGENT_LIFECYCLE_PROMPT` 拦截。额外补了 `verify-summary` 字段名不应被误判为 `verify` action 的回归测试。成功 prompt 仍建议结构化写法 `operation: update-chg` + `action: approve-and-start`，但 hook 先以机械识别减少 token 浪费。
+- 更严重的 token 浪费点：主 session 第三次 prompt 写成 `approve-and-start approval-confirmed...`，没有结构化 `operation:` / `action:`，PreToolUse 未识别 lifecycle action，放行 agent；agent 读规范后才报告缺 `task-id`，未写文件但浪费一次 agent。第四次 `close-chg verification-confirmed... verification-evidence...` 有 `close-chg` token，PreToolUse 能识别 operation 并写 owner `closing`，但 lifecycle 校验函数只看 `operation:` 字段，未在派 agent 前拦缺 `verify-summary` / `walkthrough-summary`，agent 读规范后才失败。已修复：`operationFromAgentPrompt` 对独立的 `approve` / `approve-and-start` / `update-status` token 推断为 `update-chg`；`agentLifecyclePromptDenyReason` 复用同一 operation 解析，并从独立 action token 推断 action，确保 approve/start shorthand prompt 也能在 Agent 启动前被 `DENY_AGENT_LIFECYCLE_PROMPT` 拦截。`verify` 只接受结构化 `action: verify`，避免散文中的 verify 被误识别；额外补了 `verify-summary` 字段名不应被误判为 `verify` action 的回归测试。成功 prompt 仍建议结构化写法 `operation: update-chg` + `action: approve-and-start`，但 hook 先以机械识别减少 token 浪费。
 
 Claude Code `2.1.139` hook 文档新增项：`args: string[]` exec form 已完成代码迁移，用 `command: "node"` 与 `args: ["${CLAUDE_PLUGIN_ROOT}/hooks/xxx.js"]` 直接 spawn，避免 Windows / 空格路径 / 引号拼接问题；仍需在 2.1.139+ installed plugin 环境做一次 runtime smoke。`continueOnBlock` 目前仅对 prompt/agent 型 `PostToolUse` hook 更有意义；PaceFlow 当前主路径是 command hook，短期不作为 P1。
 
