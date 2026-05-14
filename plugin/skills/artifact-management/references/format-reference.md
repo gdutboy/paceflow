@@ -4,7 +4,7 @@
 
 ---
 
-## 索引文件
+## Artifact root 文件
 
 ### spec.md
 
@@ -51,6 +51,8 @@
 
 <!-- ARCHIVE -->
 ```
+
+已知 worktree/branch 上下文时，在完成内容中保留 `[worktree:: ...] [branch:: ...]`；如果 close-chg 时没有这些上下文，允许省略，不要手写占位。
 
 ### findings.md
 

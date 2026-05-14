@@ -126,7 +126,7 @@ module.exports = function createPlanUtils(ctx) {
     try {
       const planPath = fs.readFileSync(fp, 'utf8').trim();
       if (!planPath || !nativePlanMatchesProject(planPath, cwd)) return null;
-      return planPath;
+      return ctx.normalizePath(path.resolve(cwd || process.cwd(), planPath));
     } catch(e) { return null; }
   }
 

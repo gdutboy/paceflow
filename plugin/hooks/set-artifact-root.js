@@ -46,7 +46,7 @@ function fail(cwd, action, message, fields = {}) {
   process.exitCode = 2;
 }
 
-function formatSuccess(cwd, choice, configFile, artifactDir) {
+function formatSuccess(cwd, choice, configFile, artifactDir, previousChoice = '') {
   const context = paceUtils.executionContextForCwd(cwd);
   const runtimeNote = context.isWorktree
     ? '这是 git worktree 共享的 PaceFlow runtime 配置位置，不是普通项目文件写入目标。'
@@ -54,18 +54,20 @@ function formatSuccess(cwd, choice, configFile, artifactDir) {
   const duplicateNote = context.isWorktree
     ? '不要在当前 worktree 另写 .pace/artifact-root。'
     : '不要额外手写其他 .pace/artifact-root。';
-  return [
+  const lines = [
     'artifact-root 已写入 PaceFlow runtime 配置。',
     `config-file: ${configFile.replace(/\\/g, '/')}`,
     `choice: ${choice}`,
+    previousChoice && previousChoice !== choice ? `previous-choice: ${previousChoice}` : '',
     `current-cwd: ${path.resolve(cwd).replace(/\\/g, '/')}`,
     `execution-context: ${context.text}`,
     `artifact_dir: ${paceUtils.displayDir(artifactDir)}`,
     runtimeNote,
     duplicateNote,
     '下一步从当前 cwd 运行 reserve helper:',
-    `node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`
-  ].join('\n');
+    `node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg --cwd "${path.resolve(cwd).replace(/\\/g, '/')}"`
+  ];
+  return lines.filter(Boolean).join('\n');
 }
 
 function main() {
@@ -88,12 +90,25 @@ function main() {
   }
   const keywordChoice = args.choice.toLowerCase();
   if (keywordChoice === 'local' || keywordChoice === 'vault') args.choice = keywordChoice;
+  const rawEnvChoice = paceUtils.normalizeArtifactRootChoice(process.env.PACE_ARTIFACT_ROOT || process.env.PACEFLOW_ARTIFACT_ROOT || '');
+  const envKeywordChoice = rawEnvChoice.toLowerCase();
+  const envChoice = envKeywordChoice === 'local' || envKeywordChoice === 'vault' ? envKeywordChoice : rawEnvChoice;
+  if (envChoice && envChoice !== args.choice) {
+    fail(args.cwd, 'DENY_ENV_CHOICE_CONFLICT', [
+      `当前环境变量 PACE_ARTIFACT_ROOT/PACEFLOW_ARTIFACT_ROOT=${envChoice}，会覆盖 .pace/artifact-root。`,
+      `本次请求写入 choice=${args.choice}，两者不一致，已停止以避免显示的 artifact_dir 与实际生效位置不一致。`,
+      '请先清除环境变量，或使用与环境变量相同的 --choice。'
+    ].join('\n'), { env_choice: envChoice, choice: args.choice });
+    return;
+  }
   if (args.choice === 'vault' && !paceUtils.VAULT_PATH) {
     fail(args.cwd, 'DENY_VAULT_ENV_MISSING', '用户选择了 Obsidian vault project，但当前 hook 进程没有 PACE_VAULT_PATH，无法解析 vault artifact 根目录。请恢复 PACE_VAULT_PATH 后重试，或选择 local。');
     return;
   }
 
   const configFile = paceUtils.getArtifactRootChoicePath(args.cwd);
+  let previousChoice = '';
+  try { previousChoice = paceUtils.normalizeArtifactRootChoice(fs.readFileSync(configFile, 'utf8')); } catch(e) {}
   try {
     fs.mkdirSync(path.dirname(configFile), { recursive: true });
     const gitignore = path.join(path.dirname(configFile), '.gitignore');
@@ -122,7 +137,7 @@ function main() {
     artifact_dir: paceUtils.displayDir(artifactDir),
     execution_context: paceUtils.executionContextForCwd(args.cwd).text,
   }));
-  process.stdout.write(`${formatSuccess(args.cwd, args.choice, configFile, artifactDir)}\n`);
+  process.stdout.write(`${formatSuccess(args.cwd, args.choice, configFile, artifactDir, previousChoice)}\n`);
 }
 
 main();

@@ -18,7 +18,7 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill base directory 为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`，不要搜索 `~/.claude/plugins/cache` 猜版本：
+ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill 根目录（不是本 `references/` 目录）为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`，不要搜索 `~/.claude/plugins/cache` 猜版本：
 
 ```bash
 <运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg 命令>
@@ -54,14 +54,14 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 | C 仅批准暂不开始 | `planned` | `[ ]` | `update-chg action=approve approval-confirmed=true approval-source=<source> approval-evidence=<evidence>` |
 | C+E 合并 | `in-progress` | `[/]` | `update-chg action=approve-and-start approval-confirmed=true approval-source=<source> approval-evidence=<evidence> task-id=T-NNN` |
 | E 连续执行中 | `in-progress` | `[/]` | 主 session 修改代码/测试；通常不逐个 T-NNN 派 `update-status` |
-| E 暂停/阻塞 | `in-progress` | `[!]` | `update-chg action=update-status new-status=[!] status-reason=<原因>` |
-| E 跨 session 进度留存 | `in-progress` 或 `completed` | `[/]` 或 `[x]` | `update-chg action=update-status` |
-| V 只记录验证暂不归档 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg action=verify` |
-| 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg` |
+| E 暂停/阻塞 | `in-progress` | `[!]` | `update-chg target=CHG-... action=update-status task-id=T-NNN new-status=[!] status-reason=<原因>` |
+| E 跨 session 进度留存 | `in-progress` 或 `completed` | `[/]` 或 `[x]` | `update-chg target=CHG-... action=update-status task-id=T-NNN` |
+| V 只记录验证暂不归档 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg target=CHG-... action=verify` |
+| 默认 V+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true` |
+| 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg target=CHG-...` |
+| 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 按 agent 规范处理 |
 
 `[ ] planned`（未批准 backlog 或已批准 ready）与 `[!] blocked` 都属于 Stop/调度层的 deferred：不改 artifact 状态机，允许 Stop 但会显示提醒；恢复执行前必须进入 `[/]`。
-| 默认 V+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg verification-confirmed=true complete-open-tasks=true` |
-| 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 按 agent 规范处理 |
 
 ---
 

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -246,6 +246,19 @@ test('artifactRelativePathForFile: 普通代码文件返回 null', () => {
   const dir = makeTmpDir('arff-code');
   assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src', 'task.md')), null);
   assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src.js')), null);
+});
+
+test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
+  const dir = makeTmpDir('change-id-helpers');
+  assert.strictEqual(normalizeChangeId(' chg-20260514-01 '), 'CHG-20260514-01');
+  assert.strictEqual(normalizeChangeId('hotfix-20260514-02'), 'HOTFIX-20260514-02');
+  assert.strictEqual(normalizeChangeId('chg-20260514-1'), '');
+  assert.strictEqual(slugForChangeId('CHG-20260514-01'), 'chg-20260514-01');
+  assert.strictEqual(slugForChangeId('HOTFIX-20260514-02'), 'hotfix-20260514-02');
+  assert.strictEqual(slugForChangeId('chg-not-a-date'), '');
+  assert.strictEqual(detailPathForId(dir, 'CHG-20260514-01'), path.join(dir, 'changes', 'chg-20260514-01.md'));
+  assert.strictEqual(detailPathForId(dir, 'HOTFIX-20260514-02'), path.join(dir, 'changes', 'hotfix-20260514-02.md'));
+  assert.strictEqual(detailPathForId(dir, 'CHG-20260514-1'), null);
 });
 
 // ============================================================
@@ -1393,7 +1406,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 4 个测试
+// 18. release sanity — 7 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1477,6 +1490,45 @@ test('skills 明确 HOTFIX reserve helper 用法与 --new 边界', () => {
     const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
     assert.ok(text.includes('--operation create-chg --type hotfix'), `${rel} 应明确 HOTFIX 预留命令`);
     assert.ok(text.includes('--type hotfix --new'), `${rel} 应明确 HOTFIX 新编号复用边界`);
+  }
+});
+
+test('artifact-management skill 明确 record-correction reserve helper 用法', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const text = fs.readFileSync(path.join(repoRoot, 'plugin/skills/artifact-management/SKILL.md'), 'utf8');
+  assert.ok(text.includes('--operation record-correction'), 'artifact-management 应明确 correction 预留命令');
+  assert.ok(text.includes('reserved-file-prefix'), 'artifact-management 应要求带 reserved-file-prefix');
+});
+
+test('skills lifecycle 示例不遗漏 target/task-id 且表格不断裂', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const workflow = fs.readFileSync(path.join(repoRoot, 'plugin/skills/pace-workflow/SKILL.md'), 'utf8');
+  assert.ok(!workflow.includes('update-chg section=work-record action=append'), 'work-record 示例必须带 target');
+
+  const lifecycle = fs.readFileSync(path.join(repoRoot, 'plugin/skills/artifact-management/references/change-lifecycle.md'), 'utf8');
+  assert.ok(lifecycle.includes('update-chg target=CHG-... action=update-status task-id=T-NNN new-status=[!]'), '[!] 示例必须带 target/task-id');
+  assert.ok(lifecycle.indexOf('| 取消 |') < lifecycle.indexOf('[ ] planned'), 'deferred 说明不应插入生命周期表格中间');
+});
+
+test('pace-utils 子模块可直接 require 且导出关键符号', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const modules = {
+    constants: ['PACE_VERSION', 'ARTIFACT_FILES', 'FORMAT_SNIPPETS'],
+    'line-endings': ['normalizeLineEndings', 'hasNonNullVerifiedDate'],
+    session: ['parseHookStdin', 'currentSessionId', 'isArtifactWriterAgentType'],
+    'path-utils': ['normalizePath', 'resolveToolFilePath', 'getProjectRuntimeDir'],
+    logger: ['createLogger', 'logEntry'],
+    plans: [],
+    'change-id': ['normalizeChangeId', 'detailPathForId', 'slugForChangeId'],
+    'change-analysis': [],
+    locks: [],
+  };
+  for (const [name, symbols] of Object.entries(modules)) {
+    const mod = require(path.join(repoRoot, 'plugin', 'hooks', 'pace-utils', name));
+    assert.ok(mod, `${name} should require`);
+    for (const symbol of symbols) {
+      assert.ok(Object.prototype.hasOwnProperty.call(mod, symbol), `${name} should export ${symbol}`);
+    }
   }
 });
 

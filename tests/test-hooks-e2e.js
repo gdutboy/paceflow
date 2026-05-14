@@ -12,6 +12,7 @@ const MIGRATE_SCRIPT = path.join(__dirname, '..', 'plugin', 'migrate', 'batch-ar
 const RESERVE_HELPER = path.join(HOOKS_DIR, 'reserve-artifact-id.js');
 const SYNC_PLAN_HELPER = path.join(HOOKS_DIR, 'sync-plan.js');
 const SET_ARTIFACT_ROOT_HELPER = path.join(HOOKS_DIR, 'set-artifact-root.js');
+const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;
@@ -276,7 +277,7 @@ function makeVaultBackedWorktree(label) {
   fs.writeFileSync(path.join(vaultDir, 'findings.md'), '# 调研记录\n\n## 摘要索引\n\n<!-- ARCHIVE -->\n', 'utf8');
   fs.writeFileSync(path.join(vaultDir, 'corrections.md'), '# Corrections 记录\n\n## 索引\n\n<!-- ARCHIVE -->\n', 'utf8');
   fs.writeFileSync(path.join(vaultDir, 'changes', 'chg-20260504-01.md'), chgDetail(), 'utf8');
-  return { worktree, vaultDir, projectName };
+  return { host, worktree, vaultDir, projectName };
 }
 
 function makeV6ProjectWithChanges(label, changes, opts = {}) {
@@ -1345,7 +1346,7 @@ test('9ha. worktree 普通代码文件 MultiEdit 不触发 artifact 重定向', 
   assert.ok(r.stdout.includes('additionalContext'));
 });
 
-test('9ha1. worktree 中写宿主普通文件 → DENY，避免 artifact_dir 被当项目根', () => {
+test('9ha1. local 模式 worktree 中写宿主普通文件 → 仅提示 artifact_dir 语义，不 hard deny', () => {
   const root = makeTmpDir('worktree-host-normal-write-root');
   const host = path.join(root, 'project-a');
   const worktree = path.join(root, 'project-a-wt');
@@ -1364,9 +1365,49 @@ test('9ha1. worktree 中写宿主普通文件 → DENY，避免 artifact_dir 被
     stdin: { tool_name: 'Write', tool_input: { file_path: hostFile, content: 'wrong checkout\n' } },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('"deny"'));
-  assert.ok(r.stdout.includes('DENY_WORKTREE_HOST_NON_ARTIFACT_WRITE') || r.stdout.includes('当前 cwd 是 worktree'));
-  assert.ok(r.stdout.includes(path.join(worktree, 'branch-note.md').replace(/\\/g, '/')));
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('当前 cwd 是 worktree'));
+  assert.ok(r.stdout.includes('仅用于 PaceFlow artifacts'));
+  assert.ok(r.stdout.includes('如果用户明确要求修改宿主 checkout'));
+});
+
+test('9ha2. vault 模式 worktree 中写宿主普通文件 → 仅提示 artifact_dir 语义，不 hard deny', () => {
+  const { host, worktree } = makeVaultBackedWorktree('vault-host-normal-write');
+  const hostFile = path.join(host, 'branch-note.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: { tool_name: 'Write', tool_input: { file_path: hostFile, content: 'wrong checkout\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('当前 cwd 是 worktree'));
+  assert.ok(r.stdout.includes('仅用于 PaceFlow artifacts'));
+  assert.ok(r.stdout.includes('如果用户明确要求修改宿主 checkout'));
+});
+
+test('9ha3. local 模式 worktree 写宿主普通代码文件不触发 PACE C/E gate', () => {
+  const root = makeTmpDir('worktree-host-code-write-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(path.join(host, 'changes'), { recursive: true });
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+  for (const file of ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md']) {
+    fs.writeFileSync(path.join(host, file), `# ${file}\n\n<!-- ARCHIVE -->\n`, 'utf8');
+  }
+  const hostFile = path.join(host, 'src.js');
+  const r = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: { tool_name: 'Write', tool_input: { file_path: hostFile, content: 'export const x = 1;\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('v6 项目没有活跃 CHG/HOTFIX'));
+  assert.ok(r.stdout.includes('当前 cwd 是 worktree'));
+  assert.ok(r.stdout.includes('仅用于 PaceFlow artifacts'));
 });
 
 test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', () => {
@@ -1736,6 +1777,7 @@ test('9hc-helper4a. set-artifact-root helper 在 git worktree 写宿主 artifact
   assert.ok(setRoot.stdout.includes('execution-context: [worktree:: project-a-wt]'));
   assert.ok(setRoot.stdout.includes('不要在当前 worktree 另写 .pace/artifact-root'));
   assert.ok(setRoot.stdout.includes('reserve-artifact-id.js'));
+  assert.ok(setRoot.stdout.includes(`--cwd "${worktree.replace(/\\/g, '/')}"`));
   assert.strictEqual(fs.readFileSync(path.join(host, '.pace', 'artifact-root'), 'utf8'), 'local\n');
   assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'artifact-root')), '不应写 worktree 本地 artifact-root');
 
@@ -1749,6 +1791,23 @@ test('9hc-helper4a. set-artifact-root helper 在 git worktree 写宿主 artifact
   assert.ok(reserve.stdout.includes('execution-context: [worktree:: project-a-wt]'));
   assert.ok(fs.existsSync(path.join(host, 'changes')), 'reserve helper 应在宿主 artifact root 懒创建 changes/');
   assert.ok(!fs.existsSync(path.join(worktree, 'changes')), 'worktree 分支目录不应创建 artifact changes/');
+});
+
+test('9hc-helper4a1. set-artifact-root helper 报告覆写旧 choice 且拒绝 env 冲突', () => {
+  const dir = makeTmpDir('set-root-helper-choice-conflict');
+  const first = runSetArtifactRootHelper({ cwd: dir, args: ['--choice', 'local'] });
+  assert.strictEqual(first.code, 0);
+  const second = runSetArtifactRootHelper({ cwd: dir, args: ['--choice', 'vault'] });
+  assert.strictEqual(second.code, 0);
+  assert.ok(second.stdout.includes('previous-choice: local'));
+
+  const conflict = runSetArtifactRootHelper({
+    cwd: dir,
+    args: ['--choice', 'local'],
+    env: { PACE_ARTIFACT_ROOT: 'vault' },
+  });
+  assert.strictEqual(conflict.code, 2);
+  assert.ok(conflict.stdout.includes('DENY_ENV_CHOICE_CONFLICT') || conflict.stdout.includes('环境变量'));
 });
 
 test('9hc-helper4b. worktree 本地 .pace/artifact-root 写入被提示改用 helper', () => {
@@ -2988,6 +3047,32 @@ test('9hc4b0a. verify-summary 字段名不应被误判为 verify action', () => 
   assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
 });
 
+test('9hc4b0b. prose 中提到 verify 不应被误判为 verify action', () => {
+  const dir = makeV6Project('agent-prose-verify-missing-operation', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: false }),
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-prose-verify-missing-operation',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Prose verify without explicit operation',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'target: CHG-20260504-01',
+          '请 verify 这个 CHG，但这里故意没有 operation/action 字段。',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('缺少明确 operation'));
+});
+
 test('9hc4b1. stale foreign owner takeover 必须带用户证据', () => {
   const dir = makeV6Project('agent-owner-stale-takeover-evidence-required');
   seedChangeOwner(dir, 'CHG-20260504-01', {
@@ -3263,6 +3348,60 @@ test('9hgd. Bash 执行已存在外部脚本写 artifact 被拒绝', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+});
+
+test('9hgd1. Bash guard 识别 Windows JS 转义路径', () => {
+  const script = 'const fs = require("fs");\nfs.writeFileSync("C:\\\\tmp\\\\pace\\\\task.md", "x");\n';
+  assert.strictEqual(bashGuard.bashCommandReferencesArtifact(script, 'C:\\tmp\\pace', 'C:\\tmp\\pace'), true);
+});
+
+test('9hgd2. Bash find -delete / find -exec rm 修改 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-find-delete-artifact');
+  for (const command of [
+    'find changes -name "*.md" -delete',
+    'find changes -name "*.md" -exec rm {} \\;',
+  ]) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Bash',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+  }
+});
+
+test('9hgd3. Bash .sh 包装器写 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-bash-shell-script-artifact');
+  const script = path.join(os.tmpdir(), `pace-bypass-${Date.now()}.sh`);
+  fs.writeFileSync(script, 'node -e "require(\\"fs\\").writeFileSync(\\"task.md\\", \\"x\\")"\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: `bash ${script}` },
+    },
+  });
+  try { fs.rmSync(script, { force: true }); } catch(e) {}
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact'));
+});
+
+test('9hgd4. heredoc body 中的 > artifact 文本不误判为重定向', () => {
+  const dir = makeV6Project('ptu-bash-heredoc-body-readonly');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: "cat <<'EOF'\n> task.md\nEOF" },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
 });
 
 test('9hh. 懒创建模板写入 LF', () => {

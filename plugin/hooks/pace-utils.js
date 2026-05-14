@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 // pace-utils.js 是兼容门面；子模块保持可审计边界，外部仍只 require('./pace-utils')。
+// Hook 测试与 env-scrub 场景会在同一 Node 进程内切换环境变量，因此门面重载时
+// 也要刷新会读取 process.env 的子模块缓存。
 for (const rel of [
   './pace-utils/constants',
   './pace-utils/line-endings',
@@ -699,7 +701,7 @@ module.exports = {
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, syncPlanFile,
   // 统计与检查
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
-  parseFrontmatter, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
+  parseFrontmatter, normalizeChangeId, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, summarizeActiveChanges,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, nativePlanMatchesProject, createLogger, logEntry, formatBridgeHint,

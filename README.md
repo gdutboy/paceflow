@@ -73,13 +73,15 @@ v6 不会在安装时自动改写旧 vault。首次写代码或派 `artifact-wri
 推荐流程：
 
 ```bash
-PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/6.0.55"
+PLUGIN_DIR="$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow/<installed-version>"
 ARTIFACT_DIR="/path/to/Obsidian/projects/<project-name>"
 
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR" --dry-run
 # 阅读 dry-run 摘要并确认后再执行：
 node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR"
 ```
+
+将 `<installed-version>` 替换为当前已安装的 PaceFlow 版本目录。
 
 迁移脚本会把旧 v5 内容备份为 `*.v5-backup`，再把旧内容移动到 `<!-- ARCHIVE -->` 下方，并创建 v6 需要的 `changes/`、`changes/findings/`、`changes/corrections/`。旧文件顶部 frontmatter 会在归档区转换为历史 YAML 代码块，避免看起来像第二个活动 frontmatter。如果目标已存在 `changes/` 或已有 `.v5-backup`，脚本默认拒绝重复执行；确认需要重跑时才使用 `--force`，且 `--force` 会优先使用已有 `.v5-backup` 作为迁移源，不覆盖备份。
 

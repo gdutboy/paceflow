@@ -16,9 +16,7 @@ function detailPathForId(artDir, id) {
 
 function slugForChangeId(id) {
   const lower = String(id || '').toLowerCase();
-  if (lower.startsWith('chg-') || lower.startsWith('hotfix-')) return lower;
-  if (/^chg-\d{8}-\d{2}$/i.test(lower)) return lower;
-  if (/^hotfix-\d{8}-\d{2}$/i.test(lower)) return lower;
+  if (/^(?:chg|hotfix)-\d{8}-\d{2}$/.test(lower)) return lower;
   return '';
 }
 

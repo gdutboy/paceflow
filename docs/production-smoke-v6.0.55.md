@@ -513,3 +513,42 @@ After Smoke 1-4 pass, run the deferred-focused set in this order:
 4. Smoke 8: same worktree reopen owner continuity.
 
 Optional cross-worktree check: leave a deferred or running CHG in worktree A, then in host/worktree B modify an unrelated ordinary project file. Expected: foreign progress/deferred CHG does not block ordinary current-session work, but artifact structure damage still blocks globally.
+
+## Post-84b7d7a Minimum Regression
+
+Use this set after changes that touch deferred Stop handling or artifact-writer prompt gates. It is intentionally smaller than the full Smoke 1-8 set.
+
+Required automated checks from the repo root:
+
+```bash
+git diff --check
+node tests/test-hooks-e2e.js
+node tests/test-pace-utils.js
+```
+
+Required runtime smoke:
+
+1. Run Smoke 7 through the first Stop after marking the CHG `[!]`.
+   - Expected: Stop does not hard-block, even if the assistant says the setup is complete.
+   - Expected: TUI shows `PACEflow: 仍有 deferred CHG 可后续处理` with `blocked`.
+   - Expected: no double punctuation such as `。。`.
+2. Continue Smoke 7 in a new same-cwd session.
+   - Expected: direct project-file write while `[!]` is denied.
+   - Expected: after restoring T-001 to `[/]`, the README write is allowed and `close-chg` archives cleanly.
+3. Run Smoke 8.
+   - Expected: same cwd/worktree reopen is treated as `current-worktree`, not `foreign-fresh`.
+   - Expected: no `owner-takeover-confirmed` is required.
+   - Expected: final owner state is `closed`.
+
+Optional runtime checks:
+
+- Run Smoke 5 if Stop `systemMessage` visibility or ready/deferred wording changed.
+- Run Smoke 6 if backlog/deferred wording, Stop block counter, or `.pace/stop-block-count` handling changed.
+- If a model still omits artifact-writer fields during Smoke 7/8, verify the first hook rejection includes `Skill(paceflow:pace-workflow)` and that shorthand lifecycle prompts missing `task-id`, `verify-summary`, or `walkthrough-summary` are rejected before a long-running agent attempt.
+
+Failure signals:
+
+- A deferred-only CHG increments hard-block counters or requires repeated Stop attempts.
+- `verify-summary` is interpreted as `action=verify`.
+- `approve-and-start ...` without `task-id` reaches a running artifact-writer agent instead of immediate PreToolUse deny.
+- `close-chg ...` without `verify-summary` / `walkthrough-summary` reaches a running artifact-writer agent instead of immediate PreToolUse deny.

@@ -74,8 +74,8 @@ function isBashTool(toolName) {
   return toolName === 'Bash';
 }
 
-function getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath) {
-  if (!isFileMutationTool(toolName) || !isInsideProject || !paceSignal) return null;
+function getArtifactRelIfRelevant(toolName, paceSignal, artDir, filePath) {
+  if (!isFileMutationTool(toolName) || !paceSignal) return null;
   return paceUtils.artifactRelativePathForFile(artDir, filePath);
 }
 
@@ -86,14 +86,18 @@ function isUnderDir(baseDir, targetPath) {
   return !!base && (target === base || target.startsWith(baseWithSlash));
 }
 
-function shouldDenyWorktreeHostNonArtifactWrite(cwd, artDir, filePath, artifactRel) {
-  if (!filePath || artifactRel) return false;
+function worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRel) {
+  if (!filePath || artifactRel) return '';
   const context = paceUtils.executionContextForCwd(cwd);
-  if (!context.isWorktree) return false;
-  if (paceUtils.normalizePath(artDir) !== paceUtils.normalizePath(context.stateDir)) return false;
-  if (!isUnderDir(artDir, filePath)) return false;
-  if (isUnderDir(cwd, filePath)) return false;
-  return true;
+  if (!context.isWorktree) return '';
+  if (!isUnderDir(context.stateDir, filePath)) return '';
+  if (isUnderDir(cwd, filePath)) return '';
+  const relToHost = path.relative(context.stateDir, filePath).replace(/\\/g, '/');
+  return [
+    `当前 cwd 是 worktree：${displayDir(cwd)}；本次普通文件目标在宿主 checkout：${filePath}`,
+    `artifact_dir=${displayDir(artDir)} 仅用于 PaceFlow artifacts；${relToHost} 不是 artifact。`,
+    '如果用户要求修改当前 worktree，请改用当前 worktree 下的对应路径；如果用户明确要求修改宿主 checkout，可继续使用该路径。'
+  ].join('\n');
 }
 
 // S-1: 统一 stdin 解析
@@ -639,35 +643,12 @@ paceUtils.withStdinParsed((stdin) => {
     );
   }
   const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
-  let isInsideProject = normalizedFile.startsWith(cwdWithSlash);
-  if (!isInsideProject && artDir !== cwd) {
-    const normalizedArtDir = paceUtils.normalizePath(artDir);
-    const artDirWithSlash = normalizedArtDir.endsWith('/') ? normalizedArtDir : normalizedArtDir + '/';
-    isInsideProject = normalizedFile.startsWith(artDirWithSlash);
-  }
-
-  const artifactRelForMutation = getArtifactRelIfRelevant(toolName, isInsideProject, paceSignal, artDir, filePath);
+  const artifactRelForMutation = getArtifactRelIfRelevant(toolName, paceSignal, artDir, filePath);
+  const isInsideProject = normalizedFile.startsWith(cwdWithSlash) || !!artifactRelForMutation;
+  const hostNonArtifactWriteNote = isFileMutationTool(toolName) && paceSignal
+    ? worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRelForMutation)
+    : '';
   let artifactResourceLockHeld = null;
-  if (isFileMutationTool(toolName) && paceSignal && shouldDenyWorktreeHostNonArtifactWrite(cwd, artDir, filePath, artifactRelForMutation)) {
-    const context = paceUtils.executionContextForCwd(cwd);
-    const relToHost = path.relative(artDir, filePath).replace(/\\/g, '/');
-    const worktreePath = path.join(cwd, relToHost).replace(/\\/g, '/');
-    return hardDeny(
-      [
-        `当前 cwd 是 worktree：${displayDir(cwd)}，但本次要写入宿主目录中的普通文件：${filePath}`,
-        `artifact_dir=${displayDir(artDir)} 只用于 PaceFlow artifacts；${relToHost} 不是 artifact。`,
-        `请把普通项目文件写到当前 worktree 路径：${worktreePath}`,
-        '若用户明确要求修改宿主 checkout，请在宿主 checkout 会话中执行。'
-      ].join('\n'),
-      'DENY_WORKTREE_HOST_NON_ARTIFACT_WRITE',
-      {
-        worktree: context.worktree,
-        branch: context.branch,
-        host_file: filePath,
-        worktree_file: worktreePath,
-      }
-    );
-  }
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
       if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation)) {
@@ -1137,14 +1118,29 @@ paceUtils.withStdinParsed((stdin) => {
         .filter(s => runnableEntries.some(e => e.slug === s.slug))
         .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} impl=${s.implCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} path=${s.path}`)
         .join('\n');
+      const additionalContext = hostNonArtifactWriteNote
+        ? `当前 v6 活跃变更：\n${summaries}\n\n${hostNonArtifactWriteNote}`
+        : `当前 v6 活跃变更：\n${summaries}`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
-          additionalContext: `当前 v6 活跃变更：\n${summaries}`
+          additionalContext
         }
       };
       process.stdout.write(JSON.stringify(output));
       log(paceUtils.logEntry('PreToolUse', 'PASS_V6', { proj, tool: toolName, entries: runnableEntries.length, dur: Date.now() - t0 }));
+      return;
+    }
+
+    if (hostNonArtifactWriteNote) {
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          additionalContext: hostNonArtifactWriteNote
+        }
+      };
+      process.stdout.write(JSON.stringify(output));
+      log(paceUtils.logEntry('PreToolUse', 'PASS_V6_WORKTREE_HOST_NOTE', { proj, tool: toolName, file: filePath, dur: Date.now() - t0 }));
       return;
     }
 

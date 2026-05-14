@@ -156,7 +156,7 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 | 任务跳过 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[-]` |
 | 任务阻塞 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!] block-reason=<原因>` |
 | 补充实施说明 | `update-chg target=CHG-... section=implementation action=append` |
-| 记录执行过程 | `update-chg section=work-record action=append` |
+| 记录执行过程 | `update-chg target=CHG-... section=work-record action=append` |
 
 `update-status [!]` 是暂停/阻塞信号，不是完成，也不是让其他 worktree 自动接手的信号。恢复前先确认用户意图，再把任务重新标为 `[/]` 继续，或按用户决策标 `[-]` / 取消。
 

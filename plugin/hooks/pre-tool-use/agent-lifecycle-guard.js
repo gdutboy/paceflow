@@ -146,7 +146,7 @@ function promptDeclaredAction(prompt) {
   const value = promptFieldValue(prompt, 'action');
   if (value) return value.toLowerCase();
   const text = String(prompt || '');
-  const m = text.match(/(?:^|[\s\n,，;；])(approve-and-start|update-status|approve|verify)(?=$|[\s\n,，;；:：])/i);
+  const m = text.match(/(?:^|[\n,，;；])\s*(approve-and-start|update-status|approve|verify)(?=$|[\s,，;；:：])/i);
   return m ? m[1].toLowerCase() : '';
 }
 

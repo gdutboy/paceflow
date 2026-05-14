@@ -5,6 +5,41 @@ const paceUtils = require('../pace-utils');
 
 const { ARTIFACT_FILES } = paceUtils;
 
+function normalizeCommandSearchText(value) {
+  return String(value || '')
+    .replace(/\\(["'`])/g, '$1')
+    .replace(/\\/g, '/')
+    .replace(/\b([A-Za-z]:)\/+/g, '$1/')
+    .replace(/([^:])\/{2,}/g, '$1/');
+}
+
+function stripHeredocBodies(command) {
+  const lines = String(command || '').split('\n');
+  const kept = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    kept.push(line);
+    const delimiters = [];
+    const re = /<<-?\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][A-Za-z0-9_]*))/g;
+    let m;
+    while ((m = re.exec(line)) !== null) {
+      const delimiter = m[1] || m[2] || m[3] || '';
+      if (delimiter) delimiters.push(delimiter);
+    }
+    for (const delimiter of delimiters) {
+      while (i + 1 < lines.length) {
+        i++;
+        const bodyLine = lines[i];
+        if (bodyLine.trim() === delimiter) {
+          kept.push(bodyLine);
+          break;
+        }
+      }
+    }
+  }
+  return kept.join('\n');
+}
+
 function shellCommandScripts(command) {
   const scripts = [];
   const c = String(command || '');
@@ -19,6 +54,7 @@ function shellCommandScripts(command) {
 
 function commandTextLooksMutating(c) {
   return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
+    /(^|[;&|]\s*)find\b[^;\n]*(?:\s-delete\b|\s-exec\s+(?:rm|mv|cp)\b)/i.test(c) ||
     /(^|[;&|]\s*)(npm|pnpm|yarn)\s+(?:run|exec|x)\b/i.test(c) ||
     /(^|[;&|]\s*)npx\b[\s\S]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
     /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
@@ -36,17 +72,28 @@ function bashCommandRunsScriptEngine(command) {
 
 function bashScriptExecutionTargets(command, cwd) {
   const targets = [];
-  const re = /(^|[\n;&|]\s*)(?:node|python\d*)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi;
-  let match;
-  while ((match = re.exec(String(command || ''))) !== null) {
-    const args = bashCommandPathTokens(match[2] || '');
-    for (const arg of args) {
-      if (!arg || arg.startsWith('-')) continue;
-      if (!/\.(?:[cm]?js|py)$/i.test(arg)) continue;
-      try {
-        targets.push(paceUtils.resolveToolFilePath(cwd, arg));
-      } catch(e) {}
-      break;
+  const specs = [
+    {
+      re: /(^|[\n;&|]\s*)(?:node|python\d*)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi,
+      ext: /\.(?:[cm]?js|py)$/i,
+    },
+    {
+      re: /(^|[\n;&|]\s*)(?:bash|sh|zsh|fish)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi,
+      ext: /\.(?:sh|bash|zsh|fish)$/i,
+    },
+  ];
+  for (const spec of specs) {
+    let match;
+    while ((match = spec.re.exec(String(command || ''))) !== null) {
+      const args = bashCommandPathTokens(match[2] || '');
+      for (const arg of args) {
+        if (!arg || arg.startsWith('-')) continue;
+        if (!spec.ext.test(arg)) continue;
+        try {
+          targets.push(paceUtils.resolveToolFilePath(cwd, arg));
+        } catch(e) {}
+        break;
+      }
     }
   }
   return targets;
@@ -58,7 +105,7 @@ function bashCommandLooksMutating(command) {
 }
 
 function bashOutputRedirectTargets(command) {
-  const c = String(command || '');
+  const c = stripHeredocBodies(command);
   const targets = [];
   let quote = null;
   let escaped = false;
@@ -113,7 +160,7 @@ function bashCommandPathTokens(command) {
 }
 
 function bashPathLooksArtifact(target, cwd, artDir) {
-  const t = String(target || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const t = normalizeCommandSearchText(target).replace(/\/+$/, '');
   if (!t || /^&\d+$/.test(t)) return false;
   try {
     const resolved = paceUtils.resolveToolFilePath(cwd, t);
@@ -121,7 +168,7 @@ function bashPathLooksArtifact(target, cwd, artDir) {
     if (paceUtils.artifactRelativePathForFile(cwd, resolved)) return true;
   } catch(e) {}
   // Fallback only catches simple CWD-relative artifact names that tokenization cannot resolve.
-  const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
+  const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => normalizeCommandSearchText(dir).replace(/\/+$/, '')))];
   for (const root of roots) {
     for (const file of ARTIFACT_FILES) {
       if (t === `${root}/${file}`) return true;
@@ -162,7 +209,7 @@ function bashShellCommandRedirectsToArtifactRuntimeControl(command, cwd) {
 }
 
 function bashSearchText(command) {
-  return String(command || '').replace(/\\(["'`])/g, '$1').replace(/\\/g, '/');
+  return normalizeCommandSearchText(command);
 }
 
 function escapeRegExp(value) {
@@ -268,7 +315,7 @@ function bashShellCommandReferencesArtifact(command, cwd, artDir) {
   return shellCommandScripts(command).some(script => bashCommandReferencesArtifact(script, cwd, artDir));
 }
 
-function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir) {
+function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth = 0) {
   const c = bashSearchText(command);
   if (commandTextContainsWriteApi(c) &&
       bashCommandRunsScriptEngine(c) &&
@@ -280,7 +327,11 @@ function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir) {
       const stat = fsStat(target);
       if (!stat || !stat.isFile() || stat.size > 256 * 1024) continue;
       const script = fsRead(target);
-      if (commandTextContainsWriteApi(script) && bashCommandReferencesArtifact(script, cwd, artDir)) return true;
+      const normalizedScript = bashSearchText(script);
+      if (commandTextContainsWriteApi(normalizedScript) && bashCommandReferencesArtifact(normalizedScript, cwd, artDir)) return true;
+      if (commandTextLooksMutating(normalizedScript) && bashCommandReferencesArtifact(normalizedScript, cwd, artDir)) return true;
+      if (bashCommandRedirectsToArtifact(normalizedScript, cwd, artDir) || bashShellCommandRedirectsToArtifact(normalizedScript, cwd, artDir)) return true;
+      if (depth < 2 && bashCommandEmbedsArtifactWriteScript(normalizedScript, cwd, artDir, depth + 1)) return true;
     } catch(e) {}
   }
   return false;

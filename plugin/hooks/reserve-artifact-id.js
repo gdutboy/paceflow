@@ -40,8 +40,8 @@ function parseArgs(argv) {
 function usage() {
   return [
     'Usage:',
-    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg [--type hotfix] [--new]`,
-    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation record-correction [--new]`,
+    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg [--type hotfix] [--new] [--cwd <project-cwd>]`,
+    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation record-correction [--new] [--cwd <project-cwd>]`,
     '',
     'Run this from the main session before dispatching paceflow:artifact-writer.',
   ].join('\n');
