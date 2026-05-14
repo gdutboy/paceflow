@@ -1542,6 +1542,16 @@ test('artifact-writer prompt surface 覆盖 owner takeover 与 correction 字符
   assert.ok(!writer.includes('至少 20 字>'), 'record-correction 模板应统一为 20 字符');
 });
 
+test('artifact-writer create-chg 明确索引行边界与低成本验证口径', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const createChg = fs.readFileSync(path.join(repoRoot, 'plugin/agent-references/instructions/create-chg.md'), 'utf8');
+  const spec = fs.readFileSync(path.join(repoRoot, 'plugin/agent-references/artifact-writer-spec.md'), 'utf8');
+  assert.ok(createChg.includes('索引插入契约'), 'create-chg 指令应给出正向索引插入契约');
+  assert.ok(createChg.includes('新增索引行不会粘到上一行注释'), 'create-chg 指令应覆盖行边界失败模式');
+  assert.ok(createChg.includes('^- \\[[ x/!-]\\] \\[\\[(chg|hotfix)-YYYYMMDD-NN\\]\\]'), 'create-chg 验证应检查行首格式');
+  assert.ok(spec.includes('索引行必须独占一行，并从行首 `- [` 开始'), '通用 spec 应明确机械索引格式');
+});
+
 test('pace-utils 子模块可直接 require 且导出关键符号', () => {
   const repoRoot = path.join(__dirname, '..');
   const modules = {

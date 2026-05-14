@@ -46,8 +46,8 @@ technical-decision: <How>
 2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，可保留该 CHG 内编号，但不得扫描全项目分配全局 T-ID。
 3. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
 4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
-5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部）
-6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区）
+5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部；按下方"索引插入契约"组织替换片段）
+6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区；按下方"索引插入契约"组织替换片段）
 7. 基于 payload + Edit 成功 + hook 反馈做低成本验证；除非 hook 报告本次目标问题，不要再 Read 刚写好的详情文件或两个索引文件
 
 资源约束：
@@ -107,6 +107,48 @@ technical-decision: <How>
 ```
 - [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
 ```
+
+### 索引插入契约
+
+目标输出是：每条 CHG/HOTFIX 索引独占一行，且该行从行首 `- [` 开始，位于说明注释之后、`<!-- ARCHIVE -->` 之前。
+
+<example>
+Read 到的空活跃区：
+
+```markdown
+<!-- 详情与任务清单位于 changes/<id>.md；本文件只保留索引。 -->
+
+
+<!-- ARCHIVE -->
+```
+
+Edit 使用的替换片段：
+
+```text
+old_string:
+
+
+<!-- ARCHIVE -->
+
+new_string:
+
+- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-001~T-001] [worktree:: main] [branch:: main]
+
+<!-- ARCHIVE -->
+```
+
+替换后的目标片段：
+
+```markdown
+<!-- 详情与任务清单位于 changes/<id>.md；本文件只保留索引。 -->
+
+- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-001~T-001] [worktree:: main] [branch:: main]
+
+<!-- ARCHIVE -->
+```
+</example>
+
+写入前自检 `new_string`：如果 `old_string` 以换行开头，`new_string` 也保留一个前导换行，使新增索引行不会粘到上一行注释、标题或正文后面。验证"跨索引一致性"时，按行首格式 `^- \[[ x/!-]\] \[\[(chg|hotfix)-YYYYMMDD-NN\]\]` 检查，不只检查文件里是否出现 wikilink。
 
 刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
 

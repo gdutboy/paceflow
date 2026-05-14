@@ -133,6 +133,8 @@ if (paceSignal === 'artifact') {
         addWarning('repair', `${ownerPrefix}${change.id} 的详情文件缺失（应为 changes/${change.slug}.md），请派 artifact-writer 修复。`);
       } else if (change.reason === 'index-mismatch') {
         addWarning('repair', `${ownerPrefix}${change.id} 索引状态不一致：task.md=[${change.taskCheckbox}]，implementation_plan.md=[${change.implCheckbox}]。请派 update-chg action=update-status 修复。`);
+      } else if (change.reason === 'index-malformed') {
+        addWarning('repair', `${ownerPrefix}${change.id} 索引行格式损坏：task.md / implementation_plan.md 中的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。请派 artifact-writer 修复索引行边界。`);
       } else if (change.reason === 'index-completed-with-pending-tasks') {
         addWarning('execution', `${ownerPrefix}${change.id} 索引已是 [x]，但详情仍有 ${change.tasks.pending} 个未完成任务。请派 update-chg action=update-status 修复状态联动，或继续完成任务。`);
       } else if (change.reason === 'index-completed-status-mismatch') {

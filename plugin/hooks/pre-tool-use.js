@@ -1059,6 +1059,19 @@ paceUtils.withStdinParsed((stdin) => {
     const structuralCheckNeeded = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 
     if (structuralCheckNeeded) {
+      const malformed = actionableEntries.filter(e => e.taskMalformed || e.implMalformed);
+      if (malformed.length > 0) {
+        const ids = malformed.map(e => e.id).join(', ');
+        const reason = [
+          `v6 索引行格式损坏：${ids} 的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。`,
+          '请派 artifact-writer 修复索引行边界；修复后再继续写项目文件。'
+        ].join('\n');
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_V6_INDEX_MALFORMED${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        return;
+      }
+
       const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
       if (mismatched.length > 0) {
         const ids = mismatched.map(e => e.id).join(', ');

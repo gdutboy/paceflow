@@ -528,6 +528,35 @@ test('6. v6 未批准 → DENY approve-and-start', () => {
   assert.ok(r.stdout.includes('approve-and-start'));
 });
 
+test('6a. v6 malformed 索引行 → DENY 索引格式修复而非继续执行', () => {
+  const dir = makeV6Project('ptu-malformed-index', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  const malformed = '<!-- 详情与任务清单位于 changes/<id>.md；本文件只保留索引。 -->- [ ] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('索引行格式损坏'));
+  assert.ok(r.stdout.includes('独占一行'));
+});
+
+test('6b. v6 缩进索引行 → DENY 索引格式修复而非静默无活跃 CHG', () => {
+  const dir = makeV6Project('ptu-indented-index', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  const malformed = '  - [ ] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('索引行格式损坏'));
+});
+
 test('7. v6 已批准但未 in-progress → DENY update-status', () => {
   const dir = makeV6Project('ptu-approved-planned', {
     indexMark: '[ ]',
@@ -3772,6 +3801,20 @@ test('14f1. deferred CHG 存在时声称完成仍软通过', () => {
   assert.strictEqual(r.code, 0);
   assert.strictEqual(r.stderr, '');
   assert.ok(JSON.parse(r.stdout).systemMessage.includes('CHG-20260504-01 ready'));
+});
+
+test('14f2. Stop 对 malformed CHG 索引行不能静默通过', () => {
+  const dir = makeV6ProjectWithChanges('stop-malformed-index', [
+    { id: 'CHG-20260504-01', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false },
+  ]);
+  const malformed = '<!-- 详情与任务清单位于 changes/<id>.md；本文件只保留索引。 -->- [ ] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('CHG-20260504-01'));
+  assert.ok(r.stderr.includes('索引行格式损坏'));
+  assert.ok(r.stderr.includes('独占一行'));
 });
 
 test('14g. 索引 [x] 但 status in-progress → inconsistent 阻止修复', () => {

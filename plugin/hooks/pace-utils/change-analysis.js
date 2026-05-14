@@ -137,14 +137,23 @@ module.exports = function createChangeAnalysis(ctx) {
 
   function parseChangeIndex(activeText) {
     const entries = [];
-    const re = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/gmi;
-    let m;
-    while ((m = re.exec(activeText || '')) !== null) {
+    const lineRe = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/i;
+    const malformedRe = /^(.+)- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/i;
+    for (const line of String(activeText || '').split(/\r?\n/)) {
+      let m = line.match(lineRe);
+      let malformed = false;
+      if (!m) {
+        const embedded = line.match(malformedRe);
+        if (!embedded) continue;
+        if (!/(#(?:change|hotfix|research)\b|\[tasks::)/i.test(embedded[4] || '')) continue;
+        m = embedded.slice(1);
+        malformed = true;
+      }
       const slug = m[2].toLowerCase();
       const id = slug.startsWith('chg-')
         ? `CHG-${slug.slice(4).toUpperCase()}`
         : `HOTFIX-${slug.slice(7).toUpperCase()}`;
-      entries.push({ checkbox: m[1], slug, id, rest: (m[3] || '').trim(), line: m[0] });
+      entries.push({ checkbox: m[1], slug, id, rest: (m[3] || '').trim(), line, malformed });
     }
     return entries;
   }
@@ -209,6 +218,9 @@ module.exports = function createChangeAnalysis(ctx) {
     if (!entry || !entry.task || !entry.impl) {
       return { ...base, category: 'inconsistent', reason: 'index-missing' };
     }
+    if (entry.taskMalformed || entry.implMalformed) {
+      return { ...base, category: 'inconsistent', reason: 'index-malformed' };
+    }
     if (!detail || detail.missing) {
       return { ...base, category: 'inconsistent', reason: 'detail-missing' };
     }
@@ -254,6 +266,8 @@ module.exports = function createChangeAnalysis(ctx) {
         impl,
         taskCheckbox: task && task.checkbox,
         implCheckbox: impl && impl.checkbox,
+        taskMalformed: Boolean(task && task.malformed),
+        implMalformed: Boolean(impl && impl.malformed),
         detail,
       });
     }
