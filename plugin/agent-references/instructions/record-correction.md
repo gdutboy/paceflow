@@ -3,6 +3,25 @@
 > 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`
 
+## When To Use
+
+用于持久化用户纠正：记录错误行为、正确做法、触发场景和根因。主 session 必须先通过 reserve helper 取得 correction `reserved-id` / `reserved-file-prefix`。
+
+## Correct Prompt Example
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: record-correction
+reserved-id: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出>
+trigger-quote: <用户纠正原话>
+wrong-behavior: <错误行为，至少 20 字>
+correct-behavior: <正确行为，至少 20 字>
+trigger-scenario: <触发场景>
+root-cause: <根因>
+knowledge-link: [[note]] 或 project-scope: project-only
+```
+
 ## 输入字段
 
 - `trigger-quote`（必填，用户原话引用）

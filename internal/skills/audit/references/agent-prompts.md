@@ -19,16 +19,27 @@
 6. **动态发现**：使用 Glob 发现文件，不假设文件数量或名称。发现的数量与文档不同本身可能是一个发现。
 7. **当前 v6 基线**：marketplace `source` 指向 `./plugin`；发布面是 4 个用户 skill + `artifact-writer` agent + hooks/agent-references/migrate；`internal/skills/audit`、docs、tests、tickets 不发布；v5 活跃流程只允许迁移/桥接；artifact-writer 持项目级锁写 artifact；Bash 不得修改 `.pace/artifact-writer.lock`。
 8. **不要追求提示词 100% 服从**：报告格式 warning、模型偶发拆分操作等，除非造成 artifact 错写、hook 误放行或阻塞循环，否则降级为 W/I。
+9. **Phase 1 不预筛选**：报告所有可疑发现，严重度单独标注；不要因为“可能低优先级”或“文档问题”提前丢弃。
+10. **防 stall**：大文件或大区间审计先用 `git log --stat <range> -- <file>` 定位 commit，再用 `git show <sha> -- <file>` 逐个读取；不要一次性无界 diff 长文件。
 
 ## 输出格式
 
-- [C] Critical — 功能错误或数据丢失
-- [H] High — 影响可靠性
-- [W] Warning — 代码质量
-- [I] Info — 优化建议
-- [N] Note — 已知限制或有意设计的记录
-每个问题：文件名:行号、描述、建议修复。
-最后：整体健康度（1-10）+ 最紧迫的 3 个改进项。
+请按这些标题输出：
+
+### Findings
+- [C/H/W/I/N] 文件名:行号 — 问题描述；证据；影响；建议修复。
+
+### Evidence
+- 读过的关键源码/测试/日志/session 路径。
+
+### Tests Checked
+- 运行或读取过的测试；未运行时写明原因。
+
+### Open Questions
+- 需要 Phase 2 或主 session 继续验证的点。
+
+### Health Score
+- 整体健康度（1-10）+ 最紧迫的 3 个改进项。
 ```
 
 ---

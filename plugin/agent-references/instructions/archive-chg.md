@@ -3,6 +3,19 @@
 > 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`
 
+## When To Use
+
+用于已完成且已验证的 CHG/HOTFIX 仍停在活跃索引区时，只做归档或索引修复。若主 session 刚完成验证，优先使用 `close-chg` 一次收口。
+
+## Correct Prompt Example
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: archive-chg
+target: CHG-YYYYMMDD-NN
+walkthrough-summary: <完成摘要>
+```
+
 ## 输入字段
 
 - `target`（必填，CHG-ID）

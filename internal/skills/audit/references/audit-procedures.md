@@ -6,6 +6,19 @@
 
 ## Phase 2：验证方法详解
 
+### 大文件 / 大 diff 防 stall
+
+适用于 `pace-utils.js`、`pre-tool-use.js`、长文档或跨多 commit 的审计范围。
+
+**正确做法**：
+- 先用 `git log --stat <range> -- <file>` 找出真正修改该文件的 commit
+- 再用 `git show <sha> -- <file>` 或 `git show --stat <sha>` 逐个审阅
+- 只读取相关函数或标题附近的小范围内容
+
+**避免**：
+- 不对长文件或大区间直接运行无界 `git diff <range> -- <file>`
+- 不把 watchdog/stall 当成“文件无问题”或“审计完成”
+
 ### 路径追踪
 
 从报告的"问题行"出发，沿控制流追踪所有可达路径，确认是否真的会触发问题。
@@ -68,6 +81,7 @@ Phase 2 验证结果: X 确认 / Y 部分正确 / Z 误报
 误报率: Z/Total (NN%)
 
 确认发现统计: NC_confirmed + NH_confirmed + NW_filtered + NI_filtered
+未覆盖/未验证: 列出因日志缺失、无法复现、时间限制或工具限制未验证的范围
 
 ## 确认发现
 
@@ -91,6 +105,9 @@ Phase 2 验证结果: X 确认 / Y 部分正确 / Z 误报
 
 ## 证据来源
 （列出关键源码、测试、日志、session JSONL；不要只列 guidebook/action-plan）
+
+## 后续测试建议
+（只列能复现确认风险的最小测试；不要泛泛要求“增加测试”）
 ```
 
 ---
@@ -134,3 +151,13 @@ Phase 2 验证结果: X 确认 / Y 部分正确 / Z 误报
 
 **症状**：把 guidebook/action-plan 的历史缺口当成当前 bug，或把 README 的数量描述当成发布面事实。
 **防御**：先用 Glob/rg 发现当前文件，再读 `.claude-plugin/**`、`plugin/.claude-plugin/**`、`plugin/hooks/hooks.json`、`plugin/hooks/pace-utils.js`、测试和真实日志。文档与代码不一致时，优先报告“文档过时”或“需要代码证据补充”。
+
+### 6. Phase 1 过早过滤
+
+**症状**：agent 只报告高严重度问题，低严重度但真实的文档/提示缺口消失，Phase 2 无法复核。
+**防御**：Phase 1 输出所有可疑发现，严重度单独标注；Phase 2 负责去重、降级和误报剔除。
+
+### 7. 大 diff stall
+
+**症状**：agent 对长文件或大范围 diff 卡住，最后没有产出。
+**防御**：先 `git log --stat` 定位 commit，再逐个 `git show`；必要时按函数名、标题或测试名 `rg` 定位小范围读取。

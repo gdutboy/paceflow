@@ -2,11 +2,9 @@
 name: audit
 effort: high
 description: >
-  PACEflow 内部系统全面审查框架。启动 5-agent 并行团队，基于代码、配置、
-  测试和真实日志独立审查质量、流程、一致性、Skill模板和架构，产出去重分级报告。
-  当用户说"完整分析"、
-  "全面审查"、"全面检查"、"审计"、"代码审查"、"full audit"、"code review"、
-  "comprehensive review"或调用 /audit 时触发。版本发布前的质量门控也应使用此 skill。
+  Use for PACEflow internal full audit: run five independent review agents,
+  verify evidence from code/tests/logs, de-duplicate findings, and produce a
+  severity-ranked report for release gates or comprehensive code review.
 ---
 
 # PACEflow 全面审查
@@ -31,6 +29,19 @@ description: >
 4. 用户面/内部文档：`README.md`、`REFERENCE.md`、`CLAUDE.md`、`docs/**`
 
 文档只能用于发现候选矛盾或设计意图，不能单独作为 bug 证据。任何 C/H 级问题都必须从代码路径、配置注册、测试缺口或真实日志中独立证明。
+
+输出范围：
+
+1. Phase 1 报告所有可疑发现，不按“看起来低优先级”提前丢弃；严重度只做标注。
+2. Phase 2 再做证据验证、去重、降级和误报剔除。
+3. 最终报告必须包含：确认发现、部分正确/有意设计、误报分析、验证矩阵、证据来源、剩余风险。
+4. 每个发现都写清：文件:行号、触发路径或证据、影响、建议修复；没有代码/测试/日志证据时写成候选或文档问题。
+
+长 diff / stall 防御：
+
+- 大文件或大区间审计时，先用 `git log --stat <range> -- <file>` 定位相关 commit，再用 `git show <sha> -- <file>` 逐个查看。
+- 不要一次性对 `pace-utils.js`、`pre-tool-use.js`、长文档或整个大区间跑无界 `git diff`。
+- 长文件读取优先用 `rg` 定位函数/标题，再 `sed -n` 读取小范围。
 
 当前 v6 审计基线：
 
@@ -88,6 +99,14 @@ description: >
 | 5. 架构优化 | 测试 + 文档 + 整体架构 | agent contract 覆盖度/文档准确性/流程缺口 |
 
 > 每个 agent 的完整 prompt 和共享审查纪律见 [references/agent-prompts.md](references/agent-prompts.md)。
+
+每个 Phase 1 agent 的输出必须包含：
+
+- `Findings`：所有发现，按 C/H/W/I/N 标注，不预筛选。
+- `Evidence`：每条发现引用的源码、测试、日志或 session 路径。
+- `Tests Checked`：读过或运行过的测试。
+- `Open Questions`：需要主 session 或 Phase 2 继续验证的点。
+- `Health Score`：1-10 分和最紧迫 3 项。
 
 ---
 

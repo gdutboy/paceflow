@@ -3,6 +3,22 @@
 > 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`
 
+## When To Use
+
+用于记录调研、观察、对比或 bug-report finding。`body` 是主 session 提供的完整 Markdown 正文，artifact-writer 只做原样写入和索引。
+
+## Correct Prompt Example
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: record-finding
+title: <finding 标题>
+summary: <≤200 字摘要>
+type: research | observation | comparison | bug-report
+impact: P0 | P1 | P2 | P3
+body: <完整 Markdown 正文>
+```
+
 ## 输入字段
 
 - `title`（必填）

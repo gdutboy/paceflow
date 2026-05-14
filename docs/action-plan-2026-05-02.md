@@ -845,8 +845,8 @@ Focused smoke：
 - ✅ Skill prompt：`pace-workflow` / `artifact-management` / `pace-bridge` / `pace-knowledge` 的 description 和 helper 入口改为正向、明确、可执行措辞；`artifact-management` 增加最小字段模板。
 - ✅ Agent prompt：`artifact-writer` 增加 approve-and-start、resume、pause/block、close-chg 的结构化输入模板，减少散文字段推断。
 - ✅ `CLAUDE.md`：保留启用判定、skill 入口、artifact CRUD 唯一路径、验证后 close 的长期事实；减少与 skill/reference 重复的生命周期细节。
-- ⏳ 后续结构化收尾：`agent-references/instructions/*.md` 已有“输入字段 / 前置检查 / 操作步骤 / 边界”结构，本轮不做大规模重排；后续若继续优化，再统一补 `When To Use / Required Input / Correct Prompt Example / Failure Modes` 标题。
-- ⏳ 后续 audit prompt：internal audit prompt 的 discovery 分层、stall 防御和 severity 去重另开小变更，避免与本轮 runtime prompt 修改混在同一 diff。
+- ✅ Reference 结构化收尾：`agent-references/instructions/*.md` 保留既有“输入字段 / 前置检查 / 操作步骤 / 边界”结构，并已统一补 `When To Use` 与 `Correct Prompt Example(s)` 正向入口。
+- ✅ Audit prompt：internal audit skill 已补 Phase 1 不预筛选、固定输出项、C/H 证据要求、长 diff/stall 防御和最终报告未验证范围。
 
 #### 0.1.10e25 `eca8c7c..84b7d7a` 严格审计文档对账（2026-05-14）
 

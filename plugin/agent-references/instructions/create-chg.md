@@ -3,6 +3,26 @@
 > 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`（schema / wikilink / ARCHIVE 等通用规则）
 
+## When To Use
+
+用于创建新的 CHG/HOTFIX 详情文件和根索引行。主 session 必须先通过 reserve helper 取得 `reserved-id` / `reserved-file`，再派本操作。
+
+## Correct Prompt Example
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: create-chg
+execution-context: <reserve helper 输出>
+reserved-id: <reserve helper 输出>
+reserved-file: <reserve helper 输出>
+title: <变更标题>
+tasks:
+  - T-001: <任务标题与验收>
+background: <Why>
+scope: <What>
+technical-decision: <How>
+```
+
 ## 输入字段
 
 - `title`（必填）

@@ -3,6 +3,48 @@
 > 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`
 
+## When To Use
+
+用于更新既有 CHG/HOTFIX：批准、批准并开始、暂停/恢复任务、追加记录或只记录验证。连续执行并已验证通过时，默认改用 `close-chg`，不要把最后收尾拆成多次 update。
+
+## Correct Prompt Examples
+
+批准并开始：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve-and-start
+task-id: T-001
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
+```
+
+恢复暂停/阻塞任务：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+section: tasks
+action: update-status
+task-id: T-001
+new-status: [/]
+status-reason: <用户要求恢复或阻塞已解除>
+```
+
+只记录验证：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: verify
+verify-summary: <已运行并读取的验证结果>
+```
+
 ## 输入字段
 
 - `target`（必填，CHG-ID）

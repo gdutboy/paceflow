@@ -3,6 +3,22 @@
 > 关联 agent：`artifact-writer.md`
 > 上层规范：`../artifact-writer-spec.md`
 
+## When To Use
+
+用于主 session 已运行并读取验证结果，且验证通过后收尾当前 CHG/HOTFIX。它是默认收尾路径，会一次完成 open tasks 收口、VERIFIED、归档和 walkthrough。
+
+## Correct Prompt Example
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: close-chg
+target: CHG-YYYYMMDD-NN
+verification-confirmed: true
+complete-open-tasks: true
+verify-summary: <已运行并读取的验证结果>
+walkthrough-summary: <完成摘要>
+```
+
 ## 输入字段
 
 - `target`（必填，CHG-ID）
