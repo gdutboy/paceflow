@@ -139,8 +139,8 @@
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 210/210 PASS
-node tests/test-pace-utils.js                        # 129/129 PASS
+node tests/test-hooks-e2e.js                         # 216/216 PASS
+node tests/test-pace-utils.js                        # 139/139 PASS
 node tests/test-install.js                           # 26/26 PASS
 node tests/agent-tests/run-tests.js dummy            # PASS
 claude plugin validate ./plugin                      # PASS
