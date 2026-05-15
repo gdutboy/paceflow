@@ -7,8 +7,8 @@ const {
 
 const COUNT_RE_PENDING = /- \[[ \/!]\]/g;
 const COUNT_RE_PENDING_TOP = /^- \[[ \/!]\]/gm;
-const COUNT_RE_DONE = /- \[x\]|- \[-\]/g;
-const COUNT_RE_DONE_TOP = /^- \[x\]|^- \[-\]/gm;
+const COUNT_RE_DONE = /- \[[x-]\]/g;
+const COUNT_RE_DONE_TOP = /^- \[[x-]\]/gm;
 
 module.exports = function createChangeAnalysis(ctx) {
   function countByStatus(text, { topLevelOnly = false } = {}) {
@@ -145,7 +145,6 @@ module.exports = function createChangeAnalysis(ctx) {
       if (!m) {
         const embedded = line.match(malformedRe);
         if (!embedded) continue;
-        if (!/(#(?:change|hotfix|research)\b|\[tasks::)/i.test(embedded[4] || '')) continue;
         m = embedded.slice(1);
         malformed = true;
       }

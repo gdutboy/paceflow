@@ -8,7 +8,7 @@ const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -562,6 +562,18 @@ test('artifact-root=vault → 返回 vault 项目目录', () => {
   fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
   const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
   const expected = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  assert.strictEqual(getArtifactDir(dir), expected);
+});
+
+test('_clearArtifactDirCache 刷新同进程 artifact-root 变更', () => {
+  const dir = makeTmpDir('gad-cache-clear');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  assert.strictEqual(getArtifactDir(dir), dir);
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
+  assert.strictEqual(getArtifactDir(dir), dir, '未清缓存前应保持同进程缓存值');
+  _clearArtifactDirCache();
+  const expected = path.join(paceUtils.VAULT_PATH, 'projects', path.basename(dir).toLowerCase().replace(/\s+/g, '-'));
   assert.strictEqual(getArtifactDir(dir), expected);
 });
 
@@ -1464,7 +1476,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 12 个测试
+// 18. release sanity — 15 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1659,6 +1671,28 @@ test('CLAUDE.md 不承载 PACEflow workflow 或个人回复风格', () => {
   if (fs.existsSync(outerPath)) {
     assert.ok(fs.readFileSync(outerPath, 'utf8').includes('此父目录不定义 PACEflow 运行规则'), 'outer CLAUDE.md 应成为 redirect');
   }
+});
+
+test('plugin agents 显式列表有维护说明', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+  const contributing = fs.readFileSync(path.join(repoRoot, 'CONTRIBUTING.md'), 'utf8');
+  assert.deepStrictEqual(manifest.agents, ['./agents/artifact-writer.md']);
+  assert.ok(contributing.includes('plugin/.claude-plugin/plugin.json'), 'CONTRIBUTING 应提示新增 agent 同步 manifest');
+});
+
+test('artifact-management 不保留旧 implementation_plan 详情模板别名', () => {
+  const repoRoot = path.join(__dirname, '..');
+  assert.ok(!fs.existsSync(path.join(repoRoot, 'plugin/skills/artifact-management/templates/change-implementation_plan.md')));
+});
+
+test('spec.md project-summary 与 knowledge summary 语义分离', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const specTemplate = fs.readFileSync(path.join(repoRoot, 'plugin/hooks/templates/spec.md'), 'utf8');
+  const knowledge = fs.readFileSync(path.join(repoRoot, 'plugin/skills/pace-knowledge/SKILL.md'), 'utf8');
+  assert.ok(specTemplate.includes('project-summary:'));
+  assert.ok(!/^summary:/m.test(specTemplate));
+  assert.ok(knowledge.includes('项目元描述'));
 });
 
 test('v5 migration script 使用共享 artifact 常量', () => {

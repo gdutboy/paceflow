@@ -5,7 +5,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, getProjectName, resolveProjectCwd, ts, createLogger, logEntry } = paceUtils;
+const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = createLogger(LOG);

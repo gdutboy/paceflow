@@ -22,7 +22,8 @@ function createLogger(logPath) {
         } catch(e2) {}
       }
       if (lockFd === null) {
-        fs.appendFileSync(logPath, msg);
+        // Avoid torn log lines under contention. Logs are diagnostic only; a
+        // later hook call will write once the lock is free or stale-cleared.
         return;
       }
       try {

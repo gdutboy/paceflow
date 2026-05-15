@@ -3,6 +3,7 @@
 > **生成日期**：2026-05-02
 > **当前执行版本**：PACEflow v6.0.55（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续本机复核至 v2.1.141）
+> **与 README 关系**：本文是行动项视图（按优先级分级、TODO 列表）；README 的“版本历史”表是发布交付视图。两者不要互相同步全文。
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
 ---
@@ -912,8 +913,25 @@ Smoke11（record-finding artifact_dir 模板）验证结果：
 验证要求：
 
 - 必跑：`node tests/test-pace-utils.js`、`node tests/test-hooks-e2e.js`、`node tests/test-install.js`、`node --check` 关键 hook/verify 文件、`git diff --check`。
-- 本轮已跑：`node tests/test-pace-utils.js` 135/135 PASS；`node tests/test-hooks-e2e.js` 213/213 PASS；`node tests/test-install.js` 26/26 PASS；`node --check` 关键 hook 文件 PASS；`git diff --check` PASS；`claude plugin validate ./plugin` PASS。
+- 本轮已跑：`node tests/test-pace-utils.js` 139/139 PASS；`node tests/test-hooks-e2e.js` 216/216 PASS；`node tests/test-install.js` 26/26 PASS；`node --check` 关键 hook 文件 PASS；`git diff --check` PASS；`claude plugin validate ./plugin` PASS。
 - 手动 smoke：本轮不要求重跑 installed runtime；若后续改 lifecycle gate 或 helper runtime，再按 v6.0.55 smoke 文档复测 prompt gate / worktree / root-choice。
+
+#### 0.1.10e28 2026-05-15 W/I 补遗 cleanup
+
+输入：`docs/audits/audit-2026-05-15-6260666.md` 复核后的 W 补遗与 I-01~I-21 cleanup 清单。
+
+处理结论：
+
+- W-4：`post-tool-use.js` 的 schema 提醒与 V 标记检查对齐；缺字段继续提示，空值只在已出现 `<!-- VERIFIED -->` 或 `archived` 信号时提示，避免把未验证阶段的合法 `verified-date: null` 当错误。
+- W-7 补遗：收窄审计报告表述；只有实际存在 `references/` 子目录的 `pace-workflow` / `artifact-management` 需要 SKILL 显式链接，`pace-bridge` 是单文件 skill，不适用。
+- W-13/W-16：`paceflow-v6-guidebook.md` §8 加 pre-implementation 历史说明；action-plan 明确自身是行动项视图，README 版本历史是发布交付视图。
+- I cleanup：完成 checkbox 正则、v5 legacy 大写 X 口径、PreToolUse import 分组、PostToolUseFailure signal 复用、Stop/SessionStart 注释与 dead-code 清理、logger 锁竞争丢弃日志而不无锁写、PreCompact legacy skip 日志、StopFailure 未用 import、显式 agent manifest 维护说明、旧 template stub 删除、spec `project-summary` 分离、`[!]` 写入/Stop 语义文案、finding impact 口径、VERIFIED 紧邻说明、artifact dir cache 测试清理口、lock TOCTOU 注释、malformed index 无 tag 粘连识别、vault 缺失只拦 mutating Bash 注释、SubagentStop title/status 合并提示。
+- 新增回归：cache clear、无 tag malformed 粘连索引、PostToolUse 未验证阶段空 `verified-date` 不误报、VERIFIED/archived 空 `verified-date` 才 warning、manifest 维护说明、模板 stub 删除、spec summary 语义分离。
+
+验证要求：
+
+- 必跑：`node tests/test-pace-utils.js`、`node tests/test-hooks-e2e.js`、`node tests/test-install.js`、关键 hook `node --check`、`git diff --check`、`claude plugin validate ./plugin`。
+- 本轮已跑：`node tests/test-pace-utils.js` 139/139 PASS；`node tests/test-hooks-e2e.js` 216/216 PASS；`node tests/test-install.js` 26/26 PASS；关键 hook `node --check` PASS；`git diff --check` PASS；`claude plugin validate ./plugin` PASS。
 
 
 #### 0.1.10b v6.0.40 production Smoke5 记录

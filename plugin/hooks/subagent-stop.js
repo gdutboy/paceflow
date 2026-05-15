@@ -199,8 +199,12 @@ try {
   const status = reportStatus(stdin.lastMessage);
   closeOwnerIfArchived(stdin, status, t0);
 
-  if (!hasTitle) {
-    const ctx = 'PACE artifact-writer 报告未能解析：缺少标准报告标题。请检查 agent 实际是否完成 artifact 写入；如格式失败或状态缺失，重新派 artifact-writer 按同一指令修复，不要由主 session 手写 C/V/归档标记。';
+  if (!hasTitle && !status) {
+    const ctx = 'PACE artifact-writer 报告未能解析：缺少标准报告标题和状态行。请检查 agent 实际是否完成 artifact 写入；需要修复时重新派 artifact-writer 按同一指令修复，不要由主 session 手写 C/V/归档标记。';
+    writeContext(ctx);
+    log(logEntry('SubagentStop', 'WARN', { proj, agent_type: agentType, issue: 'missing-title-status', transcript: stdin.agentTranscriptPath || '-', dur: Date.now() - t0 }));
+  } else if (!hasTitle) {
+    const ctx = 'PACE artifact-writer 报告未能解析：缺少标准报告标题。请检查 agent 实际是否完成 artifact 写入；需要修复时重新派 artifact-writer 按同一指令修复，不要由主 session 手写 C/V/归档标记。';
     writeContext(ctx);
     log(logEntry('SubagentStop', 'WARN', { proj, agent_type: agentType, issue: 'missing-title', transcript: stdin.agentTranscriptPath || '-', dur: Date.now() - t0 }));
   } else if (first !== EXPECTED_TITLE && !allowedTimestampPrefix) {

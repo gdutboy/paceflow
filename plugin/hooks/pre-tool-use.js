@@ -6,7 +6,36 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, hasUnsyncedPlanFiles, CODE_EXTS, ARTIFACT_FILES, createTemplates, VAULT_PATH, readActive, isTeammate, getArtifactDir, getProjectRuntimeDir, formatBridgeHint, getNativePlanPath, getProjectName, displayDir, FORMAT_SNIPPETS, ARCHIVE_MARKER, getActiveChangeEntries, isChangeApproved, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage } = paceUtils;
+const {
+  CODE_EXTS,
+  ARTIFACT_FILES,
+  VAULT_PATH,
+  FORMAT_SNIPPETS,
+  ARCHIVE_MARKER,
+} = paceUtils;
+const {
+  isPaceProject,
+  countCodeFiles,
+  isTeammate,
+  getArtifactDir,
+  getProjectRuntimeDir,
+  getProjectName,
+  displayDir,
+  artifactRootChoiceNeeded,
+  artifactRootChoiceMessage,
+  getV5MigrationInfo,
+  v5MigrationPromptMessage,
+} = paceUtils;
+const {
+  hasUnsyncedPlanFiles,
+  createTemplates,
+  readActive,
+  formatBridgeHint,
+  getNativePlanPath,
+  getActiveChangeEntries,
+  isChangeApproved,
+  summarizeActiveChanges,
+} = paceUtils;
 
 // I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
 const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
@@ -222,6 +251,8 @@ paceUtils.withStdinParsed((stdin) => {
         { stdin_ok: false }
       );
     }
+    // Read-only Bash intentionally falls through: vault env/config errors only stop
+    // operations that can mutate files or dispatch artifact-writer.
     if (rootConfigError && (isAgentTool(toolName) || isFileMutationTool(toolName) || (isBashTool(toolName) && bashCommandLooksMutating(bashCommand)))) {
       return hardDeny(rootConfigError.message, 'DENY_ARTIFACT_ROOT_CONFIG', {
         code: rootConfigError.code,

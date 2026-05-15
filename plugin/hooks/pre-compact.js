@@ -16,6 +16,7 @@ const proj = getProjectName(cwd);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 try {
+  const t0 = Date.now();
   const hookInput = paceUtils.parseStdinSync();
   const paceSignal = isPaceProject(cwd);
   if (!paceSignal) {
@@ -28,7 +29,8 @@ try {
     process.exit(0);
   }
   if (paceSignal !== 'artifact' && paceUtils.artifactRootChoiceNeeded(cwd)) {
-    log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: 'artifact-root-choice-pending' }));
+    const action = paceSignal === 'legacy' ? 'SKIP_LEGACY_V5' : 'SKIP';
+    log(paceUtils.logEntry('PreCompact', action, { proj, signal: paceSignal, reason: 'artifact-root-choice-pending', dur: Date.now() - t0 }));
     process.exit(0);
   }
 

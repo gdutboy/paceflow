@@ -156,7 +156,15 @@ paceUtils.withStdinParsed((stdin) => {
         if (!fm['schema-version']) warnings.push(`${filePath} 缺少 frontmatter schema-version。请派 artifact-writer 修复 schema。`);
         if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRel || '')) {
           if (!fm.status) warnings.push(`${filePath} 缺少 frontmatter status。`);
-          if (!('verified-date' in fm)) warnings.push(`${filePath} 缺少 frontmatter verified-date。`);
+          if (!('verified-date' in fm)) {
+            warnings.push(`${filePath} 缺少 frontmatter verified-date。`);
+          } else {
+            const status = paceUtils.normalizeFrontmatterStatus(fm.status).toLowerCase();
+            const verificationClaimed = status === 'archived' || content.includes('<!-- VERIFIED -->');
+            if (verificationClaimed && !paceUtils.hasNonNullVerifiedDate(content)) {
+              warnings.push(`${filePath} frontmatter verified-date 为占位 null/空，但已出现 VERIFIED/archived 信号。`);
+            }
+          }
         }
       } catch(e) {}
     }

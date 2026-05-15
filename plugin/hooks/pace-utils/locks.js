@@ -145,6 +145,8 @@ module.exports = function createLockUtils(ctx) {
     if (!sameSession && !sameAgent && !isArtifactWriterLockStale(lock)) {
       return { released: false, lock, reason: 'owner-mismatch' };
     }
+    // TOCTOU window: read/owner-check/unlink can race by microseconds. Acceptable
+    // because the next acquire still uses atomic open('wx') and will fail on EEXIST.
     try {
       fs.unlinkSync(lock.path);
       return { released: true, lock, reason: '' };

@@ -738,6 +738,8 @@ v6 目标：
 
 ---
 
+> 以下 §8 全部记录的是 v6 升级前的 CLAUDE.md / README / REFERENCE 缺口，当前实现已按对应 v6 目标完成。本节仅作 pre-implementation 历史背景。
+
 ## 8. CLAUDE.md / README / REFERENCE 缺口
 
 ### 8.1 `CLAUDE.md`

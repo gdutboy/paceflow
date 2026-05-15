@@ -146,7 +146,11 @@ approval-evidence: <用户原话或已确认方案摘要>
 
 需要 AskUserQuestion 确认批准时，必须提供 2-3 个互斥选项，例如“批准并开始”与“暂不执行”；不要只提供单个确认选项。
 
-PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 都存在，详情文件存在，已 APPROVED，且状态/checkbox 已进入可执行状态。`APPROVED` 只是 C 阶段完成；`[ ] planned + APPROVED` 仍是 ready/deferred，不能写项目文件，必须先 `approve-and-start` 或恢复为 `[/]`。`[!]` 是 blocked/deferred，允许 Stop 但会显示提醒，恢复前不能继续写。
+PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 都存在，详情文件存在，已 APPROVED，且状态/checkbox 已进入可执行状态。`APPROVED` 只是 C 阶段完成；`[ ] planned + APPROVED` 仍是 ready/deferred，不能写项目文件，必须先 `approve-and-start` 或恢复为 `[/]`。
+
+`[!]` 是 blocked/deferred：
+- PreToolUse 仍会阻止继续写项目文件。
+- Stop 允许结束当前 turn，但会显示人可见提醒，恢复前不能继续写。
 
 ---
 

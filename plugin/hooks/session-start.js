@@ -537,11 +537,9 @@ for (const file of ARTIFACT_FILES) {
 }
 
 if (paceSignal === 'artifact') {
-  const summaries = activeChangeSummaries;
-  activeChangeSummaries = summaries;
-  if (summaries.length > 0) {
+  if (activeChangeSummaries.length > 0) {
     process.stdout.write(`=== 活跃 CHG 摘要 ===\n`);
-    for (const s of summaries) {
+    for (const s of activeChangeSummaries) {
       process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
     }
     process.stdout.write('\n');

@@ -225,6 +225,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 ```
 
 `verified-date` 是机器权威，`<!-- VERIFIED -->` 是人读/hook 信号。两者必须同时存在或同时不存在。
+`<!-- VERIFIED -->` 必须紧邻 `<!-- APPROVED -->` 下一行，中间不留空行。
 
 ---
 

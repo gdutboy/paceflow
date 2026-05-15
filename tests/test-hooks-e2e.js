@@ -557,6 +557,20 @@ test('6b. v6 缩进索引行 → DENY 索引格式修复而非静默无活跃 CH
   assert.ok(r.stdout.includes('索引行格式损坏'));
 });
 
+test('6c. v6 无 tag 的粘连 malformed CHG 行 → DENY 索引格式修复', () => {
+  const dir = makeV6Project('ptu-malformed-index-plain', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  const malformed = '说明文字- [ ] [[chg-20260504-01]] 测试变更\n';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('索引行格式损坏'));
+});
+
 test('7. v6 已批准但未 in-progress → DENY update-status', () => {
   const dir = makeV6Project('ptu-approved-planned', {
     indexMark: '[ ]',
@@ -3982,6 +3996,26 @@ test('15. v6 schema 缺 verified-date → warning', () => {
   const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('verified-date'));
+});
+
+test('15a0. v6 schema verified-date null 且未验证 → 不误报占位 warning', () => {
+  const detail = chgDetail().replace('verified-date: null', 'verified-date: ""');
+  const dir = makeV6Project('post-schema-empty-verified-date', { detail });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('占位 null/空'));
+});
+
+test('15a0b. v6 VERIFIED 标记存在但 verified-date 占位 → warning', () => {
+  const detail = chgDetail()
+    .replace('verified-date: null', 'verified-date: ""')
+    .replace('<!-- APPROVED -->', '<!-- APPROVED -->\n<!-- VERIFIED -->');
+  const dir = makeV6Project('post-schema-empty-verified-date-with-marker', { detail });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('占位 null/空'));
 });
 
 test('15a. PostToolUse 对 artifact-writer 合法 C/V 标志写入不报直接写入', () => {

@@ -26,7 +26,8 @@ function bashLooksLikeValidationCommand(command) {
 paceUtils.withStdinParsed((stdin) => {
   const t0 = Date.now();
   try {
-    if (!isPaceProject(cwd)) {
+    const paceSignal = isPaceProject(cwd);
+    if (!paceSignal) {
       log(logEntry('PostToolUseFailure', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
       return;
     }
@@ -39,7 +40,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     const agentType = stdin.agentType || stdin.toolInput.subagent_type || stdin.toolInput.subagentType || '';
     const isArtifactWriterAgent = isArtifactWriterAgentType(agentType);
-    const artDir = paceUtils.isPaceProject(cwd) === 'artifact' ? paceUtils.getArtifactDir(cwd) : cwd;
+    const artDir = paceSignal === 'artifact' ? paceUtils.getArtifactDir(cwd) : cwd;
     const resolvedFilePath = stdin.filePath ? paceUtils.resolveToolFilePath(cwd, stdin.filePath) : '';
     const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
     const isCodeFile = resolvedFilePath && CODE_EXTS.some(ext => resolvedFilePath.endsWith(ext));

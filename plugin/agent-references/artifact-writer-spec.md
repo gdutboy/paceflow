@@ -188,7 +188,7 @@ schema-version: "6.0"
 ### 5.4 findings.md
 
 ```
-- [<checkbox>] [[finding-yyyy-mm-dd-slug|<title>]] — <summary ≤200 字符> #finding [date:: YYYY-MM-DD] [impact:: P<N>] [<extra-meta>]
+- [<checkbox>] [[finding-yyyy-mm-dd-slug|<title>]] — <summary ≤200 字符> #finding [date:: YYYY-MM-DD] [impact:: P0-P3] [<extra-meta>]
 ```
 
 `<extra-meta>` 可包含：

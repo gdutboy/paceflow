@@ -12,6 +12,8 @@ description: >
 
 **Vault 路径**：由 `PACE_VAULT_PATH` 环境变量指定的 Vault 路径
 
+`spec.md` 的 `project-summary` 是项目元描述，不是 knowledge/thoughts 笔记的 L0 `summary` 字段。
+
 > **SessionStart 自动注入**：SessionStart hook 会自动扫描 `thoughts/` 和 `knowledge/` 目录中与当前项目相关的笔记（通过 frontmatter `projects` 字段匹配），将 L0 摘要注入到会话上下文中。compact 恢复时不触发扫描。
 
 > **状态体系说明**：knowledge/thoughts 笔记使用 `discussing`/`concluded`/`archived` 状态标记（frontmatter `status` 字段），与 task.md/implementation_plan.md 的 checkbox 状态标记（`[ ]`/`[/]`/`[x]`）是**完全独立的含义系统**，不可混用。

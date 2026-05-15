@@ -316,8 +316,8 @@ function legacyV5FilesInDir(dir) {
     const impl = contents['implementation_plan.md'] || '';
     const hasTaskRoot = /^#\s*(?:Task|Tasks|项目任务|项目任务追踪)\s*$/im.test(task);
     const hasImplRoot = /^#\s*(?:Implementation\s+Plan|Plan|实施计划)\s*$/im.test(impl);
-    const hasTaskCheckbox = /^- \[[ xX\/!\-]\]\s+\S/m.test(task);
-    const hasImplCheckbox = /^- \[[ xX\/!\-]\]\s+\S/m.test(impl);
+    const hasTaskCheckbox = /^- \[[ x\/!\-]\]\s+\S/m.test(task);
+    const hasImplCheckbox = /^- \[[ x\/!\-]\]\s+\S/m.test(impl);
     if (hasTaskRoot && hasImplRoot && hasTaskCheckbox && hasImplCheckbox) {
       return ['task.md', 'implementation_plan.md'];
     }
@@ -433,6 +433,10 @@ function appendArtifactDirHint(cwd, message) {
 
 // T-281: 模块级缓存，避免同一 hook 进程内重复 existsSync（同 cwd 最多 11 次→1 次）
 let _artifactDirCache = { cwd: null, dir: null };
+
+function _clearArtifactDirCache() {
+  _artifactDirCache = { cwd: null, dir: null };
+}
 
 /**
  * 获取 artifact 文件的实际存储目录
@@ -683,7 +687,7 @@ module.exports = {
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd,
   // 项目检测与路径
   isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
-  getArtifactDir, getProjectStateDir, getProjectRuntimeDir,
+  getArtifactDir, _clearArtifactDirCache, getProjectStateDir, getProjectRuntimeDir,
   getArtifactRootChoicePath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
   isWorktreeLocalArtifactRootChoicePath, worktreeLocalArtifactRootChoiceDenyReason,
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
