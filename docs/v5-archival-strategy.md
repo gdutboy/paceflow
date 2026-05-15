@@ -1,5 +1,7 @@
 # PACEflow v5 → v6 归档式迁移策略（B 方案）
 
+> **历史文档**：本文是 v6 迁移方案设计稿。当前 legacy v5 处理以 `plugin/migrate/batch-archive-v5.js`、hook 提示和 production smoke 记录为准。
+>
 > **文档版本**：1.0
 > **生成日期**：2026-05-02
 > **状态**：待实施（拟执行于 v6-only agent Phase A 测试通过后）

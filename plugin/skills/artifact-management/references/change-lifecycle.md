@@ -54,8 +54,8 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 | C 仅批准暂不开始 | `planned` | `[ ]` | `update-chg action=approve approval-confirmed=true approval-source=<source> approval-evidence=<evidence>` |
 | C+E 合并 | `in-progress` | `[/]` | `update-chg action=approve-and-start approval-confirmed=true approval-source=<source> approval-evidence=<evidence> task-id=T-NNN` |
 | E 连续执行中 | `in-progress` | `[/]` | 主 session 修改代码/测试；通常不逐个 T-NNN 派 `update-status` |
-| E 暂停/阻塞 | `in-progress` | `[!]` | `update-chg target=CHG-... action=update-status task-id=T-NNN new-status=[!] status-reason=<原因>` |
-| E 跨 session 进度留存 | `in-progress` 或 `completed` | `[/]` 或 `[x]` | `update-chg target=CHG-... action=update-status task-id=T-NNN` |
+| E 暂停/阻塞 | `in-progress` | `[!]` | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!] status-reason=<原因>` |
+| E 跨 session 进度留存 | `in-progress` 或 `completed` | `[/]` 或 `[x]` | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[/]` 或 `new-status=[x]` |
 | V 只记录验证暂不归档 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg target=CHG-... action=verify` |
 | 默认 V+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true` |
 | 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg target=CHG-...` |

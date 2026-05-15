@@ -1,5 +1,7 @@
 # PACEflow paceflow-artifact-writer Agent 设计文档
 
+> **历史文档**：本文是 v6 早期 pre-implementation agent 设计稿，不是当前 artifact-writer 权威。当前实现以 `plugin/agents/artifact-writer.md`、`plugin/agent-references/**` 和 agent fixture 为准。
+>
 > **文档版本**：1.0
 > **生成日期**：2026-05-02
 > **状态**：设计中（pre-implementation）

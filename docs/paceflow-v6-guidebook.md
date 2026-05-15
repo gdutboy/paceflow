@@ -1,5 +1,7 @@
 # PACEflow v6 Guidebook
 
+> **历史文档**：本文是 2026-05-04 起的 v6 升级审计 guidebook，包含已修复缺口、pre-implementation 目标和历史执行日志。当前权威以 `README.md`、`REFERENCE.md`、`plugin/hooks/**`、`plugin/skills/**`、`plugin/agent-references/**` 和 `docs/action-plan-2026-05-02.md` 当前执行视图为准。
+>
 > 生成日期：2026-05-04
 > 范围：本地仓库、GitHub 远端 `origin/master`、PACEflow vault 流程图与项目 artifact
 > 结论：v6.0.0 按 breaking change 推进，不继续兼容 v5 运行格式

@@ -209,7 +209,7 @@ function safeLockName(value) {
   return encodeURIComponent(String(value || 'unknown')).replace(/%/g, '_');
 }
 
-function seedArtifactResourceLock(dir, resource, { sessionId = 'sid-resource-owner', agentId = 'agent-resource-owner', file = '' } = {}) {
+function seedArtifactResourceLock(dir, resource, { sessionId = 'sid-resource-owner', agentId = 'agent-resource-owner', file = '', timestampMs = Date.now() } = {}) {
   const lockDir = path.join(dir, '.pace', 'locks', 'artifacts');
   fs.mkdirSync(lockDir, { recursive: true });
   const lockPath = path.join(lockDir, `${safeLockName(resource)}.lock`);
@@ -224,7 +224,7 @@ function seedArtifactResourceLock(dir, resource, { sessionId = 'sid-resource-own
     file,
     operation: 'test',
     createdAt: new Date().toISOString(),
-    timestampMs: Date.now(),
+    timestampMs,
   }, null, 2) + '\n', 'utf8');
   return lockPath;
 }
@@ -901,7 +901,7 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
   });
 
   const after = fs.readFileSync(logFile, 'utf8');
-  const projectLogLines = after.split('\n').filter(line => line.includes(path.basename(dir))).join('\n');
+  const projectLogLines = after.split('\n').filter(line => line.includes(projectNameForDir(dir))).join('\n');
   const delta = projectLogLines || after.slice(before.length);
   assert.ok(delta.includes('act=DENY_V6_MARKER'));
   assert.ok(delta.includes('agent_id=agent-log-deny'));
@@ -2184,6 +2184,36 @@ test('9hc0a2. PostToolUseFailure:Agent 清理 artifact-writer resource lock', ()
   assert.ok(!fs.existsSync(lockPath), 'Agent 工具失败时应清理 resource lock');
 });
 
+test('9hc0a3. PreToolUse 读取 artifact resource stale lock 时自愈', () => {
+  const dir = makeV6Project('agent-artifact-stale-lock-read-self-heal');
+  const lockPath = seedArtifactResourceLock(dir, 'detail:changes/chg-20260504-01.md', {
+    sessionId: 'sid-stale-resource',
+    agentId: 'agent-stale-resource',
+    file: path.join(dir, 'changes', 'chg-20260504-01.md'),
+    timestampMs: Date.now() - 10 * 60 * 1000,
+  });
+  assert.ok(fs.existsSync(lockPath), '测试前应存在 stale resource lock');
+
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-new-resource-owner',
+      agent_id: 'agent-new-resource-owner',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'changes', 'chg-20260504-01.md'),
+        old_string: '## 工作记录',
+        new_string: '## 工作记录',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('当前 artifact 正由 artifact-writer 写入'));
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  assert.strictEqual(lock.sessionId, 'sid-new-resource-owner');
+});
+
 test('9hc0b. artifact-writer 新建 CHG 详情必须使用 hook 预留编号', () => {
   const dir = makeV6Project('agent-artifact-lock-write-deny');
   const r = runHook('pre-tool-use.js', {
@@ -3423,6 +3453,10 @@ test('9hgc. Bash shell wrapper / package runner 修改 artifact 被拒绝', () =
   const commands = [
     `bash -c 'node -e "require(\\"fs\\").writeFileSync(\\"task.md\\",\\"x\\")"'`,
     `bash -c 'cat > task.md <<EOF\nx\nEOF'`,
+    `echo $(bash -c 'echo x > task.md')`,
+    "echo `bash -c 'echo x > task.md'`",
+    `eval "bash -c 'echo x > task.md'"`,
+    `printf ignored | xargs sh -c 'echo x > task.md'`,
     `cat > /tmp/pace-artifact-bypass.js <<'SCRIPT'\nconst fs = require('fs');\nfs.writeFileSync('${path.join(dir, 'task.md').replace(/\\/g, '/')}', 'x');\nSCRIPT\nnode /tmp/pace-artifact-bypass.js`,
     'npx prettier --write task.md',
     'npm run fix -- task.md',
@@ -3817,6 +3851,31 @@ test('14f2. Stop 对 malformed CHG 索引行不能静默通过', () => {
   assert.ok(r.stderr.includes('独占一行'));
 });
 
+test('14f3. Stop findings aging 识别带引号的 open status', () => {
+  const dir = makeV6Project('stop-finding-quoted-open-aging', {
+    withIndex: false,
+    detail: false,
+    walkToday: false,
+  });
+  fs.writeFileSync(path.join(dir, 'changes', 'findings', 'finding-2000-01-01-quoted-open.md'), [
+    '---',
+    'finding-id: FINDING-2000-01-01-quoted-open',
+    'status: "open"',
+    'type: research',
+    'date: 2000-01-01',
+    'impact: P2',
+    'summary: quoted open status aging test',
+    'schema-version: "6.0"',
+    '---',
+    '',
+    '# quoted open status aging test',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('open finding 超过 14 天'));
+});
+
 test('14g. 索引 [x] 但 status in-progress → inconsistent 阻止修复', () => {
   const dir = makeV6ProjectWithChanges('stop-x-status-mismatch', [
     { id: 'CHG-20260504-01', indexMark: '[x]', status: 'in-progress', task: '[x]', approved: true },
@@ -4068,6 +4127,29 @@ test('15f. PostToolUse 同一 CHG 状态提醒每会话只提示一次', () => {
   const second = runHook('post-tool-use.js', { cwd: dir, stdin });
   assert.strictEqual(second.code, 0);
   assert.ok(!second.stdout.includes('缺少 verified-date'));
+});
+
+test('15f0. PostToolUse 将 quoted null verified-date 视为未验证', () => {
+  const detail = chgDetail({ status: 'completed', task: '[x]', approved: true, verified: false })
+    .replace('verified-date: null', 'verified-date: "null"');
+  const dir = makeV6Project('post-entry-warning-quoted-null', {
+    indexMark: '[x]',
+    detail,
+  });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '## 工作记录',
+        new_string: '## 工作记录',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('缺少 verified-date'));
 });
 
 test('15f1. artifact-writer 多步收尾中间态不输出状态类 warning', () => {

@@ -281,7 +281,7 @@ module.exports = function createChangeAnalysis(ctx) {
 
   function isChangeVerified(detail) {
     if (!detail || detail.missing) return false;
-    const verifiedDate = (detail.frontmatter['verified-date'] || '').trim();
+    const verifiedDate = normalizeFrontmatterStatus(detail.frontmatter['verified-date']).toLowerCase();
     return verifiedDate && verifiedDate !== 'null' && /<!-- VERIFIED -->/.test(detail.content);
   }
 
@@ -311,6 +311,7 @@ module.exports = function createChangeAnalysis(ctx) {
     countByStatus,
     extractOpenKeys,
     normalizeFindingKey,
+    normalizeFrontmatterStatus,
     detectLegacyImplFormat,
     parseFrontmatter,
     validateWalkthroughLinks,

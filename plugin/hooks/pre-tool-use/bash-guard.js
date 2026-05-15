@@ -43,7 +43,7 @@ function stripHeredocBodies(command) {
 function shellCommandScripts(command) {
   const scripts = [];
   const c = String(command || '');
-  const re = /(^|[;&|]\s*)(?:bash|sh|zsh|fish)\s+-c\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|]+))/gi;
+  const re = /(^|[;&|]\s*|\$\(\s*|`\s*|\beval\s+(?:["']\s*)?|\bxargs(?:\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+))*\s+)(?:bash|sh|zsh|fish)\s+-c\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|]+))/gi;
   let m;
   while ((m = re.exec(c)) !== null) {
     const script = m[2] || m[3] || m[4] || m[5] || '';

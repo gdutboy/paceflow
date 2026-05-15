@@ -36,7 +36,7 @@ module.exports = function createLockUtils(ctx) {
         raw: parsed,
       };
     } catch(e) {
-      return { ok: false, path: lockPath, error: e.message };
+      return { ok: false, path: lockPath, error: e.message, code: e.code || '' };
     }
   }
 
@@ -198,7 +198,7 @@ module.exports = function createLockUtils(ctx) {
         raw: parsed,
       };
     } catch(e) {
-      return { ok: false, path: lockPath, error: e.message };
+      return { ok: false, path: lockPath, error: e.message, code: e.code || '' };
     }
   }
 
@@ -271,8 +271,21 @@ module.exports = function createLockUtils(ctx) {
     return path.join(getArtifactResourceLockDir(cwd), `${safeLockName(resource)}.lock`);
   }
 
-  function readArtifactResourceLock(cwd, resource) {
-    return readJsonLock(getArtifactResourceLockPath(cwd, resource));
+  function readArtifactResourceLock(cwd, resource, { ttlMs = ARTIFACT_RESOURCE_LOCK_TTL_MS } = {}) {
+    const lockPath = getArtifactResourceLockPath(cwd, resource);
+    const lock = readJsonLock(lockPath);
+    if (!lock.ok && lock.code === 'ENOENT') return lock;
+    if (jsonLockIsStale(lock, ttlMs)) {
+      try {
+        fs.unlinkSync(lockPath);
+      } catch(e) {
+        if (!e || e.code !== 'ENOENT') {
+          return { ...lock, stale: true, cleanupError: e && e.message || String(e) };
+        }
+      }
+      return { ok: false, path: lockPath, stale: true, lock };
+    }
+    return lock;
   }
 
   function artifactResourceForRel(artifactRel) {

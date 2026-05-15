@@ -409,6 +409,34 @@ test('artifact resource stale lock 被其他进程删除时继续重试获取', 
   }
 });
 
+test('artifact resource read path 自动清理 stale lock', () => {
+  const dir = makeTmpDir('arl-read-stale-self-heal');
+  const resource = 'detail:changes/chg-20260510-01.md';
+  const lockPath = getArtifactResourceLockPath(dir, resource);
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, JSON.stringify({
+    version: 'resource-v1',
+    resource,
+    sessionId: 'sid-stale-read',
+    ownerKey: 'session:sid-stale-read',
+    timestampMs: 1,
+  }), 'utf8');
+
+  const lock = readArtifactResourceLock(dir, resource);
+  assert.strictEqual(lock.ok, false);
+  assert.strictEqual(lock.stale, true);
+  assert.strictEqual(fs.existsSync(lockPath), false);
+});
+
+test('artifact resource read path 对缺失锁保持普通 ok:false', () => {
+  const dir = makeTmpDir('arl-read-missing');
+  const resource = 'detail:changes/chg-20260510-01.md';
+  const lock = readArtifactResourceLock(dir, resource);
+  assert.strictEqual(lock.ok, false);
+  assert.strictEqual(lock.code, 'ENOENT');
+  assert.strictEqual(lock.stale, undefined);
+});
+
 test('index:changes 在 task.md 与 implementation_plan.md 都触碰后释放', () => {
   const dir = makeTmpDir('arl-index');
   const resource = artifactResourceForRel('task.md');
@@ -1095,6 +1123,17 @@ test('classifyChange — completed 未 verified 需要收尾', () => {
   assert.strictEqual(classified.verified, false);
 });
 
+test('isChangeVerified — verified-date 为带引号 null 时不算 verified', () => {
+  const dir = makeTmpDir('v6-class-quoted-null-verified');
+  writeV6ChangeFixture(dir, { status: 'completed', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true });
+  const detailPath = path.join(dir, 'changes', 'chg-20260507-01.md');
+  const content = fs.readFileSync(detailPath, 'utf8').replace(/^verified-date: .+$/m, 'verified-date: "null"');
+  fs.writeFileSync(detailPath, content, 'utf8');
+  const entry = paceUtils.getActiveChangeEntries(dir)[0];
+  assert.strictEqual(paceUtils.isChangeVerified(entry.detail), false);
+  assert.strictEqual(paceUtils.classifyChange(entry).category, 'closing-required');
+});
+
 test('classifyChange — archived/cancelled 活跃区视为 inconsistent', () => {
   const dir = makeTmpDir('v6-class-terminal-active');
   writeV6ChangeFixture(dir, { status: 'archived', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true });
@@ -1425,7 +1464,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 9 个测试
+// 18. release sanity — 12 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1526,7 +1565,7 @@ test('skills lifecycle 示例不遗漏 target/task-id 且表格不断裂', () =>
   assert.ok(!workflow.includes('skill base directory'), 'workflow skill 应统一使用中文“skill 根目录”');
 
   const lifecycle = fs.readFileSync(path.join(repoRoot, 'plugin/skills/artifact-management/references/change-lifecycle.md'), 'utf8');
-  assert.ok(lifecycle.includes('update-chg target=CHG-... action=update-status task-id=T-NNN new-status=[!]'), '[!] 示例必须带 target/task-id');
+  assert.ok(lifecycle.includes('update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!]'), '[!] 示例必须带 target/section/task-id/new-status');
   assert.ok(lifecycle.indexOf('| 取消 |') < lifecycle.indexOf('[ ] planned'), 'deferred 说明不应插入生命周期表格中间');
 
   const bridge = fs.readFileSync(path.join(repoRoot, 'plugin/skills/pace-bridge/SKILL.md'), 'utf8');
@@ -1571,6 +1610,54 @@ test('pace-utils 子模块可直接 require 且导出关键符号', () => {
     for (const symbol of symbols) {
       assert.ok(Object.prototype.hasOwnProperty.call(mod, symbol), `${name} should export ${symbol}`);
     }
+  }
+});
+
+test('record-finding type 枚举不混入 correction', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const files = [
+    'plugin/agent-references/artifact-writer-spec.md',
+    'plugin/agent-references/instructions/record-finding.md',
+    'plugin/skills/artifact-management/SKILL.md',
+  ];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    const recordFindingSection = text;
+    assert.ok(recordFindingSection.includes('research | observation | comparison | bug-report'), `${rel} 应列出 finding type 枚举`);
+    assert.ok(!/research \| observation \| comparison \| bug-report \| correction/.test(recordFindingSection), `${rel} 不应把 correction 混入 record-finding type`);
+  }
+});
+
+test('用户 skills 显式链接现有 references 文档', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const expectations = {
+    'plugin/skills/pace-workflow/SKILL.md': ['references/superpowers-integration.md'],
+    'plugin/skills/artifact-management/SKILL.md': ['references/format-reference.md', 'references/change-lifecycle.md'],
+  };
+  for (const [rel, refs] of Object.entries(expectations)) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    for (const ref of refs) {
+      assert.ok(text.includes(`](${ref})`), `${rel} 应显式链接 ${ref}`);
+    }
+  }
+});
+
+test('CLAUDE.md 不承载 PACEflow workflow 或个人回复风格', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const inner = fs.readFileSync(path.join(repoRoot, 'CLAUDE.md'), 'utf8');
+  const outerPath = path.join(repoRoot, '..', 'CLAUDE.md');
+  const candidates = [['inner', inner]];
+  if (fs.existsSync(outerPath)) {
+    candidates.push(['outer', fs.readFileSync(outerPath, 'utf8')]);
+  }
+  for (const [label, text] of candidates) {
+    assert.ok(!text.includes('🐱'), `${label} CLAUDE.md 不应包含个人固定结尾`);
+    assert.ok(!text.includes('每条回复开头'), `${label} CLAUDE.md 不应包含个人时间戳规则`);
+    assert.ok(!text.includes('v6.0.34'), `${label} CLAUDE.md 不应保留旧版本号`);
+  }
+  assert.ok(inner.includes('不承担 artifact 创建、批准、验证、归档'), 'inner CLAUDE.md 应说明 workflow 权威不在 CLAUDE.md');
+  if (fs.existsSync(outerPath)) {
+    assert.ok(fs.readFileSync(outerPath, 'utf8').includes('此父目录不定义 PACEflow 运行规则'), 'outer CLAUDE.md 应成为 redirect');
   }
 });
 

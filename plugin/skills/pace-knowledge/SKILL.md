@@ -155,7 +155,7 @@ sources:
 
 ## Corrections 双写流程
 
-被用户纠正时（"不对"、"别这样"、"错了"等），CLAUDE.md G-3 要求先评估 knowledge 双写，再通过 artifact writer 记录 correction：
+被用户纠正时（"不对"、"别这样"、"错了"等），先评估 knowledge 双写，再通过 artifact writer 记录 correction：
 
 1. **评估通用性**：该纠正是否跨项目通用？
    - **通用**（如 AI 验证习惯、决策偏差模式）→ 步骤 2
@@ -179,7 +179,7 @@ sources:
 
 ## Obsidian 操作指引
 
-操作 Obsidian 笔记时，优先调用 plugin skill（需安装 obsidian-skills 插件，未安装时回退到 fs 操作）：
+操作 Obsidian 笔记时，优先调用当前可用的 `obsidian:*` plugin skill；未安装 Obsidian plugin skill 时回退到 fs 操作：
 
 - **CLI 操作**（搜索/创建/追加/属性编辑）→ 调用 `obsidian:obsidian-cli`
 - **Markdown 语法**（wikilinks/callouts/embeds/properties）→ 调用 `obsidian:obsidian-markdown`

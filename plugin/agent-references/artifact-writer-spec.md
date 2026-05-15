@@ -66,7 +66,7 @@ archived-date: null                  # status=archived 时填
 ```yaml
 finding-id: FINDING-YYYY-MM-DD-slug
 status: open                         # open | investigating | accepted | rejected | merged | blocked
-type: research                       # research | observation | comparison | bug-report | correction
+type: research                       # research | observation | comparison | bug-report
 date: YYYY-MM-DD
 impact: P1                           # P0 | P1 | P2 | P3
 summary: ""                          # ≤ 200 字符

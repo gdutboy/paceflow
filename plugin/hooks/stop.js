@@ -218,7 +218,7 @@ if (paceSignal === 'artifact') {
             fs.closeSync(fd);
           }
           const fm = paceUtils.parseFrontmatter(detail);
-          if ((fm.status || 'open') !== 'open' || !fm.date) return false;
+          if ((paceUtils.normalizeFrontmatterStatus(fm.status) || 'open') !== 'open' || !fm.date) return false;
           const days = paceUtils.daysSinceISODate(fm.date);
           return days !== null && days >= 14;
         }).length
