@@ -4419,6 +4419,29 @@ test('15g. walkthrough wikilink 必须指向 CHG/HOTFIX 详情 slug', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('wikilink 应为 [[chg-20260504-01]]'));
+  const out = JSON.parse(r.stdout);
+  assert.strictEqual(out.decision, 'block');
+  assert.strictEqual(out.continue, true);
+  assert.ok(out.reason.includes('PostToolUse 终态修复'));
+  assert.ok(out.reason.includes('不要结束 artifact-writer 报告'));
+
+  const second = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-walkthrough',
+      agent_type: 'paceflow:artifact-writer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: 'smoke',
+        new_string: 'smoke',
+      },
+    },
+  });
+  assert.strictEqual(second.code, 0);
+  const secondOut = JSON.parse(second.stdout);
+  assert.notStrictEqual(secondOut.decision, 'block', '同一 walkthrough 终态问题每 session 只 continue 一次，避免循环');
+  assert.ok(second.stdout.includes('wikilink 应为 [[chg-20260504-01]]'));
 });
 
 test('15g1. walkthrough 行缺少 wikilink 时 PostToolUse 提醒', () => {

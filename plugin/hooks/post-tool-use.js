@@ -1,6 +1,7 @@
 // PostToolUse hook：通过 JSON additionalContext 向 AI 反馈（多信号检测 + stdin 工具类型过滤 + Claude 任务列表同步提醒）
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 let paceUtils;
 try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
@@ -33,6 +34,7 @@ paceUtils.withStdinParsed((stdin) => {
   const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
 
   const warnings = [];
+  const continueBlocks = [];
   // W-dry-4: 每会话首次提醒辅助函数（flag 检查+写入去重）
   function warnOnce(flagName, message) {
     const flagFile = path.join(PACE_RUNTIME, flagName);
@@ -54,6 +56,25 @@ paceUtils.withStdinParsed((stdin) => {
   const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
   const isChangeDetailEdit = !!artifactRel && /^changes\/.+\.md$/i.test(artifactRel);
   const isV6ArtifactEdit = isArtifactEdit || isChangeDetailEdit;
+  function continueBlockOnce(kind, basis, reason) {
+    const hash = crypto.createHash('sha1').update(String(basis || kind)).digest('hex').slice(0, 12);
+    const flagFile = path.join(PACE_RUNTIME, `post-continue-${kind}-${hash}`);
+    if (fs.existsSync(flagFile)) return false;
+    try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
+    try { fs.writeFileSync(flagFile, '1', 'utf8'); } catch(e) {}
+    continueBlocks.push({ kind, reason });
+    return true;
+  }
+
+  function changeIdsFromMessages(messages) {
+    const ids = new Set();
+    for (const message of messages) {
+      for (const match of String(message || '').matchAll(/\b(?:CHG|HOTFIX)-\d{8}-\d{2}\b/gi)) {
+        ids.add(match[0].toUpperCase());
+      }
+    }
+    return [...ids].sort();
+  }
   if (paceSignal === 'artifact' && stdin.sessionId && ((isFileMutationTool && isCodeFile && !isV6ArtifactEdit) || toolName === 'Bash')) {
     const touched = paceUtils.touchChangeOwnersForSession(cwd, {
       sessionId: stdin.sessionId,
@@ -214,8 +235,20 @@ paceUtils.withStdinParsed((stdin) => {
       warnings.push('检测到 correction 详情变更。请确认已同步写入 knowledge/ 或在 corrections.md 索引标注 [knowledge:: project-only]。');
     }
     if (artifactRel === 'walkthrough.md') {
-      for (const issue of paceUtils.validateWalkthroughLinks(cwd)) {
+      const walkthroughIssues = paceUtils.validateWalkthroughLinks(cwd);
+      for (const issue of walkthroughIssues) {
         warnings.push(issue);
+      }
+      if (walkthroughIssues.length > 0 && isFileMutationTool && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
+        const ids = changeIdsFromMessages(walkthroughIssues);
+        const target = ids.length > 0 ? ids.join(', ') : 'walkthrough.md';
+        const reason = [
+          `PACEflow PostToolUse 终态修复：你刚写入的 walkthrough.md 仍不符合 v6 完成记录规范（${target}）。`,
+          ...walkthroughIssues.map((issue, idx) => `[${idx + 1}] ${issue}`),
+          '请在当前 turn 继续修复，不要结束 artifact-writer 报告：读取 task.md / implementation_plan.md 对应索引与 changes/<id>.md，补齐正确 wikilink 和 [worktree:: ...] [branch:: ...] 上下文；修复后再报告。',
+          '不要改用 Bash、临时脚本或主 session 直接改 artifact。'
+        ].join('\n');
+        continueBlockOnce('walkthrough', target, reason);
       }
     }
   } else if (taskActive) {
@@ -265,14 +298,32 @@ paceUtils.withStdinParsed((stdin) => {
   // I-8: warnings 通过 additionalContext 输出给 AI（单条拼接，非逐条输出）
   if (warnings.length > 0) {
     const ctx = `PACE 提醒：${warnings.join('；')}\n${paceUtils.artifactDirRuntimeHint(cwd)}`;
-    const output = {
-      hookSpecificOutput: {
-        hookEventName: "PostToolUse",
-        additionalContext: ctx
-      }
-    };
+    const output = continueBlocks.length > 0
+      ? {
+          decision: "block",
+          continue: true,
+          reason: `${continueBlocks.map(block => block.reason).join('\n\n')}\n${paceUtils.artifactDirRuntimeHint(cwd)}`,
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: ctx
+          }
+        }
+      : {
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: ctx
+          }
+        };
     process.stdout.write(JSON.stringify(output));
-    log(paceUtils.logEntry('PostToolUse', 'WARN', { proj, tool: toolName, file: filePath || '-', checks: warnings.length, output: ctx, dur: Date.now() - t0 }));
+    log(paceUtils.logEntry('PostToolUse', continueBlocks.length > 0 ? 'CONTINUE_BLOCK' : 'WARN', {
+      proj,
+      tool: toolName,
+      file: filePath || '-',
+      checks: warnings.length,
+      continue_blocks: continueBlocks.map(block => block.kind).join(','),
+      output: continueBlocks.length > 0 ? output.reason : ctx,
+      dur: Date.now() - t0
+    }));
   } else {
     log(paceUtils.logEntry('PostToolUse', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
   }

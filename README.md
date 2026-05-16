@@ -301,6 +301,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.57 | 2026-05-16 | 将 `PostToolUse` 的 `decision:"block" + continue:true` 引入生产最小试点：artifact-writer 写入 `walkthrough.md` 后若 wikilink 或 `[worktree:: ...] [branch:: ...]` 上下文仍不符合 v6 规范，hook 会让当前 turn 继续修复；每 session/目标只触发一次，避免循环 |
 | v6.0.56 | 2026-05-16 | 覆盖 Claude Code 2.1.143 后的 Windows 工具面：PreToolUse 新增 `PowerShell` / `Monitor` matcher，PowerShell 原生命令写 artifact 或 `.pace` 写入控制运行态会被阻止；Monitor 只能做只读观察，不能作为后台命令绕过 Bash artifact guard；PostToolUseFailure 同步覆盖 PowerShell/Monitor 失败恢复提示 |
 | v6.0.55 | 2026-05-12 | 修复 v6.0.54 Smoke3/4 后续缺口：首次 root-choice SessionStart 输出当前 reserve helper 命令；helper 明确拒绝 `--artifact-dir` / `--artifact-root` / `--project-dir`；当前 session owner 的 README/文档/配置等非代码写入也进入 C/E gate，foreign fresh owner 不阻断普通非代码写入但结构损坏仍全局阻断；SubagentStop 兜底清理 close/archive 后的 owner `closing` 残留 |
 | v6.0.54 | 2026-05-12 | 修复 worktree 完成记录可读性：close/archive 写 `walkthrough.md` 时同步保留索引行的 `[worktree:: ...] [branch:: ...]` 执行上下文；PostToolUse/Stop 机械校验 walkthrough 行与 task/implementation 索引上下文一致 |
@@ -368,4 +369,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v6.0.56 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.57 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

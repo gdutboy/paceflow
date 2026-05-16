@@ -2,7 +2,7 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v6.0.56';
+const PACE_VERSION = 'v6.0.57';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -75,6 +75,7 @@ const SESSION_SCOPED_FLAG_PREFIXES = [
   'status-mismatch-',
   'verify-missing-',
   'blocked-tasks-',
+  'post-continue-',
 ];
 
 const PLAN_DIRS = ['docs/plans', 'docs/superpowers/plans'];

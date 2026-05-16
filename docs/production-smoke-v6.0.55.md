@@ -1,6 +1,6 @@
-# PACEflow v6.0.56 Production Smoke
+# PACEflow v6.0.57 Production Smoke
 
-> Focus: verify v6.0.55 lifecycle follow-ups plus v6.0.56 Claude Code 2.1.143 tool-surface coverage: PowerShell/Monitor artifact guard and `continueOnBlock` PoC.
+> Focus: verify v6.0.55 lifecycle follow-ups plus v6.0.56/57 Claude Code 2.1.143 tool-surface coverage: PowerShell/Monitor artifact guard and `PostToolUse continue:true` walkthrough repair.
 > Run in real Claude Code sessions after installing/updating PaceFlow from marketplace and running `/reload plugin`.
 
 ## Preconditions
@@ -12,13 +12,13 @@ PLUGIN_DIR="$(find "$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow" -m
 echo "$PLUGIN_DIR"
 test -f "$PLUGIN_DIR/.claude-plugin/plugin.json"
 node -e 'const p=require(process.argv[1]); console.log(p.version)' "$PLUGIN_DIR/.claude-plugin/plugin.json"
-rg 'PACE_VERSION' "$PLUGIN_DIR/hooks/pace-utils.js"
+rg 'PACE_VERSION' "$PLUGIN_DIR/hooks/pace-utils/constants.js"
 ```
 
 Expected:
 
-- Installed version is `6.0.56`.
-- `PACE_VERSION` is `v6.0.56`.
+- Installed version is `6.0.57`.
+- `PACE_VERSION` is `v6.0.57`.
 - Claude Code session has reloaded the plugin after install/update.
 
 ## Smoke 1: Root-Choice Helper Command
@@ -807,7 +807,7 @@ Failure signals:
 
 ### Smoke 15: PostToolUse `continueOnBlock` PoC
 
-Goal: verify whether Claude Code command-type `PostToolUse` hooks can use `continueOnBlock:true` to feed a rejection reason back to Claude and continue the same turn. This is a PoC only; production PaceFlow should not migrate until this passes.
+Goal: verify whether Claude Code command-type `PostToolUse` hooks can feed a rejection reason back to Claude with `decision:"block" + continue:true` and continue the same turn. This was the prerequisite PoC for the v6.0.57 production walkthrough repair path.
 
 Setup:
 
@@ -826,7 +826,7 @@ Failure signals:
 - The hook ends the turn exactly like a normal block.
 - Claude repeats the same edit indefinitely.
 
-If Smoke 15 fails, keep production PostToolUse on `additionalContext` / warning semantics and do not alter the current runtime architecture.
+If Smoke 15 fails in a future Claude Code runtime, keep production PostToolUse continue-block disabled or roll it back to `additionalContext` / warning semantics.
 
 2026-05-16 result:
 
@@ -847,11 +847,83 @@ PostToolUse Edit  -> K:\AI\cc-smoke15\poc.txt
 ```
 
 - The one-shot marker prevented an infinite loop.
-- This validates the command-hook `continue:true` behavior, but does not authorize migrating PreToolUse gates. Candidate production use remains limited to PostToolUse final-state repairs such as walkthrough context/wikilink gaps or VERIFIED/frontmatter mismatches.
+- This validates the command-hook `continue:true` behavior, but does not authorize migrating PreToolUse gates. v6.0.57 production use is limited to walkthrough context/wikilink final-state repair.
+
+### Smoke 16: Production PostToolUse Walkthrough Continue Block
+
+Goal: verify v6.0.57 production behavior for the first `PostToolUse continue:true` migration. This is not a PreToolUse gate. It only covers artifact-writer writing `walkthrough.md` into a malformed final state.
+
+Setup in an installed-runtime scratch project:
+
+```bash
+rm -rf /mnt/k/AI/paceflow-smoke-657-post
+mkdir -p /mnt/k/AI/paceflow-smoke-657-post/changes
+cd /mnt/k/AI/paceflow-smoke-657-post
+cat > task.md <<'EOF'
+# 项目任务追踪
+
+## 活跃任务
+
+<!-- ARCHIVE -->
+- [x] [[chg-20260516-01]] PostToolUse continue smoke #change [tasks:: T-001] [worktree:: smoke] [branch:: feature-x]
+EOF
+cat > implementation_plan.md <<'EOF'
+# 实施计划
+
+## 变更索引
+
+<!-- ARCHIVE -->
+- [x] [[chg-20260516-01]] PostToolUse continue smoke #change [tasks:: T-001] [worktree:: smoke] [branch:: feature-x]
+EOF
+cat > walkthrough.md <<'EOF'
+# 工作记录
+
+## 最近工作
+
+| 日期 | 完成内容 | 关联变更 |
+| --- | --- | --- |
+| 2026-05-16 | [[bad-link]] smoke | CHG-20260516-01 |
+<!-- ARCHIVE -->
+EOF
+cat > changes/chg-20260516-01.md <<'EOF'
+---
+schema-version: "6.0"
+id: CHG-20260516-01
+title: PostToolUse continue smoke
+status: archived
+created: 2026-05-16T00:00:00+08:00
+updated: 2026-05-16T00:00:00+08:00
+verified-date: 2026-05-16T00:00:00+08:00
+---
+# PostToolUse continue smoke
+<!-- APPROVED -->
+<!-- VERIFIED -->
+## 任务清单
+- [x] T-001 smoke
+EOF
+
+PLUGIN_DIR="$(find "$HOME/.claude/plugins/cache/paceaitian-paceflow/paceflow" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)"
+printf '%s' '{"session_id":"sid-smoke16","agent_id":"agent-smoke16","agent_type":"paceflow:artifact-writer","tool_name":"Edit","tool_input":{"file_path":"walkthrough.md","old_string":"smoke","new_string":"smoke"}}' \
+  | CLAUDE_PROJECT_DIR="$PWD" node "$PLUGIN_DIR/hooks/post-tool-use.js"
+```
+
+Expected first output:
+
+- JSON includes `"decision":"block"` and `"continue":true`.
+- `reason` includes `PostToolUse 终态修复`.
+- `reason` mentions the bad walkthrough wikilink and missing `[worktree:: smoke] [branch:: feature-x]` context.
+- The message tells artifact-writer to keep repairing in the current turn and not to use Bash or a temporary script.
+
+Run the same command again without fixing the file.
+
+Expected second output:
+
+- The same warning may appear as `hookSpecificOutput.additionalContext`.
+- It must not include `"decision":"block"` again for the same session/target, proving the one-shot guard prevents loops.
 
 ### Release UX: Plugin Details / Projected Context Cost
 
-Goal: verify installed plugin inventory and projected context cost after v6.0.56 prompt/tool-surface changes.
+Goal: verify installed plugin inventory and projected context cost after v6.0.56+ prompt/tool-surface changes.
 
 Command:
 
@@ -895,4 +967,5 @@ Run this set after changes that touch `plugin/hooks/hooks.json`, Bash/PowerShell
 
 1. Smoke 14 on Windows Claude Code with the PowerShell tool enabled.
 2. A normal Smoke 2 or Smoke 10 run to confirm existing Bash/Write/Edit/Agent gates still behave.
-3. Smoke 15 only for the isolated `continueOnBlock` PoC branch; do not run it against production PaceFlow unless the PoC implementation is present.
+3. Smoke 15 only for the isolated `continueOnBlock` PoC branch.
+4. Smoke 16 for the production walkthrough continue-block path in v6.0.57+.
