@@ -8,7 +8,7 @@ const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -1074,6 +1074,41 @@ test('listUnsyncedPlanFiles: 主文件已同步时 -design.md 伴随文件也视
   assert.strictEqual(unsynced[0].name, '2026-03-08-other.md');
 });
 
+test('bridge candidate plans: 旧 plan 不作为当前 bridge 信号', () => {
+  const dir = makeTmpDir('usp-stale-bridge');
+  const planDir = path.join(dir, 'docs', 'plans');
+  fs.mkdirSync(planDir, { recursive: true });
+  const plan = path.join(planDir, '2026-03-08-old-plan.md');
+  fs.writeFileSync(plan, '# Old plan\n', 'utf8');
+  const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(plan, old, old);
+
+  assert.strictEqual(paceUtils.hasUnsyncedPlanFiles(dir), true);
+  assert.strictEqual(hasBridgeCandidatePlanFiles(dir), false);
+  assert.deepStrictEqual(listBridgeCandidatePlanFiles(dir), []);
+  assert.strictEqual(paceUtils.formatBridgeHint(dir, dir), null);
+  assert.strictEqual(isPaceProject(dir), false);
+});
+
+test('bridge candidate plans: current-native-plan 即使较旧也保持桥接提示', () => {
+  const dir = makeTmpDir('usp-current-native-bridge');
+  const planDir = path.join(dir, 'docs', 'plans');
+  fs.mkdirSync(planDir, { recursive: true });
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  const plan = path.join(planDir, '2026-03-08-current-plan.md');
+  fs.writeFileSync(plan, '# Current plan\n', 'utf8');
+  const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(plan, old, old);
+  fs.writeFileSync(path.join(dir, '.pace', 'current-native-plan'), plan, 'utf8');
+
+  assert.strictEqual(hasBridgeCandidatePlanFiles(dir), true);
+  const candidates = listBridgeCandidatePlanFiles(dir);
+  assert.strictEqual(candidates.length, 1);
+  assert.strictEqual(candidates[0].name, '2026-03-08-current-plan.md');
+  assert.ok(paceUtils.formatBridgeHint(dir, dir).fileList.includes('2026-03-08-current-plan.md'));
+  assert.strictEqual(isPaceProject(dir), 'superpowers');
+});
+
 // ============================================================
 // 10. v6 change parsing/classification
 // ============================================================
@@ -1144,6 +1179,14 @@ test('isChangeVerified — verified-date 为带引号 null 时不算 verified', 
   const entry = paceUtils.getActiveChangeEntries(dir)[0];
   assert.strictEqual(paceUtils.isChangeVerified(entry.detail), false);
   assert.strictEqual(paceUtils.classifyChange(entry).category, 'closing-required');
+});
+
+test('parseFrontmatter — 支持 UTF-8 BOM 前缀', () => {
+  const content = '\uFEFF---\nchg-id: CHG-20260507-01\nstatus: in-progress\n---\n';
+  assert.deepStrictEqual(parseFrontmatter(content), {
+    'chg-id': 'CHG-20260507-01',
+    status: 'in-progress',
+  });
 });
 
 test('classifyChange — archived/cancelled 活跃区视为 inconsistent', () => {

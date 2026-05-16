@@ -4,6 +4,9 @@ const paceUtils = require('../pace-utils');
 const { FORMAT_SNIPPETS } = paceUtils;
 
 function isArtifactWriterManagedRel(artifactRel) {
+  // spec.md is a project facts file maintained by the main session via Edit.
+  // Shell writes are still blocked by bash/powershell guards because they skip
+  // artifact formatting and line-ending safeguards.
   return !!artifactRel && artifactRel !== 'spec.md';
 }
 

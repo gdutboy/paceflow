@@ -8,6 +8,8 @@ const {
 } = require('./constants');
 const { normalizeLineEndings } = require('./line-endings');
 
+const PLAN_BRIDGE_FRESH_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
 module.exports = function createPlanUtils(ctx) {
   let _planFilesCache = { cwd: null, result: [] };
 
@@ -39,6 +41,10 @@ module.exports = function createPlanUtils(ctx) {
     return listUnsyncedPlanFiles(cwd).length > 0;
   }
 
+  function hasBridgeCandidatePlanFiles(cwd) {
+    return listBridgeCandidatePlanFiles(cwd).length > 0;
+  }
+
   function listUnsyncedPlanFiles(cwd) {
     const plans = listPlanFiles(cwd);
     if (plans.length === 0) return [];
@@ -50,6 +56,43 @@ module.exports = function createPlanUtils(ctx) {
       syncedSet.add(f.replace(/\.md$/, '-design.md'));
     }
     return plans.filter(p => !syncedSet.has(p.name));
+  }
+
+  function currentNativePlanName(cwd) {
+    const nativePlanPath = getNativePlanPath(cwd);
+    return nativePlanPath ? path.basename(nativePlanPath) : '';
+  }
+
+  function mainNameForDesignPlan(name) {
+    return String(name || '').replace(/-design\.md$/i, '.md');
+  }
+
+  function listBridgeCandidatePlanFiles(cwd) {
+    const planFiles = listUnsyncedPlanFiles(cwd);
+    if (planFiles.length === 0) return [];
+    const currentName = currentNativePlanName(cwd);
+    const byName = new Map(planFiles.map(p => [p.name, p]));
+    const now = Date.now();
+
+    function isCurrent(p) {
+      return currentName && (p.name === currentName || mainNameForDesignPlan(p.name) === currentName);
+    }
+
+    function isFresh(p) {
+      try {
+        const stat = fs.statSync(path.join(cwd, p.dir, p.name));
+        return stat.mtimeMs > 0 && now - stat.mtimeMs <= PLAN_BRIDGE_FRESH_WINDOW_MS;
+      } catch(e) {
+        return false;
+      }
+    }
+
+    function mainIsCandidate(p) {
+      const main = byName.get(mainNameForDesignPlan(p.name));
+      return main && main !== p && (isCurrent(main) || isFresh(main));
+    }
+
+    return planFiles.filter(p => isCurrent(p) || isFresh(p) || mainIsCandidate(p));
   }
 
   function expandHomePath(value) {
@@ -152,7 +195,7 @@ module.exports = function createPlanUtils(ctx) {
   }
 
   function formatBridgeHint(cwd, artDir) {
-    const planFiles = listUnsyncedPlanFiles(cwd);
+    const planFiles = listBridgeCandidatePlanFiles(cwd);
     if (planFiles.length === 0) return null;
     const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
     const bridgeSteps = `调用 Skill(paceflow:pace-bridge)，按该 skill 读取计划、创建 v6 CHG、必要时 approve-and-start；bridge 成功后运行 plan 同步 helper：node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"。`;
@@ -164,6 +207,8 @@ module.exports = function createPlanUtils(ctx) {
     hasPlanFiles,
     hasUnsyncedPlanFiles,
     listUnsyncedPlanFiles,
+    hasBridgeCandidatePlanFiles,
+    listBridgeCandidatePlanFiles,
     syncPlanFile,
     getNativePlanPath,
     nativePlanMatchesProject,

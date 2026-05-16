@@ -59,7 +59,8 @@ paceUtils.withStdinParsed((stdin) => {
     const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate');
 
     const taskActive = readActive(cwd, 'task.md');
-    // W-dry-2: 预计算桥接提示（只作为任务列表提醒；任务列表不是 artifact 权威）
+    // W-dry-2: 预计算桥接提示。任务列表只是工作记忆；
+    // superpowers+no task.md 场景不再持续注入用户不可见的 additionalContext。
     const artDir = getArtifactDir(cwd);
     const artifactHint = paceUtils.artifactDirRuntimeHint(cwd);
     const bridgeHint = formatBridgeHint(cwd, artDir);
@@ -88,16 +89,25 @@ paceUtils.withStdinParsed((stdin) => {
     } else {
       if (taskActive) {
         if (isWriteOp) {
-          hints.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。Claude 任务列表不再从 v5 task.md 同步；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。迁移或桥接后仍需重试被阻止的原始代码写入。`);
+          log(paceUtils.logEntry('TaskSync', 'SUPPRESS_NON_ARTIFACT_HINT', {
+            proj,
+            tool: toolName,
+            signal: paceSignal,
+            reason: 'task-list-is-working-memory',
+            dur: Date.now() - t0
+          }));
         }
       } else {
         // task.md 不存在但在创建 todo
         if (isWriteOp) {
-          if (paceSignal === 'superpowers' && bridgeHint) {
-            hints.push(`检测到 Superpowers 计划文件（${bridgeHint.fileList}）但 task.md 不存在；Claude 任务列表可继续作为工作记忆。真正写代码或派 artifact-writer 前，请先按 paceflow:pace-bridge 桥接计划。`);
-          } else {
-            hints.push(`未检测到 v6 artifact。请先创建 changes/ 与 v6 索引，或用 .pace/disabled 标记此项目不使用 PACE。`);
-          }
+          log(paceUtils.logEntry('TaskSync', 'SUPPRESS_NON_ARTIFACT_HINT', {
+            proj,
+            tool: toolName,
+            signal: paceSignal,
+            plans: bridgeHint ? bridgeHint.fileList : '-',
+            reason: 'task-list-is-working-memory',
+            dur: Date.now() - t0
+          }));
         }
       }
     }

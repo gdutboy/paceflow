@@ -194,14 +194,16 @@ paceflow/
 │   ├── agent-references/             #   Agent 运行规范与 instruction contracts
 │   │   ├── artifact-writer-spec.md
 │   │   └── instructions/
-│   ├── hooks/                        #   9 个 Hook 脚本 + 公共工具
+│   ├── hooks/                        #   Hook 注册脚本 + helper + 公共工具
 │   │   ├── hooks.json                #     自动注册配置
 │   │   ├── pace-utils.js             #     公共工具库
+│   │   ├── pace-utils/               #     公共工具子模块
 │   │   ├── pre-tool-use.js           #     写代码前：任务检查 + 审批检查
 │   │   ├── pre-tool-use/             #     PreToolUse guard helper modules
 │   │   │   ├── agent-lifecycle-guard.js
 │   │   │   ├── bash-guard.js
-│   │   │   └── marker-guard.js
+│   │   │   ├── marker-guard.js
+│   │   │   └── powershell-guard.js
 │   │   ├── post-tool-use.js          #     写代码后：归档提醒 + 格式检查
 │   │   ├── post-tool-use-failure.js  #     工具失败后：恢复提示
 │   │   ├── session-start.js          #     会话启动：上下文注入
@@ -210,7 +212,10 @@ paceflow/
 │   │   ├── stop-failure.js           #     API 错误中断：事件日志
 │   │   ├── task-list-sync.js         #     任务列表：一致性校验
 │   │   ├── pre-compact.js            #     Compact 前快照
-│   │   └── templates/                #     6 个 artifact 模板 + 1 个 knowledge 模板
+│   │   ├── reserve-artifact-id.js    #     ID 预留 helper
+│   │   ├── set-artifact-root.js      #     artifact root 选择 helper
+│   │   ├── sync-plan.js              #     plan bridge 同步 helper
+│   │   └── templates/                #     6 个 artifact 模板 + 1 个 knowledge 参考模板
 │   ├── skills/                       #   4 个用户 Skill
 │   │   ├── pace-workflow/            #     PACE 核心流程
 │   │   ├── pace-bridge/              #     Superpowers 桥接

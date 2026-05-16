@@ -173,6 +173,8 @@ const {
   hasPlanFiles,
   hasUnsyncedPlanFiles,
   listUnsyncedPlanFiles,
+  hasBridgeCandidatePlanFiles,
+  listBridgeCandidatePlanFiles,
   syncPlanFile,
   getNativePlanPath,
   nativePlanMatchesProject,
@@ -526,8 +528,9 @@ function isPaceProject(cwd) {
       }
     }
     if (getLegacyV5ArtifactDir(cwd)) return 'legacy';
-    // 信号 2（强）：Superpowers plan 文件
-    if (hasPlanFiles(cwd)) return 'superpowers';
+    // 信号 2（强）：当前/近期/显式选中的 Superpowers plan 文件。
+    // 旧 plan 只作为历史 backlog，不再让普通会话长期进入 superpowers 信号。
+    if (hasBridgeCandidatePlanFiles(cwd)) return 'superpowers';
     // 信号 3（强）：手动激活标记
     if (fs.existsSync(path.join(cwd, '.pace-enabled'))) return 'manual';
     // 信号 4（弱/兜底）：3+ 代码文件（原有逻辑）
@@ -703,7 +706,7 @@ module.exports = {
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
   // 计划文件
-  hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, syncPlanFile,
+  hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, syncPlanFile,
   // 统计与检查
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
   normalizeFrontmatterStatus,

@@ -14,7 +14,7 @@ description: >
 
 `spec.md` 的 `project-summary` 是项目元描述，不是 knowledge/thoughts 笔记的 L0 `summary` 字段。
 
-> **SessionStart 自动注入**：SessionStart hook 会自动扫描 `thoughts/` 和 `knowledge/` 目录中与当前项目相关的笔记（通过 frontmatter `projects` 字段匹配），将 L0 摘要注入到会话上下文中。compact 恢复时不触发扫描。
+> **SessionStart 自动注入**：SessionStart hook 会自动扫描 `thoughts/` 和 `knowledge/` 目录中与当前项目相关的笔记（通过 frontmatter `projects` 字段匹配），将 L0 摘要注入到会话上下文中。startup 最多注入 5 条，compact 恢复时缩减为最多 3 条以控制上下文占用。
 
 > **状态体系说明**：knowledge/thoughts 笔记使用 `discussing`/`concluded`/`archived` 状态标记（frontmatter `status` 字段），与 task.md/implementation_plan.md 的 checkbox 状态标记（`[ ]`/`[/]`/`[x]`）是**完全独立的含义系统**，不可混用。
 
@@ -23,6 +23,8 @@ description: >
 ## thoughts/ 笔记
 
 **用途**：酝酿中的想法、方案讨论、可行性验证——尚未成熟到进入 PACE 执行阶段。
+
+仓库内 `plugin/hooks/templates/knowledge-note.md` 是 knowledge/thoughts 笔记的参考模板；实际创建仍按本 skill 的字段要求写入 Obsidian vault。
 
 ### 模板
 

@@ -561,8 +561,8 @@ Required automated checks from the repo root:
 
 ```bash
 git diff --check
-node tests/test-hooks-e2e.js              # expected: 222/222 PASS
-node tests/test-pace-utils.js             # expected: 139/139 PASS
+node tests/test-hooks-e2e.js              # expected: 223/223 PASS
+node tests/test-pace-utils.js             # expected: 142/142 PASS
 node tests/test-install.js                # expected: 26/26 PASS
 node tests/agent-tests/run-tests.js dummy # expected: PASS
 claude plugin validate ./plugin           # expected: PASS

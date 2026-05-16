@@ -39,7 +39,7 @@ module.exports = function createChangeAnalysis(ctx) {
   }
 
   function parseFrontmatter(content) {
-    const match = content && content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const match = content && content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---/);
     if (!match) return {};
     const out = {};
     for (const line of match[1].split(/\r?\n/)) {

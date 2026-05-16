@@ -3567,7 +3567,7 @@ test('9hgd4. heredoc body 中的 > artifact 文本不误判为重定向', () => 
     cwd: dir,
     stdin: {
       tool_name: 'Bash',
-      tool_input: { command: "cat <<'EOF'\n> task.md\nEOF" },
+      tool_input: { command: "cat > readme.md <<'EOF'\n> task.md\n; rm task.md\n查看 .pace/locks/example.lock\nEOF" },
     },
   });
   assert.strictEqual(r.code, 0);
@@ -3580,6 +3580,9 @@ test('9hge. PowerShell 修改 artifact / runtime-control 被拒绝，只读放�
     ['Set-Content task.md "bad"', '禁止使用 PowerShell 修改 artifact'],
     ['"bad" > .\\task.md', '禁止使用 PowerShell 修改 artifact'],
     ['Add-Content .\\changes\\chg-20260504-01.md "bad"', '禁止使用 PowerShell 修改 artifact'],
+    ["[IO.File]::WriteAllText('task.md', 'bad')", '禁止使用 PowerShell 修改 artifact'],
+    ['"bad" | Tee-Object -FilePath task.md', '禁止使用 PowerShell 修改 artifact'],
+    ['Invoke-WebRequest https://example.com/file -OutFile task.md', '禁止使用 PowerShell 修改 artifact'],
     ['Remove-Item .pace\\locks\\artifacts\\x.lock -Force', '禁止使用 PowerShell 修改 PaceFlow artifact 写入控制运行态'],
   ];
   for (const [command, expected] of commands) {
@@ -4663,7 +4666,7 @@ test('18b. TaskUpdate 走 Claude 任务列表同步提示', () => {
   assert.ok(fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
 });
 
-test('18d. Superpowers plan 存在但 task.md 不存在时 TaskCreate 只提示不 deny', () => {
+test('18d. Superpowers plan 存在但 task.md 不存在时 TaskCreate 不注入不可见 bridge 提醒', () => {
   const dir = makeTmpDir('taskcreate-superpowers-no-task');
   fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-05-11-plan.md'), '# Plan\n', 'utf8');
@@ -4675,10 +4678,25 @@ test('18d. Superpowers plan 存在但 task.md 不存在时 TaskCreate 只提示�
     },
   });
   assert.strictEqual(r.code, 0);
-  const out = JSON.parse(r.stdout);
-  assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PreToolUse');
-  assert.ok(!out.hookSpecificOutput.permissionDecision, 'TaskCreate 不应被 hard deny');
-  assert.ok(out.hookSpecificOutput.additionalContext.includes('Claude 任务列表可继续作为工作记忆'));
+  assert.strictEqual(r.stdout, '');
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
+});
+
+test('18e. code-count 项目无 artifact 时 TaskUpdate 不注入不可见流程提醒', () => {
+  const dir = makeTmpDir('taskupdate-code-count-no-artifact');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'module.exports = 2;\n');
+  fs.writeFileSync(path.join(dir, 'c.js'), 'module.exports = 3;\n');
+  const r = runHook('task-list-sync.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'TaskUpdate',
+      tool_input: { task_id: 'task-001', status: 'in_progress' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stdout, '');
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'task-list-used')));
 });
 
 test('19. PreCompact 写 activeChanges 快照', () => {

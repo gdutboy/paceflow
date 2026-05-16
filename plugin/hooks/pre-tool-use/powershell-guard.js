@@ -17,17 +17,52 @@ function stripHereStrings(command) {
   return String(command || '').replace(/@(["'])[\s\S]*?\1@/g, '@""@');
 }
 
-function powershellCommandPathTokens(command) {
+function powershellCommandTokens(command) {
   const tokens = [];
   const re = /"((?:`.|[^"])*)"|'([^']*)'|([^\s;|<>]+)/g;
   let match;
-  while ((match = re.exec(String(command || ''))) !== null) {
-    let token = (match[1] ?? match[2] ?? match[3] ?? '').trim();
-    token = normalizePowerShellSearchText(token).replace(/^['"]|['"]$/g, '');
+  while ((match = re.exec(stripHereStrings(command))) !== null) {
+    const token = (match[1] ?? match[2] ?? match[3] ?? '').trim();
+    if (token) tokens.push(normalizePowerShellSearchText(token).replace(/^['"]|['"]$/g, ''));
+  }
+  return tokens;
+}
+
+function powershellCommandPathTokens(command) {
+  const tokens = [];
+  for (const token of powershellCommandTokens(command)) {
     if (!token || token === '&' || token === '.' || token.startsWith('-') || /^\w+=/.test(token)) continue;
     tokens.push(token);
   }
   return tokens;
+}
+
+function powershellMutatingCommandSegments(command) {
+  const c = stripHereStrings(command);
+  const mutatingCommand =
+    '(?:Set-Content|Add-Content|Out-File|Tee-Object|New-Item|Remove-Item|Move-Item|Copy-Item|Clear-Content|Rename-Item|Set-Item|Remove-ItemProperty|Set-ItemProperty|Invoke-WebRequest|Invoke-RestMethod|Export-Csv|Export-Clixml|Compress-Archive|Expand-Archive|Start-Process|Start-Job|mkdir|rmdir|rm|del|erase|mv|move|cp|copy|ni|sc|ac|tee|iwr|irm|curl|wget|saps)';
+  const re = new RegExp(`(?:^|[\\n;|]\\s*)(${mutatingCommand}\\b[^\\n;|]*)`, 'gi');
+  const segments = [];
+  let match;
+  while ((match = re.exec(c)) !== null) {
+    if (match[1]) segments.push(match[1]);
+  }
+  return segments;
+}
+
+function powershellNamedWriteTargets(command) {
+  const targets = [];
+  const targetParams = /^(?:-FilePath|-OutFile|-Path|-LiteralPath|-Destination|-OutputPath)$/i;
+  for (const segment of powershellMutatingCommandSegments(command)) {
+    const tokens = powershellCommandTokens(segment);
+    for (let i = 0; i < tokens.length; i++) {
+      if (!targetParams.test(tokens[i])) continue;
+      let j = i + 1;
+      while (j < tokens.length && /^-[A-Za-z]/.test(tokens[j])) j++;
+      if (j < tokens.length && tokens[j] && !/^-[A-Za-z]/.test(tokens[j])) targets.push(tokens[j]);
+    }
+  }
+  return targets;
 }
 
 function powershellOutputRedirectTargets(command) {
@@ -73,15 +108,21 @@ function powershellOutputRedirectTargets(command) {
 }
 
 function commandTextLooksMutating(command) {
-  const c = normalizePowerShellSearchText(command);
-  return /(^|[\n;|]\s*)(?:Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|Clear-Content|Rename-Item|Set-Item|Remove-ItemProperty|Set-ItemProperty|mkdir|rmdir|rm|del|erase|mv|move|cp|copy|ni|sc|ac)\b/i.test(c) ||
-    /(^|[\n;|]\s*)(?:node|python\d*)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
+  return /(^|[\n;|]\s*)(?:Set-Content|Add-Content|Out-File|Tee-Object|New-Item|Remove-Item|Move-Item|Copy-Item|Clear-Content|Rename-Item|Set-Item|Remove-ItemProperty|Set-ItemProperty|Invoke-WebRequest|Invoke-RestMethod|Export-Csv|Export-Clixml|Compress-Archive|Expand-Archive|Start-Process|Start-Job|mkdir|rmdir|rm|del|erase|mv|move|cp|copy|ni|sc|ac|tee|iwr|irm|curl|wget|saps)\b/i.test(c) ||
+    /(^|[\n;|]\s*)(?:node|python\d*)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c) ||
+    /\[(?:System\.)?IO\.File\]::(?:WriteAllText|WriteAllBytes|WriteAllLines|AppendAllText|AppendAllLines|Delete|Move|Copy|Replace|Create)\b/i.test(c) ||
+    /\[(?:System\.)?IO\.(?:StreamWriter|FileStream)\]::new\b/i.test(c) ||
+    /\[(?:System\.)?IO\.Directory\]::(?:Delete|Move|CreateDirectory)\b/i.test(c);
 }
 
 function commandTextContainsWriteApi(command) {
-  const c = normalizePowerShellSearchText(command);
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
   return /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rmSync|renameSync|mkdirSync|write_text|write_bytes)\b/i.test(c) ||
-    /\bopen\s*\([^)]*,\s*['"][wax+]/i.test(c);
+    /\bopen\s*\([^)]*,\s*['"][wax+]/i.test(c) ||
+    /\[(?:System\.)?IO\.File\]::(?:WriteAllText|WriteAllBytes|WriteAllLines|AppendAllText|AppendAllLines|Delete|Move|Copy|Replace|Create)\b/i.test(c) ||
+    /\[(?:System\.)?IO\.(?:StreamWriter|FileStream)\]::new\b/i.test(c) ||
+    /\[(?:System\.)?IO\.Directory\]::(?:Delete|Move|CreateDirectory)\b/i.test(c);
 }
 
 function powershellCommandLooksMutating(command) {
@@ -121,7 +162,8 @@ function powershellPathLooksArtifact(target, cwd, artDir) {
 }
 
 function powershellCommandRedirectsToArtifact(command, cwd, artDir) {
-  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksArtifact(target, cwd, artDir));
+  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksArtifact(target, cwd, artDir)) ||
+    powershellNamedWriteTargets(command).some(target => powershellPathLooksArtifact(target, cwd, artDir));
 }
 
 function powershellPathLooksArtifactRuntimeControl(target, cwd) {
@@ -137,11 +179,12 @@ function powershellPathLooksArtifactRuntimeControl(target, cwd) {
 }
 
 function powershellCommandRedirectsToArtifactRuntimeControl(command, cwd) {
-  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksArtifactRuntimeControl(target, cwd));
+  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksArtifactRuntimeControl(target, cwd)) ||
+    powershellNamedWriteTargets(command).some(target => powershellPathLooksArtifactRuntimeControl(target, cwd));
 }
 
 function powershellCommandReferencesArtifactRuntimeControl(command, cwd) {
-  const c = normalizePowerShellSearchText(command);
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
   const runtime = normalizePowerShellSearchText(paceUtils.getProjectRuntimeDir(cwd)).replace(/\/+$/, '');
   const relRuntime = path.relative(cwd, runtime).replace(/\\/g, '/').replace(/\/+$/, '');
   return textReferencesPathOrChild(c, `${runtime}/locks`) ||
@@ -180,13 +223,14 @@ function powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd) {
 }
 
 function powershellCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) {
-  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd));
+  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd)) ||
+    powershellNamedWriteTargets(command).some(target => powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd));
 }
 
 function powershellCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd) {
   const context = paceUtils.executionContextForCwd(cwd);
   if (!context.isWorktree) return false;
-  const c = normalizePowerShellSearchText(command);
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
   const localChoicePath = path.join(path.resolve(cwd || process.cwd()), '.pace', 'artifact-root').replace(/\\/g, '/');
   return textReferencesPathOrChild(c, localChoicePath) ||
     /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-root(?=$|[\s"'`;|&<>])/i.test(c) ||
@@ -199,7 +243,7 @@ function powershellCommandMutatesWorktreeLocalArtifactRootChoice(command, cwd) {
 }
 
 function powershellCommandReferencesArtifact(command, cwd, artDir) {
-  const c = normalizePowerShellSearchText(command);
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
   if (powershellCommandPathTokens(c).some(target => powershellPathLooksArtifact(target, cwd, artDir))) return true;
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => normalizePowerShellSearchText(dir).replace(/\/+$/, '')))];
   for (const root of roots) {
@@ -224,7 +268,7 @@ function powershellScriptExecutionTargets(command, cwd) {
 }
 
 function powershellCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth = 0) {
-  const c = normalizePowerShellSearchText(command);
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
   if (commandTextContainsWriteApi(c) && powershellCommandReferencesArtifact(c, cwd, artDir)) {
     return true;
   }
@@ -233,7 +277,7 @@ function powershellCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth 
       const stat = fs.statSync(target);
       if (!stat.isFile() || stat.size > 256 * 1024) continue;
       const script = fs.readFileSync(target, 'utf8');
-      const normalizedScript = normalizePowerShellSearchText(script);
+      const normalizedScript = normalizePowerShellSearchText(stripHereStrings(script));
       if (commandTextContainsWriteApi(normalizedScript) && powershellCommandReferencesArtifact(normalizedScript, cwd, artDir)) return true;
       if (commandTextLooksMutating(normalizedScript) && powershellCommandReferencesArtifact(normalizedScript, cwd, artDir)) return true;
       if (powershellCommandRedirectsToArtifact(normalizedScript, cwd, artDir)) return true;

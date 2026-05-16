@@ -6,6 +6,9 @@
 > 范围：本地仓库、GitHub 远端 `origin/master`、PACEflow vault 流程图与项目 artifact
 > 结论：v6.0.0 按 breaking change 推进，不继续兼容 v5 运行格式
 
+<details>
+<summary>历史执行状态更新（仅供检索）</summary>
+
 > 执行状态更新（2026-05-04）：本文件最初是升级审计 guidebook，部分“当前缺口”章节描述的是修复前状态。后续已完成 P0.1 agent spec 自洽修复、P0.5 hook v6 改造、plugin marketplace 安装路径澄清、skills/CLAUDE/README/REFERENCE v6-only 口径收敛。`install.js` / `verify.js` 只作为本地验证工具，不是正式安装路径。剩余发布前重点是 marketplace 实装验证、vault 迁移重跑、完整 agent fixture 报告与流程图/长文档清理。
 > 执行状态更新（2026-05-06）：agent 显示名已去重为 `artifact-writer`（插件 UI 预期显示 `paceflow:artifact-writer`），审计 skill 已去重为 `audit`，agent frontmatter 已加入 `color: orange`。hook legacy fallback 不再给 v5 自修提示，统一要求迁移或桥接到 v6。
 > 执行状态更新（2026-05-06）：worktree artifact 路由已修复。真实 Git worktree（`.git -> .../.git/worktrees/*`）和 `.claude/worktrees/*` 会归一到宿主项目，优先沿用 `$PACE_VAULT_PATH/projects/<project>/changes`；避免在临时 worktree 根目录误创建独立 artifacts。
@@ -21,6 +24,8 @@
 > 执行状态更新（2026-05-08，v6.0.34）：全面审计确认项已修复：Bash artifact/lock 保护改为解析等价路径；worktree 运行态 `.pace` 统一到宿主项目；`artifact-root=vault` 缺 `PACE_VAULT_PATH` 时 fail-closed，不再静默落本地；Stop 防循环计数在 `.pace` 缺失时仍可降级但 idle PASS 不落盘；C/V 与 PostToolUse artifact 判定统一基于 artifact root。当前代码层验证基线：hook E2E 116/116、pace-utils 101/101、install 24/24。
 > 执行状态更新（2026-05-09，v6.0.46）：native plan bridge Step 5 已改为硬收尾，必须把源 plan basename 写入宿主项目 `.pace/synced-plans`；Phase C agent fixture 扩到 close/archive/finding/correction 正向 contract；release sanity 已纳入 `tests/test-pace-utils.js`，机械检查 plugin manifest/marketplace version 一致和 runtime root 不含开发资料。当前代码层验证基线：hook E2E 128/128、pace-utils 106/106、`claude plugin validate ./plugin` PASS。
 > 执行状态更新（2026-05-11，v6.0.50 验证基线）：hook E2E 149/149、pace-utils 115/115、`claude plugin validate ./plugin` PASS、`git diff --check` PASS。pace-bridge Step 5 已新增 `hooks/sync-plan.js` helper，桥接成功后由 helper 幂等写入宿主 `.pace/synced-plans`。
+
+</details>
 
 ---
 

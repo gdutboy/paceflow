@@ -12,7 +12,7 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
-如果用户已明确选择 vault/local 但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault` 或 `--choice local`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
+如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对项目 state dir 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
 
 Helper 命令来源：正确做法是优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令。禁止搜索 `~/.claude/plugins/cache` 猜版本。
 
@@ -254,7 +254,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径；不要搜索 `~/.claude/plugins/cache` 猜版本。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径；不要搜索 `~/.claude/plugins/cache` 猜版本。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`。`--type research` 由 internal audit 与 finding 沉淀流程使用；普通工作流走 `record-finding` 或常规 CHG/HOTFIX，不需要此类型。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 前原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。先运行 `node ".../hooks/reserve-artifact-id.js" --operation record-correction`，再把 helper 输出的 `reserved-file-prefix` 原样写入 Agent prompt。

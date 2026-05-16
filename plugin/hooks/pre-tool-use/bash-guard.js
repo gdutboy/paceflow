@@ -16,16 +16,48 @@ function normalizeCommandSearchText(value) {
 function stripHeredocBodies(command) {
   const lines = String(command || '').split('\n');
   const kept = [];
+  function delimitersInLine(line) {
+    const delimiters = [];
+    let quote = null;
+    let escaped = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\' && quote !== "'") {
+        escaped = true;
+        continue;
+      }
+      if (quote) {
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch;
+        continue;
+      }
+      if (ch !== '<' || line[i + 1] !== '<') continue;
+      let j = i + 2;
+      if (line[j] === '-') j++;
+      while (/\s/.test(line[j] || '')) j++;
+      let delimiter = '';
+      if (line[j] === '"' || line[j] === "'") {
+        const endQuote = line[j++];
+        while (j < line.length && line[j] !== endQuote) delimiter += line[j++];
+      } else {
+        while (j < line.length && /[A-Za-z0-9_]/.test(line[j])) delimiter += line[j++];
+      }
+      if (delimiter) delimiters.push(delimiter);
+      i = j;
+    }
+    return delimiters;
+  }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     kept.push(line);
-    const delimiters = [];
-    const re = /<<-?\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][A-Za-z0-9_]*))/g;
-    let m;
-    while ((m = re.exec(line)) !== null) {
-      const delimiter = m[1] || m[2] || m[3] || '';
-      if (delimiter) delimiters.push(delimiter);
-    }
+    const delimiters = delimitersInLine(line);
     for (const delimiter of delimiters) {
       while (i + 1 < lines.length) {
         i++;
@@ -42,7 +74,7 @@ function stripHeredocBodies(command) {
 
 function shellCommandScripts(command) {
   const scripts = [];
-  const c = String(command || '');
+  const c = stripHeredocBodies(command);
   const re = /(^|[;&|]\s*|\$\(\s*|`\s*|\beval\s+(?:["']\s*)?|\bxargs(?:\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+))*\s+)(?:bash|sh|zsh|fish)\s+-c\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|]+))/gi;
   let m;
   while ((m = re.exec(c)) !== null) {
@@ -72,6 +104,7 @@ function bashCommandRunsScriptEngine(command) {
 
 function bashScriptExecutionTargets(command, cwd) {
   const targets = [];
+  const c = stripHeredocBodies(command);
   const specs = [
     {
       re: /(^|[\n;&|]\s*)(?:node|python\d*)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi,
@@ -84,7 +117,7 @@ function bashScriptExecutionTargets(command, cwd) {
   ];
   for (const spec of specs) {
     let match;
-    while ((match = spec.re.exec(String(command || ''))) !== null) {
+    while ((match = spec.re.exec(c)) !== null) {
       const args = bashCommandPathTokens(match[2] || '');
       for (const arg of args) {
         if (!arg || arg.startsWith('-')) continue;
@@ -99,8 +132,36 @@ function bashScriptExecutionTargets(command, cwd) {
   return targets;
 }
 
+function bashHeredocExecutionBodies(command, cwd) {
+  const executed = new Set(bashScriptExecutionTargets(command, cwd).map(fp => path.resolve(fp)));
+  if (executed.size === 0) return [];
+  const lines = String(command || '').split('\n');
+  const bodies = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const re = />+\|?\s*(?:"([^"]+)"|'([^']+)'|([^\s;&|<>]+))\s+<<-?\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][A-Za-z0-9_]*))/g;
+    let match;
+    while ((match = re.exec(line)) !== null) {
+      const target = match[1] || match[2] || match[3] || '';
+      const delimiter = match[4] || match[5] || match[6] || '';
+      if (!target || !delimiter) continue;
+      let resolved = '';
+      try { resolved = path.resolve(paceUtils.resolveToolFilePath(cwd, target)); } catch(e) {}
+      if (!resolved || !executed.has(resolved)) continue;
+      const body = [];
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        if (lines[j].trim() === delimiter) break;
+        body.push(lines[j]);
+      }
+      bodies.push(body.join('\n'));
+    }
+  }
+  return bodies;
+}
+
 function bashCommandLooksMutating(command) {
-  const c = String(command || '');
+  const c = stripHeredocBodies(command);
   return commandTextLooksMutating(c) || shellCommandScripts(c).some(script => commandTextLooksMutating(script));
 }
 
@@ -176,6 +237,8 @@ function bashPathLooksArtifact(target, cwd, artDir) {
     if (t === `${root}/changes`) return true;
     if (t.startsWith(`${root}/changes/`)) return true;
   }
+  // Bash writes to spec.md are still denied: unlike Edit, shell redirection
+  // bypasses the line-ending and consistency checks around artifact files.
   return /^(?:\.\/)?(?:task\.md|implementation_plan\.md|walkthrough\.md|findings\.md|corrections\.md|spec\.md)$/.test(t) ||
     /^(?:\.\/)?changes(?:\/|$)/.test(t);
 }
@@ -209,7 +272,7 @@ function bashShellCommandRedirectsToArtifactRuntimeControl(command, cwd) {
 }
 
 function bashSearchText(command) {
-  return normalizeCommandSearchText(command);
+  return normalizeCommandSearchText(stripHeredocBodies(command));
 }
 
 function escapeRegExp(value) {
@@ -321,6 +384,12 @@ function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth = 0) {
       bashCommandRunsScriptEngine(c) &&
       (bashCommandReferencesArtifact(c, cwd, artDir) || bashShellCommandReferencesArtifact(c, cwd, artDir))) {
     return true;
+  }
+  for (const body of bashHeredocExecutionBodies(command, cwd)) {
+    const normalizedBody = bashSearchText(body);
+    if (commandTextContainsWriteApi(normalizedBody) && bashCommandReferencesArtifact(normalizedBody, cwd, artDir)) return true;
+    if (commandTextLooksMutating(normalizedBody) && bashCommandReferencesArtifact(normalizedBody, cwd, artDir)) return true;
+    if (bashCommandRedirectsToArtifact(normalizedBody, cwd, artDir) || bashShellCommandRedirectsToArtifact(normalizedBody, cwd, artDir)) return true;
   }
   for (const target of bashScriptExecutionTargets(command, cwd)) {
     try {
