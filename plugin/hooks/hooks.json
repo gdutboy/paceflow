@@ -34,6 +34,26 @@
         ]
       },
       {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js"]
+          }
+        ]
+      },
+      {
+        "matcher": "Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js"]
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
@@ -68,7 +88,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Agent",
+        "matcher": "Write|Edit|MultiEdit|Bash|PowerShell|Monitor|Agent",
         "hooks": [
           {
             "type": "command",

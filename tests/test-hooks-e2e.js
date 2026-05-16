@@ -13,6 +13,7 @@ const RESERVE_HELPER = path.join(HOOKS_DIR, 'reserve-artifact-id.js');
 const SYNC_PLAN_HELPER = path.join(HOOKS_DIR, 'sync-plan.js');
 const SET_ARTIFACT_ROOT_HELPER = path.join(HOOKS_DIR, 'set-artifact-root.js');
 const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
+const powershellGuard = require('../plugin/hooks/pre-tool-use/powershell-guard');
 const { createTestRunner } = require('./test-utils');
 const t = createTestRunner('pace-e2e');
 const { test, makeTmpDir } = t;
@@ -1919,6 +1920,19 @@ test('9hc-helper4b. worktree 本地 .pace/artifact-root 写入被提示改用 he
   assert.ok(bash.stdout.includes('"deny"'));
   assert.ok(bash.stdout.includes('set-artifact-root.js'));
   assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'artifact-root')), '被拦截后不应产生 worktree 本地配置');
+
+  const powershell = runHook('pre-tool-use.js', {
+    cwd: worktree,
+    stdin: {
+      tool_name: 'PowerShell',
+      tool_input: {
+        command: 'New-Item -ItemType Directory .pace -Force; Set-Content .pace\\artifact-root local',
+      },
+    },
+  });
+  assert.strictEqual(powershell.code, 0);
+  assert.ok(powershell.stdout.includes('"deny"'));
+  assert.ok(powershell.stdout.includes('set-artifact-root.js'));
 });
 
 test('9hc-helper5. sync-plan helper 幂等写入单个 plan basename', () => {
@@ -3560,6 +3574,89 @@ test('9hgd4. heredoc body 中的 > artifact 文本不误判为重定向', () => 
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
+test('9hge. PowerShell 修改 artifact / runtime-control 被拒绝，只读放行', () => {
+  const dir = makeV6Project('ptu-powershell-artifact');
+  const commands = [
+    ['Set-Content task.md "bad"', '禁止使用 PowerShell 修改 artifact'],
+    ['"bad" > .\\task.md', '禁止使用 PowerShell 修改 artifact'],
+    ['Add-Content .\\changes\\chg-20260504-01.md "bad"', '禁止使用 PowerShell 修改 artifact'],
+    ['Remove-Item .pace\\locks\\artifacts\\x.lock -Force', '禁止使用 PowerShell 修改 PaceFlow artifact 写入控制运行态'],
+  ];
+  for (const [command, expected] of commands) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'PowerShell',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes(expected), `命令 ${command} 应返回 ${expected}`);
+  }
+
+  const readOnly = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'PowerShell',
+      tool_input: { command: 'Get-Content task.md' },
+    },
+  });
+  assert.strictEqual(readOnly.code, 0);
+  assert.ok(!readOnly.stdout.includes('"deny"'));
+});
+
+test('9hge1. PowerShell guard 识别 Windows JS 转义路径', () => {
+  const script = 'const fs = require("fs");\nfs.writeFileSync("C:\\\\tmp\\\\pace\\\\task.md", "x");\n';
+  assert.strictEqual(powershellGuard.powershellCommandReferencesArtifact(script, 'C:\\tmp\\pace', 'C:\\tmp\\pace'), true);
+});
+
+test('9hge2. PowerShell .ps1 包装器写 artifact 被拒绝', () => {
+  const dir = makeV6Project('ptu-powershell-script-artifact');
+  const script = path.join(os.tmpdir(), `pace-bypass-${Date.now()}.ps1`);
+  fs.writeFileSync(script, 'Set-Content task.md "x"\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'PowerShell',
+      tool_input: { command: `& "${script}"` },
+    },
+  });
+  try { fs.rmSync(script, { force: true }); } catch(e) {}
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止使用 PowerShell 修改 artifact'));
+});
+
+test('9hge3. Monitor 修改 artifact / runtime-control 被拒绝，只读放行', () => {
+  const dir = makeV6Project('ptu-monitor-artifact');
+  for (const command of [
+    'echo bad > task.md',
+    'rm .pace/locks/artifacts/x.lock',
+  ]) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Monitor',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes('Monitor'));
+  }
+
+  const readOnly = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Monitor',
+      tool_input: { command: 'tail -f server.log' },
+    },
+  });
+  assert.strictEqual(readOnly.code, 0);
+  assert.ok(!readOnly.stdout.includes('"deny"'));
+});
+
 test('9hh. 懒创建模板写入 LF', () => {
   const dir = makeTmpDir('ptu-template-lf');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
@@ -4701,6 +4798,23 @@ test('22e. PostToolUseFailure Bash 验证失败仍注入验证恢复提示', () 
   assert.ok(out.hookSpecificOutput.additionalContext.includes('确认验证通过前不要派 verify/close-chg'));
 });
 
+test('22e0. PostToolUseFailure PowerShell / Monitor 验证失败仍注入验证恢复提示', () => {
+  const dir = makeV6Project('ptuf-command-validation');
+  for (const toolName of ['PowerShell', 'Monitor']) {
+    const r = runHook('post-tool-use-failure.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: toolName,
+        tool_input: { command: 'npm test' },
+        error: 'tests failed',
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    const out = JSON.parse(r.stdout);
+    assert.ok(out.hookSpecificOutput.additionalContext.includes('确认验证通过前不要派 verify/close-chg'), toolName);
+  }
+});
+
 test('22e1. PostToolUseFailure 自定义 Bash 验证脚本失败仍注入验证恢复提示', () => {
   const dir = makeV6Project('ptuf-bash-custom-validation');
   for (const command of ['bash scripts/test.sh', './run-tests.sh', 'python -m pytest tests/unit']) {
@@ -4765,13 +4879,22 @@ test('22a. PostToolUseFailure 用户中断只记录日志不注入恢复提示',
   assert.strictEqual(r.stdout, '');
 });
 
-test('22b. hooks.json 为 PostToolUseFailure 注册 Agent matcher', () => {
+test('22b. hooks.json 为 PostToolUseFailure 注册 Agent / command-tool matcher', () => {
   const hooksConfig = JSON.parse(fs.readFileSync(path.join(HOOKS_DIR, 'hooks.json'), 'utf8'));
   const entries = hooksConfig.hooks.PostToolUseFailure || [];
-  assert.ok(
-    entries.some(e => String(e.matcher || '').split('|').includes('Agent')),
-    'PostToolUseFailure matcher 必须包含 Agent，否则 Agent 失败不能触发锁释放'
-  );
+  const matcherParts = entries.flatMap(e => String(e.matcher || '').split('|'));
+  for (const tool of ['Agent', 'Bash', 'PowerShell', 'Monitor']) {
+    assert.ok(matcherParts.includes(tool), `PostToolUseFailure matcher 必须包含 ${tool}`);
+  }
+});
+
+test('22b1. hooks.json 为 PreToolUse 注册 PowerShell / Monitor matcher', () => {
+  const hooksConfig = JSON.parse(fs.readFileSync(path.join(HOOKS_DIR, 'hooks.json'), 'utf8'));
+  const entries = hooksConfig.hooks.PreToolUse || [];
+  const matcherParts = entries.flatMap(e => String(e.matcher || '').split('|'));
+  for (const tool of ['Bash', 'PowerShell', 'Monitor']) {
+    assert.ok(matcherParts.includes(tool), `PreToolUse matcher 必须包含 ${tool}`);
+  }
 });
 
 test('22c. hooks.json 使用 exec-form args 避免 shell quoting', () => {

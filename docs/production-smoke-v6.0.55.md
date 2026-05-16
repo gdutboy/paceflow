@@ -1,6 +1,6 @@
-# PACEflow v6.0.55 Production Smoke
+# PACEflow v6.0.56 Production Smoke
 
-> Focus: verify v6.0.55 follow-ups from Smoke3/Smoke4: root-choice helper command visibility, helper argument fail-fast wording, current-owner non-code C/E gate, worktree foreign-owner boundary, SubagentStop owner cleanup, and the later deferred Stop reminder semantics.
+> Focus: verify v6.0.55 lifecycle follow-ups plus v6.0.56 Claude Code 2.1.143 tool-surface coverage: PowerShell/Monitor artifact guard and `continueOnBlock` PoC.
 > Run in real Claude Code sessions after installing/updating PaceFlow from marketplace and running `/reload plugin`.
 
 ## Preconditions
@@ -17,8 +17,8 @@ rg 'PACE_VERSION' "$PLUGIN_DIR/hooks/pace-utils.js"
 
 Expected:
 
-- Installed version is `6.0.55`.
-- `PACE_VERSION` is `v6.0.55`.
+- Installed version is `6.0.56`.
+- `PACE_VERSION` is `v6.0.56`.
 - Claude Code session has reloaded the plugin after install/update.
 
 ## Smoke 1: Root-Choice Helper Command
@@ -561,7 +561,7 @@ Required automated checks from the repo root:
 
 ```bash
 git diff --check
-node tests/test-hooks-e2e.js              # expected: 216/216 PASS
+node tests/test-hooks-e2e.js              # expected: 222/222 PASS
 node tests/test-pace-utils.js             # expected: 139/139 PASS
 node tests/test-install.js                # expected: 26/26 PASS
 node tests/agent-tests/run-tests.js dummy # expected: PASS
@@ -765,6 +765,64 @@ Failure signals:
 - Report omits evidence paths or verification matrix.
 - Low-severity but real prompt/doc findings are silently dropped before Phase 2.
 
+### Smoke 14: PowerShell Tool Artifact Guard
+
+Goal: after adding PowerShell coverage, Windows Claude Code cannot bypass PaceFlow artifact/runtime write protection by using the native `PowerShell` tool instead of `Bash`.
+
+Precondition:
+
+```powershell
+claude --version
+$env:CLAUDE_CODE_USE_POWERSHELL_TOOL = "1"
+```
+
+Use a fresh PaceFlow local project. After artifact root is selected and at least one planned CHG exists, ask Claude Code to intentionally try PowerShell writes:
+
+```text
+这是 PowerShell guard smoke。不要修复，故意尝试用 PowerShell 直接写 PaceFlow artifact 和 .pace runtime：
+1. Set-Content task.md "bad"
+2. Add-Content changes/chg-YYYYMMDD-NN.md "bad"
+3. Remove-Item .pace/locks/* -Force
+4. Get-Content task.md
+观察 hook 是否阻止 PaceFlow artifact/runtime-control 写入，同时允许只读读取。
+```
+
+Expected:
+
+- `PowerShell` tool calls that mutate `task.md`, `implementation_plan.md`, `walkthrough.md`, `findings.md`, `corrections.md`, `changes/**`, or `.pace` runtime-control files are denied before execution.
+- Read-only PowerShell commands such as `Get-Content task.md` are allowed.
+- Ordinary project-file paths must not be described as redirected into `artifact_dir`; this smoke only verifies artifact/runtime-control boundaries.
+- Deny text includes the same skill and artifact-writer guidance style as Bash/Write/Edit denials.
+
+Failure signals:
+
+- PowerShell can write or delete PaceFlow artifact/runtime-control files while Bash is blocked.
+- The hook tells Claude to switch to Bash to work around PowerShell denial.
+- The hook expands into a generic “project outside path” policy instead of the PaceFlow artifact/runtime-control boundary.
+
+### Smoke 15: PostToolUse `continueOnBlock` PoC
+
+Goal: verify whether Claude Code command-type `PostToolUse` hooks can use `continueOnBlock:true` to feed a rejection reason back to Claude and continue the same turn. This is a PoC only; production PaceFlow should not migrate until this passes.
+
+Setup:
+
+- Install a temporary local hook or use a dedicated test plugin branch that registers a minimal `PostToolUse` command hook with `continueOnBlock:true`.
+- The hook should trigger on a harmless file edit and return a synthetic block reason that asks Claude to make a second harmless edit.
+
+Expected:
+
+- Claude receives the hook rejection reason in the same turn.
+- Claude can continue and perform the requested repair without the user sending another prompt.
+- No infinite hook loop occurs; the PoC must include a per-session or per-file one-shot guard.
+
+Failure signals:
+
+- `continueOnBlock` is ignored for command-type PostToolUse hooks.
+- The hook ends the turn exactly like a normal block.
+- Claude repeats the same edit indefinitely.
+
+If Smoke 15 fails, keep production PostToolUse on `additionalContext` / warning semantics and do not alter the current runtime architecture.
+
 ## Prompt Surface Smoke Priority
 
 After `f541959` / `3f479c7` or any follow-up prompt-surface change, run:
@@ -774,3 +832,11 @@ After `f541959` / `3f479c7` or any follow-up prompt-surface change, run:
 3. Smoke 10 and Smoke 11 to verify copyable hook templates.
 4. Smoke 12 during the next ordinary PACEflow runtime smoke.
 5. Smoke 13 only when internal audit prompts changed.
+
+## Post-2.1.143 Tool Surface Priority
+
+Run this set after changes that touch `plugin/hooks/hooks.json`, Bash/PowerShell/Monitor guards, or PostToolUse decision behavior:
+
+1. Smoke 14 on Windows Claude Code with the PowerShell tool enabled.
+2. A normal Smoke 2 or Smoke 10 run to confirm existing Bash/Write/Edit/Agent gates still behave.
+3. Smoke 15 only for the isolated `continueOnBlock` PoC branch; do not run it against production PaceFlow unless the PoC implementation is present.

@@ -58,6 +58,16 @@ const {
   bashArtifactDenyReason,
 } = require('./pre-tool-use/bash-guard');
 const {
+  powershellCommandLooksMutating,
+  powershellCommandRedirectsToArtifact,
+  powershellCommandEmbedsArtifactWriteScript,
+  powershellCommandMutatesArtifactRuntimeControl,
+  powershellCommandMutatesWorktreeLocalArtifactRootChoice,
+  powershellCommandReferencesArtifact,
+  powershellArtifactRuntimeControlDenyReason,
+  powershellArtifactDenyReason,
+} = require('./pre-tool-use/powershell-guard');
+const {
   isArtifactWriterAgentTool,
   extractPromptArtifactDir,
   promptHasExactArtifactDir,
@@ -104,9 +114,42 @@ function isBashTool(toolName) {
   return toolName === 'Bash';
 }
 
+function isPowerShellTool(toolName) {
+  return toolName === 'PowerShell';
+}
+
+function isMonitorTool(toolName) {
+  return toolName === 'Monitor';
+}
+
+function isCommandExecutionTool(toolName) {
+  return isBashTool(toolName) || isPowerShellTool(toolName) || isMonitorTool(toolName);
+}
+
+function commandExecutionLooksMutating(toolName, command) {
+  if (isPowerShellTool(toolName)) return powershellCommandLooksMutating(command);
+  return bashCommandLooksMutating(command);
+}
+
 function getArtifactRelIfRelevant(toolName, paceSignal, artDir, filePath) {
   if (!isFileMutationTool(toolName) || !paceSignal) return null;
   return paceUtils.artifactRelativePathForFile(artDir, filePath);
+}
+
+function monitorArtifactRuntimeControlDenyReason(command) {
+  return [
+    '禁止使用 Monitor 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
+    '如果需要观察日志或测试输出，请让 Monitor 执行只读命令；不要用 Monitor 删除或改写 PaceFlow 运行态文件。',
+    `被拦截的命令：${String(command || '').slice(0, 500)}`
+  ].join('\n');
+}
+
+function monitorArtifactDenyReason(command) {
+  return [
+    '禁止使用 Monitor 修改 artifact 文件。Monitor 只适合观察日志、测试输出或轮询状态；artifact 修改必须走 artifact-writer 的 Write/Edit 路径。',
+    '允许用 Monitor 执行只读观察命令，但禁止 sed -i、重定向、rm/mv/cp/touch/mkdir、脚本写文件等会改变 artifact 的命令。',
+    `被拦截的命令：${String(command || '').slice(0, 500)}`
+  ].join('\n');
 }
 
 function isUnderDir(baseDir, targetPath) {
@@ -138,7 +181,9 @@ paceUtils.withStdinParsed((stdin) => {
   const editList = Array.isArray(stdin.toolInput.edits) ? stdin.toolInput.edits : [];
   const oldString = stdin.oldString || editList.map(e => e.old_string || '').join('\n');
   const newString = stdin.newString || editList.map(e => e.new_string || '').join('\n');
-  const bashCommand = stdin.toolInput.command || '';
+  const commandInput = stdin.toolInput.command || stdin.toolInput.script || stdin.toolInput.cmd || '';
+  const bashCommand = commandInput;
+  const powershellCommand = commandInput;
   const rawFilePath = stdin.filePath || '';
   const filePath = paceUtils.resolveToolFilePath(cwd, rawFilePath);
   log(paceUtils.logEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
@@ -198,7 +243,7 @@ paceUtils.withStdinParsed((stdin) => {
     legacy_v5: v5MigrationInfo.detected,
     migration_state: v5MigrationInfo.state || '',
   }));
-  if (paceSignal === 'artifact' && (isFileMutationTool(toolName) || isBashTool(toolName))) {
+  if (paceSignal === 'artifact' && (isFileMutationTool(toolName) || isCommandExecutionTool(toolName))) {
     heartbeatChangeOwners(toolName);
   }
   const taskFp = path.join(artDir, 'task.md');
@@ -253,11 +298,41 @@ paceUtils.withStdinParsed((stdin) => {
     }
     // Read-only Bash intentionally falls through: vault env/config errors only stop
     // operations that can mutate files or dispatch artifact-writer.
-    if (rootConfigError && (isAgentTool(toolName) || isFileMutationTool(toolName) || (isBashTool(toolName) && bashCommandLooksMutating(bashCommand)))) {
+    if (rootConfigError && (isAgentTool(toolName) || isFileMutationTool(toolName) || (isCommandExecutionTool(toolName) && commandExecutionLooksMutating(toolName, commandInput)))) {
       return hardDeny(rootConfigError.message, 'DENY_ARTIFACT_ROOT_CONFIG', {
         code: rootConfigError.code,
         choice_path: rootConfigError.choicePath,
       });
+    }
+    if (isBashTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+      return hardDeny(
+        paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+        'DENY_BASH_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+        {
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+          authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+        }
+      );
+    }
+    if (isPowerShellTool(toolName) && powershellCommandMutatesWorktreeLocalArtifactRootChoice(powershellCommand, cwd)) {
+      return hardDeny(
+        paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
+        'DENY_POWERSHELL_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+        {
+          command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
+          authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+        }
+      );
+    }
+    if (isMonitorTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+      return hardDeny(
+        paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+        'DENY_MONITOR_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+        {
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+          authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+        }
+      );
     }
     if (isAgentTool(toolName)) {
       if (isArtifactWriterAgentTool(stdin) && needsArtifactRootChoice) {
@@ -626,9 +701,72 @@ paceUtils.withStdinParsed((stdin) => {
       log(paceUtils.logEntry('PreToolUse', 'PASS_BASH', { proj, dur: Date.now() - t0 }));
       return;
     }
+    if (isPowerShellTool(toolName)) {
+      if (powershellCommandMutatesArtifactRuntimeControl(powershellCommand, cwd)) {
+        const reason = powershellArtifactRuntimeControlDenyReason(powershellCommand);
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT_RUNTIME${teammateTag}`, {
+          proj,
+          command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
+          runtime: paceUtils.getProjectRuntimeDir(cwd),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      const mutatesArtifact = powershellCommandRedirectsToArtifact(powershellCommand, cwd, artDir) ||
+        powershellCommandEmbedsArtifactWriteScript(powershellCommand, cwd, artDir) ||
+        (powershellCommandLooksMutating(powershellCommand) &&
+          powershellCommandReferencesArtifact(powershellCommand, cwd, artDir));
+      if (mutatesArtifact) {
+        const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : powershellArtifactDenyReason(powershellCommand);
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT${teammateTag}`, {
+          proj,
+          command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      log(paceUtils.logEntry('PreToolUse', 'PASS_POWERSHELL', { proj, dur: Date.now() - t0 }));
+      return;
+    }
+    if (isMonitorTool(toolName)) {
+      if (bashCommandMutatesArtifactRuntimeControl(bashCommand, cwd)) {
+        const reason = monitorArtifactRuntimeControlDenyReason(bashCommand);
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_MONITOR_ARTIFACT_RUNTIME${teammateTag}`, {
+          proj,
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+          runtime: paceUtils.getProjectRuntimeDir(cwd),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
+        bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
+        bashCommandEmbedsArtifactWriteScript(bashCommand, cwd, artDir) ||
+        (bashCommandLooksMutating(bashCommand) &&
+          (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
+      if (mutatesArtifact) {
+        const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : monitorArtifactDenyReason(bashCommand);
+        const output = denyOrHint(reason);
+        process.stdout.write(JSON.stringify(output));
+        log(paceUtils.logEntry('PreToolUse', `DENY_MONITOR_ARTIFACT${teammateTag}`, {
+          proj,
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+          dur: Date.now() - t0,
+        }));
+        return;
+      }
+      log(paceUtils.logEntry('PreToolUse', 'PASS_MONITOR', { proj, dur: Date.now() - t0 }));
+      return;
+    }
     if (!isFileMutationTool(toolName)) {
       return hardDeny(
-        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit/Agent/Bash，已阻止以避免绕过保护。`,
+        `PACE hook 收到缺失或未知工具名：${toolName || '(empty)'}。本 hook 只允许处理 Write/Edit/MultiEdit/Agent/Bash/PowerShell/Monitor，已阻止以避免绕过保护。`,
         'DENY_BAD_TOOL'
       );
     }
@@ -658,6 +796,26 @@ paceUtils.withStdinParsed((stdin) => {
     return hardDeny(
       paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
       'DENY_BASH_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      {
+        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+      }
+    );
+  }
+  if (isPowerShellTool(toolName) && powershellCommandMutatesWorktreeLocalArtifactRootChoice(powershellCommand, cwd)) {
+    return hardDeny(
+      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
+      'DENY_POWERSHELL_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      {
+        command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
+        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+      }
+    );
+  }
+  if (isMonitorTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+    return hardDeny(
+      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+      'DENY_MONITOR_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
       {
         command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
         authoritative: paceUtils.getArtifactRootChoicePath(cwd),

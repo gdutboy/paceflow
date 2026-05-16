@@ -11,7 +11,7 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
 const proj = getProjectName(cwd);
-const RECOVERY_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'Bash', 'Agent']);
+const RECOVERY_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'Bash', 'PowerShell', 'Monitor', 'Agent']);
 
 function bashLooksLikeValidationCommand(command) {
   const c = String(command || '');
@@ -44,8 +44,8 @@ paceUtils.withStdinParsed((stdin) => {
     const resolvedFilePath = stdin.filePath ? paceUtils.resolveToolFilePath(cwd, stdin.filePath) : '';
     const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
     const isCodeFile = resolvedFilePath && CODE_EXTS.some(ext => resolvedFilePath.endsWith(ext));
-    const bashCommand = String(stdin.toolInput.command || '');
-    const bashLooksLikeValidation = bashLooksLikeValidationCommand(bashCommand);
+    const commandInput = String(stdin.toolInput.command || stdin.toolInput.script || stdin.toolInput.cmd || '');
+    const commandLooksLikeValidation = bashLooksLikeValidationCommand(commandInput);
 
     if (toolName === 'Agent' && isArtifactWriterAgentType(agentType)) {
       const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
@@ -106,12 +106,12 @@ paceUtils.withStdinParsed((stdin) => {
     const shouldInjectRecovery =
       (toolName === 'Agent' && isArtifactWriterAgent) ||
       (['Write', 'Edit', 'MultiEdit'].includes(toolName) && (artifactRel || isCodeFile)) ||
-      (toolName === 'Bash' && bashLooksLikeValidation);
+      (['Bash', 'PowerShell', 'Monitor'].includes(toolName) && commandLooksLikeValidation);
     if (!shouldInjectRecovery) return;
 
     const target = stdin.filePath ? `（目标：${stdin.filePath}）` : '';
     const reason = err ? `错误：${err}` : '错误详情见工具输出';
-    const recovery = toolName === 'Bash'
+    const recovery = ['Bash', 'PowerShell', 'Monitor'].includes(toolName)
       ? '请先读取失败输出、修复后重跑；确认验证通过前不要派 verify/close-chg。'
       : '不要把失败工具调用视为完成；artifact 写入失败时按当前 artifact_dir 重试或重新派 artifact-writer。';
     const ctx = `PACE 工具失败恢复：${toolName} 执行失败${target}。${reason}。${paceUtils.artifactDirRuntimeHint(cwd)}。${recovery}`;
