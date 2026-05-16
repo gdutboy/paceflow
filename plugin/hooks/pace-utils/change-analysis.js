@@ -113,18 +113,21 @@ module.exports = function createChangeAnalysis(ctx) {
       const expectedId = id[0].toUpperCase();
       const expectedSlug = slugForChangeId(expectedId);
       const link = summaryCell.match(/\[\[([^|\]#]+)(?:#[^|\]]+)?(?:\|[^\]]+)?\]\]/);
+      let linkMatchesExpected = false;
       if (!link) {
         issues.push(`walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedSlug}]]。`);
-        continue;
-      }
-      const target = String(link[1] || '').trim().toLowerCase();
-      if (target !== expectedSlug) {
-        issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedSlug}]]，当前为 [[${target}]]。`);
-        continue;
+      } else {
+        const target = String(link[1] || '').trim().toLowerCase();
+        if (target !== expectedSlug) {
+          issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedSlug}]]，当前为 [[${target}]]。`);
+        } else {
+          linkMatchesExpected = true;
+        }
       }
       const detailPath = detailPathForId(artDir, expectedId);
       if (detailPath && !fs.existsSync(detailPath)) {
-        issues.push(`walkthrough.md 行 ${expectedId} 指向 [[${expectedSlug}]]，但详情文件不存在：changes/${expectedSlug}.md。`);
+        const linkHint = linkMatchesExpected ? `指向 [[${expectedSlug}]]，但` : `应指向 [[${expectedSlug}]]，且`;
+        issues.push(`walkthrough.md 行 ${expectedId} ${linkHint}详情文件不存在：changes/${expectedSlug}.md。`);
       }
       const expectedContext = walkthroughContextForChange(cwd, expectedId);
       const missingContext = expectedContext.filter(spec => !textHasContextMarker(summaryCell, spec));

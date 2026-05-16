@@ -142,7 +142,7 @@
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 225/225 PASS
+node tests/test-hooks-e2e.js                         # 226/226 PASS
 node tests/test-pace-utils.js                        # 142/142 PASS
 node tests/test-install.js                           # 26/26 PASS
 node tests/agent-tests/run-tests.js dummy            # PASS
@@ -989,7 +989,7 @@ Smoke11（record-finding artifact_dir 模板）验证结果：
 - 在 `/mnt/k/AI/cc-smoke15` 直接派 `paceflow:artifact-writer create-chg` 且故意缺 `title/tasks/reserved-id` 时，agent 启动后自检返回 `missing-fields`，耗时约 9s / 16k tokens。根因不是 agent 未注册，而是该目录不是 PaceFlow 项目：本地 hook replay 显示 `PreToolUse ROUTE signal=none`，随后 `SKIP reason=no-task-content`，因此没有进入 `PreToolUse:Agent` 的 artifact-writer lifecycle gate。
 - 修复结论：显式派 `paceflow:artifact-writer` 本身应视为 PaceFlow 入口信号。即使当前没有 `.pace` / v6 artifact 文件，hook 也必须在 agent 启动前进入 artifact-root 选择 gate，提示使用 `set-artifact-root.js`；选择前不得自动创建 `.pace`、`changes/` 或 vault project 空目录。
 - 在已启用 PaceFlow 的项目中，同类 malformed dispatch 会先被 `artifact_dir` 或 `reserved-id` gate 拦截。进一步 hardening 空间：当 prompt 已带有效 reservation 但仍缺 `title` 或 `tasks` 时，当前 hook 会放行给 agent 自检；可后续补 `create-chg` title/tasks pre-deny，减少 token 浪费。
-- 回归验证：新增 `9haa0` / `9haa0b` 覆盖无 PACE 信号的显式 artifact-writer 入口；`node tests/test-hooks-e2e.js` 225/225 PASS，`node tests/test-pace-utils.js` 142/142 PASS，`node tests/test-install.js` 26/26 PASS。
+- 回归验证：新增 `9haa0` / `9haa0b` 覆盖无 PACE 信号的显式 artifact-writer 入口；`node tests/test-hooks-e2e.js` 226/226 PASS，`node tests/test-pace-utils.js` 142/142 PASS，`node tests/test-install.js` 26/26 PASS。
 
 
 #### 0.1.10e30 旧 Superpowers plan 与 TaskSync 提醒边界（2026-05-16）

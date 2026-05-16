@@ -561,7 +561,7 @@ Required automated checks from the repo root:
 
 ```bash
 git diff --check
-node tests/test-hooks-e2e.js              # expected: 225/225 PASS
+node tests/test-hooks-e2e.js              # expected: 226/226 PASS
 node tests/test-pace-utils.js             # expected: 142/142 PASS
 node tests/test-install.js                # expected: 26/26 PASS
 node tests/agent-tests/run-tests.js dummy # expected: PASS
@@ -920,6 +920,23 @@ Expected second output:
 
 - The same warning may appear as `hookSpecificOutput.additionalContext`.
 - It must not include `"decision":"block"` again for the same session/target, proving the one-shot guard prevents loops.
+
+Optional context-only variant:
+
+```bash
+rm -rf /mnt/k/AI/paceflow-smoke-657-post-context
+cp -a /mnt/k/AI/paceflow-smoke-657-post /mnt/k/AI/paceflow-smoke-657-post-context
+cd /mnt/k/AI/paceflow-smoke-657-post-context
+rm -rf .pace
+perl -0pi -e 's/\\[\\[bad-link\\]\\]/[[chg-20260516-01]]/' walkthrough.md
+printf '%s' '{"session_id":"sid-smoke16-context","agent_id":"agent-smoke16","agent_type":"paceflow:artifact-writer","tool_name":"Edit","tool_input":{"file_path":"walkthrough.md","old_string":"smoke","new_string":"smoke"}}' \
+  | CLAUDE_PROJECT_DIR="$PWD" node "$PLUGIN_DIR/hooks/post-tool-use.js"
+```
+
+Expected context-only output:
+
+- JSON includes `"decision":"block"` and `"continue":true`.
+- `reason` mentions missing `[worktree:: smoke] [branch:: feature-x]` context.
 
 ### Release UX: Plugin Details / Projected Context Cost
 
