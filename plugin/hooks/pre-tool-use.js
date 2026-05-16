@@ -227,8 +227,10 @@ paceUtils.withStdinParsed((stdin) => {
 
   // W-3: 缓存 isPaceProject 结果（避免多次调用）
   const paceSignal = isPaceProject(cwd);
+  const artifactWriterAgentRequested = isAgentTool(toolName) && isArtifactWriterAgentTool(stdin);
+  const paceEntrySignal = paceSignal || (artifactWriterAgentRequested ? 'artifact-writer-agent' : false);
   const artDir = getArtifactDir(cwd);
-  const rootConfigError = paceSignal ? paceUtils.artifactRootConfigError(cwd) : null;
+  const rootConfigError = paceEntrySignal ? paceUtils.artifactRootConfigError(cwd) : null;
   const needsArtifactRootChoice = artifactRootChoiceNeeded(cwd);
   const artifactRootChoiceReason = needsArtifactRootChoice ? artifactRootChoiceMessage(cwd) : '';
   const v5MigrationInfo = getV5MigrationInfo(cwd);
@@ -236,7 +238,7 @@ paceUtils.withStdinParsed((stdin) => {
   const artifactRootHint = paceUtils.artifactDirRuntimeHint(cwd);
   log(paceUtils.logEntry('PreToolUse', 'ROUTE', {
     proj,
-    signal: paceSignal || 'none',
+    signal: paceEntrySignal || 'none',
     artifact_dir: displayDir(artDir),
     choice: paceUtils.readArtifactRootChoice(cwd) || 'auto',
     choice_pending: needsArtifactRootChoice,
@@ -288,7 +290,7 @@ paceUtils.withStdinParsed((stdin) => {
 
   // P0-20260506-02: PACE 项目的 Write/Edit 保护链路必须 fail-closed。
   // 非 PACE 项目保持低干扰；PACE 项目中坏 stdin 或缺关键字段不能自然放行。
-  if (paceSignal) {
+  if (paceEntrySignal) {
     if (!stdin.ok) {
       return hardDeny(
         'PACE hook 无法解析 Claude Code 提供的 Write/Edit JSON 输入。为避免绕过 artifact 保护，本次写入已阻止；请重试工具调用。',

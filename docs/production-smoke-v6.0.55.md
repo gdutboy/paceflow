@@ -561,7 +561,7 @@ Required automated checks from the repo root:
 
 ```bash
 git diff --check
-node tests/test-hooks-e2e.js              # expected: 223/223 PASS
+node tests/test-hooks-e2e.js              # expected: 225/225 PASS
 node tests/test-pace-utils.js             # expected: 142/142 PASS
 node tests/test-install.js                # expected: 26/26 PASS
 node tests/agent-tests/run-tests.js dummy # expected: PASS
@@ -800,6 +800,11 @@ Failure signals:
 - The hook tells Claude to switch to Bash to work around PowerShell denial.
 - The hook expands into a generic “project outside path” policy instead of the PaceFlow artifact/runtime-control boundary.
 
+2026-05-16 status:
+
+- Still pending a real Windows installed-runtime PowerShell/Monitor transcript.
+- A transcript labeled as Smoke14 was actually the Smoke15 `PostToolUse` PoC in `/mnt/k/AI/cc-smoke15`; keep Smoke14 separate from the continue-on-block result.
+
 ### Smoke 15: PostToolUse `continueOnBlock` PoC
 
 Goal: verify whether Claude Code command-type `PostToolUse` hooks can use `continueOnBlock:true` to feed a rejection reason back to Claude and continue the same turn. This is a PoC only; production PaceFlow should not migrate until this passes.
@@ -822,6 +827,57 @@ Failure signals:
 - Claude repeats the same edit indefinitely.
 
 If Smoke 15 fails, keep production PostToolUse on `additionalContext` / warning semantics and do not alter the current runtime architecture.
+
+2026-05-16 result:
+
+- PASS in isolated PoC project `/mnt/k/AI/cc-smoke15`.
+- The command hook returned `{"decision":"block","continue":true,"reason":"Smoke15 PoC: append a second line exactly: repair line, then stop."}` after the first `Write(poc.txt)`.
+- Claude continued in the same turn and ran `Edit(poc.txt)`, producing:
+
+```text
+initial line
+repair line
+```
+
+- Hook log showed exactly the expected sequence:
+
+```text
+PostToolUse Write -> K:\AI\cc-smoke15\poc.txt
+PostToolUse Edit  -> K:\AI\cc-smoke15\poc.txt
+```
+
+- The one-shot marker prevented an infinite loop.
+- This validates the command-hook `continue:true` behavior, but does not authorize migrating PreToolUse gates. Candidate production use remains limited to PostToolUse final-state repairs such as walkthrough context/wikilink gaps or VERIFIED/frontmatter mismatches.
+
+### Release UX: Plugin Details / Projected Context Cost
+
+Goal: verify installed plugin inventory and projected context cost after v6.0.56 prompt/tool-surface changes.
+
+Command:
+
+```powershell
+claude plugin details paceflow@paceaitian-paceflow
+```
+
+2026-05-16 observed output summary:
+
+- Version: `paceflow 6.0.56`.
+- Skills: 4 (`artifact-management`, `pace-bridge`, `pace-knowledge`, `pace-workflow`).
+- Hooks: 8 (`SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStop`, `PreCompact`, `Stop`, `StopFailure`), shown as harness-only with no model context cost.
+- Always-on projected token cost: `~296 tok`.
+- On-invoke skill costs: `artifact-management ~7.2k`, `pace-workflow ~5.4k`, `pace-knowledge ~3k`, `pace-bridge ~2.8k`.
+- Inventory warning: `Agents (0)` was displayed even though the installed cache contains `agents/artifact-writer.md` and `.claude-plugin/plugin.json` declares `"agents": ["./agents/artifact-writer.md"]`.
+
+Runtime agent verification:
+
+- Dispatching `paceflow:artifact-writer` succeeded; the agent returned `missing-fields` for an intentionally incomplete `create-chg` prompt and did not create files.
+- Therefore `Agents (0)` is treated as a Claude Code `plugin details` inventory display gap unless a future runtime dispatch fails.
+
+Follow-up observation:
+
+- The runtime dispatch test was run from the isolated `/mnt/k/AI/cc-smoke15` PoC directory, which was not yet a PaceFlow project. Local hook replay showed `PreToolUse ROUTE signal=none` followed by `SKIP reason=no-task-content`, so `PreToolUse:Agent` did not enter the artifact-writer lifecycle gate and the agent self-validated after startup.
+- Fixed follow-up: explicit `paceflow:artifact-writer` dispatch now counts as a PaceFlow entry signal even when `.pace` / v6 artifact files do not exist yet. The first malformed dispatch is denied before agent startup and asks the model/user to choose artifact root with `set-artifact-root.js`; it does not auto-create `.pace`, `changes/`, or vault project directories.
+- In an enabled PaceFlow project, malformed dispatch is blocked before agent startup at the artifact_dir or reservation gate. A narrower remaining hardening opportunity is to also pre-deny `create-chg` prompts that already contain a valid reservation but still omit `title` or `tasks`.
 
 ## Prompt Surface Smoke Priority
 

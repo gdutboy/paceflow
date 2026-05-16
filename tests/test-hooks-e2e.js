@@ -1475,6 +1475,52 @@ test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', (
   assert.ok(r.stdout.includes('artifact-root'));
 });
 
+test('9haa0. 无 PACE 信号但显式派 artifact-writer 也先要求选择 artifact root', () => {
+  const dir = makeTmpDir('agent-no-signal-artifact-root-choice');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-no-signal-root-choice',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: 'operation: create-chg',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('AskUserQuestion'));
+  assert.ok(r.stdout.includes('set-artifact-root.js'));
+  assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
+  assert.ok(!fs.existsSync(path.join(dir, '.pace')), '选择前不应创建 .pace');
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '选择前不应创建本地 artifact 模板');
+});
+
+test('9haa0b. 已写 artifact-root 但无 PACE 信号时 artifact-writer 仍进入 artifact_dir gate', () => {
+  const dir = makeTmpDir('agent-no-signal-artifact-dir-gate');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-no-signal-artdir',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Create CHG',
+        prompt: 'operation: create-chg',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('缺少或写错当前 artifact_dir'));
+  assert.ok(r.stdout.includes(`artifact_dir: ${dir.replace(/\\/g, '/')}/`));
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '缺 artifact_dir 时不应先创建 artifact 模板');
+});
+
 test('9haa1. legacy v5 存在时 artifact-writer 不得触发 v6 懒创建', () => {
   const dir = makeLegacyProject('agent-legacy-v5');
   const r = runHook('pre-tool-use.js', {
