@@ -23,9 +23,8 @@ PACEflow 的运行时行为必须由以下位置定义：
 ```bash
 node tests/test-pace-utils.js
 node tests/test-hooks-e2e.js
-node tests/test-install.js
 claude plugin validate ./plugin
 git diff --check
 ```
 
-`install.js` / `verify.js` 只作为本地 smoke 或手动安装健康检查工具；marketplace 安装以 `plugin/.claude-plugin/plugin.json`、`plugin/hooks/hooks.json` 和 `plugin/**` 发布面为准。
+可选本地手动安装检查：如果当前工作区有未跟踪的 `install.js` 与 `tests/test-install.js` 本地副本，可以额外运行 `node tests/test-install.js`。`install.js` / `verify.js` 只作为本地 smoke 或手动安装健康检查工具；marketplace 安装以 `plugin/.claude-plugin/plugin.json`、`plugin/hooks/hooks.json` 和 `plugin/**` 发布面为准。

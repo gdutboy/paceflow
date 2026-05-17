@@ -16,12 +16,12 @@
 | Artifact schema | `plugin/agent-references/artifact-writer-spec.md` |
 | Agent 操作步骤 | `plugin/agent-references/instructions/*.md` |
 | Hook 运行逻辑 | `plugin/hooks/*.js` + `plugin/hooks/pre-tool-use/*.js` + `plugin/hooks/pace-utils.js` |
-| 主 session 规则 | `CLAUDE.md` |
+| 仓库维护入口 | `CLAUDE.md`（不承载 PACEflow 用户工作流规范） |
 | 用户 Skill 规则 | `plugin/skills/*/SKILL.md` |
 | 内部审计资料 | `internal/skills/audit/` |
 | v6 迁移 guidebook | `docs/paceflow-v6-guidebook.md` |
 
-`install.js` / `verify.js` 只允许作为本地 smoke/健康检查工具，不是 v6 正式安装路径。
+`install.js` / `verify.js` 只允许作为本地 smoke/健康检查工具，不是 v6 正式安装路径；对应本地测试文件 `tests/test-install.js` 也不属于 tracked release gate。
 
 ---
 

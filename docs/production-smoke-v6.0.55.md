@@ -563,9 +563,14 @@ Required automated checks from the repo root:
 git diff --check
 node tests/test-hooks-e2e.js              # expected: 226/226 PASS
 node tests/test-pace-utils.js             # expected: 142/142 PASS
-node tests/test-install.js                # expected: 26/26 PASS
 node tests/agent-tests/run-tests.js dummy # expected: PASS
 claude plugin validate ./plugin           # expected: PASS
+```
+
+Optional local manual-install check:
+
+```bash
+test -f tests/test-install.js && node tests/test-install.js  # local-only; ignored/untracked in release repo
 ```
 
 Static prompt-surface checks:
@@ -805,13 +810,14 @@ Failure signals:
 - Still pending a real Windows installed-runtime PowerShell/Monitor transcript.
 - A transcript labeled as Smoke14 was actually the Smoke15 `PostToolUse` PoC in `/mnt/k/AI/cc-smoke15`; keep Smoke14 separate from the continue-on-block result.
 
-### Smoke 15: PostToolUse `continueOnBlock` PoC
+### Smoke 15: PostToolUse `decision:block` + `continue:true` PoC
 
 Goal: verify whether Claude Code command-type `PostToolUse` hooks can feed a rejection reason back to Claude with `decision:"block" + continue:true` and continue the same turn. This was the prerequisite PoC for the v6.0.57 production walkthrough repair path.
 
 Setup:
 
-- Install a temporary local hook or use a dedicated test plugin branch that registers a minimal `PostToolUse` command hook with `continueOnBlock:true`.
+- Install a temporary local hook or use a dedicated test plugin branch that registers a minimal command-type `PostToolUse` hook.
+- The command hook should return JSON with `decision:"block"`, `continue:true`, and a concrete `reason`.
 - The hook should trigger on a harmless file edit and return a synthetic block reason that asks Claude to make a second harmless edit.
 
 Expected:
@@ -822,7 +828,7 @@ Expected:
 
 Failure signals:
 
-- `continueOnBlock` is ignored for command-type PostToolUse hooks.
+- `continue:true` is ignored for command-type PostToolUse hooks.
 - The hook ends the turn exactly like a normal block.
 - Claude repeats the same edit indefinitely.
 
@@ -948,9 +954,9 @@ Command:
 claude plugin details paceflow@paceaitian-paceflow
 ```
 
-2026-05-16 observed output summary:
+2026-05-16 observed output summary from the installed cache at that time:
 
-- Version: `paceflow 6.0.56`.
+- Version shown then: `paceflow 6.0.56`. After reinstalling the current repo build, this should match `plugin/.claude-plugin/plugin.json` (`6.0.57` at this document revision).
 - Skills: 4 (`artifact-management`, `pace-bridge`, `pace-knowledge`, `pace-workflow`).
 - Hooks: 8 (`SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStop`, `PreCompact`, `Stop`, `StopFailure`), shown as harness-only with no model context cost.
 - Always-on projected token cost: `~296 tok`.
@@ -984,5 +990,5 @@ Run this set after changes that touch `plugin/hooks/hooks.json`, Bash/PowerShell
 
 1. Smoke 14 on Windows Claude Code with the PowerShell tool enabled.
 2. A normal Smoke 2 or Smoke 10 run to confirm existing Bash/Write/Edit/Agent gates still behave.
-3. Smoke 15 only for the isolated `continueOnBlock` PoC branch.
+3. Smoke 15 only for the isolated `decision:"block" + continue:true` PoC branch.
 4. Smoke 16 for the production walkthrough continue-block path in v6.0.57+.
