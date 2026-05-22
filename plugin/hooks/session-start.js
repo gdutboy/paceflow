@@ -89,6 +89,32 @@ if (rootConfigError) {
 const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
 const artifactRootChoice = paceUtils.readArtifactRootChoice(cwd) || 'auto';
 
+function projectContextMode(rootInfo) {
+  if (rootInfo.mode === 'inherited') return '继承父级 PACEflow 项目';
+  if (rootInfo.mode === 'independent') return '当前 cwd 是 independent Project Root';
+  if (rootInfo.mode === 'worktree') return 'git worktree 共享宿主 Project Root';
+  if (rootInfo.mode === 'disabled') return '当前 Project Root 已禁用 PACEflow';
+  return '当前 cwd 作为 Project Root';
+}
+
+function writeProjectContextSection() {
+  const rootInfo = paceUtils.resolveEffectiveProjectRoot(cwd);
+  const contextArtDir = paceSignal ? artDir : paceUtils.getArtifactDir(cwd);
+  const lines = [
+    '=== PACEflow 项目上下文 ===',
+    `Current CWD: ${cwd.replace(/\\/g, '/')}`,
+    `Project Root: ${rootInfo.projectRoot.replace(/\\/g, '/')}`,
+    `Artifact Root: ${paceUtils.displayDir(contextArtDir)}`,
+    `Runtime Root: ${rootInfo.runtimeRoot.replace(/\\/g, '/')}`,
+    `模式: ${projectContextMode(rootInfo)}（mode=${rootInfo.mode}）`,
+  ];
+  if (rootInfo.mode === 'inherited') {
+    lines.push(`若这是独立子项目，先运行：node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent`);
+  }
+  lines.push('');
+  process.stdout.write(lines.join('\n') + '\n');
+}
+
 function writeWorkflowEntrySection(reason) {
   const lines = [
     '=== PACEflow 工作流入口 ===',
@@ -96,11 +122,16 @@ function writeWorkflowEntrySection(reason) {
     '收到实现、迁移、CHG、验证或归档任务时，先调用 Skill(paceflow:pace-workflow)。',
     '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
     `artifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
+    `独立子项目 helper: node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
     `预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     'reserve helper 从当前项目 cwd 和 .pace/artifact-root 解析 artifact_dir；不要搜索 plugin cache，也不要传 --artifact-dir / --artifact-root / --project-dir。',
     '',
   ];
   process.stdout.write(lines.join('\n') + '\n');
+}
+
+if (paceSignal || rootChoicePending || paceUtils.resolveEffectiveProjectRoot(cwd).mode === 'inherited') {
+  writeProjectContextSection();
 }
 
 if (paceSignal && !rootChoicePending && eventType !== 'compact') {
@@ -247,6 +278,7 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
     '本项目已触发 PACEflow 信号；收到代码修改任务时先调用 Skill(paceflow:pace-workflow)。',
     '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
     '首次写代码或派 artifact-writer 时，PreToolUse 会要求选择 artifact root；选择前不会创建 .pace/、changes/ 或 Obsidian 空项目目录。',
+    `若当前子目录应作为独立 PaceFlow 项目，先运行：node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
     `若用户已明确选择 vault/local，先从当前项目 cwd 运行：node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
     `配置写入后再运行：node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     'reserve helper 不接受 --artifact-dir / --artifact-root / --project-dir；不要搜索 plugin cache 猜版本。',
@@ -278,7 +310,7 @@ function writeArtifactDirSection() {
     const vaultRoot = paceUtils.normalizePath(path.resolve(paceUtils.VAULT_PATH, 'projects'));
     if (normalizedArtDir.startsWith(`${vaultRoot}/`)) mode = 'Obsidian vault project';
   }
-  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}。\nartifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
+  process.stdout.write(`=== Artifact 目录 ===\n路径: ${paceUtils.displayDir(artDir)}\n模式: ${mode}\n仅用于 PaceFlow artifacts：${paceUtils.PACE_ARTIFACT_ROOT_CONTENT}。\nartifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault\n独立子项目 helper: node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent\n预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg\nplan 同步 helper: node "${paceUtils.SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"\n\n`);
 }
 
 function enrichSummaryOwner(summary) {
@@ -728,7 +760,7 @@ try {
   }
 } catch(e) {} // Vault 不可用静默跳过
 
-log(paceUtils.logEntry('SessionStart', 'INJECT', {
+log(paceUtils.projectLogEntry(cwd, 'SessionStart', 'INJECT', {
   cwd,
   proj,
   event: eventType,

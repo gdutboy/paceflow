@@ -13,12 +13,17 @@ const PLAN_BRIDGE_FRESH_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 module.exports = function createPlanUtils(ctx) {
   let _planFilesCache = { cwd: null, result: [] };
 
+  function planSearchRoot(cwd) {
+    return ctx.getProjectStateDir ? ctx.getProjectStateDir(cwd) : cwd;
+  }
+
   function listPlanFiles(cwd) {
-    if (_planFilesCache.cwd === cwd) return _planFilesCache.result;
+    const root = planSearchRoot(cwd);
+    if (_planFilesCache.cwd === root) return _planFilesCache.result;
     const results = [];
     const seen = new Set();
     for (const rel of PLAN_DIRS) {
-      const dir = path.join(cwd, rel);
+      const dir = path.join(root, rel);
       try {
         for (const f of fs.readdirSync(dir)) {
           if (/^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) && !seen.has(f)) {
@@ -29,7 +34,7 @@ module.exports = function createPlanUtils(ctx) {
       } catch(e) {}
     }
     const sorted = results.sort((a, b) => b.name.localeCompare(a.name));
-    _planFilesCache = { cwd, result: sorted };
+    _planFilesCache = { cwd: root, result: sorted };
     return sorted;
   }
 
@@ -80,7 +85,7 @@ module.exports = function createPlanUtils(ctx) {
 
     function isFresh(p) {
       try {
-        const stat = fs.statSync(path.join(cwd, p.dir, p.name));
+        const stat = fs.statSync(path.join(planSearchRoot(cwd), p.dir, p.name));
         return stat.mtimeMs > 0 && now - stat.mtimeMs <= PLAN_BRIDGE_FRESH_WINDOW_MS;
       } catch(e) {
         return false;
@@ -169,20 +174,21 @@ module.exports = function createPlanUtils(ctx) {
     try {
       const planPath = fs.readFileSync(fp, 'utf8').trim();
       if (!planPath || !nativePlanMatchesProject(planPath, cwd)) return null;
-      return path.resolve(cwd || process.cwd(), planPath).replace(/\\/g, '/');
+      return path.resolve(planSearchRoot(cwd) || cwd || process.cwd(), planPath).replace(/\\/g, '/');
     } catch(e) { return null; }
   }
 
   function nativePlanMatchesProject(planPath, cwd) {
-    const normalizedPlanPath = ctx.normalizePath(path.resolve(cwd || process.cwd(), String(planPath || '')));
-    const normalizedCwd = ctx.normalizePath(path.resolve(cwd || process.cwd()));
-    const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
-    if (normalizedPlanPath.startsWith(cwdWithSlash)) return true;
+    const root = planSearchRoot(cwd) || cwd || process.cwd();
+    const normalizedPlanPath = ctx.normalizePath(path.resolve(root, String(planPath || '')));
+    const normalizedRoot = ctx.normalizePath(path.resolve(root));
+    const rootWithSlash = normalizedRoot.endsWith('/') ? normalizedRoot : normalizedRoot + '/';
+    if (normalizedPlanPath.startsWith(rootWithSlash)) return true;
 
     let content = '';
     try { content = fs.readFileSync(normalizedPlanPath, 'utf8').slice(0, 65536); } catch(e) { return false; }
     const normalizedContent = content.replace(/\\/g, '/').toLowerCase();
-    if (normalizedContent.includes(normalizedCwd.toLowerCase())) return true;
+    if (normalizedContent.includes(normalizedRoot.toLowerCase())) return true;
 
     const candidates = new Set(ctx.getProjectNameCandidates(cwd)
       .map(name => String(name || '').toLowerCase())

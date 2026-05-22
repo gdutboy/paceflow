@@ -13,6 +13,7 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
+const projectLogEntry = (hook, action, fields = {}) => paceUtils.projectLogEntry(cwd, hook, action, fields);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 try {
@@ -20,17 +21,17 @@ try {
   const hookInput = paceUtils.parseStdinSync();
   const paceSignal = isPaceProject(cwd);
   if (!paceSignal) {
-    log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: 'non-pace' }));
+    log(projectLogEntry('PreCompact', 'SKIP', { proj, reason: 'non-pace' }));
     process.exit(0);
   }
   const rootConfigError = paceUtils.artifactRootConfigError(cwd);
   if (rootConfigError) {
-    log(paceUtils.logEntry('PreCompact', 'SKIP', { proj, reason: rootConfigError.code }));
+    log(projectLogEntry('PreCompact', 'SKIP', { proj, reason: rootConfigError.code }));
     process.exit(0);
   }
   if (paceSignal !== 'artifact' && paceUtils.artifactRootChoiceNeeded(cwd)) {
     const action = paceSignal === 'legacy' ? 'SKIP_LEGACY_V5' : 'SKIP';
-    log(paceUtils.logEntry('PreCompact', action, { proj, signal: paceSignal, reason: 'artifact-root-choice-pending', dur: Date.now() - t0 }));
+    log(projectLogEntry('PreCompact', action, { proj, signal: paceSignal, reason: 'artifact-root-choice-pending', dur: Date.now() - t0 }));
     process.exit(0);
   }
 
@@ -121,7 +122,7 @@ try {
             const currentPlan = fs.readFileSync(currentPlanFile, 'utf8').trim();
             if (currentPlan && !paceUtils.nativePlanMatchesProject(currentPlan, cwd)) {
               fs.unlinkSync(currentPlanFile);
-              log(paceUtils.logEntry('PreCompact', 'NATIVE_PLAN_DROP_FOREIGN', { proj, plan: currentPlan }));
+              log(projectLogEntry('PreCompact', 'NATIVE_PLAN_DROP_FOREIGN', { proj, plan: currentPlan }));
             }
           }
         } catch(e) {}
@@ -135,7 +136,7 @@ try {
             if (!fs.existsSync(currentPlanFile)) fs.writeFileSync(currentPlanFile, recentPlans[0].path, 'utf8');
           } catch(e) {}
         } else if (allRecentPlans.length > 0) {
-          log(paceUtils.logEntry('PreCompact', 'NATIVE_PLAN_SKIP_FOREIGN', {
+          log(projectLogEntry('PreCompact', 'NATIVE_PLAN_SKIP_FOREIGN', {
             proj,
             candidates: allRecentPlans.length,
           }));
@@ -148,7 +149,7 @@ try {
   fs.mkdirSync(PACE_RUNTIME, { recursive: true });
   fs.writeFileSync(path.join(PACE_RUNTIME, 'pre-compact-state.json'), JSON.stringify(snapshot, null, 2), 'utf8');
 
-  log(paceUtils.logEntry('PreCompact', 'SNAPSHOT', { proj, tasks: taskActive ? 'yes' : 'no', plan: planActive ? 'yes' : 'no' }));
+  log(projectLogEntry('PreCompact', 'SNAPSHOT', { proj, tasks: taskActive ? 'yes' : 'no', plan: planActive ? 'yes' : 'no' }));
 } catch(e) {
-  try { log(paceUtils.logEntry('PreCompact', 'ERROR', { proj, error: e.message })); } catch(e2) {}
+  try { log(projectLogEntry('PreCompact', 'ERROR', { proj, error: e.message })); } catch(e2) {}
 }

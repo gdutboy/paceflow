@@ -12,6 +12,7 @@ const MIGRATE_SCRIPT = path.join(__dirname, '..', 'plugin', 'migrate', 'batch-ar
 const RESERVE_HELPER = path.join(HOOKS_DIR, 'reserve-artifact-id.js');
 const SYNC_PLAN_HELPER = path.join(HOOKS_DIR, 'sync-plan.js');
 const SET_ARTIFACT_ROOT_HELPER = path.join(HOOKS_DIR, 'set-artifact-root.js');
+const SET_PROJECT_ROOT_HELPER = path.join(HOOKS_DIR, 'set-project-root.js');
 const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
 const powershellGuard = require('../plugin/hooks/pre-tool-use/powershell-guard');
 const { createTestRunner } = require('./test-utils');
@@ -81,6 +82,16 @@ function runSyncPlanHelper({ cwd, args = [], env = {} }) {
 
 function runSetArtifactRootHelper({ cwd, args = [], env = {} }) {
   const r = spawnSync('node', [SET_ARTIFACT_ROOT_HELPER, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...env },
+  });
+  return { code: r.status || 0, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+function runSetProjectRootHelper({ cwd, args = [], env = {} }) {
+  const r = spawnSync('node', [SET_PROJECT_ROOT_HELPER, ...args], {
     cwd,
     encoding: 'utf8',
     timeout: 10000,
@@ -1114,6 +1125,8 @@ test('9c2a. PreToolUse 关键路径日志包含 artifact_dir 与 choice', () => 
     line.includes('PreToolUse') &&
     line.includes('act=ROUTE') &&
     line.includes(`artifact_dir=${dir.replace(/\\/g, '/')}/`) &&
+    line.includes(`project_root=${dir.replace(/\\/g, '/')}`) &&
+    line.includes('mode=current') &&
     line.includes('choice=local')
   );
   assert.ok(routeLine, `应写入本次 artifact_dir route 日志；delta=${delta}`);
@@ -1176,6 +1189,102 @@ test('9c3c. worktree 继承宿主 local artifact-root 时 SessionStart 显示本
   assert.ok(!r.stdout.includes('模式: Obsidian vault project'));
   assert.ok(fs.existsSync(path.join(host, '.pace', 'stop-block-count')), 'SessionStart 运行态应写入宿主 .pace');
   assert.ok(!fs.existsSync(path.join(worktree, '.pace')), 'worktree 不应创建独立 .pace 运行态目录');
+});
+
+test('9c3d. 子目录继承父级 Project Root 的 vault artifact 并注入活跃 CHG', () => {
+  const root = makeTmpDir('ss-subdir-inherit-root');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(child, { recursive: true });
+  const vaultDir = path.join(_vaultTmpDir, 'projects', projectNameForDir(root));
+  fs.mkdirSync(path.join(vaultDir, 'changes', 'findings'), { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes', 'corrections'), { recursive: true });
+  const index = '- [/] [[chg-20260504-01]] 父级任务 #change [tasks:: T-001]\n';
+  fs.writeFileSync(path.join(vaultDir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${index}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${index}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'walkthrough.md'), '# 工作记录\n\n## 最近工作\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'findings.md'), '# 调研记录\n\n## 摘要索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'corrections.md'), '# Corrections 记录\n\n## 索引\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(vaultDir, 'changes', 'chg-20260504-01.md'), chgDetail({ status: 'in-progress', task: '[/]', approved: true }), 'utf8');
+
+  const r = runHookDetailed('session-start.js', { cwd: child, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('=== PACEflow 项目上下文 ==='));
+  assert.ok(r.stdout.includes(`Current CWD: ${child.replace(/\\/g, '/')}`));
+  assert.ok(r.stdout.includes(`Project Root: ${root.replace(/\\/g, '/')}`));
+  assert.ok(r.stdout.includes(`Runtime Root: ${path.join(root, '.pace').replace(/\\/g, '/')}`));
+  assert.ok(r.stdout.includes(`路径: ${vaultDir.replace(/\\/g, '/')}/`));
+  assert.ok(r.stdout.includes('=== 活跃 CHG 摘要 ==='));
+  assert.ok(r.stdout.includes('CHG-20260504-01'));
+  assert.ok(fs.existsSync(path.join(root, '.pace', 'stop-block-count')), '运行态应写入父级 Project Root');
+  assert.ok(!fs.existsSync(path.join(child, '.pace')), '继承子目录不应创建自己的 .pace');
+});
+
+test('9c3e. 子目录 Project Root helper 声明 independent 后不再继承父级 artifact', () => {
+  const root = makeTmpDir('ss-subdir-independent-root');
+  const child = path.join(root, 'experiments', 'new-project');
+  fs.mkdirSync(child, { recursive: true });
+  const parentVault = path.join(_vaultTmpDir, 'projects', projectNameForDir(root));
+  fs.mkdirSync(path.join(parentVault, 'changes'), { recursive: true });
+
+  const setRoot = runSetProjectRootHelper({ cwd: child, args: ['--mode', 'independent'] });
+  assert.strictEqual(setRoot.code, 0);
+  assert.ok(setRoot.stdout.includes('Project Root 已声明为 independent'));
+  assert.ok(setRoot.stdout.includes('mode: independent'));
+  assert.ok(setRoot.stdout.includes('next-step:'));
+  assert.ok(fs.existsSync(path.join(child, '.pace', 'project-root')));
+
+  const setArtifact = runSetArtifactRootHelper({ cwd: child, args: ['--choice', 'local'] });
+  assert.strictEqual(setArtifact.code, 0);
+  assert.ok(setArtifact.stdout.includes(`project-root: ${child.replace(/\\/g, '/')}`));
+  assert.ok(fs.existsSync(path.join(child, '.pace', 'artifact-root')));
+  assert.ok(!fs.existsSync(path.join(root, '.pace', 'artifact-root')), 'independent 子项目不应写父级 artifact-root');
+});
+
+test('9c3f. git worktree 不允许用 Project Root helper 声明 independent', () => {
+  const root = makeTmpDir('ss-worktree-independent-deny-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  const worktreeChild = path.join(worktree, 'packages', 'api');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(worktreeChild, { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+
+  const r = runSetProjectRootHelper({ cwd: worktree, args: ['--mode', 'independent'] });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stdout.includes('DENY_WORKTREE_PROJECT_ROOT') || r.stdout.includes('git worktree'));
+  assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'project-root')), '不应在 worktree 写入无效 independent marker');
+
+  const child = runSetProjectRootHelper({ cwd: worktreeChild, args: ['--mode', 'independent'] });
+  assert.strictEqual(child.code, 2);
+  assert.ok(child.stdout.includes('DENY_WORKTREE_PROJECT_ROOT') || child.stdout.includes('git worktree'));
+  assert.ok(!fs.existsSync(path.join(worktreeChild, '.pace', 'project-root')), 'worktree 子目录也不能分裂 independent marker');
+});
+
+test('9c3g. 继承子目录普通代码写入受父级 active CHG gate 约束', () => {
+  const root = makeV6Project('ptu-subdir-inherit-code-gate', { withIndex: false, detail: false });
+  const child = path.join(root, 'packages', 'api');
+  const sibling = path.join(root, 'packages', 'web');
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(sibling, { recursive: true });
+  fs.writeFileSync(path.join(child, 'src.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(root, 'src.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(sibling, 'src.js'), 'a\n', 'utf8');
+
+  const r = runHook('pre-tool-use.js', { cwd: child, stdin: codeEditStdin(child) });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('没有活跃 CHG'));
+
+  const parent = runHook('pre-tool-use.js', { cwd: child, stdin: codeEditStdin(root) });
+  assert.strictEqual(parent.code, 0);
+  assert.ok(parent.stdout.includes('"deny"'));
+  assert.ok(parent.stdout.includes('没有活跃 CHG'));
+
+  const siblingWrite = runHook('pre-tool-use.js', { cwd: child, stdin: codeEditStdin(sibling) });
+  assert.strictEqual(siblingWrite.code, 0);
+  assert.ok(siblingWrite.stdout.includes('"deny"'));
+  assert.ok(siblingWrite.stdout.includes('没有活跃 CHG'));
+  assert.ok(!fs.existsSync(path.join(child, '.pace')), '子目录 gate 不应分裂 runtime');
 });
 
 test('9c3a. artifact-root=local 的 SessionStart 不创建 Obsidian 空项目目录', () => {
@@ -1452,6 +1561,41 @@ test('9ha3. local 模式 worktree 写宿主普通代码文件不触发 PACE C/E 
   assert.ok(!r.stdout.includes('v6 项目没有活跃 CHG/HOTFIX'));
   assert.ok(r.stdout.includes('当前 cwd 是 worktree'));
   assert.ok(r.stdout.includes('仅用于 PaceFlow artifacts'));
+});
+
+test('9ha4. worktree 子目录写 checkout 根或 sibling 代码文件仍受 C/E gate 约束', () => {
+  const root = makeTmpDir('worktree-child-checkout-boundary-root');
+  const host = path.join(root, 'project-a');
+  const worktree = path.join(root, 'project-a-wt');
+  const child = path.join(worktree, 'packages', 'api');
+  const sibling = path.join(worktree, 'packages', 'web');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'project-a-wt'), { recursive: true });
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(path.join(host, 'changes'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(sibling, { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'project-a-wt')}\n`, 'utf8');
+  for (const file of ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md']) {
+    fs.writeFileSync(path.join(host, file), `# ${file}\n\n<!-- ARCHIVE -->\n`, 'utf8');
+  }
+
+  const rootWrite = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: { tool_name: 'Write', tool_input: { file_path: path.join(worktree, 'root.js'), content: 'export const root = true;\n' } },
+  });
+  assert.strictEqual(rootWrite.code, 0);
+  assert.ok(rootWrite.stdout.includes('"deny"'));
+  assert.ok(rootWrite.stdout.includes('没有活跃 CHG'));
+
+  const siblingWrite = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: { tool_name: 'Write', tool_input: { file_path: path.join(sibling, 'src.js'), content: 'export const web = true;\n' } },
+  });
+  assert.strictEqual(siblingWrite.code, 0);
+  assert.ok(siblingWrite.stdout.includes('"deny"'));
+  assert.ok(siblingWrite.stdout.includes('没有活跃 CHG'));
+  assert.ok(!siblingWrite.stdout.includes('当前 cwd 是 worktree'), 'checkout 内 sibling 不应被误认为宿主 checkout 写入');
 });
 
 test('9haa. 首次 artifact-writer Agent 派遣前要求选择 artifact root', () => {
@@ -1783,6 +1927,25 @@ test('9hc-helper. reserve-artifact-id helper 预留 create-chg 后 Agent 首派�
   assert.ok(helper.stdout.includes('execution-context:'), 'helper 应输出 execution-context');
 });
 
+test('9hc-helper0a. reserve-artifact-id helper 在继承子目录写父 Project Root runtime', () => {
+  const root = makeTmpDir('agent-reserve-helper-subdir-parent');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', 'artifact-root'), 'local\n', 'utf8');
+
+  const helper = runReserveHelper({
+    cwd: child,
+    args: ['--operation', 'create-chg'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-subdir-create' },
+  });
+  assert.strictEqual(helper.code, 0);
+  assert.ok(helper.stdout.includes(`artifact_dir: ${root.replace(/\\/g, '/')}/`));
+  assert.ok(helper.stdout.includes(`project-root: ${root.replace(/\\/g, '/')}`));
+  assert.ok(fs.existsSync(path.join(root, '.pace', 'reservations')), 'reservation 应写父 Project Root runtime');
+  assert.ok(!fs.existsSync(path.join(child, '.pace')), '继承子目录不应创建自己的 .pace runtime');
+});
+
 test('9hc-helper1a. reserve-artifact-id helper 遇到未知参数 fail-fast', () => {
   const dir = makeV6Project('agent-reserve-helper-unknown-arg', { withIndex: false, detail: false });
   const helper = runReserveHelper({
@@ -1894,7 +2057,7 @@ test('9hc-helper4a. set-artifact-root helper 在 git worktree 写宿主 artifact
   assert.ok(setRoot.stdout.includes(`config-file: ${path.join(host, '.pace', 'artifact-root').replace(/\\/g, '/')}`));
   assert.ok(setRoot.stdout.includes('choice: local'));
   assert.ok(setRoot.stdout.includes('execution-context: [worktree:: project-a-wt]'));
-  assert.ok(setRoot.stdout.includes('不要在当前 worktree 另写 .pace/artifact-root'));
+  assert.ok(setRoot.stdout.includes('不要在当前子目录另写 .pace/artifact-root'));
   assert.ok(setRoot.stdout.includes('reserve-artifact-id.js'));
   assert.ok(setRoot.stdout.includes(`--cwd "${worktree.replace(/\\/g, '/')}"`));
   assert.strictEqual(fs.readFileSync(path.join(host, '.pace', 'artifact-root'), 'utf8'), 'local\n');
@@ -1929,6 +2092,21 @@ test('9hc-helper4a1. set-artifact-root helper 报告覆写旧 choice 且拒绝 e
   assert.ok(conflict.stdout.includes('DENY_ENV_CHOICE_CONFLICT') || conflict.stdout.includes('环境变量'));
 });
 
+test('9hc-helper4a2. 继承子目录 set-artifact-root 写父 Project Root runtime', () => {
+  const root = makeTmpDir('set-root-helper-subdir-parent');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(path.join(root, 'changes'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+
+  const r = runSetArtifactRootHelper({ cwd: child, args: ['--choice', 'local'] });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes(`project-root: ${root.replace(/\\/g, '/')}`));
+  assert.ok(r.stdout.includes(`artifact-root: ${root.replace(/\\/g, '/')}/`));
+  assert.ok(r.stdout.includes('不写入当前 cwd'));
+  assert.strictEqual(fs.readFileSync(path.join(root, '.pace', 'artifact-root'), 'utf8'), 'local\n');
+  assert.ok(!fs.existsSync(path.join(child, '.pace', 'artifact-root')), '不应写子目录 artifact-root');
+});
+
 test('9hc-helper4b. worktree 本地 .pace/artifact-root 写入被提示改用 helper', () => {
   const root = makeTmpDir('set-root-helper-worktree-deny-root');
   const host = path.join(root, 'project-a');
@@ -1949,7 +2127,7 @@ test('9hc-helper4b. worktree 本地 .pace/artifact-root 写入被提示改用 he
   });
   assert.strictEqual(write.code, 0);
   assert.ok(write.stdout.includes('"deny"'));
-  assert.ok(write.stdout.includes('DENY_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE') || write.stdout.includes('git worktree'));
+  assert.ok(write.stdout.includes('DENY_LOCAL_ARTIFACT_ROOT_CHOICE') || write.stdout.includes('继承了外层 PaceFlow Project Root'));
   assert.ok(write.stdout.includes('set-artifact-root.js'));
   assert.ok(write.stdout.includes(path.join(host, '.pace', 'artifact-root').replace(/\\/g, '/')));
 
@@ -1979,6 +2157,94 @@ test('9hc-helper4b. worktree 本地 .pace/artifact-root 写入被提示改用 he
   assert.strictEqual(powershell.code, 0);
   assert.ok(powershell.stdout.includes('"deny"'));
   assert.ok(powershell.stdout.includes('set-artifact-root.js'));
+});
+
+test('9hc-helper4c. 普通继承子目录本地 .pace/artifact-root 写入被提示改用 helper', () => {
+  const root = makeTmpDir('set-root-helper-subdir-deny-root');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', 'artifact-root'), 'local\n', 'utf8');
+
+  const write = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(child, '.pace', 'artifact-root'),
+        content: 'local\n',
+      },
+    },
+  });
+  assert.strictEqual(write.code, 0);
+  assert.ok(write.stdout.includes('"deny"'));
+  assert.ok(write.stdout.includes('继承了外层 PaceFlow Project Root'));
+  assert.ok(write.stdout.includes('Project Root'));
+  assert.ok(write.stdout.includes(path.join(root, '.pace', 'artifact-root').replace(/\\/g, '/')));
+  assert.ok(!fs.existsSync(path.join(child, '.pace', 'artifact-root')));
+});
+
+test('9hc-helper4d. .pace/project-root 不能手写，必须通过 set-project-root helper', () => {
+  const root = makeTmpDir('set-project-root-direct-deny-root');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', 'artifact-root'), 'local\n', 'utf8');
+
+  const write = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: {
+      tool_name: 'Write',
+      tool_input: {
+        file_path: path.join(child, '.pace', 'project-root'),
+        content: 'independent\n',
+      },
+    },
+  });
+  assert.strictEqual(write.code, 0);
+  assert.ok(write.stdout.includes('"deny"'));
+  assert.ok(write.stdout.includes('禁止手写 .pace/project-root'));
+  assert.ok(write.stdout.includes('set-project-root.js'));
+  assert.ok(!fs.existsSync(path.join(child, '.pace', 'project-root')));
+
+  const bash = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: {
+        command: 'mkdir -p .pace && echo independent > .pace/project-root',
+      },
+    },
+  });
+  assert.strictEqual(bash.code, 0);
+  assert.ok(bash.stdout.includes('"deny"'));
+  assert.ok(bash.stdout.includes('set-project-root.js'));
+
+  const powershell = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: {
+      tool_name: 'PowerShell',
+      tool_input: {
+        command: 'New-Item -ItemType Directory .pace -Force; Set-Content .pace\\project-root independent',
+      },
+    },
+  });
+  assert.strictEqual(powershell.code, 0);
+  assert.ok(powershell.stdout.includes('"deny"'));
+  assert.ok(powershell.stdout.includes('set-project-root.js'));
+
+  const monitor = runHook('pre-tool-use.js', {
+    cwd: child,
+    stdin: {
+      tool_name: 'Monitor',
+      tool_input: {
+        command: 'mkdir -p .pace && echo independent > .pace/project-root',
+      },
+    },
+  });
+  assert.strictEqual(monitor.code, 0);
+  assert.ok(monitor.stdout.includes('"deny"'));
+  assert.ok(monitor.stdout.includes('set-project-root.js'));
 });
 
 test('9hc-helper5. sync-plan helper 幂等写入单个 plan basename', () => {
@@ -2019,6 +2285,21 @@ test('9hc-helper6. sync-plan helper 在 git worktree 写宿主 .pace/synced-plan
   assert.ok(fs.existsSync(path.join(host, '.pace', 'synced-plans')), '应写宿主项目 runtime');
   assert.strictEqual(fs.readFileSync(path.join(host, '.pace', 'synced-plans'), 'utf8'), '2026-05-11-worktree-plan.md\n');
   assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'synced-plans')), '不应写 worktree 自己的 runtime');
+});
+
+test('9hc-helper6a. sync-plan helper 在继承子目录写父 Project Root synced-plans', () => {
+  const root = makeTmpDir('plan-sync-helper-subdir-root');
+  const child = path.join(root, 'packages', 'api');
+  const plan = path.join(root, 'docs', 'plans', '2026-05-22-subdir-plan.md');
+  fs.mkdirSync(path.join(root, 'changes'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.dirname(plan), { recursive: true });
+  fs.writeFileSync(plan, '# inherited subdir plan\n', 'utf8');
+
+  const r = runSyncPlanHelper({ cwd: child, args: ['--plan', plan] });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(fs.readFileSync(path.join(root, '.pace', 'synced-plans'), 'utf8'), '2026-05-22-subdir-plan.md\n');
+  assert.ok(!fs.existsSync(path.join(child, '.pace', 'synced-plans')), '继承子目录不应写自己的 synced-plans');
 });
 
 test('9hc-mismatch. create-chg 显式 reserved-id 与 hook reservation 不匹配 → DENY', () => {

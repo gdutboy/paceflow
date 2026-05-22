@@ -27,6 +27,7 @@ const {
   MIGRATABLE_ARTIFACT_FILES,
   VAULT_PATH,
   ARTIFACT_ROOT_CHOICE_FILE,
+  PROJECT_ROOT_FILE,
   V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE,
   ARTIFACT_WRITER_LOCK_TTL_MS,
@@ -41,6 +42,7 @@ const {
   RESERVE_ARTIFACT_ID_SCRIPT,
   SYNC_PLAN_SCRIPT,
   SET_ARTIFACT_ROOT_SCRIPT,
+  SET_PROJECT_ROOT_SCRIPT,
   PACE_ARTIFACT_ROOT_CONTENT,
   ARCHIVE_MARKER,
   ARCHIVE_PATTERN,
@@ -80,6 +82,8 @@ const {
   isArtifactRelativePath,
   artifactRelativePathForFile,
   escapeRegex,
+  resolveEffectiveProjectRoot,
+  rawProjectNameCandidates,
   getProjectNameCandidates,
   getProjectName,
   getProjectStateDir,
@@ -166,6 +170,7 @@ const {
   getArtifactDir,
   todayISO,
   CHANGE_OWNER_TTL_MS,
+  PROJECT_ROOT_FILE,
 });
 
 const {
@@ -181,6 +186,7 @@ const {
   formatBridgeHint,
 } = require('./pace-utils/plans')({
   getProjectRuntimeDir,
+  getProjectStateDir,
   acquireJsonLock,
   normalizePath,
   getProjectNameCandidates,
@@ -191,26 +197,53 @@ function getArtifactRootChoicePath(cwd) {
   return path.join(getProjectRuntimeDir(cwd), ARTIFACT_ROOT_CHOICE_FILE);
 }
 
-function isWorktreeLocalArtifactRootChoicePath(cwd, filePath) {
+function getProjectRootMarkerPath(cwd) {
+  return path.join(path.resolve(cwd || process.cwd()), '.pace', PROJECT_ROOT_FILE);
+}
+
+function isLocalArtifactRootChoicePath(cwd, filePath) {
   if (!cwd || !filePath) return false;
-  const context = executionContextForCwd(cwd);
-  if (!context.isWorktree) return false;
   const target = normalizePath(path.resolve(filePath));
   const localChoicePath = normalizePath(path.join(path.resolve(cwd), '.pace', ARTIFACT_ROOT_CHOICE_FILE));
   const authoritativeChoicePath = normalizePath(getArtifactRootChoicePath(cwd));
   return target === localChoicePath && target !== authoritativeChoicePath;
 }
 
-function worktreeLocalArtifactRootChoiceDenyReason(cwd, extra = '') {
+function isProjectRootMarkerPath(cwd, filePath) {
+  if (!filePath) return false;
+  const target = normalizePath(path.resolve(filePath));
+  return target.endsWith(`/.pace/${PROJECT_ROOT_FILE}`);
+}
+
+function localArtifactRootChoiceDenyReason(cwd, extra = '') {
   const context = executionContextForCwd(cwd);
   const choicePath = getArtifactRootChoicePath(cwd).replace(/\\/g, '/');
+  const projectRoot = getProjectStateDir(cwd).replace(/\\/g, '/');
   const lines = [
-    '当前 cwd 是 git worktree，PaceFlow artifact-root 配置必须写入共享 runtime，不写当前 worktree 的 .pace/artifact-root。',
+    '当前 cwd 继承了外层 PaceFlow Project Root，artifact-root 配置必须写入该 Project Root 的共享 runtime，不写当前子目录的 .pace/artifact-root。',
     `当前 cwd: ${path.resolve(cwd || process.cwd()).replace(/\\/g, '/')}`,
+    `Project Root: ${projectRoot}`,
     `配置文件: ${choicePath}`,
     `execution-context: ${context.text}`,
     `请运行 artifact-root helper：node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
-    'helper 会写入正确的共享 runtime 配置位置；不要在当前 worktree 另写 .pace/artifact-root。'
+    'helper 会写入正确的共享 runtime 配置位置；若当前子目录确实是独立项目，先运行 Project Root helper 声明 independent。'
+  ];
+  if (extra) lines.push(extra);
+  return lines.join('\n');
+}
+
+function projectRootMarkerDenyReason(cwd, extra = '') {
+  const context = executionContextForCwd(cwd);
+  const markerPath = getProjectRootMarkerPath(cwd).replace(/\\/g, '/');
+  const projectRoot = getProjectStateDir(cwd).replace(/\\/g, '/');
+  const lines = [
+    '禁止手写 .pace/project-root。Project Root 独立声明必须通过 helper 完成，避免绕过 worktree 拒绝、父级继承和后续 artifact-root 引导。',
+    `当前 cwd: ${path.resolve(cwd || process.cwd()).replace(/\\/g, '/')}`,
+    `当前 Project Root: ${projectRoot}`,
+    `当前 cwd marker: ${markerPath}`,
+    `execution-context: ${context.text}`,
+    `请运行 Project Root helper：node "${SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
+    'helper 会校验当前 cwd 是否为真实 git worktree；声明成功后再运行 artifact-root helper 选择 local 或 vault。'
   ];
   if (extra) lines.push(extra);
   return lines.join('\n');
@@ -400,11 +433,14 @@ function artifactRootChoiceNeeded(cwd) {
 function artifactRootChoiceMessage(cwd) {
   const projectName = getProjectName(cwd);
   const stateDir = getProjectStateDir(cwd);
+  const rootInfo = resolveEffectiveProjectRoot(cwd);
   const vaultDir = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectName) : '';
   const choicePath = getArtifactRootChoicePath(cwd);
   return [
     'PACEflow 首次启用需要选择 artifact 存放位置。',
     FORMAT_SNIPPETS.skillRef,
+    `Project Root: ${stateDir.replace(/\\/g, '/')}（当前 cwd: ${path.resolve(cwd || process.cwd()).replace(/\\/g, '/')}；mode=${rootInfo.mode}）`,
+    `如果当前子目录应作为独立 PaceFlow 项目，先运行 Project Root helper：node "${SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
     `Obsidian vault artifact 根目录: ${displayDir(vaultDir)}`,
     `本地项目 artifact 根目录: ${displayDir(stateDir)}`,
     '请用 AskUserQuestion 询问用户选择 "Obsidian vault project" 或 "本地项目目录"（至少两个选项）。',
@@ -421,9 +457,10 @@ function artifactRootChoiceMessage(cwd) {
 function artifactDirRuntimeHint(cwd) {
   const artDir = getArtifactDir(cwd);
   const stateDir = getProjectStateDir(cwd);
+  const rootInfo = resolveEffectiveProjectRoot(cwd);
   const choice = readArtifactRootChoice(cwd) || 'auto';
   const choicePath = getArtifactRootChoicePath(cwd);
-  return `Artifact 根目录：${displayDir(artDir)}（选择=${choice}；配置文件=${choicePath}；仅用于 ${PACE_ARTIFACT_ROOT_CONTENT}）`;
+  return `Artifact 根目录：${displayDir(artDir)}（选择=${choice}；配置文件=${choicePath}；Project Root=${stateDir.replace(/\\/g, '/')}；mode=${rootInfo.mode}；仅用于 ${PACE_ARTIFACT_ROOT_CONTENT}）`;
 }
 
 function appendArtifactDirHint(cwd, message) {
@@ -448,7 +485,8 @@ function _clearArtifactDirCache() {
  */
 function getArtifactDir(cwd) {
   if (_artifactDirCache.cwd === cwd) return _artifactDirCache.dir;
-  let result = cwd;
+  const stateDir = getProjectStateDir(cwd);
+  let result = stateDir;
   const configuredDir = getConfiguredArtifactDir(cwd);
   if (configuredDir) {
     _artifactDirCache = { cwd, dir: configuredDir };
@@ -469,10 +507,10 @@ function getArtifactDir(cwd) {
       } catch(e) {}
     }
   }
-  // CWD 有 changes/ → CWD
-  if (fs.existsSync(path.join(cwd, 'changes'))) {
-    _artifactDirCache = { cwd, dir: cwd };
-    return cwd;
+  // Project Root 有 changes/ → Project Root
+  if (fs.existsSync(path.join(stateDir, 'changes'))) {
+    _artifactDirCache = { cwd, dir: stateDir };
+    return stateDir;
   }
   const legacyDir = getLegacyV5ArtifactDir(cwd);
   if (legacyDir) {
@@ -480,9 +518,30 @@ function getArtifactDir(cwd) {
     return legacyDir;
   }
   // 新项目 → vault（有 VAULT_PATH 时）或 CWD（无 VAULT_PATH）
-  result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectCandidates[0]) : cwd;
+  result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectCandidates[0]) : stateDir;
   _artifactDirCache = { cwd, dir: result };
   return result;
+}
+
+function projectLogFields(cwd, artifactDir = '') {
+  const rootInfo = resolveEffectiveProjectRoot(cwd);
+  let artDir = artifactDir;
+  try {
+    if (!artDir) artDir = getArtifactDir(cwd);
+  } catch(e) {}
+  return {
+    cwd: path.resolve(cwd || process.cwd()).replace(/\\/g, '/'),
+    project_root: rootInfo.projectRoot.replace(/\\/g, '/'),
+    artifact_dir: artDir ? displayDir(artDir) : '',
+    mode: rootInfo.mode,
+  };
+}
+
+function projectLogEntry(cwd, hook, action, fields = {}, artifactDir = '') {
+  return logEntry(hook, action, {
+    ...projectLogFields(cwd, artifactDir),
+    ...fields,
+  });
 }
 
 // W-6: 模块级缓存，避免 isPaceProject + 外部调用重复扫描目录
@@ -515,8 +574,9 @@ function isPaceProject(cwd) {
     if (configuredDir) {
       if (fs.existsSync(path.join(configuredDir, 'changes'))) return 'artifact';
     } else {
+      const stateDir = getProjectStateDir(cwd);
       // 信号 1（最强）：v6 项目必须有 changes/ 目录
-      if (fs.existsSync(path.join(cwd, 'changes'))) return 'artifact';
+      if (fs.existsSync(path.join(stateDir, 'changes'))) return 'artifact';
       // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
       if (VAULT_PATH) {
         for (const projectName of getProjectNameCandidates(cwd)) {
@@ -532,7 +592,7 @@ function isPaceProject(cwd) {
     // 旧 plan 只作为历史 backlog，不再让普通会话长期进入 superpowers 信号。
     if (hasBridgeCandidatePlanFiles(cwd)) return 'superpowers';
     // 信号 3（强）：手动激活标记
-    if (fs.existsSync(path.join(cwd, '.pace-enabled'))) return 'manual';
+    if (fs.existsSync(path.join(getProjectStateDir(cwd), '.pace-enabled'))) return 'manual';
     // 信号 4（弱/兜底）：3+ 代码文件（原有逻辑）
     if (countCodeFiles(cwd) >= 3) return 'code-count';
   } catch(e) {}
@@ -678,21 +738,22 @@ function scanRelatedNotes(projectName) {
 // I-04: 多行格式按功能分组，便于 diff 审阅
 module.exports = {
   // 常量
-  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, V5_MIGRATION_STATE_FILE,
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, PROJECT_ROOT_FILE, V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
-  RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, PACE_ARTIFACT_ROOT_CONTENT,
+  RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, PACE_ARTIFACT_ROOT_CONTENT,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
   TODO_DRIFT_THRESHOLD, SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
-  resolveProjectCwd, ts, todayISO, daysSinceISODate, countCodeFiles, getProjectName, getProjectNameCandidates, normalizePath, displayDir,
+  resolveProjectCwd, ts, todayISO, daysSinceISODate, countCodeFiles, getProjectName, getProjectNameCandidates, rawProjectNameCandidates, normalizePath, displayDir,
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd,
+  projectLogFields, projectLogEntry,
   // 项目检测与路径
   isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
-  getArtifactDir, _clearArtifactDirCache, getProjectStateDir, getProjectRuntimeDir,
-  getArtifactRootChoicePath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
-  isWorktreeLocalArtifactRootChoicePath, worktreeLocalArtifactRootChoiceDenyReason,
+  getArtifactDir, _clearArtifactDirCache, resolveEffectiveProjectRoot, getProjectStateDir, getProjectRuntimeDir,
+  getArtifactRootChoicePath, getProjectRootMarkerPath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
+  isLocalArtifactRootChoicePath, localArtifactRootChoiceDenyReason, isProjectRootMarkerPath, projectRootMarkerDenyReason,
   getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
   getArtifactWriterLockPath, readArtifactWriterLock, acquireArtifactWriterLock,
   artifactWriterLockMatches, releaseArtifactWriterLock, formatArtifactWriterLock,

@@ -761,10 +761,11 @@ module.exports = function createLockUtils(ctx) {
     const runtimeSlash = runtime.endsWith('/') ? runtime : `${runtime}/`;
     const rel = fp.startsWith(runtimeSlash) ? fp.slice(runtimeSlash.length) : '';
     if (!rel) return false;
-    // This guard only covers artifact-writer coordination resources.
-    // Plan bridge state, v5 migration state, and Stop loop flags are owned by
-    // their dedicated helpers/hooks; accidental writes there are lower impact.
+    // This guard covers high-impact runtime controls. Plan bridge state, v5
+    // migration state, and Stop loop flags are owned by their dedicated
+    // helpers/hooks; accidental writes there are lower impact.
     return rel === ARTIFACT_WRITER_LOCK_FILE ||
+      rel === ctx.PROJECT_ROOT_FILE ||
       /^locks\//.test(rel) ||
       /^sequences\//.test(rel) ||
       /^reservations\//.test(rel) ||
