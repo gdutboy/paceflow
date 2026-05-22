@@ -34,11 +34,13 @@ flowchart TD
 
 Artifact 根目录以 hook 注入或 PreToolUse 提示为准。`artifact_dir` 仅用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
+Project Root 是 PACEflow 管理边界；`local` artifact root 表示 Project Root 本地目录，不是当前子目录。Current CWD 位于父级 Project Root 内时，沿用父项目 artifact、owner、Stop 和 `.pace` 运行态。若当前子目录确实是独立项目，先运行 hook 提示的 `set-project-root` helper（`--mode independent`），再选择 artifact root。
+
 `spec.md` 是 artifact root 内的项目事实文件，用于记录技术栈、依赖、配置、目录结构和编码约定等长期事实。它由主 session 按需要直接 `Edit` 维护，不派 `artifact-writer`，也不参与 CHG/HOTFIX 的批准、验证或归档流程。
 
-若用户已经明确选择 Obsidian vault、本地项目目录或自定义 artifact 目录，但 artifact-root 配置尚未写入，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对项目 state dir 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传自造的 `--artifact-dir` / `--artifact-root` / `--project-dir`。
+若用户已经明确选择 Obsidian vault、本地项目目录或自定义 artifact 目录，但 artifact-root 配置尚未写入，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 或继承父 Project Root 的子目录里手写该文件。helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传自造的 `--artifact-dir` / `--artifact-root` / `--project-dir`。
 
-Helper 命令来源：正确做法是优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令。禁止搜索 `~/.claude/plugins/cache` 猜版本。
+Helper 命令来源：正确做法是优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-project-root.js`、`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令。禁止搜索 `~/.claude/plugins/cache` 猜版本。
 
 参考：Superpowers/native plan 桥接细节见 [references/superpowers-integration.md](references/superpowers-integration.md)。
 
@@ -119,7 +121,7 @@ A 阶段完成标志：`task.md` 与 `implementation_plan.md` 有同一个活跃
 
 检测到旧 v5 artifact（有 `task.md` / `implementation_plan.md` 活跃内容但无 `changes/`）时，先按 hook 提示执行 dry-run 迁移或桥接为 v6 CHG；迁移确认前不要创建 `changes/`，也不要把迁移本身报告成原代码任务完成。迁移或桥接完成后，再重试被阻止的原始写代码动作。
 
-Git worktree 中的 artifact root 与运行态 `.pace/` 归一到宿主项目。主 session 修改普通项目文件仍以当前 cwd/worktree 为准；只有 PaceFlow artifacts 与 `.pace` 运行态走宿主共享位置。不要在 worktree 分支目录手写 `.pace/artifact-root`。
+Git worktree 中的 artifact root 与运行态 `.pace/` 归一到宿主项目。普通子目录默认继承最近父级 Project Root。主 session 修改普通项目文件仍以当前 cwd/worktree 为准；只有 PaceFlow artifacts 与 `.pace` 运行态走 Project Root 共享位置。不要在 worktree 分支目录或继承子目录手写 `.pace/artifact-root`；独立子项目先用 `set-project-root --mode independent` 声明边界。
 
 ---
 

@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.57（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.58（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续本机复核至 v2.1.141；官方文档复核至 v2.1.143）
 > **与 README 关系**：本文是行动项视图（按优先级分级、TODO 列表）；README 的“版本历史”表是发布交付视图。两者不要互相同步全文。
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
@@ -17,7 +17,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-16，v6.0.57）
+### 0.1 当前执行视图（2026-05-22，v6.0.58）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -31,7 +31,7 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.57）：
+执行状态（v6.0.58）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
@@ -43,6 +43,7 @@
 - v6.0.55 修复 v6.0.54 Smoke3/4 后续缺口：首次 root-choice SessionStart 输出当前 reserve helper 命令；helper 未知参数明确拒绝 `--artifact-dir` / `--artifact-root` / `--project-dir`；当前 session owner 的非代码项目写入也进入 C/E gate，foreign fresh owner 不阻断普通非代码写入但结构损坏仍全局阻断；SubagentStop 在 close/archive 已离开活跃索引后兜底标记 owner closed；legacy/artifact 信号的 SessionStart skill 入口提前。
 - v6.0.56 覆盖 Claude Code 2.1.143 后的 Windows 工具面：PreToolUse 新增 `PowerShell` / `Monitor` matcher；PowerShell 的 `Set-Content` / `Add-Content` / `Out-File` / `Remove-Item` / alias / redirection / `.ps1` wrapper 写 PaceFlow artifacts 或 `.pace` 写入控制运行态会被拒绝；Monitor 复用 Bash-like guard，只允许只读观察，不允许作为后台命令绕过 artifact/runtime-control 写保护；PostToolUseFailure 同步覆盖 PowerShell/Monitor。
 - v6.0.57 将 `PostToolUse continue:true` 投入生产最小试点：仅当 artifact-writer 写入 `walkthrough.md` 后仍缺正确 wikilink 或执行上下文时，PostToolUse 返回 `decision:"block" + continue:true`，要求当前 turn 继续修复；每 session/目标只触发一次，第二次降级为原有 additionalContext，避免循环。PreToolUse gate、artifact-root 选择、legacy migration、Agent 缺字段等仍不迁移。
+- v6.0.58 实现显式 Project Root：普通子目录默认继承最近父级 PACEflow 项目，artifact/root choice、runtime `.pace`、CHG owner、Stop、native plan sync 与 helper 均以 effective Project Root 为准；新增 `set-project-root.js --mode independent` 作为独立子项目入口。设计记录见 `docs/project-root-inheritance-design.md`，production smoke 见 `docs/production-smoke-v6.0.58.md`。
 - v6.0.51 完成 `pre-tool-use.js` 结构拆分：Bash guard、artifact-writer Agent lifecycle guard、marker/direct artifact mutation guard 下沉到 `plugin/hooks/pre-tool-use/*.js`，主 hook 保留路由、stdout 输出与日志顺序。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
@@ -138,13 +139,14 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.57）：
+最近一次验证结果（v6.0.58）：
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 226/226 PASS
-node tests/test-pace-utils.js                        # 142/142 PASS
+node tests/test-hooks-e2e.js                         # 239/239 PASS
+node tests/test-pace-utils.js                        # 158/158 PASS
 node tests/agent-tests/run-tests.js dummy            # PASS
+node tests/test-install.js                           # 26/26 PASS
 claude plugin validate ./plugin                      # PASS
 git diff --check                                     # PASS
 ```
@@ -991,7 +993,7 @@ Smoke11（record-finding artifact_dir 模板）验证结果：
 - 在 `/mnt/k/AI/cc-smoke15` 直接派 `paceflow:artifact-writer create-chg` 且故意缺 `title/tasks/reserved-id` 时，agent 启动后自检返回 `missing-fields`，耗时约 9s / 16k tokens。根因不是 agent 未注册，而是该目录不是 PaceFlow 项目：本地 hook replay 显示 `PreToolUse ROUTE signal=none`，随后 `SKIP reason=no-task-content`，因此没有进入 `PreToolUse:Agent` 的 artifact-writer lifecycle gate。
 - 修复结论：显式派 `paceflow:artifact-writer` 本身应视为 PaceFlow 入口信号。即使当前没有 `.pace` / v6 artifact 文件，hook 也必须在 agent 启动前进入 artifact-root 选择 gate，提示使用 `set-artifact-root.js`；选择前不得自动创建 `.pace`、`changes/` 或 vault project 空目录。
 - 在已启用 PaceFlow 的项目中，同类 malformed dispatch 会先被 `artifact_dir` 或 `reserved-id` gate 拦截。进一步 hardening 空间：当 prompt 已带有效 reservation 但仍缺 `title` 或 `tasks` 时，当前 hook 会放行给 agent 自检；可后续补 `create-chg` title/tasks pre-deny，减少 token 浪费。
-- 回归验证：新增 `9haa0` / `9haa0b` 覆盖无 PACE 信号的显式 artifact-writer 入口；`node tests/test-hooks-e2e.js` 226/226 PASS，`node tests/test-pace-utils.js` 142/142 PASS；`node tests/test-install.js` 26/26 PASS 为本地 ignored manual-install tooling 补充检查。
+- 回归验证：新增 `9haa0` / `9haa0b` 覆盖无 PACE 信号的显式 artifact-writer 入口；当前基线为 `node tests/test-hooks-e2e.js` 239/239 PASS，`node tests/test-pace-utils.js` 158/158 PASS；`node tests/test-install.js` 26/26 PASS 为本地 ignored manual-install tooling 补充检查。
 
 
 #### 0.1.10e30 旧 Superpowers plan 与 TaskSync 提醒边界（2026-05-16）
@@ -1033,6 +1035,17 @@ Windows `paceflow` installed runtime 观察：
 - `listBridgeCandidatePlanFiles()` 只把 14 天内修改的 plan 或 `.pace/current-native-plan` 明确指向的 plan 作为 bridge candidate；旧 plan 不再让 `isPaceProject()` 返回 `superpowers`。
 - `task-list-sync.js` 对 non-artifact 信号的 `TaskCreate` / `TaskUpdate` / `TodoWrite` 改为 log-only，保留 `.pace/task-list-used` 运行态，不再输出 `additionalContext`。
 - 回归：`tests/test-pace-utils.js` 覆盖旧 plan / current-native-plan；`tests/test-hooks-e2e.js` 覆盖 Superpowers no-task 与 code-count no-artifact TaskSync 静默。
+
+#### 0.1.10e31 Project Root / 子目录继承设计调研（2026-05-22）
+
+完整设计已独立记录到 [project-root-inheritance-design.md](project-root-inheritance-design.md)。
+
+摘要：
+
+- 触发场景：在 `/mnt/k/AI/paceflow-hooks/paceflow` 子目录打开 Claude Code 时，当前实现只按子目录自身 `code-count` 弱信号启用，未继承父项目 `/mnt/k/AI/paceflow-hooks` 的 PACE artifacts，导致父项目 active CHG / Stop / owner 上下文缺失。
+- 调研结论：Claude Code 的 `CLAUDE.md` / settings 语义天然支持父级上下文继承和子级覆盖。PACEflow 应把 `Project Root` 暴露为一级概念，并区分 `Current CWD`、`Project Root`、`Artifact Root`、`Runtime Root`。
+- 设计方向：普通子目录默认继承最近父级明确 PACE Project Root；父级弱信号、旧 plan、`.pace/` 运行态残留不能继承；独立子项目通过 `set-project-root.js --mode independent` 显式断开继承；真实 git worktree 归一逻辑优先保留。
+- 落地节奏：Phase 1 先补术语和 helper 输出；Phase 2 增加 independent Project Root helper；Phase 3 再启用 ancestor inherit；Phase 4 做 installed runtime smoke 与文档收口。
 
 
 #### 0.1.10b v6.0.40 production Smoke5 记录

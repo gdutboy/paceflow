@@ -211,35 +211,60 @@ function powershellCommandMutatesArtifactRuntimeControl(command, cwd) {
     (powershellCommandLooksMutating(command) && powershellCommandReferencesArtifactRuntimeControl(command, cwd));
 }
 
-function powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd) {
+function powershellPathLooksLocalArtifactRootChoice(target, cwd) {
   const raw = normalizePowerShellSearchText(target).trim().replace(/^['"]|['"]$/g, '');
   if (!raw || /^&\d+$/.test(raw)) return false;
   try {
     const resolved = paceUtils.resolveToolFilePath(cwd, raw);
-    return paceUtils.isWorktreeLocalArtifactRootChoicePath(cwd, resolved);
+    return paceUtils.isLocalArtifactRootChoicePath(cwd, resolved);
   } catch(e) {
     return false;
   }
 }
 
-function powershellCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) {
-  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd)) ||
-    powershellNamedWriteTargets(command).some(target => powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd));
+function powershellCommandRedirectsToLocalArtifactRootChoice(command, cwd) {
+  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksLocalArtifactRootChoice(target, cwd)) ||
+    powershellNamedWriteTargets(command).some(target => powershellPathLooksLocalArtifactRootChoice(target, cwd));
 }
 
-function powershellCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd) {
-  const context = paceUtils.executionContextForCwd(cwd);
-  if (!context.isWorktree) return false;
+function powershellCommandReferencesLocalArtifactRootChoice(command, cwd) {
   const c = normalizePowerShellSearchText(stripHereStrings(command));
   const localChoicePath = path.join(path.resolve(cwd || process.cwd()), '.pace', 'artifact-root').replace(/\\/g, '/');
   return textReferencesPathOrChild(c, localChoicePath) ||
     /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-root(?=$|[\s"'`;|&<>])/i.test(c) ||
-    powershellCommandPathTokens(c).some(target => powershellPathLooksWorktreeLocalArtifactRootChoice(target, cwd));
+    powershellCommandPathTokens(c).some(target => powershellPathLooksLocalArtifactRootChoice(target, cwd));
 }
 
-function powershellCommandMutatesWorktreeLocalArtifactRootChoice(command, cwd) {
-  return powershellCommandRedirectsToWorktreeLocalArtifactRootChoice(command, cwd) ||
-    (powershellCommandLooksMutating(command) && powershellCommandReferencesWorktreeLocalArtifactRootChoice(command, cwd));
+function powershellCommandMutatesLocalArtifactRootChoice(command, cwd) {
+  return powershellCommandRedirectsToLocalArtifactRootChoice(command, cwd) ||
+    (powershellCommandLooksMutating(command) && powershellCommandReferencesLocalArtifactRootChoice(command, cwd));
+}
+
+function powershellPathLooksProjectRootMarker(target, cwd) {
+  const raw = normalizePowerShellSearchText(target).trim().replace(/^['"]|['"]$/g, '');
+  if (!raw || /^&\d+$/.test(raw)) return false;
+  try {
+    const resolved = paceUtils.resolveToolFilePath(cwd, raw);
+    return paceUtils.isProjectRootMarkerPath(cwd, resolved);
+  } catch(e) {
+    return false;
+  }
+}
+
+function powershellCommandRedirectsToProjectRootMarker(command, cwd) {
+  return powershellOutputRedirectTargets(command).some(target => powershellPathLooksProjectRootMarker(target, cwd)) ||
+    powershellNamedWriteTargets(command).some(target => powershellPathLooksProjectRootMarker(target, cwd));
+}
+
+function powershellCommandReferencesProjectRootMarker(command, cwd) {
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
+  return /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/project-root(?=$|[\s"'`;|&<>])/i.test(c) ||
+    powershellCommandPathTokens(c).some(target => powershellPathLooksProjectRootMarker(target, cwd));
+}
+
+function powershellCommandMutatesProjectRootMarker(command, cwd) {
+  return powershellCommandRedirectsToProjectRootMarker(command, cwd) ||
+    (powershellCommandLooksMutating(command) && powershellCommandReferencesProjectRootMarker(command, cwd));
 }
 
 function powershellCommandReferencesArtifact(command, cwd, artDir) {
@@ -309,7 +334,8 @@ module.exports = {
   powershellCommandRedirectsToArtifact,
   powershellCommandEmbedsArtifactWriteScript,
   powershellCommandMutatesArtifactRuntimeControl,
-  powershellCommandMutatesWorktreeLocalArtifactRootChoice,
+  powershellCommandMutatesLocalArtifactRootChoice,
+  powershellCommandMutatesProjectRootMarker,
   powershellCommandReferencesArtifact,
   powershellArtifactRuntimeControlDenyReason,
   powershellArtifactDenyReason,

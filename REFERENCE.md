@@ -1,6 +1,6 @@
-# PACEflow v6.0.57 参考手册
+# PACEflow v6.0.58 参考手册
 
-> 最后更新：2026-05-16
+> 最后更新：2026-05-22
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify)
 > v6 决策：不兼容 v5 活跃流程；v5 内容只作为 ARCHIVE 历史。
 
@@ -22,6 +22,26 @@
 | v6 迁移 guidebook | `docs/paceflow-v6-guidebook.md` |
 
 `install.js` / `verify.js` 只允许作为本地 smoke/健康检查工具，不是 v6 正式安装路径；对应本地测试文件 `tests/test-install.js` 也不属于 tracked release gate。
+
+---
+
+## 1.1 Project Root / Artifact Root / CWD
+
+PACEflow 的运行边界使用以下术语：
+
+| 名称 | 含义 |
+|------|------|
+| Current CWD | Claude Code 当前打开目录，可能是 Project Root，也可能是其子目录 |
+| Project Root | PACEflow 管理的项目边界；`.pace` 运行态、CHG owner、Stop 检查和 `local` artifact root 归属这里 |
+| Artifact Root | `spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**` 的存放目录 |
+
+普通子目录默认继承最近的父级 PACEflow Project Root。真实 git worktree 仍共享宿主 Project Root。只有当前子目录确实是独立项目时，运行：
+
+```bash
+node "<plugin>/hooks/set-project-root.js" --mode independent
+```
+
+再运行 `set-artifact-root.js --choice local|vault` 选择该子项目自己的 Artifact Root。
 
 ---
 

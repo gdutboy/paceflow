@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { ARTIFACT_FILES } = require('./constants');
+const {
+  ARTIFACT_FILES,
+  ARTIFACT_ROOT_CHOICE_FILE,
+  PROJECT_ROOT_FILE,
+  VAULT_PATH,
+  ARTIFACT_ROOT_CHOICE_MAX_CHARS,
+} = require('./constants');
 
 function resolveProjectCwd() {
   return process.env.CLAUDE_PROJECT_DIR
@@ -73,6 +79,37 @@ function sanitizeProjectName(name) {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+function normalizeRuntimeChoice(value) {
+  let raw = String(value || '').slice(0, ARTIFACT_ROOT_CHOICE_MAX_CHARS).trim();
+  if (!raw) return '';
+  const first = raw[0];
+  const last = raw[raw.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'") || (first === '`' && last === '`')) {
+    raw = raw.slice(1, -1).trim();
+  }
+  return raw;
+}
+
+function readRuntimeFile(dir, file) {
+  try {
+    return normalizeRuntimeChoice(fs.readFileSync(path.join(dir, '.pace', file), 'utf8'));
+  } catch(e) {
+    return '';
+  }
+}
+
+function hasDisabledMarker(dir) {
+  try { return fs.existsSync(path.join(dir, '.pace', 'disabled')); } catch(e) { return false; }
+}
+
+function hasArtifactRootChoiceFile(dir) {
+  try { return fs.existsSync(path.join(dir, '.pace', ARTIFACT_ROOT_CHOICE_FILE)); } catch(e) { return false; }
+}
+
+function hasManualMarker(dir) {
+  try { return fs.existsSync(path.join(dir, '.pace-enabled')); } catch(e) { return false; }
+}
+
 function worktreeBaseDir(cwd) {
   const resolved = path.resolve(cwd || '');
   const parts = resolved.split(path.sep);
@@ -81,6 +118,16 @@ function worktreeBaseDir(cwd) {
     const baseParts = parts.slice(0, i);
     if (baseParts.length === 0) return null;
     return baseParts.join(path.sep) || path.sep;
+  }
+  return null;
+}
+
+function claudeWorktreeCheckoutDir(cwd) {
+  const resolved = path.resolve(cwd || '');
+  const parts = resolved.split(path.sep);
+  for (let i = parts.length - 3; i >= 0; i--) {
+    if (parts[i] !== '.claude' || parts[i + 1] !== 'worktrees' || !parts[i + 2]) continue;
+    return parts.slice(0, i + 3).join(path.sep) || path.sep;
   }
   return null;
 }
@@ -102,11 +149,13 @@ function gitWorktreeMainCheckoutDir(gitDir) {
   return path.dirname(mainGitDir);
 }
 
-function getProjectNameCandidates(cwd) {
+function rawProjectNameCandidates(cwd, { includeEnv = true } = {}) {
   const candidates = [];
   const safeCwd = cwd || '';
-  addProjectCandidate(candidates, process.env.PACE_PROJECT_NAME);
-  addProjectCandidate(candidates, process.env.PACEFLOW_PROJECT_NAME);
+  if (includeEnv) {
+    addProjectCandidate(candidates, process.env.PACE_PROJECT_NAME);
+    addProjectCandidate(candidates, process.env.PACEFLOW_PROJECT_NAME);
+  }
 
   const wtBase = worktreeBaseDir(safeCwd);
   if (wtBase) addProjectCandidate(candidates, path.basename(wtBase));
@@ -128,33 +177,296 @@ function getProjectNameCandidates(cwd) {
   return candidates.length > 0 ? candidates : ['unknown-project'];
 }
 
+function getProjectNameCandidates(cwd) {
+  const resolved = path.resolve(cwd || process.cwd());
+  const root = resolveEffectiveProjectRoot(resolved).projectRoot;
+  const candidates = rawProjectNameCandidates(root);
+  const wtHost = worktreeBaseDir(resolved) || gitWorktreeHostDir(resolved);
+  if (wtHost && normalizePath(root) !== normalizePath(resolved)) {
+    addProjectCandidate(candidates, path.basename(worktreeCheckoutDir(resolved) || resolved));
+  }
+  return candidates;
+}
+
 function getProjectName(cwd) {
   if (!cwd || cwd === '.' || cwd === '/' || cwd === '\\') return 'unknown-project';
   if (/^[A-Z]:\\\\?$/i.test(cwd)) return 'unknown-project';
   return getProjectNameCandidates(cwd)[0] || 'unknown-project';
 }
 
-function gitWorktreeHostDir(cwd) {
-  const safeCwd = cwd || '';
-  try {
-    const gitFile = path.join(safeCwd, '.git');
-    if (!fs.existsSync(gitFile) || !fs.statSync(gitFile).isFile()) return null;
-    const content = fs.readFileSync(gitFile, 'utf8');
-    const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
-    if (!match) return null;
-    const gitDir = path.resolve(safeCwd, match[1].trim());
-    return gitWorktreeMainCheckoutDir(gitDir);
-  } catch(e) {
-    return null;
+function gitWorktreeInfo(cwd) {
+  let dir = path.resolve(cwd || process.cwd());
+  while (dir) {
+    try {
+      const gitFile = path.join(dir, '.git');
+      if (fs.existsSync(gitFile)) {
+        if (fs.statSync(gitFile).isFile()) {
+          const content = fs.readFileSync(gitFile, 'utf8');
+          const match = content.match(/^gitdir:\s*(.+?)\s*$/m);
+          if (match) {
+            const gitDir = path.resolve(dir, match[1].trim());
+            const hostDir = gitWorktreeMainCheckoutDir(gitDir);
+            if (hostDir) return { hostDir, checkoutDir: dir };
+          }
+        }
+      }
+    } catch(e) {
+      // A nested or unreadable .git marker is not enough to rule out an outer
+      // real worktree checkout; keep scanning ancestors.
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
+  return null;
+}
+
+function gitWorktreeHostDir(cwd) {
+  const info = gitWorktreeInfo(cwd);
+  return info ? info.hostDir : null;
+}
+
+function worktreeCheckoutDir(cwd) {
+  const gitInfo = gitWorktreeInfo(cwd);
+  return claudeWorktreeCheckoutDir(cwd) || (gitInfo ? gitInfo.checkoutDir : null);
+}
+
+function hasGitRootMarker(dir) {
+  try { return fs.existsSync(path.join(dir, '.git')); } catch(e) { return false; }
+}
+
+function hasChangesDir(dir) {
+  try { return !!dir && fs.existsSync(path.join(dir, 'changes')); } catch(e) { return false; }
+}
+
+function artifactDirFromChoiceForRoot(root, choice) {
+  const raw = normalizeRuntimeChoice(choice);
+  if (!raw) return null;
+  const keyword = raw.toLowerCase();
+  if (keyword === 'local') return root;
+  if (keyword === 'vault') {
+    if (!VAULT_PATH) return null;
+    return path.join(VAULT_PATH, 'projects', rawProjectNameCandidates(root)[0]);
+  }
+  if (isPortableAbsolutePath(raw)) return path.resolve(raw);
+  return path.resolve(root, raw);
+}
+
+function configuredRootHasArtifacts(dir) {
+  const choice = readRuntimeFile(dir, ARTIFACT_ROOT_CHOICE_FILE);
+  const configured = artifactDirFromChoiceForRoot(dir, choice);
+  return !!configured && hasChangesDir(configured);
+}
+
+function hasV6ArtifactRoot(dir, { includeEnv = true } = {}) {
+  if (hasChangesDir(dir)) return true;
+  if (configuredRootHasArtifacts(dir)) return true;
+  if (VAULT_PATH) {
+    for (const projectName of rawProjectNameCandidates(dir, { includeEnv })) {
+      if (hasChangesDir(path.join(VAULT_PATH, 'projects', projectName))) return true;
+    }
+  }
+  return false;
+}
+
+function legacyV5FilesInDir(dir) {
+  if (!dir || hasChangesDir(dir)) return [];
+  const signatures = {
+    'task.md': /<!-- ARCHIVE -->|#\s*项目任务追踪|##\s*活跃任务|###\s*(?:CHG|HOTFIX)-/i,
+    'implementation_plan.md': /<!-- ARCHIVE -->|#\s*实施计划|##\s*变更索引|##\s*活跃变更详情|###\s*(?:CHG|HOTFIX)-/i,
+    'walkthrough.md': /<!-- ARCHIVE -->|#\s*工作记录|##\s*最近工作/i,
+    'findings.md': /<!-- ARCHIVE -->|#\s*调研记录|##\s*未解决问题|##\s*Corrections\s*记录/i,
+  };
+  const contents = {};
+  const detected = Object.entries(signatures).filter(([file, re]) => {
+    try {
+      const fp = path.join(dir, file);
+      if (!fs.existsSync(fp)) return false;
+      const head = fs.readFileSync(fp, 'utf8').slice(0, 20000);
+      contents[file] = head;
+      return re.test(head);
+    } catch(e) {
+      return false;
+    }
+  }).map(([file]) => file);
+  if (detected.length > 0) return detected;
+
+  try {
+    for (const file of ['task.md', 'implementation_plan.md']) {
+      if (!contents[file]) {
+        const fp = path.join(dir, file);
+        if (fs.existsSync(fp)) contents[file] = fs.readFileSync(fp, 'utf8').slice(0, 20000);
+      }
+    }
+    const task = contents['task.md'] || '';
+    const impl = contents['implementation_plan.md'] || '';
+    const hasTaskRoot = /^#\s*(?:Task|Tasks|项目任务|项目任务追踪)\s*$/im.test(task);
+    const hasImplRoot = /^#\s*(?:Implementation\s+Plan|Plan|实施计划)\s*$/im.test(impl);
+    const hasTaskCheckbox = /^- \[[ x\/!\-]\]\s+\S/m.test(task);
+    const hasImplCheckbox = /^- \[[ x\/!\-]\]\s+\S/m.test(impl);
+    if (hasTaskRoot && hasImplRoot && hasTaskCheckbox && hasImplCheckbox) {
+      return ['task.md', 'implementation_plan.md'];
+    }
+  } catch(e) {}
+  return [];
+}
+
+function hasLegacyV5Root(dir, { includeEnv = true } = {}) {
+  if (legacyV5FilesInDir(dir).length > 0) return true;
+  if (!VAULT_PATH) return false;
+  for (const projectName of rawProjectNameCandidates(dir, { includeEnv })) {
+    if (legacyV5FilesInDir(path.join(VAULT_PATH, 'projects', projectName)).length > 0) return true;
+  }
+  return false;
+}
+
+function projectRootMarkerMode(dir) {
+  const marker = readRuntimeFile(dir, PROJECT_ROOT_FILE).toLowerCase();
+  return marker === 'independent' ? 'independent' : '';
+}
+
+function explicitProjectRootReason(dir, options = {}) {
+  if (!dir || hasDisabledMarker(dir)) return '';
+  try {
+    if (!fs.existsSync(dir)) return '';
+  } catch(e) {
+    return '';
+  }
+  if (projectRootMarkerMode(dir)) return 'project-root';
+  if (hasManualMarker(dir)) return 'manual-marker';
+  if (hasArtifactRootChoiceFile(dir)) return 'artifact-root-choice';
+  const includeEnv = options.includeEnv !== false;
+  if (hasV6ArtifactRoot(dir, { includeEnv })) return 'artifact';
+  if (hasLegacyV5Root(dir, { includeEnv })) return 'legacy';
+  return '';
+}
+
+function resolveEffectiveProjectRoot(cwd) {
+  const resolved = path.resolve(cwd || process.cwd());
+  if (hasDisabledMarker(resolved)) {
+    return {
+      projectRoot: resolved,
+      runtimeRoot: path.join(resolved, '.pace'),
+      mode: 'disabled',
+      reason: 'cwd-disabled',
+      cwd: resolved,
+      inheritedFrom: '',
+      inherited: false,
+    };
+  }
+
+  const wtBase = worktreeBaseDir(resolved);
+  const gitHost = gitWorktreeHostDir(resolved);
+  const wtHost = wtBase || gitHost;
+  if (wtHost) {
+    return {
+      projectRoot: wtHost,
+      runtimeRoot: path.join(wtHost, '.pace'),
+      mode: 'worktree',
+      reason: wtBase ? 'claude-worktree' : 'git-worktree',
+      cwd: resolved,
+      inheritedFrom: '',
+      inherited: true,
+    };
+  }
+
+  // Env project-name overrides choose a vault project for the eventual root;
+  // they are not enough to claim every scanned child/ancestor as that root.
+  const currentReason = explicitProjectRootReason(resolved, { current: true, includeEnv: false });
+  if (currentReason) {
+    return {
+      projectRoot: resolved,
+      runtimeRoot: path.join(resolved, '.pace'),
+      mode: currentReason === 'project-root' ? 'independent' : 'current',
+      reason: currentReason,
+      cwd: resolved,
+      inheritedFrom: '',
+      inherited: false,
+    };
+  }
+
+  let envAliasGitRoot = hasGitRootMarker(resolved) ? resolved : '';
+  let parent = path.dirname(resolved);
+  while (parent && parent !== resolved) {
+    if (hasDisabledMarker(parent)) {
+      return {
+        projectRoot: parent,
+        runtimeRoot: path.join(parent, '.pace'),
+        mode: 'disabled',
+        reason: 'ancestor-disabled',
+        cwd: resolved,
+        inheritedFrom: '',
+        inherited: true,
+      };
+    }
+    if (hasGitRootMarker(parent)) envAliasGitRoot = parent;
+    const reason = explicitProjectRootReason(parent, { includeEnv: false });
+    if (reason) {
+      return {
+        projectRoot: parent,
+        runtimeRoot: path.join(parent, '.pace'),
+        mode: 'inherited',
+        reason,
+        cwd: resolved,
+        inheritedFrom: parent,
+        inherited: true,
+      };
+    }
+    const next = path.dirname(parent);
+    if (next === parent) break;
+    parent = next;
+  }
+
+  // PACE_PROJECT_NAME may recover a vault alias for an unmarked git project,
+  // but nested git repos still inherit the outer project unless explicitly
+  // declared independent. After strong roots fail, anchor that alias at the
+  // outermost git root seen on the current path, not every inner git ancestor.
+  if (envAliasGitRoot) {
+    const envGitReason = explicitProjectRootReason(envAliasGitRoot, { current: envAliasGitRoot === resolved });
+    if (envGitReason) {
+      return {
+        projectRoot: envAliasGitRoot,
+        runtimeRoot: path.join(envAliasGitRoot, '.pace'),
+        mode: envAliasGitRoot === resolved && envGitReason === 'project-root' ? 'independent'
+          : envAliasGitRoot === resolved ? 'current' : 'inherited',
+        reason: envGitReason,
+        cwd: resolved,
+        inheritedFrom: envAliasGitRoot === resolved ? '' : envAliasGitRoot,
+        inherited: envAliasGitRoot !== resolved,
+      };
+    }
+  }
+
+  const envCurrentReason = explicitProjectRootReason(resolved, { current: true });
+  if (envCurrentReason) {
+    return {
+      projectRoot: resolved,
+      runtimeRoot: path.join(resolved, '.pace'),
+      mode: envCurrentReason === 'project-root' ? 'independent' : 'current',
+      reason: envCurrentReason,
+      cwd: resolved,
+      inheritedFrom: '',
+      inherited: false,
+    };
+  }
+
+  return {
+    projectRoot: resolved,
+    runtimeRoot: path.join(resolved, '.pace'),
+    mode: 'current',
+    reason: 'cwd',
+    cwd: resolved,
+    inheritedFrom: '',
+    inherited: false,
+  };
 }
 
 function getProjectStateDir(cwd) {
-  return worktreeBaseDir(cwd) || gitWorktreeHostDir(cwd) || cwd;
+  return resolveEffectiveProjectRoot(cwd).projectRoot;
 }
 
 function getProjectRuntimeDir(cwd) {
-  return path.join(getProjectStateDir(cwd), '.pace');
+  return resolveEffectiveProjectRoot(cwd).runtimeRoot;
 }
 
 function gitBranchName(cwd) {
@@ -172,16 +484,24 @@ function gitBranchName(cwd) {
 
 function executionContextForCwd(cwd) {
   const resolved = path.resolve(cwd || process.cwd());
-  const stateDir = getProjectStateDir(resolved);
-  const isWorktree = normalizePath(stateDir) !== normalizePath(resolved);
-  const worktree = isWorktree ? path.basename(resolved) : 'main';
+  const rootInfo = resolveEffectiveProjectRoot(resolved);
+  const stateDir = rootInfo.projectRoot;
+  const wtHost = worktreeBaseDir(resolved) || gitWorktreeHostDir(resolved);
+  const wtCheckout = worktreeCheckoutDir(resolved);
+  const isWorktree = !!wtHost && normalizePath(stateDir) !== normalizePath(resolved);
+  const worktree = isWorktree ? path.basename(wtCheckout || resolved) : 'main';
   const branch = gitBranchName(resolved) || worktree || 'unknown';
   return {
     worktree,
     branch,
     cwd: resolved,
     stateDir,
+    checkoutDir: wtCheckout || resolved,
     isWorktree,
+    projectRoot: stateDir,
+    projectRootMode: rootInfo.mode,
+    projectRootReason: rootInfo.reason,
+    inheritedProjectRoot: !!rootInfo.inherited && !isWorktree,
     text: `[worktree:: ${worktree}] [branch:: ${branch}]`,
   };
 }
@@ -198,6 +518,8 @@ module.exports = {
   isArtifactRelativePath,
   artifactRelativePathForFile,
   escapeRegex,
+  resolveEffectiveProjectRoot,
+  rawProjectNameCandidates,
   getProjectNameCandidates,
   getProjectName,
   getProjectStateDir,

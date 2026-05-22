@@ -62,19 +62,24 @@ function fail(cwd, action, message, fields = {}) {
 
 function formatSuccess(cwd, choice, configFile, artifactDir, previousChoice = '') {
   const context = paceUtils.executionContextForCwd(cwd);
-  const runtimeNote = context.isWorktree
-    ? '这是 git worktree 共享的 PaceFlow runtime 配置位置，不是普通项目文件写入目标。'
+  const rootInfo = paceUtils.resolveEffectiveProjectRoot(cwd);
+  const runtimeNote = context.isWorktree || rootInfo.inherited
+    ? '当前 cwd 位于共享 PaceFlow Project Root 内。本次配置写入 Project Root 的 runtime，不写入当前 cwd。'
     : '这是 PaceFlow runtime 配置位置，不是普通项目文件写入目标。';
-  const duplicateNote = context.isWorktree
-    ? '不要在当前 worktree 另写 .pace/artifact-root。'
+  const duplicateNote = context.isWorktree || rootInfo.inherited
+    ? '不要在当前子目录另写 .pace/artifact-root；若当前子目录是独立项目，先声明 independent Project Root。'
     : '不要额外手写其他 .pace/artifact-root。';
   const lines = [
     'artifact-root 已写入 PaceFlow runtime 配置。',
     `config-file: ${configFile.replace(/\\/g, '/')}`,
     `choice: ${choice}`,
     previousChoice && previousChoice !== choice ? `previous-choice: ${previousChoice}` : '',
+    `project-root: ${rootInfo.projectRoot.replace(/\\/g, '/')}`,
+    `runtime-root: ${rootInfo.runtimeRoot.replace(/\\/g, '/')}`,
+    `project-root-mode: ${rootInfo.mode}`,
     `current-cwd: ${path.resolve(cwd).replace(/\\/g, '/')}`,
     `execution-context: ${context.text}`,
+    `artifact-root: ${paceUtils.displayDir(artifactDir)}`,
     `artifact_dir: ${paceUtils.displayDir(artifactDir)}`,
     runtimeNote,
     duplicateNote,

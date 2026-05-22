@@ -14,6 +14,7 @@ const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
+const projectLogEntry = (hook, action, fields = {}) => paceUtils.projectLogEntry(cwd, hook, action, fields);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
@@ -24,7 +25,7 @@ const paceSignal = isPaceProject(cwd);
 
 // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
 if (!paceSignal) {
-  log(paceUtils.logEntry('Stop', 'SKIP', { proj, reason: 'non-pace' }));
+  log(projectLogEntry('Stop', 'SKIP', { proj, reason: 'non-pace' }));
   process.exit(0);
 }
 
@@ -75,7 +76,7 @@ function emitSoftReminders(reminders, t0) {
   const more = reminders.length > shown.length ? `；另有 ${reminders.length - shown.length} 个` : '';
   const systemMessage = `PACEflow: 仍有 deferred CHG 可后续处理（已允许结束）：${shown.join('；')}${more}。`;
   process.stdout.write(JSON.stringify({ systemMessage }) + '\n');
-  log(paceUtils.logEntry('Stop', 'SOFT_DEFERRED_PASS', {
+  log(projectLogEntry('Stop', 'SOFT_DEFERRED_PASS', {
     proj,
     count: reminders.length,
     changes: reminders.map(r => (r.match(/^(CHG|HOTFIX)-\d{8}-\d{2}/) || [''])[0]).filter(Boolean).join(','),
@@ -89,7 +90,7 @@ const t0 = Date.now();
 // S-1: 统一 stdin 解析
 const stdin = paceUtils.parseStdinSync();
 const lastMessage = stdin.lastMessage;
-log(paceUtils.logEntry('Stop', 'ENTRY', { proj }));
+log(projectLogEntry('Stop', 'ENTRY', { proj }));
 
 // I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
 const artDir = getArtifactDir(cwd);
@@ -112,7 +113,7 @@ if (paceSignal === 'artifact') {
     const isForeignOwner = isForeignOwnerStatus(ownerStatus);
     const isProgressState = ['running', 'blocked', 'closing-required'].includes(change.category);
     if (isForeignOwner && (isProgressState || isDeferredCategory(change.category))) {
-      log(paceUtils.logEntry('Stop', ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER', {
+      log(projectLogEntry('Stop', ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER', {
         proj,
         change: change.id,
         owner_state: ownerStatus.owner.state || '',
@@ -154,7 +155,7 @@ if (paceSignal === 'artifact') {
     if (isDeferredCategory(change.category)) {
       const pending = Number(change.tasks && change.tasks.pending || 0);
       softReminders.push(`${change.id} ${change.category}: ${deferredNextAction(change)}`);
-      log(paceUtils.logEntry('Stop', 'SOFT_DEFERRED_CHANGE', {
+      log(projectLogEntry('Stop', 'SOFT_DEFERRED_CHANGE', {
         proj,
         change: change.id,
         category: change.category,
@@ -240,11 +241,11 @@ if (paceSignal === 'artifact') {
   // 无任何 artifact：v4.3.5 多信号检测
   if (paceSignal === 'superpowers' || paceSignal === 'manual') {
     // T-078 D2 修复：无 artifact 时仅记录日志，不加入 warnings
-    log(paceUtils.logEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'no artifact' }));
+    log(projectLogEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'no artifact' }));
   } else {
     const codeCount = countCodeFiles(cwd);
     if (codeCount >= 3) {
-      log(paceUtils.logEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, codeCount, reason: 'code-count-no-artifact' }));
+      log(projectLogEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, codeCount, reason: 'code-count-no-artifact' }));
     }
   }
 }
@@ -256,7 +257,7 @@ const taskListFlags = [path.join(PACE_RUNTIME, 'task-list-used'), path.join(PACE
 if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
   if (pending === 0 && done === 0) {
-    log(paceUtils.logEntry('Stop', 'TASK_LIST_CLEANUP', { proj, reason: 'no active task' }));
+    log(projectLogEntry('Stop', 'TASK_LIST_CLEANUP', { proj, reason: 'no active task' }));
     for (const flag of taskListFlags) {
       try { fs.unlinkSync(flag); } catch(e) {}
     }
@@ -275,7 +276,7 @@ if (warnings.length > 0) {
   // v4.7: teammate 降级 — 不阻止，仅输出 additionalContext 提醒
   if (isTeammate()) {
     // I-6: Stop hook 不支持 additionalContext，teammate 直接 exit 0 放行
-    log(paceUtils.logEntry('Stop', 'TEAMMATE_PASS', { proj, team: process.env.CLAUDE_CODE_TEAM_NAME, checks: warnings.join('; ') }));
+    log(projectLogEntry('Stop', 'TEAMMATE_PASS', { proj, team: process.env.CLAUDE_CODE_TEAM_NAME, checks: warnings.join('; ') }));
     process.exit(0);
   } else {
     // W-7: 修正缩进（与 if 分支对齐）
@@ -287,7 +288,7 @@ if (warnings.length > 0) {
       try { fs.writeFileSync(path.join(PACE_RUNTIME, 'degraded'), `降级时间: ${ts()}\n未通过检查:\n${checksDetail}\n`, 'utf8'); } catch(e) {}
       // T-424: 降级后重置计数器，避免下次会话冻结在 MAX_BLOCKS
       setBlockCount(0, { ensure: true });
-      log(paceUtils.logEntry('Stop', 'DOWNGRADE', { proj, blockCount, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), note: '.pace/degraded written' }));
+      log(projectLogEntry('Stop', 'DOWNGRADE', { proj, blockCount, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), note: '.pace/degraded written' }));
       process.exit(0);
     } else {
       // v4：exit 2 阻止 Claude 停止，stderr 反馈给 Claude
@@ -312,7 +313,7 @@ if (warnings.length > 0) {
       }
       const stderrMsg = `${prefix}\n${paceUtils.artifactDirRuntimeHint(cwd)}\n${stderrLines.join('\n')}`;
       process.stderr.write(stderrMsg + '\n');
-      log(paceUtils.logEntry('Stop', 'BLOCK', { proj, blockCount: blockCount + 1, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), stderr: stderrMsg }));
+      log(projectLogEntry('Stop', 'BLOCK', { proj, blockCount: blockCount + 1, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), stderr: stderrMsg }));
       process.exit(2);
     }
   } // 关闭 isTeammate else
@@ -320,10 +321,10 @@ if (warnings.length > 0) {
   // 检查全部通过，重置计数器 + 清除降级标记
   if (emitSoftReminders(softReminders, t0)) process.exit(0);
   resetHardBlockRuntime();
-  log(paceUtils.logEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));
+  log(projectLogEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));
   process.exit(0);
 }
 } catch(e) {
-  try { log(paceUtils.logEntry('Stop', 'ERROR', { proj, error: e.message })); } catch(e2) {}
+  try { log(projectLogEntry('Stop', 'ERROR', { proj, error: e.message })); } catch(e2) {}
   process.exit(0);
 }

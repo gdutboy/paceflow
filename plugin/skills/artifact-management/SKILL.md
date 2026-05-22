@@ -12,9 +12,11 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
-如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对项目 state dir 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
+Project Root 是 PACEflow 管理边界；`local` artifact root 表示 Project Root 本地目录，不是当前子目录。普通子目录默认继承最近父级 Project Root；独立子项目先运行 `set-project-root --mode independent`，再选择 artifact root。
 
-Helper 命令来源：正确做法是优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令。禁止搜索 `~/.claude/plugins/cache` 猜版本。
+如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录或继承父 Project Root 的子目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
+
+Helper 命令来源：正确做法是优先使用 SessionStart / PreToolUse 提示中的完整命令。若当前上下文没有完整 helper 命令，以当前 skill 根目录为基准拼成同版本绝对路径：`../../hooks/set-project-root.js`、`../../hooks/set-artifact-root.js` 与 `../../hooks/reserve-artifact-id.js`。若从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。若无法确定 skill 根目录，先触发/等待 hook 提供 helper 命令。禁止搜索 `~/.claude/plugins/cache` 猜版本。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
@@ -82,7 +84,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 `action=approve` 只完成 C 阶段，CHG 仍是 ready/deferred，不能据此写项目文件；只有 `approve-and-start` 或将任务恢复为 `[/]` 后才进入 E 阶段。`[!]` 表示 blocked/deferred：允许 Stop，但 Stop 会显示人可见提醒，恢复前不能继续写项目文件。
 
-Legacy v5 项目必须先按 hook 提示 dry-run/迁移或桥接到 v6；不要在旧 v5 活跃区继续手写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通项目文件仍写当前 worktree/cwd。
+Legacy v5 项目必须先按 hook 提示 dry-run/迁移或桥接到 v6；不要在旧 v5 活跃区继续手写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
 
 主 session 禁止：
 - 直接写 `<!-- APPROVED -->` / `<!-- VERIFIED -->`

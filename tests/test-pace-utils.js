@@ -8,7 +8,7 @@ const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -75,6 +75,13 @@ test('有 .pace/disabled + task.md → false（豁免优先）', () => {
 test('有 .pace-enabled → manual', () => {
   const dir = makeTmpDir('manual');
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  assert.strictEqual(isPaceProject(dir), 'manual');
+});
+
+test('只有 artifact-root 选择且尚无 changes → manual', () => {
+  const dir = makeTmpDir('artifact-root-choice-signal');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
   assert.strictEqual(isPaceProject(dir), 'manual');
 });
 
@@ -628,9 +635,11 @@ test('首次启用且 vault/local 都无 changes → 需要选择 artifact root'
 
 test('helper 脚本常量使用绝对当前 runtime 路径', () => {
   assert.ok(path.isAbsolute(SET_ARTIFACT_ROOT_SCRIPT));
+  assert.ok(path.isAbsolute(SET_PROJECT_ROOT_SCRIPT));
   assert.ok(path.isAbsolute(RESERVE_ARTIFACT_ID_SCRIPT));
   assert.ok(path.isAbsolute(SYNC_PLAN_SCRIPT));
   assert.ok(SET_ARTIFACT_ROOT_SCRIPT.endsWith('/plugin/hooks/set-artifact-root.js'));
+  assert.ok(SET_PROJECT_ROOT_SCRIPT.endsWith('/plugin/hooks/set-project-root.js'));
   assert.ok(RESERVE_ARTIFACT_ID_SCRIPT.endsWith('/plugin/hooks/reserve-artifact-id.js'));
   assert.ok(SYNC_PLAN_SCRIPT.endsWith('/plugin/hooks/sync-plan.js'));
 });
@@ -673,6 +682,245 @@ test('已有 changes 或已有选择 → 不需要 artifact root 选择', () => 
   fs.mkdirSync(path.join(withChoice, '.pace'), { recursive: true });
   fs.writeFileSync(path.join(withChoice, '.pace', 'artifact-root'), 'local\n', 'utf8');
   assert.strictEqual(artifactRootChoiceNeeded(withChoice), false);
+});
+
+test('子目录继承父级 PaceFlow Project Root 与 vault artifact', () => {
+  const root = makeTmpDir('project-root-parent');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(child, '.git'), { recursive: true });
+  const projectName = path.basename(root).toLowerCase().replace(/\s+/g, '-');
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
+  t.tmpDirs.push(vaultDir);
+
+  const rootInfo = resolveEffectiveProjectRoot(child);
+  assert.strictEqual(rootInfo.projectRoot, root);
+  assert.strictEqual(rootInfo.mode, 'inherited');
+  assert.strictEqual(rootInfo.inheritedFrom, root);
+  assert.strictEqual(getProjectStateDir(child), root);
+  assert.strictEqual(getProjectRuntimeDir(child), path.join(root, '.pace'));
+  assert.strictEqual(getProjectName(child), projectName);
+  assert.strictEqual(getArtifactDir(child), vaultDir);
+  assert.strictEqual(isPaceProject(child), 'artifact');
+  const ctx = executionContextForCwd(child);
+  assert.strictEqual(ctx.isWorktree, false);
+  assert.strictEqual(ctx.inheritedProjectRoot, true);
+});
+
+test('PACE_ARTIFACT_ROOT 只选择 artifact，不切断子目录 Project Root 继承', () => {
+  const root = makeTmpDir('project-root-env-parent');
+  const child = path.join(root, 'packages', 'worker');
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const prev = process.env.PACE_ARTIFACT_ROOT;
+  process.env.PACE_ARTIFACT_ROOT = 'local';
+  _clearArtifactDirCache();
+  try {
+    const rootInfo = resolveEffectiveProjectRoot(child);
+    assert.strictEqual(rootInfo.projectRoot, root);
+    assert.strictEqual(rootInfo.mode, 'inherited');
+    assert.strictEqual(getArtifactDir(child), root);
+  } finally {
+    if (prev === undefined) delete process.env.PACE_ARTIFACT_ROOT;
+    else process.env.PACE_ARTIFACT_ROOT = prev;
+    _clearArtifactDirCache();
+  }
+});
+
+test('子目录继承父级 artifact-root-only 项目且触发 PACE 信号', () => {
+  const root = makeTmpDir('project-root-choice-only-parent');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', 'artifact-root'), 'local\n', 'utf8');
+
+  const rootInfo = resolveEffectiveProjectRoot(child);
+  assert.strictEqual(rootInfo.projectRoot, root);
+  assert.strictEqual(rootInfo.mode, 'inherited');
+  assert.strictEqual(rootInfo.reason, 'artifact-root-choice');
+  assert.strictEqual(getProjectStateDir(child), root);
+  assert.strictEqual(getArtifactDir(child), root);
+  assert.strictEqual(isPaceProject(child), 'manual');
+  assert.strictEqual(artifactRootChoiceNeeded(child), false);
+});
+
+test('PACE_PROJECT_NAME 不把 vault ancestor scan 收窄到最近子目录', () => {
+  const root = makeTmpDir('project-root-name-env-parent');
+  const child = path.join(root, 'packages', 'api');
+  const projectName = path.basename(root).toLowerCase().replace(/\s+/g, '-');
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
+  t.tmpDirs.push(vaultDir);
+  const prev = process.env.PACE_PROJECT_NAME;
+  process.env.PACE_PROJECT_NAME = projectName;
+  _clearArtifactDirCache();
+  try {
+    const rootInfo = resolveEffectiveProjectRoot(child);
+    assert.strictEqual(rootInfo.projectRoot, root);
+    assert.strictEqual(rootInfo.mode, 'inherited');
+    assert.strictEqual(getProjectRuntimeDir(child), path.join(root, '.pace'));
+    assert.strictEqual(getArtifactDir(child), vaultDir);
+  } finally {
+    if (prev === undefined) delete process.env.PACE_PROJECT_NAME;
+    else process.env.PACE_PROJECT_NAME = prev;
+    _clearArtifactDirCache();
+  }
+});
+
+test('PACE_PROJECT_NAME vault alias 从 git 父 root 继承而不分裂 child runtime', () => {
+  const root = makeTmpDir('project-root-name-alias-parent');
+  const child = path.join(root, 'packages', 'api');
+  const alias = `project-root-alias-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', alias);
+  fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
+  t.tmpDirs.push(vaultDir);
+  const prev = process.env.PACE_PROJECT_NAME;
+  process.env.PACE_PROJECT_NAME = alias;
+  _clearArtifactDirCache();
+  try {
+    const rootInfo = resolveEffectiveProjectRoot(child);
+    assert.strictEqual(rootInfo.projectRoot, root);
+    assert.strictEqual(rootInfo.mode, 'inherited');
+    assert.strictEqual(getProjectRuntimeDir(child), path.join(root, '.pace'));
+    assert.strictEqual(getArtifactDir(child), vaultDir);
+  } finally {
+    if (prev === undefined) delete process.env.PACE_PROJECT_NAME;
+    else process.env.PACE_PROJECT_NAME = prev;
+    _clearArtifactDirCache();
+  }
+});
+
+test('PACE_PROJECT_NAME vault alias 不让 nested git repo 抢父 Project Root', () => {
+  const root = makeTmpDir('project-root-name-alias-nested-parent');
+  const nested = path.join(root, 'nested-repo');
+  const child = path.join(nested, 'packages', 'api');
+  const alias = `project-root-nested-alias-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const vaultDir = path.join(paceUtils.VAULT_PATH, 'projects', alias);
+  fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(nested, '.git'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.mkdirSync(path.join(vaultDir, 'changes'), { recursive: true });
+  t.tmpDirs.push(vaultDir);
+  const prev = process.env.PACE_PROJECT_NAME;
+  process.env.PACE_PROJECT_NAME = alias;
+  _clearArtifactDirCache();
+  try {
+    assert.strictEqual(resolveEffectiveProjectRoot(nested).projectRoot, root);
+    const rootInfo = resolveEffectiveProjectRoot(child);
+    assert.strictEqual(rootInfo.projectRoot, root);
+    assert.strictEqual(rootInfo.mode, 'inherited');
+    assert.strictEqual(getProjectRuntimeDir(child), path.join(root, '.pace'));
+    assert.strictEqual(getArtifactDir(child), vaultDir);
+  } finally {
+    if (prev === undefined) delete process.env.PACE_PROJECT_NAME;
+    else process.env.PACE_PROJECT_NAME = prev;
+    _clearArtifactDirCache();
+  }
+});
+
+test('最近父级 PaceFlow root 胜出，避免继承更外层项目', () => {
+  const outer = makeTmpDir('project-root-outer');
+  const inner = path.join(outer, 'sub-project');
+  const child = path.join(inner, 'src');
+  fs.mkdirSync(child, { recursive: true });
+  const outerVault = path.join(paceUtils.VAULT_PATH, 'projects', path.basename(outer).toLowerCase().replace(/\s+/g, '-'));
+  const innerVault = path.join(paceUtils.VAULT_PATH, 'projects', 'sub-project');
+  fs.mkdirSync(path.join(outerVault, 'changes'), { recursive: true });
+  fs.mkdirSync(path.join(innerVault, 'changes'), { recursive: true });
+  t.tmpDirs.push(outerVault, innerVault);
+
+  assert.strictEqual(getProjectStateDir(child), inner);
+  assert.strictEqual(getArtifactDir(child), innerVault);
+  assert.strictEqual(getProjectName(child), 'sub-project');
+});
+
+test('子目录 project-root=independent 阻断父级继承', () => {
+  const root = makeTmpDir('project-root-independent-parent');
+  const child = path.join(root, 'experiments', 'new-direction');
+  fs.mkdirSync(path.join(child, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(child, '.pace', 'project-root'), 'independent\n', 'utf8');
+  const parentVault = path.join(paceUtils.VAULT_PATH, 'projects', path.basename(root).toLowerCase().replace(/\s+/g, '-'));
+  fs.mkdirSync(path.join(parentVault, 'changes'), { recursive: true });
+  t.tmpDirs.push(parentVault);
+
+  const rootInfo = resolveEffectiveProjectRoot(child);
+  assert.strictEqual(rootInfo.projectRoot, child);
+  assert.strictEqual(rootInfo.mode, 'independent');
+  assert.strictEqual(getProjectStateDir(child), child);
+  assert.strictEqual(isPaceProject(child), false);
+  assert.strictEqual(getArtifactDir(child), path.join(paceUtils.VAULT_PATH, 'projects', 'new-direction'));
+});
+
+test('中间父级 .pace/disabled 阻断继续继承更外层 Project Root', () => {
+  const outer = makeTmpDir('project-root-disabled-outer');
+  const disabled = path.join(outer, 'disabled-subtree');
+  const child = path.join(disabled, 'pkg');
+  fs.mkdirSync(path.join(disabled, '.pace'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  fs.writeFileSync(path.join(disabled, '.pace', 'disabled'), '', 'utf8');
+  fs.writeFileSync(path.join(child, 'a.js'), '');
+  fs.writeFileSync(path.join(child, 'b.js'), '');
+  fs.writeFileSync(path.join(child, 'c.js'), '');
+  const outerVault = path.join(paceUtils.VAULT_PATH, 'projects', path.basename(outer).toLowerCase().replace(/\s+/g, '-'));
+  fs.mkdirSync(path.join(outerVault, 'changes'), { recursive: true });
+  t.tmpDirs.push(outerVault);
+
+  const rootInfo = resolveEffectiveProjectRoot(child);
+  assert.strictEqual(rootInfo.projectRoot, disabled);
+  assert.strictEqual(rootInfo.mode, 'disabled');
+  assert.strictEqual(rootInfo.reason, 'ancestor-disabled');
+  assert.strictEqual(isPaceProject(child), false);
+});
+
+test('父级 legacy v5 artifact 让子目录继承 Project Root 并触发迁移提示', () => {
+  const root = makeTmpDir('project-root-legacy-parent');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(child, { recursive: true });
+  fs.writeFileSync(path.join(root, 'task.md'), '# Task\n\n- [ ] Legacy parent task\n', 'utf8');
+  fs.writeFileSync(path.join(root, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] Legacy parent plan\n', 'utf8');
+
+  const rootInfo = resolveEffectiveProjectRoot(child);
+  assert.strictEqual(rootInfo.projectRoot, root);
+  assert.strictEqual(rootInfo.mode, 'inherited');
+  assert.strictEqual(rootInfo.reason, 'legacy');
+  assert.strictEqual(isPaceProject(child), 'legacy');
+  const migration = getV5MigrationInfo(child);
+  assert.strictEqual(migration.detected, true);
+  assert.strictEqual(migration.dir, root);
+});
+
+test('父级残留 .pace/.gitignore 不会被当成 Project Root', () => {
+  const root = makeTmpDir('project-root-runtime-only');
+  const child = path.join(root, 'pkg');
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', '.gitignore'), '*\n', 'utf8');
+  fs.mkdirSync(child, { recursive: true });
+  fs.writeFileSync(path.join(child, 'a.js'), '');
+  fs.writeFileSync(path.join(child, 'b.js'), '');
+  fs.writeFileSync(path.join(child, 'c.js'), '');
+
+  assert.strictEqual(getProjectStateDir(child), child);
+  assert.strictEqual(isPaceProject(child), 'code-count');
+});
+
+test('子目录本地 artifact-root 显式声明当前目录为 Project Root', () => {
+  const root = makeTmpDir('project-root-child-choice-parent');
+  const child = path.join(root, 'tool');
+  fs.mkdirSync(path.join(child, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(child, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const parentVault = path.join(paceUtils.VAULT_PATH, 'projects', path.basename(root).toLowerCase().replace(/\s+/g, '-'));
+  fs.mkdirSync(path.join(parentVault, 'changes'), { recursive: true });
+  t.tmpDirs.push(parentVault);
+
+  assert.strictEqual(getProjectStateDir(child), child);
+  assert.strictEqual(getArtifactRootChoicePath(child), path.join(child, '.pace', 'artifact-root'));
+  assert.strictEqual(getArtifactDir(child), child);
+  assert.strictEqual(artifactRootChoiceNeeded(child), false);
 });
 
 test('worktree 有本地 changes 时仍优先沿用宿主 vault artifact', () => {
@@ -725,14 +973,77 @@ test('executionContextForCwd: git worktree 标记 worktree 名称并写宿主 st
   const root = makeTmpDir('exec-context-root');
   const host = path.join(root, 'host');
   const worktree = path.join(root, 'worktrees', 'feature-a');
+  const child = path.join(worktree, 'packages', 'api');
   fs.mkdirSync(path.join(host, '.git', 'worktrees', 'feature-a'), { recursive: true });
-  fs.mkdirSync(worktree, { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
   fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'feature-a')}\n`, 'utf8');
   const ctx = executionContextForCwd(worktree);
   assert.strictEqual(ctx.isWorktree, true);
   assert.strictEqual(ctx.worktree, 'feature-a');
   assert.strictEqual(ctx.stateDir, host);
+  assert.strictEqual(ctx.checkoutDir, worktree);
   assert.ok(ctx.text.includes('[worktree:: feature-a]'));
+  const childCtx = executionContextForCwd(child);
+  assert.strictEqual(childCtx.isWorktree, true);
+  assert.strictEqual(childCtx.worktree, 'feature-a');
+  assert.strictEqual(childCtx.stateDir, host);
+  assert.strictEqual(childCtx.checkoutDir, worktree);
+
+  const written = writeChangeOwner(worktree, 'CHG-20260522-01', {
+    sessionId: 'sid-worktree-root',
+    agentId: 'agent-worktree-root',
+    operation: 'update-chg',
+    state: 'active',
+  });
+  assert.strictEqual(written.ok, true);
+  assert.strictEqual(changeOwnerStatus(child, 'CHG-20260522-01', 'sid-worktree-child').disposition, 'current-worktree');
+});
+
+test('git worktree 内 nested .git 目录仍向上继承宿主 Project Root', () => {
+  const root = makeTmpDir('worktree-nested-git-dir-root');
+  const host = path.join(root, 'host');
+  const worktree = path.join(root, 'worktrees', 'feature-nested-dir');
+  const nested = path.join(worktree, 'vendor', 'lib');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'feature-nested-dir'), { recursive: true });
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(path.join(nested, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'feature-nested-dir')}\n`, 'utf8');
+
+  const rootInfo = resolveEffectiveProjectRoot(nested);
+  assert.strictEqual(rootInfo.mode, 'worktree');
+  assert.strictEqual(rootInfo.projectRoot, host);
+  assert.strictEqual(getProjectStateDir(nested), host);
+  assert.strictEqual(getProjectRuntimeDir(nested), path.join(host, '.pace'));
+  assert.strictEqual(getArtifactDir(nested), host);
+  const ctx = executionContextForCwd(nested);
+  assert.strictEqual(ctx.isWorktree, true);
+  assert.strictEqual(ctx.worktree, 'feature-nested-dir');
+  assert.strictEqual(ctx.checkoutDir, worktree);
+});
+
+test('git worktree 内 nested 普通 .git 文件仍向上继承宿主 Project Root', () => {
+  const root = makeTmpDir('worktree-nested-git-file-root');
+  const host = path.join(root, 'host');
+  const worktree = path.join(root, 'worktrees', 'feature-nested-file');
+  const nested = path.join(worktree, 'vendor', 'submodule');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'feature-nested-file'), { recursive: true });
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.mkdirSync(path.join(nested, '.gitdir'), { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'feature-nested-file')}\n`, 'utf8');
+  fs.writeFileSync(path.join(nested, '.git'), `gitdir: ${path.join(nested, '.gitdir')}\n`, 'utf8');
+
+  const rootInfo = resolveEffectiveProjectRoot(nested);
+  assert.strictEqual(rootInfo.mode, 'worktree');
+  assert.strictEqual(rootInfo.projectRoot, host);
+  assert.strictEqual(getProjectStateDir(nested), host);
+  assert.strictEqual(getProjectRuntimeDir(nested), path.join(host, '.pace'));
+  assert.strictEqual(getArtifactDir(nested), host);
+  const ctx = executionContextForCwd(nested);
+  assert.strictEqual(ctx.isWorktree, true);
+  assert.strictEqual(ctx.worktree, 'feature-nested-file');
+  assert.strictEqual(ctx.checkoutDir, worktree);
 });
 
 test('change owner runtime: 当前 session / foreign fresh 可区分', () => {
@@ -1326,6 +1637,18 @@ test('logEntry — 字段单行化并截断长值', () => {
   assert.ok(entry.includes('...'), '长字段应截断');
 });
 
+test('projectLogEntry — 补齐 cwd/project_root/artifact_dir/mode 上下文', () => {
+  const root = makeTmpDir('project-log-root');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(path.join(root, 'changes'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  const entry = paceUtils.projectLogEntry(child, 'Stop', 'ENTRY', { proj: 'demo' });
+  assert.ok(entry.includes(`cwd=${child.replace(/\\/g, '/')}`));
+  assert.ok(entry.includes(`project_root=${root.replace(/\\/g, '/')}`));
+  assert.ok(entry.includes(`artifact_dir=${root.replace(/\\/g, '/')}/`));
+  assert.ok(entry.includes('mode=inherited'));
+});
+
 // ============================================================
 // 15. parseHookStdin() — 6 个测试
 // ============================================================
@@ -1652,7 +1975,7 @@ test('pace-utils 子模块可直接 require 且导出关键符号', () => {
     constants: ['PACE_VERSION', 'ARTIFACT_FILES', 'FORMAT_SNIPPETS'],
     'line-endings': ['normalizeLineEndings', 'hasNonNullVerifiedDate'],
     session: ['parseHookStdin', 'currentSessionId', 'isArtifactWriterAgentType'],
-    'path-utils': ['normalizePath', 'resolveToolFilePath', 'getProjectRuntimeDir'],
+    'path-utils': ['normalizePath', 'resolveToolFilePath', 'resolveEffectiveProjectRoot', 'getProjectRuntimeDir'],
     logger: ['createLogger', 'logEntry'],
     plans: [],
     'change-id': ['normalizeChangeId', 'detailPathForId', 'slugForChangeId'],

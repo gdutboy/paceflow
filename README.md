@@ -97,9 +97,27 @@ node "$PLUGIN_DIR/migrate/batch-archive-v5.js" "$ARTIFACT_DIR"
 /plugin install paceflow@paceaitian-paceflow
 ```
 
-安装后 9 个 hook 脚本（8 类 hook 事件）+ 4 个用户 skill + `artifact-writer` agent 自动注册，零配置。重启 Claude Code 生效。
+安装后 8 类 hook 事件、配套 helper 脚本、4 个用户 skill 和 `artifact-writer` agent 自动注册，零配置。重启 Claude Code 生效。
 
-> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault。新项目首次写代码或派 `artifact-writer` 时，PACEflow 会要求主 session 询问 artifact 存放在 `$PACE_VAULT_PATH/projects/<项目名>/` 还是本地项目目录，并把选择持久化到 `.pace/artifact-root`；`local` 表示本地项目根目录，不是 `.pace/`。已有 `changes/` 的项目沿用现有位置。真实 Git worktree 和 `.claude/worktrees/<name>` 会自动归一到宿主项目名；也可用 `PACE_PROJECT_NAME` 显式指定项目名。自动化/headless 环境可设置 `PACE_ARTIFACT_ROOT=local|vault|/abs/path` 跳过询问。
+> **可选**：设置环境变量 `PACE_VAULT_PATH` 指向你的 Obsidian Vault。新项目首次写代码或派 `artifact-writer` 时，PACEflow 会要求主 session 询问 artifact 存放在 `$PACE_VAULT_PATH/projects/<项目名>/` 还是本地项目目录，并把选择持久化到 Project Root 的 `.pace/artifact-root`；`local` 表示 Project Root 本地目录，不是当前子目录，也不是 `.pace/`。已有 `changes/` 的项目沿用现有位置。真实 Git worktree 和 `.claude/worktrees/<name>` 会自动归一到宿主项目名；也可用 `PACE_PROJECT_NAME` 显式指定项目名。自动化/headless 环境可设置 `PACE_ARTIFACT_ROOT=local|vault|/abs/path` 跳过询问。
+
+### Project Root 与子目录继承
+
+PACEflow 区分三个路径：
+
+- **Current CWD**：Claude Code 当前打开的目录。
+- **Project Root**：PACEflow 管理的项目边界，`.pace` 运行态、CHG owner、Stop 检查和 `local` artifact root 都以它为准。
+- **Artifact Root**：`spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**` 的存放目录，可等于 Project Root，也可位于 Obsidian vault。
+
+在被 PACEflow 管理的父项目子目录中启动 Claude Code 时，子目录默认继承最近的父级 Project Root。这样在 `packages/api`、`plugin/`、嵌套 git repo 等目录里工作时，仍能看到同一个父项目的 active CHG、owner 和 Stop 状态。
+
+如果当前子目录是一个真正独立的新项目，先运行：
+
+```bash
+node "$PLUGIN_DIR/hooks/set-project-root.js" --mode independent
+```
+
+再运行 `set-artifact-root.js --choice local|vault` 选择它自己的 artifact root。不要手写子目录 `.pace/project-root` 或 `.pace/artifact-root`。
 
 ---
 
@@ -214,6 +232,7 @@ paceflow/
 │   │   ├── pre-compact.js            #     Compact 前快照
 │   │   ├── reserve-artifact-id.js    #     ID 预留 helper
 │   │   ├── set-artifact-root.js      #     artifact root 选择 helper
+│   │   ├── set-project-root.js       #     独立 Project Root 声明 helper
 │   │   ├── sync-plan.js              #     plan bridge 同步 helper
 │   │   └── templates/                #     6 个 artifact 模板 + 1 个 knowledge 参考模板
 │   ├── skills/                       #   4 个用户 Skill
@@ -258,11 +277,12 @@ paceflow/
 | `degraded` | 降级标记 |
 | `task-list-used` | 本会话是否用过 Claude 任务列表工具 |
 | `artifact-root` | artifact 存放位置选择：`local` / `vault` / 绝对路径 / 相对路径 |
+| `project-root` | 独立子项目标记；只允许 helper 写入 `independent`，不要手写 |
 | `locks/artifacts/*.lock` | artifact resource lock；按详情文件或索引资源保护真实写入窗口 |
 | `sequences/*.counter` | CHG/HOTFIX/CORRECTION 编号计数器，由 hook 原子分配 |
 | `reservations/*.json` | 当前 session/agent 的预留编号 |
 | `index-transactions/*.json` | `task.md` + `implementation_plan.md` 成对索引写入事务 |
-| `disabled` | 豁免标记（用户手动创建）|
+| `disabled` | 豁免标记（用户手动创建 `.pace/disabled` 文件；不是 `project-root=disabled`）|
 | `synced-plans` | 已桥接的 plan 文件列表 |
 
 ## 三级触发（PreToolUse）
@@ -301,6 +321,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.58 | 2026-05-22 | 引入显式 Project Root 解析：普通子目录默认继承最近父级 PACEflow 项目，artifact/root choice、runtime `.pace`、CHG owner、Stop 和 plan sync 都归属 effective Project Root；新增 `set-project-root.js --mode independent` 让真正独立子项目断开继承；SessionStart/helper 文案显示 Current CWD / Project Root / Artifact Root 边界 |
 | v6.0.57 | 2026-05-16 | 将 `PostToolUse` 的 `decision:"block" + continue:true` 引入生产最小试点：artifact-writer 写入 `walkthrough.md` 后若 wikilink 或 `[worktree:: ...] [branch:: ...]` 上下文仍不符合 v6 规范，hook 会让当前 turn 继续修复；每 session/目标只触发一次，避免循环 |
 | v6.0.56 | 2026-05-16 | 覆盖 Claude Code 2.1.143 后的 Windows 工具面：PreToolUse 新增 `PowerShell` / `Monitor` matcher，PowerShell 原生命令写 artifact 或 `.pace` 写入控制运行态会被阻止；Monitor 只能做只读观察，不能作为后台命令绕过 Bash artifact guard；PostToolUseFailure 同步覆盖 PowerShell/Monitor 失败恢复提示 |
 | v6.0.55 | 2026-05-12 | 修复 v6.0.54 Smoke3/4 后续缺口：首次 root-choice SessionStart 输出当前 reserve helper 命令；helper 明确拒绝 `--artifact-dir` / `--artifact-root` / `--project-dir`；当前 session owner 的 README/文档/配置等非代码写入也进入 C/E gate，foreign fresh owner 不阻断普通非代码写入但结构损坏仍全局阻断；SubagentStop 兜底清理 close/archive 后的 owner `closing` 残留 |
@@ -369,4 +390,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v6.0.57 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.58 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

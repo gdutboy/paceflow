@@ -85,6 +85,7 @@ function formatReservationBlock(cwd, artDir, operation, reservation, reused) {
     `artifact_dir: ${paceUtils.displayDir(artDir)}`,
     `operation: ${operation}`,
   ];
+  lines.push(`project-root: ${context.projectRoot.replace(/\\/g, '/')}`);
   if (operation === 'create-chg') lines.push(`execution-context: ${context.text}`);
   if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
   if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);

@@ -14,6 +14,7 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
+const projectLogEntry = (hook, action, fields = {}) => paceUtils.projectLogEntry(cwd, hook, action, fields);
 
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
@@ -24,7 +25,7 @@ paceUtils.withStdinParsed((stdin) => {
   // H-1: 非 PACE 项目直接放行（.pace/disabled 豁免）
   const paceSignal = isPaceProject(cwd);
   if (!paceSignal) {
-    log(paceUtils.logEntry('PostToolUse', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
+    log(projectLogEntry('PostToolUse', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
     return;
   }
 
@@ -81,7 +82,7 @@ paceUtils.withStdinParsed((stdin) => {
       states: ['active', 'closing'],
     });
     if (touched.length > 0) {
-      log(paceUtils.logEntry('PostToolUse', 'CHANGE_OWNER_HEARTBEAT', {
+      log(projectLogEntry('PostToolUse', 'CHANGE_OWNER_HEARTBEAT', {
         proj,
         tool: toolName,
         changes: touched.join(','),
@@ -95,7 +96,7 @@ paceUtils.withStdinParsed((stdin) => {
     if (target && ['close-chg', 'archive-chg'].includes(operation)) {
       const stillActive = getActiveChangeEntries(cwd).some(entry => entry.id === target);
       if (stillActive) {
-        log(paceUtils.logEntry('PostToolUse', 'CHANGE_OWNER_CLOSE_SKIPPED', {
+        log(projectLogEntry('PostToolUse', 'CHANGE_OWNER_CLOSE_SKIPPED', {
           proj,
           target,
           operation,
@@ -108,7 +109,7 @@ paceUtils.withStdinParsed((stdin) => {
           agentId: stdin.agentId,
           operation,
         });
-        log(paceUtils.logEntry('PostToolUse', closed.ok ? 'CHANGE_OWNER_CLOSED' : 'CHANGE_OWNER_CLOSE_SKIPPED', {
+        log(projectLogEntry('PostToolUse', closed.ok ? 'CHANGE_OWNER_CLOSED' : 'CHANGE_OWNER_CLOSE_SKIPPED', {
           proj,
           target,
           operation,
@@ -127,7 +128,7 @@ paceUtils.withStdinParsed((stdin) => {
       const reservationCleared = toolName === 'Write'
         ? paceUtils.clearArtifactReservationForRel(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId }, artifactRel)
         : false;
-      log(paceUtils.logEntry('PostToolUse', release.released ? 'RELEASE_ARTIFACT_RESOURCE_LOCK' : 'KEEP_ARTIFACT_RESOURCE_LOCK', {
+      log(projectLogEntry('PostToolUse', release.released ? 'RELEASE_ARTIFACT_RESOURCE_LOCK' : 'KEEP_ARTIFACT_RESOURCE_LOCK', {
         proj,
         tool: toolName,
         file: filePath || '-',
@@ -147,7 +148,7 @@ paceUtils.withStdinParsed((stdin) => {
   ];
   const isRuntimeConfigEdit = runtimeConfigPaths.some(fp => normalizedFile === paceUtils.normalizePath(fp));
   if (isRuntimeConfigEdit) {
-    log(paceUtils.logEntry('PostToolUse', 'PASS_RUNTIME_CONFIG', { proj, tool: toolName, file: filePath || '-', dur: Date.now() - t0 }));
+    log(projectLogEntry('PostToolUse', 'PASS_RUNTIME_CONFIG', { proj, tool: toolName, file: filePath || '-', dur: Date.now() - t0 }));
     return;
   }
 
@@ -315,7 +316,7 @@ paceUtils.withStdinParsed((stdin) => {
           }
         };
     process.stdout.write(JSON.stringify(output));
-    log(paceUtils.logEntry('PostToolUse', continueBlocks.length > 0 ? 'CONTINUE_BLOCK' : 'WARN', {
+    log(projectLogEntry('PostToolUse', continueBlocks.length > 0 ? 'CONTINUE_BLOCK' : 'WARN', {
       proj,
       tool: toolName,
       file: filePath || '-',
@@ -325,9 +326,9 @@ paceUtils.withStdinParsed((stdin) => {
       dur: Date.now() - t0
     }));
   } else {
-    log(paceUtils.logEntry('PostToolUse', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
+    log(projectLogEntry('PostToolUse', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
   }
   } catch(e) {
-    try { log(paceUtils.logEntry('PostToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
+    try { log(projectLogEntry('PostToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
   }
 });

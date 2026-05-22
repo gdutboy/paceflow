@@ -38,7 +38,7 @@ HOTFIX 预留必须加类型：
 
 再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
 
-reserve helper 从目标项目 cwd 与 artifact-root 配置解析 artifact_dir，不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化场景只可用 `--cwd` 指定项目 cwd。若用户已明确选择 vault/local 但配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper；不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录里手写该文件。
+reserve helper 从目标项目 cwd 与 artifact-root 配置解析 artifact_dir，不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化场景只可用 `--cwd` 指定项目 cwd。普通子目录默认继承最近父级 Project Root，`local` 表示 Project Root 本地目录。若用户已明确选择 vault/local 但配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper；若当前子目录是独立项目，先运行 `set-project-root --mode independent`。不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录或继承父 Project Root 的子目录里手写该文件。
 
 `T-NNN` 是单个 CHG/HOTFIX 内的局部任务编号。不同 CHG 可以都从 `T-001` 开始；所有状态更新必须同时带 `target: CHG-...` 和 `task-id: T-...`，避免多 worktree / 多 CHG 并发时产生歧义。
 

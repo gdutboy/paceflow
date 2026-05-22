@@ -45,13 +45,15 @@ const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
+const projectLogEntry = (hook, action, fields = {}) => paceUtils.projectLogEntry(cwd, hook, action, fields);
 const {
   bashCommandLooksMutating,
   bashCommandRedirectsToArtifact,
   bashShellCommandRedirectsToArtifact,
   bashCommandEmbedsArtifactWriteScript,
   bashCommandMutatesArtifactRuntimeControl,
-  bashCommandMutatesWorktreeLocalArtifactRootChoice,
+  bashCommandMutatesLocalArtifactRootChoice,
+  bashCommandMutatesProjectRootMarker,
   bashCommandReferencesArtifact,
   bashShellCommandReferencesArtifact,
   bashArtifactRuntimeControlDenyReason,
@@ -62,7 +64,8 @@ const {
   powershellCommandRedirectsToArtifact,
   powershellCommandEmbedsArtifactWriteScript,
   powershellCommandMutatesArtifactRuntimeControl,
-  powershellCommandMutatesWorktreeLocalArtifactRootChoice,
+  powershellCommandMutatesLocalArtifactRootChoice,
+  powershellCommandMutatesProjectRootMarker,
   powershellCommandReferencesArtifact,
   powershellArtifactRuntimeControlDenyReason,
   powershellArtifactDenyReason,
@@ -186,7 +189,7 @@ paceUtils.withStdinParsed((stdin) => {
   const powershellCommand = commandInput;
   const rawFilePath = stdin.filePath || '';
   const filePath = paceUtils.resolveToolFilePath(cwd, rawFilePath);
-  log(paceUtils.logEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
+  log(projectLogEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
   function denyOrHint(reason) {
@@ -205,7 +208,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
     };
     process.stdout.write(JSON.stringify(output));
-    log(paceUtils.logEntry('PreToolUse', action, { proj, tool: toolName, file: filePath, ...fields, dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', action, { proj, tool: toolName, file: filePath, ...fields, dur: Date.now() - t0 }));
     return output;
   }
   function heartbeatChangeOwners(reason) {
@@ -215,7 +218,7 @@ paceUtils.withStdinParsed((stdin) => {
       states: ['active', 'closing'],
     });
     if (touched.length > 0) {
-      log(paceUtils.logEntry('PreToolUse', 'CHANGE_OWNER_HEARTBEAT', {
+      log(projectLogEntry('PreToolUse', 'CHANGE_OWNER_HEARTBEAT', {
         proj,
         reason,
         changes: touched.join(','),
@@ -236,7 +239,7 @@ paceUtils.withStdinParsed((stdin) => {
   const v5MigrationInfo = getV5MigrationInfo(cwd);
   const v5MigrationReason = v5MigrationInfo.needsPrompt ? v5MigrationPromptMessage(cwd) : '';
   const artifactRootHint = paceUtils.artifactDirRuntimeHint(cwd);
-  log(paceUtils.logEntry('PreToolUse', 'ROUTE', {
+  log(projectLogEntry('PreToolUse', 'ROUTE', {
     proj,
     signal: paceEntrySignal || 'none',
     artifact_dir: displayDir(artDir),
@@ -306,33 +309,60 @@ paceUtils.withStdinParsed((stdin) => {
         choice_path: rootConfigError.choicePath,
       });
     }
-    if (isBashTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+    if (isBashTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
       return hardDeny(
-        paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-        'DENY_BASH_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+        paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+        'DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE',
         {
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           authoritative: paceUtils.getArtifactRootChoicePath(cwd),
         }
       );
     }
-    if (isPowerShellTool(toolName) && powershellCommandMutatesWorktreeLocalArtifactRootChoice(powershellCommand, cwd)) {
+    if (isPowerShellTool(toolName) && powershellCommandMutatesLocalArtifactRootChoice(powershellCommand, cwd)) {
       return hardDeny(
-        paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
-        'DENY_POWERSHELL_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+        paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
+        'DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE',
         {
           command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
           authoritative: paceUtils.getArtifactRootChoicePath(cwd),
         }
       );
     }
-    if (isMonitorTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+    if (isMonitorTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
       return hardDeny(
-        paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-        'DENY_MONITOR_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+        paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+        'DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE',
         {
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+        }
+      );
+    }
+    if (isBashTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
+      return hardDeny(
+        paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+        'DENY_BASH_PROJECT_ROOT_MARKER',
+        {
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+        }
+      );
+    }
+    if (isPowerShellTool(toolName) && powershellCommandMutatesProjectRootMarker(powershellCommand, cwd)) {
+      return hardDeny(
+        paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
+        'DENY_POWERSHELL_PROJECT_ROOT_MARKER',
+        {
+          command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
+        }
+      );
+    }
+    if (isMonitorTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
+      return hardDeny(
+        paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+        'DENY_MONITOR_PROJECT_ROOT_MARKER',
+        {
+          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
         }
       );
     }
@@ -340,7 +370,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (isArtifactWriterAgentTool(stdin) && needsArtifactRootChoice) {
         const output = denyOrHint(artifactRootChoiceReason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_AGENT_ARTIFACT_ROOT_CHOICE${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_AGENT_ARTIFACT_ROOT_CHOICE${teammateTag}`, {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           dur: Date.now() - t0,
@@ -350,7 +380,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (isArtifactWriterAgentTool(stdin) && v5MigrationInfo.needsPrompt) {
         const output = denyOrHint(v5MigrationReason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_AGENT_V5_MIGRATION${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_AGENT_V5_MIGRATION${teammateTag}`, {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(v5MigrationInfo.dir),
@@ -370,7 +400,7 @@ paceUtils.withStdinParsed((stdin) => {
           }
         };
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_DIR', {
+        log(projectLogEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_DIR', {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
@@ -390,7 +420,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_LIFECYCLE_PROMPT', {
+          log(projectLogEntry('PreToolUse', 'DENY_AGENT_LIFECYCLE_PROMPT', {
             proj,
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             reason: lifecycleReason.split('\n')[0],
@@ -411,7 +441,7 @@ paceUtils.withStdinParsed((stdin) => {
               }
             };
             process.stdout.write(JSON.stringify(output));
-            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_LEGACY_ARTIFACT_LOCK', {
+            log(projectLogEntry('PreToolUse', 'DENY_AGENT_LEGACY_ARTIFACT_LOCK', {
               proj,
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
@@ -435,7 +465,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_BASE', {
+          log(projectLogEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_BASE', {
             proj,
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             artifact_dir: displayDir(artDir),
@@ -476,7 +506,7 @@ paceUtils.withStdinParsed((stdin) => {
                 }
               };
               process.stdout.write(JSON.stringify(output));
-              log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_ID_RESERVATION', {
+              log(projectLogEntry('PreToolUse', 'DENY_AGENT_ID_RESERVATION', {
                 proj,
                 agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
                 artifact_dir: displayDir(artDir),
@@ -495,7 +525,7 @@ paceUtils.withStdinParsed((stdin) => {
               }
             };
             process.stdout.write(JSON.stringify(output));
-            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_REQUIRED', {
+            log(projectLogEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_REQUIRED', {
               proj,
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
@@ -520,7 +550,7 @@ paceUtils.withStdinParsed((stdin) => {
               }
             };
             process.stdout.write(JSON.stringify(output));
-            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_MISMATCH', {
+            log(projectLogEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_MISMATCH', {
               proj,
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
@@ -549,7 +579,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_TARGET_REQUIRED', {
+          log(projectLogEntry('PreToolUse', 'DENY_AGENT_TARGET_REQUIRED', {
             proj,
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             operation,
@@ -576,7 +606,7 @@ paceUtils.withStdinParsed((stdin) => {
               }
             };
             process.stdout.write(JSON.stringify(output));
-            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER', {
+            log(projectLogEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER', {
               proj,
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               target: targetChangeId,
@@ -603,7 +633,7 @@ paceUtils.withStdinParsed((stdin) => {
               }
             };
             process.stdout.write(JSON.stringify(output));
-            log(paceUtils.logEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER_STALE', {
+            log(projectLogEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER_STALE', {
               proj,
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               target: targetChangeId,
@@ -631,7 +661,7 @@ paceUtils.withStdinParsed((stdin) => {
             operation,
             state: ownerState,
           });
-          log(paceUtils.logEntry('PreToolUse', ownerWrite.ok ? 'CHANGE_OWNER_SET' : 'CHANGE_OWNER_SET_FAILED', {
+          log(projectLogEntry('PreToolUse', ownerWrite.ok ? 'CHANGE_OWNER_SET' : 'CHANGE_OWNER_SET_FAILED', {
             proj,
             target: targetChangeId,
             operation,
@@ -657,7 +687,7 @@ paceUtils.withStdinParsed((stdin) => {
           }
         };
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT_ARTIFACT_BASE', {
+        log(projectLogEntry('PreToolUse', 'PASS_AGENT_ARTIFACT_BASE', {
           proj,
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
@@ -668,7 +698,7 @@ paceUtils.withStdinParsed((stdin) => {
         }));
         return;
       }
-      log(paceUtils.logEntry('PreToolUse', 'PASS_AGENT', { proj, tool: toolName, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'PASS_AGENT', { proj, tool: toolName, dur: Date.now() - t0 }));
       return;
     }
     if (isBashTool(toolName)) {
@@ -676,7 +706,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = bashArtifactRuntimeControlDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT_RUNTIME${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_BASH_ARTIFACT_RUNTIME${teammateTag}`, {
           proj,
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           runtime: paceUtils.getProjectRuntimeDir(cwd),
@@ -693,14 +723,14 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : bashArtifactDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_BASH_ARTIFACT${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_BASH_ARTIFACT${teammateTag}`, {
           proj,
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           dur: Date.now() - t0,
         }));
         return;
       }
-      log(paceUtils.logEntry('PreToolUse', 'PASS_BASH', { proj, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'PASS_BASH', { proj, dur: Date.now() - t0 }));
       return;
     }
     if (isPowerShellTool(toolName)) {
@@ -708,7 +738,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = powershellArtifactRuntimeControlDenyReason(powershellCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT_RUNTIME${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT_RUNTIME${teammateTag}`, {
           proj,
           command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
           runtime: paceUtils.getProjectRuntimeDir(cwd),
@@ -724,14 +754,14 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : powershellArtifactDenyReason(powershellCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT${teammateTag}`, {
           proj,
           command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
           dur: Date.now() - t0,
         }));
         return;
       }
-      log(paceUtils.logEntry('PreToolUse', 'PASS_POWERSHELL', { proj, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'PASS_POWERSHELL', { proj, dur: Date.now() - t0 }));
       return;
     }
     if (isMonitorTool(toolName)) {
@@ -739,7 +769,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = monitorArtifactRuntimeControlDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_MONITOR_ARTIFACT_RUNTIME${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_MONITOR_ARTIFACT_RUNTIME${teammateTag}`, {
           proj,
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           runtime: paceUtils.getProjectRuntimeDir(cwd),
@@ -756,14 +786,14 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : monitorArtifactDenyReason(bashCommand);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_MONITOR_ARTIFACT${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_MONITOR_ARTIFACT${teammateTag}`, {
           proj,
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           dur: Date.now() - t0,
         }));
         return;
       }
-      log(paceUtils.logEntry('PreToolUse', 'PASS_MONITOR', { proj, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'PASS_MONITOR', { proj, dur: Date.now() - t0 }));
       return;
     }
     if (!isFileMutationTool(toolName)) {
@@ -780,47 +810,93 @@ paceUtils.withStdinParsed((stdin) => {
     }
   }
 
-  // v4.3.1: 项目外文件豁免（CWD 和 vault artifact 目录均视为"项目内"）
+  // v4.3.1: 项目外文件豁免（Project Root 与 artifact 目录均视为"项目内"）
   // H-1: 使用 normalizePath 跨平台适配（Windows toLowerCase，Linux 保持原样）
   const normalizedFile = paceUtils.normalizePath(filePath);
-  const normalizedCwd = paceUtils.normalizePath(cwd);
-  if (isFileMutationTool(toolName) && paceUtils.isWorktreeLocalArtifactRootChoicePath(cwd, filePath)) {
+  const rootInfo = paceUtils.resolveEffectiveProjectRoot(cwd);
+  const executionContext = paceUtils.executionContextForCwd(cwd);
+  // Worktree 的代码边界是 checkout 根，不是当前子目录；真正写宿主
+  // checkout 的普通文件仍只给 soft note。普通 inherited 子目录则由父
+  // Project Root 承担 C/E gate，覆盖父目录与 sibling 文件。
+  const projectBoundary = rootInfo.mode === 'worktree'
+    ? (executionContext.checkoutDir || cwd)
+    : rootInfo.projectRoot;
+  const normalizedProjectBoundary = paceUtils.normalizePath(projectBoundary);
+  if (isFileMutationTool(toolName) && paceUtils.isLocalArtifactRootChoicePath(cwd, filePath)) {
     return hardDeny(
-      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd),
-      'DENY_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      paceUtils.localArtifactRootChoiceDenyReason(cwd),
+      'DENY_LOCAL_ARTIFACT_ROOT_CHOICE',
       {
         file: filePath,
         authoritative: paceUtils.getArtifactRootChoicePath(cwd),
       }
     );
   }
-  if (isBashTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+  if (isBashTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
     return hardDeny(
-      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-      'DENY_BASH_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+      'DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE',
       {
         command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
         authoritative: paceUtils.getArtifactRootChoicePath(cwd),
       }
     );
   }
-  if (isPowerShellTool(toolName) && powershellCommandMutatesWorktreeLocalArtifactRootChoice(powershellCommand, cwd)) {
+  if (isPowerShellTool(toolName) && powershellCommandMutatesLocalArtifactRootChoice(powershellCommand, cwd)) {
     return hardDeny(
-      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
-      'DENY_POWERSHELL_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
+      'DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE',
       {
         command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
         authoritative: paceUtils.getArtifactRootChoicePath(cwd),
       }
     );
   }
-  if (isMonitorTool(toolName) && bashCommandMutatesWorktreeLocalArtifactRootChoice(bashCommand, cwd)) {
+  if (isMonitorTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
     return hardDeny(
-      paceUtils.worktreeLocalArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-      'DENY_MONITOR_WORKTREE_LOCAL_ARTIFACT_ROOT_CHOICE',
+      paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+      'DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE',
       {
         command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
         authoritative: paceUtils.getArtifactRootChoicePath(cwd),
+      }
+    );
+  }
+  if (isFileMutationTool(toolName) && paceUtils.isProjectRootMarkerPath(cwd, filePath)) {
+    return hardDeny(
+      paceUtils.projectRootMarkerDenyReason(cwd),
+      'DENY_PROJECT_ROOT_MARKER',
+      {
+        file: filePath,
+        agent_id: stdin.agentId,
+        agent_type: stdin.agentType,
+      }
+    );
+  }
+  if (isBashTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
+    return hardDeny(
+      paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+      'DENY_BASH_PROJECT_ROOT_MARKER',
+      {
+        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
+      }
+    );
+  }
+  if (isPowerShellTool(toolName) && powershellCommandMutatesProjectRootMarker(powershellCommand, cwd)) {
+    return hardDeny(
+      paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
+      'DENY_POWERSHELL_PROJECT_ROOT_MARKER',
+      {
+        command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
+      }
+    );
+  }
+  if (isMonitorTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
+    return hardDeny(
+      paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
+      'DENY_MONITOR_PROJECT_ROOT_MARKER',
+      {
+        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
       }
     );
   }
@@ -835,13 +911,15 @@ paceUtils.withStdinParsed((stdin) => {
       }
     );
   }
-  const cwdWithSlash = normalizedCwd.endsWith('/') ? normalizedCwd : normalizedCwd + '/';
+  const projectBoundaryWithSlash = normalizedProjectBoundary.endsWith('/')
+    ? normalizedProjectBoundary
+    : normalizedProjectBoundary + '/';
   const artifactRelForMutation = getArtifactRelIfRelevant(toolName, paceSignal, artDir, filePath);
   // Artifact paths are part of the guarded project surface even when vault/local routing
   // puts them outside the current worktree cwd. Ordinary host-checkout files from a
   // worktree get a soft note only; PaceFlow hard-gates artifact semantics, not generic
   // edits to every path the user may explicitly request.
-  const isInsideProject = normalizedFile.startsWith(cwdWithSlash) || !!artifactRelForMutation;
+  const isInsideProject = normalizedFile.startsWith(projectBoundaryWithSlash) || !!artifactRelForMutation;
   const hostNonArtifactWriteNote = isFileMutationTool(toolName) && paceSignal
     ? worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRelForMutation)
     : '';
@@ -869,7 +947,7 @@ paceUtils.withStdinParsed((stdin) => {
               }
             };
             process.stdout.write(JSON.stringify(output));
-            log(paceUtils.logEntry('PreToolUse', 'DENY_ARCHIVE_WITHOUT_INDEX_MARKER', {
+            log(projectLogEntry('PreToolUse', 'DENY_ARCHIVE_WITHOUT_INDEX_MARKER', {
               proj,
               tool: toolName,
               file: filePath,
@@ -896,7 +974,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_STATUS_INVALID', {
+          log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_STATUS_INVALID', {
             proj,
             tool: toolName,
             file: filePath,
@@ -932,7 +1010,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISSING', {
+          log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISSING', {
             proj,
             tool: toolName,
             file: filePath,
@@ -962,7 +1040,7 @@ paceUtils.withStdinParsed((stdin) => {
             }
           };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISMATCH', {
+          log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISMATCH', {
             proj,
             tool: toolName,
             file: filePath,
@@ -994,7 +1072,7 @@ paceUtils.withStdinParsed((stdin) => {
           }
         };
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_RESOURCE_LOCK', {
+        log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_RESOURCE_LOCK', {
           proj,
           tool: toolName,
           file: filePath,
@@ -1008,7 +1086,7 @@ paceUtils.withStdinParsed((stdin) => {
         return;
       }
       artifactResourceLockHeld = resource;
-      log(paceUtils.logEntry('PreToolUse', lockAttempt.reentrant ? 'PASS_ARTIFACT_RESOURCE_LOCK_REENTRANT' : 'PASS_ARTIFACT_RESOURCE_LOCK', {
+      log(projectLogEntry('PreToolUse', lockAttempt.reentrant ? 'PASS_ARTIFACT_RESOURCE_LOCK_REENTRANT' : 'PASS_ARTIFACT_RESOURCE_LOCK', {
         proj,
         tool: toolName,
         file: filePath,
@@ -1035,7 +1113,7 @@ paceUtils.withStdinParsed((stdin) => {
           }
         };
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', 'DENY_ARTIFACT_CONCURRENT_WRITE', {
+        log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_CONCURRENT_WRITE', {
           proj,
           tool: toolName,
           file: filePath,
@@ -1063,7 +1141,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'DENY_REDIRECT', { proj, tool: toolName, file: filePath, artifact: cwdArtifactRel, redirect: correctPath, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'DENY_REDIRECT', { proj, tool: toolName, file: filePath, artifact: cwdArtifactRel, redirect: correctPath, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -1088,7 +1166,7 @@ paceUtils.withStdinParsed((stdin) => {
         const normalized = paceUtils.normalizeLineEndings(current);
         if (normalized !== current) {
           fs.writeFileSync(filePath, normalized, 'utf8');
-          log(paceUtils.logEntry('PreToolUse', 'NORMALIZE_CRLF_ARTIFACT', {
+          log(projectLogEntry('PreToolUse', 'NORMALIZE_CRLF_ARTIFACT', {
             proj,
             tool: toolName,
             file: filePath,
@@ -1097,7 +1175,7 @@ paceUtils.withStdinParsed((stdin) => {
           }));
         }
       } catch(e) {
-        log(paceUtils.logEntry('PreToolUse', 'NORMALIZE_CRLF_ARTIFACT_FAILED', {
+        log(projectLogEntry('PreToolUse', 'NORMALIZE_CRLF_ARTIFACT_FAILED', {
           proj,
           tool: toolName,
           file: filePath,
@@ -1123,7 +1201,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'DENY_WRITE_EXISTING_ARTIFACT', { proj, tool: toolName, file: filePath, artifact: artifactRelForMutation, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'DENY_WRITE_EXISTING_ARTIFACT', { proj, tool: toolName, file: filePath, artifact: artifactRelForMutation, dur: Date.now() - t0 }));
       return;
     }
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
@@ -1136,7 +1214,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'DENY_WRITE_ARTIFACT', { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'DENY_WRITE_ARTIFACT', { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -1152,7 +1230,7 @@ paceUtils.withStdinParsed((stdin) => {
           const ctx = `新建 ${fileName}：请严格按照以下官方模板格式，保留双区结构（${ARCHIVE_MARKER} 分隔符）和注释说明：\n\n${tmplContent}`;
           const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: ctx } };
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', 'INJECT_TEMPLATE', { proj, file: fileName, dur: Date.now() - t0 }));
+          log(projectLogEntry('PreToolUse', 'INJECT_TEMPLATE', { proj, file: fileName, dur: Date.now() - t0 }));
           return;
         } catch(e) {}
       }
@@ -1178,7 +1256,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'INJECT_FORMAT', { proj, file: filePath, dir: dirName, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'INJECT_FORMAT', { proj, file: filePath, dir: dirName, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -1203,7 +1281,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = markerMutationDenyReason(markerMutation);
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
           proj,
           file: filePath,
           agent_id: stdin.agentId,
@@ -1215,7 +1293,7 @@ paceUtils.withStdinParsed((stdin) => {
         }));
         return;
       }
-      log(paceUtils.logEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
+      log(projectLogEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
         proj,
         file: filePath,
         agent_id: stdin.agentId,
@@ -1259,7 +1337,7 @@ paceUtils.withStdinParsed((stdin) => {
         ].join('\n');
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_INDEX_MALFORMED${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MALFORMED${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
 
@@ -1273,7 +1351,7 @@ paceUtils.withStdinParsed((stdin) => {
         ].join('\n');
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
 
@@ -1283,7 +1361,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = `v6 详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
     }
@@ -1296,7 +1374,7 @@ paceUtils.withStdinParsed((stdin) => {
           : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
         return;
       }
 
@@ -1306,7 +1384,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
 
@@ -1320,7 +1398,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
 
@@ -1338,7 +1416,7 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'PASS_V6', { proj, tool: toolName, entries: runnableEntries.length, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'PASS_V6', { proj, tool: toolName, entries: runnableEntries.length, dur: Date.now() - t0 }));
       return;
     }
 
@@ -1350,11 +1428,11 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'PASS_V6_WORKTREE_HOST_NOTE', { proj, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'PASS_V6_WORKTREE_HOST_NOTE', { proj, tool: toolName, file: filePath, dur: Date.now() - t0 }));
       return;
     }
 
-    log(paceUtils.logEntry('PreToolUse', 'PASS_V6_NON_CODE', { proj, tool: toolName, dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', 'PASS_V6_NON_CODE', { proj, tool: toolName, dur: Date.now() - t0 }));
     return;
   }
 
@@ -1365,7 +1443,7 @@ paceUtils.withStdinParsed((stdin) => {
       : `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。当前工具调用已被 hook 阻止，目标代码/artifact 尚未被修改。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md / implementation_plan.md wikilink 索引。不要继续在 task.md / implementation_plan.md 手写 v5 详情、APPROVED 或 VERIFIED。迁移或桥接后必须重试被阻止的原始工具调用；在写入工具成功前不要声称任务已完成。`;
     const output = denyOrHint(reason);
     process.stdout.write(JSON.stringify(output));
-    log(paceUtils.logEntry('PreToolUse', `DENY_LEGACY_ACTIVE${teammateTag}`, { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', `DENY_LEGACY_ACTIVE${teammateTag}`, { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
     return;
   }
 
@@ -1376,7 +1454,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (needsArtifactRootChoice) {
         const output = denyOrHint(artifactRootChoiceReason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
         return;
       }
       let createdFiles = [];
@@ -1389,7 +1467,7 @@ paceUtils.withStdinParsed((stdin) => {
       const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 v6 CHG 并记录同步标记；桥接完成后再重试本次代码写入。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
       return;
     }
   }
@@ -1405,7 +1483,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (v5MigrationInfo.needsPrompt) {
         const output = denyOrHint(v5MigrationReason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_V5_MIGRATION${teammateTag}`, {
+        log(projectLogEntry('PreToolUse', `DENY_V5_MIGRATION${teammateTag}`, {
           proj,
           signal: paceSignal,
           tool: toolName,
@@ -1419,7 +1497,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (needsArtifactRootChoice) {
         const output = denyOrHint(artifactRootChoiceReason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
         return;
       }
       // T-076: DENY 前懒创建缺失的模板文件；幂等同内容创建，不需要 artifact-writer 写锁。
@@ -1455,7 +1533,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
       return;
     }
 
@@ -1466,7 +1544,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (needsArtifactRootChoice) {
           const output = denyOrHint(artifactRootChoiceReason);
           process.stdout.write(JSON.stringify(output));
-          log(paceUtils.logEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+          log(projectLogEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, dur: Date.now() - t0 }));
           return;
         }
         let createdFiles = [];
@@ -1477,7 +1555,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先创建 v6 CHG；若用户已批准并准备开始，派 artifact-writer approve-and-start 后再写代码。字段格式见 Skill(paceflow:artifact-management)。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
         const output = denyOrHint(reason);
         process.stdout.write(JSON.stringify(output));
-        log(paceUtils.logEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
+        log(projectLogEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
         return;
       }
     }
@@ -1495,12 +1573,12 @@ paceUtils.withStdinParsed((stdin) => {
         }
       };
       process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('PreToolUse', 'SOFT_WARN', { proj, codeCount: displayCountForHint, tool: toolName, file: filePath, output: ctx, dur: Date.now() - t0 }));
+      log(projectLogEntry('PreToolUse', 'SOFT_WARN', { proj, codeCount: displayCountForHint, tool: toolName, file: filePath, output: ctx, dur: Date.now() - t0 }));
       return;
     }
 
     // W-code-6: 当前无代码文件，不触发
-    log(paceUtils.logEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-trigger', dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-trigger', dur: Date.now() - t0 }));
     return;
   }
 
@@ -1514,11 +1592,11 @@ paceUtils.withStdinParsed((stdin) => {
       }
     };
     process.stdout.write(JSON.stringify(output));
-    log(paceUtils.logEntry('PreToolUse', 'PASS', { proj, tool: toolName, injected: taskActiveContent.split('\n').length, dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', 'PASS', { proj, tool: toolName, injected: taskActiveContent.split('\n').length, dur: Date.now() - t0 }));
   } else {
-    log(paceUtils.logEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-task-content', dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-task-content', dur: Date.now() - t0 }));
   }
   } catch(e) {
-    try { log(paceUtils.logEntry('PreToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
+    try { log(projectLogEntry('PreToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
   }
 });
