@@ -273,7 +273,21 @@ git add .
 git -c user.name="PACEflow Smoke" -c user.email="paceflow-smoke@example.local" commit -m init
 ```
 
-Start Claude Code in `$ROOT` with `PACE_PROJECT_NAME=$ALIAS`, choose vault artifacts, create and close a small CHG. Then start Claude Code in `$ROOT/packages/api` with the same env override.
+Start Claude Code in `$ROOT` with `PACE_PROJECT_NAME=$ALIAS`, choose vault artifacts, create and close a small CHG:
+
+```bash
+cd "$ROOT"
+PACE_PROJECT_NAME="$ALIAS" claude
+```
+
+Then start Claude Code in `$ROOT/packages/api` with the same env override:
+
+```bash
+cd "$ROOT/packages/api"
+PACE_PROJECT_NAME="$ALIAS" claude
+```
+
+If the env override is omitted in the child session, the vault project falls back to the parent directory basename (`paceflow-smoke-project-root-alias`) and creates the wrong artifact directory. That is a smoke setup error, not a Project Root inheritance pass.
 
 Child prompt:
 
@@ -289,4 +303,34 @@ Expected:
 - Runtime files stay in `$ROOT/.pace/`; no child `.pace` runtime split appears.
 - Repeating the child prompt from a nested git repo under `$ROOT` still keeps Project Root at `$ROOT` until `set-project-root --mode independent` is run there.
 
-Production smoke passes when all six scenarios show the intended Project Root, Artifact Root, and `.pace` runtime location without duplicate child artifacts.
+Production smoke passes when all Project Root scenarios show the intended Project Root, Artifact Root, and `.pace` runtime location without duplicate child artifacts.
+
+## Smoke 17G: No-Signal Skill Helper Fallback
+
+Verify that a brand-new project can start from the loaded skill without searching the plugin cache.
+
+```bash
+ROOT=/mnt/k/AI/paceflow-smoke-skill-helper-fallback
+rm -rf "$ROOT"
+mkdir -p "$ROOT"
+cd "$ROOT"
+git init
+printf 'console.log("skill helper")\n' > index.js
+git add .
+git -c user.name="PACEflow Smoke" -c user.email="paceflow-smoke@example.local" commit -m init
+```
+
+Start Claude Code in `$ROOT`.
+
+Prompt:
+
+```text
+这个新项目还没有 .pace。请先调用 Skill(paceflow:pace-workflow)，artifact 选择 local，创建一个小 CHG：把 index.js 输出改成 "skill helper ok"，运行 node index.js 验证，通过后 close-chg 归档。
+如果 SessionStart 没有注入 helper 绝对路径，请使用已加载 skill 的 skill 根目录拼出 ../../hooks/set-artifact-root.js 和 ../../hooks/reserve-artifact-id.js，不要搜索 ~/.claude/plugins/cache。
+```
+
+Expected:
+
+- The model does not run `find ~/.claude/plugins/cache` or `ls ~/.claude/plugins/cache` to locate helpers.
+- The model runs `set-artifact-root.js --choice local` before `reserve-artifact-id.js --operation create-chg`.
+- Artifact files are created under `$ROOT/`, and active `task.md` / `implementation_plan.md` lines are empty after close.

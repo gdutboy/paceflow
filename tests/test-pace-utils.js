@@ -1842,7 +1842,7 @@ test('ARCHIVE_PATTERN 不匹配行内嵌入的标记', () => {
 });
 
 // ============================================================
-// 18. release sanity — 15 个测试
+// 18. release sanity — 16 个测试
 // ============================================================
 console.log('\n--- release sanity ---');
 
@@ -1926,6 +1926,28 @@ test('skills 明确 HOTFIX reserve helper 用法与 --new 边界', () => {
     const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
     assert.ok(text.includes('--operation create-chg --type hotfix'), `${rel} 应明确 HOTFIX 预留命令`);
     assert.ok(text.includes('--type hotfix --new'), `${rel} 应明确 HOTFIX 新编号复用边界`);
+  }
+});
+
+test('skills 在无 hook 注入时给出 skill-root helper fallback', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const files = {
+    'plugin/skills/pace-workflow/SKILL.md': ['set-artifact-root.js', 'reserve-artifact-id.js'],
+    'plugin/skills/artifact-management/SKILL.md': ['set-artifact-root.js', 'reserve-artifact-id.js'],
+    'plugin/skills/pace-bridge/SKILL.md': ['set-artifact-root.js', 'reserve-artifact-id.js', 'sync-plan.js'],
+    'plugin/skills/artifact-management/references/change-lifecycle.md': ['reserve-artifact-id.js'],
+  };
+  for (const [rel, helpers] of Object.entries(files)) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    assert.ok(!text.includes('<运行 hook 提供的'), `${rel} 不应保留不可执行 helper 占位命令`);
+    assert.ok(!/find\s+.*~\/\.claude\/plugins\/cache/.test(text), `${rel} 不应引导搜索 plugin cache`);
+    assert.ok(text.includes('<skill-root>/../../hooks/'), `${rel} 应给出 skill-root fallback`);
+    if (rel.endsWith('SKILL.md')) {
+      assert.ok(text.includes('这不是顺序执行清单'), `${rel} 应避免把 helper 模板误读为顺序脚本`);
+    }
+    for (const helper of helpers) {
+      assert.ok(text.includes(`<skill-root>/../../hooks/${helper}`), `${rel} 应给出 ${helper} fallback`);
+    }
   }
 });
 

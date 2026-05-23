@@ -18,22 +18,28 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill 根目录（不是本 `references/` 目录）为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`，不要搜索 `~/.claude/plugins/cache` 猜版本：
+ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill 根目录（不是本 `references/` 目录）为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`。不要用 `find` / `ls` 搜索 `~/.claude/plugins/cache` 猜版本：
 
 ```bash
-<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg 命令>
+node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation create-chg
+# 若没有 hook 输出但本 skill 已加载：
+node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg
 ```
 
 HOTFIX 预留必须加类型：
 
 ```bash
-<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix 命令>
+node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation create-chg --type hotfix
+# 若没有 hook 输出但本 skill 已加载：
+node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix
 ```
 
 同一 session 默认复用尚未消费的 `create-chg` reservation。若已预留普通 CHG 后要创建 HOTFIX，或确实需要第二个新编号，加 `--new`：
 
 ```bash
-<运行 hook 提供的 node ".../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new 命令>
+node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation create-chg --type hotfix --new
+# 若没有 hook 输出但本 skill 已加载：
+node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new
 ```
 
 再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
