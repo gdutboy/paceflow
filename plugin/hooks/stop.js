@@ -250,9 +250,9 @@ if (paceSignal === 'artifact') {
   }
 }
 
-// Claude 任务列表残留检测：本会话用过任务列表工具且 task.md 无活跃任务 → 仅 log + 清理标志位。
-// v6 artifact 模式的 task-list flags 由 SessionStart 按会话清理；Stop 不改写 artifact 内容。
-// 不阻止退出，因为 hook 无法查询 Claude 内部任务列表实际状态。
+// Legacy 任务面板 observer 标志清理：仅兼容旧手动配置，不代表当前 PACE 执行状态。
+// v6 artifact 模式的 legacy task-panel flags 由 SessionStart 按会话清理；Stop 不改写 artifact 内容。
+// 不阻止退出，因为当前插件不注册任务面板 hook，也无法查询 Claude 内部任务面板状态。
 const taskListFlags = [path.join(PACE_RUNTIME, 'task-list-used'), path.join(PACE_RUNTIME, 'todowrite-used')];
 if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && taskActive) {
   const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });

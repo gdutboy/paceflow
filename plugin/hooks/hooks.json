@@ -62,16 +62,6 @@
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js"]
           }
         ]
-      },
-      {
-        "matcher": "TodoWrite|TaskCreate|TaskUpdate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-list-sync.js"]
-          }
-        ]
       }
     ],
     "PostToolUse": [

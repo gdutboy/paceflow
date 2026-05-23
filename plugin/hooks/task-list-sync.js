@@ -1,137 +1,68 @@
-// PreToolUse:TaskCreate|TaskUpdate|TodoWrite hook 方案 D
-// 拦截 Claude 任务列表写入：交互式 TaskCreate/TaskUpdate + 非交互/SDK TodoWrite。
-// 校验任务列表与 v6 changes/<id>.md 任务清单的一致性。
-// 非 PACE 项目时直接放行；PACE 项目时检查 task.md 活跃任务与操作的合理性
+// Legacy compatibility observer for older manual settings that still call this script.
+// Current Claude Code exposes task-panel hooks as TaskCreated/TaskCompleted events, and
+// PaceFlow no longer uses task-list hooks for workflow guidance. The authoritative
+// execution state is changes/<id>.md; Claude's task panel remains model-owned memory.
 const fs = require('fs');
 const path = require('path');
+
 let paceUtils;
 try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, isPaceProject, readActive, isTeammate, getArtifactDir, getProjectName, formatBridgeHint, TODO_DRIFT_THRESHOLD, FORMAT_SNIPPETS, getActiveChangeEntries, classifyChange } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
-// W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
-const proj = getProjectName(cwd);
+const proj = paceUtils.getProjectName(cwd);
 
-// S-1: 统一 stdin 解析
+function observedTaskEvent(stdin) {
+  const event = String(stdin.raw && stdin.raw.hook_event_name || '');
+  const tool = String(stdin.toolName || '');
+  return (
+    event === 'TaskCreated' ||
+    event === 'TaskCompleted' ||
+    tool === 'TaskCreate' ||
+    tool === 'TaskUpdate' ||
+    tool === 'TodoWrite'
+  );
+}
+
 paceUtils.withStdinParsed((stdin) => {
+  const t0 = Date.now();
   try {
-    const t0 = Date.now();
-    const paceSignal = isPaceProject(cwd);
+    if (!stdin.ok) {
+      log(paceUtils.logEntry('TaskSync', 'SKIP', { proj, reason: 'bad-stdin', dur: Date.now() - t0 }));
+      return;
+    }
 
-    // 非 PACE 项目：直接放行
+    const paceSignal = paceUtils.isPaceProject(cwd);
     if (!paceSignal) {
       log(paceUtils.logEntry('TaskSync', 'SKIP', { proj, reason: 'non-pace', dur: Date.now() - t0 }));
       return;
     }
-    const rootConfigError = paceUtils.artifactRootConfigError(cwd);
-    if (rootConfigError) {
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          additionalContext: rootConfigError.message,
-        }
-      };
-      process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('TaskSync', 'HINT', { proj, reason: rootConfigError.code, dur: Date.now() - t0 }));
-      return;
-    }
 
-    // v4.7: teammate 静默——避免 Agent Teams 共享任务的假阳性
-    if (isTeammate()) {
+    if (paceUtils.isTeammate()) {
       log(paceUtils.logEntry('TaskSync', 'SKIP', { proj, reason: 'teammate', dur: Date.now() - t0 }));
       return;
     }
 
-    const { toolName, toolInput } = stdin;
-    if (!stdin.ok) return;
-
-    // TodoWrite 清空操作（空数组）直接放行，不产生 hint
-    if (toolName === 'TodoWrite' && (toolInput.todos || []).length === 0) {
+    if (observedTaskEvent(stdin)) {
+      const runtime = paceUtils.getProjectRuntimeDir(cwd);
+      try { fs.mkdirSync(runtime, { recursive: true }); } catch(e) {}
+      try { fs.writeFileSync(path.join(runtime, 'task-list-used'), paceUtils.ts(), 'utf8'); } catch(e) {}
+      log(paceUtils.logEntry('TaskSync', 'OBSERVE', {
+        proj,
+        event: stdin.raw && stdin.raw.hook_event_name || '-',
+        tool: stdin.toolName || '-',
+        task_id: stdin.raw && stdin.raw.task_id || stdin.toolInput.task_id || '-',
+        reason: 'task-panel-is-working-memory',
+        dur: Date.now() - t0,
+      }));
       return;
     }
 
-    // 写入类操作：TodoWrite（批量替换）、TaskCreate（创建单项）、TaskUpdate（更新单项）
-    const isWriteOp = (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate');
-
-    const taskActive = readActive(cwd, 'task.md');
-    // W-dry-2: 预计算桥接提示。任务列表只是工作记忆；
-    // superpowers+no task.md 场景不再持续注入用户不可见的 additionalContext。
-    const artDir = getArtifactDir(cwd);
-    const artifactHint = paceUtils.artifactDirRuntimeHint(cwd);
-    const bridgeHint = formatBridgeHint(cwd, artDir);
-    const hints = [];
-
-    if (paceSignal === 'artifact') {
-      const changes = getActiveChangeEntries(cwd).map(e => classifyChange(e));
-      const currentChanges = changes.filter(c => c.category === 'running');
-      const activeTaskCount = currentChanges.reduce((sum, c) => sum + c.tasks.pending, 0);
-      const completedActiveChanges = changes.filter(c => c.category === 'closing-required').length;
-
-      if (isWriteOp && activeTaskCount === 0 && changes.length === 0) {
-        hints.push(`v6 项目当前无活跃 CHG。请先派 artifact-writer create-chg 创建变更，再更新 Claude 任务列表。`);
-      } else if (isWriteOp && activeTaskCount > 0) {
-        hints.push(`v6 任务权威是 changes/<id>.md 的 ## 任务清单。当前执行中的 CHG 有 ${activeTaskCount} 个未完成 T-NNN，请为它们创建或更新 Claude 任务列表项。`);
-      } else if (isWriteOp && activeTaskCount === 0 && completedActiveChanges > 0) {
-        hints.push(`当前有 ${completedActiveChanges} 个 completed 变更待 close-chg。确认验证通过并归档后再清空 Claude 任务列表；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
-      }
-
-      if (toolName === 'TodoWrite') {
-        const todos = toolInput.todos || [];
-        if (todos.length > 0 && activeTaskCount > 0 && Math.abs(todos.length - activeTaskCount) > TODO_DRIFT_THRESHOLD) {
-          hints.push(`TodoWrite（${todos.length} 项）与 v6 详情未完成任务（${activeTaskCount} 项）数量差异较大。`);
-        }
-      }
-    } else {
-      if (taskActive) {
-        if (isWriteOp) {
-          log(paceUtils.logEntry('TaskSync', 'SUPPRESS_NON_ARTIFACT_HINT', {
-            proj,
-            tool: toolName,
-            signal: paceSignal,
-            reason: 'task-list-is-working-memory',
-            dur: Date.now() - t0
-          }));
-        }
-      } else {
-        // task.md 不存在但在创建 todo
-        if (isWriteOp) {
-          log(paceUtils.logEntry('TaskSync', 'SUPPRESS_NON_ARTIFACT_HINT', {
-            proj,
-            tool: toolName,
-            signal: paceSignal,
-            plans: bridgeHint ? bridgeHint.fileList : '-',
-            reason: 'task-list-is-working-memory',
-            dur: Date.now() - t0
-          }));
-        }
-      }
-    }
-
-    // 标记本会话使用过任务列表工具（供 Stop hook 检测残留）。
-    if (isWriteOp) {
-      const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
-      try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
-      try { fs.writeFileSync(path.join(PACE_RUNTIME, 'task-list-used'), ts(), 'utf8'); } catch(e) {}
-    }
-
-    if (hints.length > 0) {
-      const ctx = `Claude 任务列表同步校验：${hints.join(' ')}\n${artifactHint}`;
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          additionalContext: ctx
-        }
-      };
-      process.stdout.write(JSON.stringify(output));
-      log(paceUtils.logEntry('TaskSync', 'HINT', { proj, tool: toolName, hints: hints.join('; '), dur: Date.now() - t0 }));
-    } else {
-      log(paceUtils.logEntry('TaskSync', 'PASS', { proj, tool: toolName, dur: Date.now() - t0 }));
-    }
+    log(paceUtils.logEntry('TaskSync', 'PASS', { proj, dur: Date.now() - t0 }));
   } catch(e) {
     log(paceUtils.logEntry('TaskSync', 'ERROR', { proj, error: e.message }));
   }

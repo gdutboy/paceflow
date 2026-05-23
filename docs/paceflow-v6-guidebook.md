@@ -294,7 +294,7 @@ archived-date: null
 | `archived` | `[x]` | ARCHIVE 下方 |
 | `cancelled` | `[-]` | ARCHIVE 下方 |
 
-Stop / SessionStart / Claude 任务列表同步必须使用同一套机械分类：
+Stop / SessionStart / CHG 执行上下文必须使用同一套机械分类：
 
 | 分类 | 判定 | Stop 行为 |
 |---|---|---|
@@ -306,7 +306,7 @@ Stop / SessionStart / Claude 任务列表同步必须使用同一套机械分类
 | `archived` / `cancelled` | ARCHIVE 下方历史项，不在活跃区分类内 | 不阻止 |
 | `inconsistent` | 索引缺失、索引状态不一致、详情缺失、`[x]` 但 status 非 completed/archived、`archived/cancelled/[-]` 仍在活跃区、running/completed 但无 T-NNN 任务行 | 阻止修复 |
 
-多 CHG backlog 是允许的；planned backlog 的 T-NNN 不计入当前 Claude 任务列表。已开始或已完成的 CHG 必须闭环，不能用后续 backlog 稀释当前 CHG 的 close/verify/archive 要求。
+多 CHG backlog 是允许的；planned backlog 的 T-NNN 不计入当前执行中的 T-NNN。已开始或已完成的 CHG 必须闭环，不能用后续 backlog 稀释当前 CHG 的 close/verify/archive 要求。
 
 ### 4.2 CHG 详情结构
 
@@ -628,20 +628,21 @@ v6 目标：
 4. 模板懒创建必须创建 `changes/`、`changes/findings/`、`changes/corrections/`、`corrections.md`。
 5. B 方案执行后，对 v5 历史只提示 “ARCHIVE 下方历史，按需 Read”，不再尝试截断 v5 详情。
 
-### 6.6 `hooks/task-list-sync.js`
+### 6.6 `hooks/task-list-sync.js`（legacy observer）
 
 v6 初始审计时的问题（当前实现已按 v6 目标迁移或明确处置）：
 
 - `task.md` 被视为任务权威来源。
 - 顶层 checkbox 数量与 Claude 任务列表对齐。
 
-v6 目标：
+v6 目标与当前处置：
 
 1. `task.md` 是 CHG 索引，不是子任务权威。
 2. 子任务权威改为活跃 `changes/<id>.md ## 任务清单`。
-3. Claude 任务列表项应映射到 `T-NNN` 子任务，附带 CHG ID。交互式 Claude Code 使用 `TaskCreate/TaskUpdate`，非交互/SDK 使用 `TodoWrite`。
-4. `task.md` 无顶层任务不能说明无任务，需要检查详情文件。
-5. Superpowers 桥接 deny 改为 “派 agent create-chg”。
+3. Claude 任务面板是主模型工作记忆，不作为 PaceFlow hook 约束对象；当前官方 hook 文档没有 `TodoWrite` matcher，任务面板相关 hook 为独立 `TaskCreated` / `TaskCompleted` 事件。
+4. `task-list-sync.js` 不再注册到 `hooks.json`；脚本仅作为 legacy no-op observer，避免旧手动配置仍引用时产生错误或上下文噪声。
+5. `task.md` 无顶层任务不能说明无任务，需要检查详情文件。
+6. Superpowers 桥接 deny 改为 “派 agent create-chg”。
 
 ### 6.7 `hooks/pre-compact.js`
 

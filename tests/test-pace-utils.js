@@ -1963,6 +1963,12 @@ test('skills lifecycle 示例不遗漏 target/task-id 且表格不断裂', () =>
   const workflow = fs.readFileSync(path.join(repoRoot, 'plugin/skills/pace-workflow/SKILL.md'), 'utf8');
   assert.ok(!workflow.includes('update-chg section=work-record action=append'), 'work-record 示例必须带 target');
   assert.ok(!workflow.includes('skill base directory'), 'workflow skill 应统一使用中文“skill 根目录”');
+  assert.ok(workflow.includes('继续、恢复或收口已有 CHG 前'), 'workflow skill 应提醒先读取 CHG 详情');
+  assert.ok(workflow.includes('SessionStart 摘要只用于定位，不替代 CHG 详情'), 'workflow skill 应说明摘要不替代详情');
+
+  const artifactManagement = fs.readFileSync(path.join(repoRoot, 'plugin/skills/artifact-management/SKILL.md'), 'utf8');
+  assert.ok(artifactManagement.includes('继续、恢复或收口已有 CHG/HOTFIX 前'), 'artifact-management skill 应提醒先读取详情文件');
+  assert.ok(artifactManagement.includes('SessionStart 摘要只用于定位，不替代详情文件'), 'artifact-management skill 应说明摘要不替代详情');
 
   const lifecycle = fs.readFileSync(path.join(repoRoot, 'plugin/skills/artifact-management/references/change-lifecycle.md'), 'utf8');
   assert.ok(lifecycle.includes('update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!]'), '[!] 示例必须带 target/section/task-id/new-status');

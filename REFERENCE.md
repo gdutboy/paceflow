@@ -110,7 +110,7 @@ projects/<project>/
 | `post-tool-use-failure.js` | 写入/验证工具失败后提醒不要误判完成 |
 | `subagent-stop.js` | 观察 `artifact-writer` 报告标题/状态并记录 transcript |
 | `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致 |
-| `task-list-sync.js` | 用 `changes/<id>.md` 任务清单校验 Claude 任务列表（TaskCreate/TaskUpdate/TodoWrite） |
+| `task-list-sync.js` | legacy 兼容 observer；当前插件不注册任务面板 hook，PACE 权威仍是 `changes/<id>.md` |
 | `pre-compact.js` | 快照活跃 CHG、pending、approved、verified 状态 |
 | `stop-failure.js` | API 错误中断日志 |
 

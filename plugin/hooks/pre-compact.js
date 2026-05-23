@@ -73,7 +73,7 @@ try {
   try { blockCount = parseInt(fs.readFileSync(blockCountFile, 'utf8').trim(), 10) || 0; } catch(e) {}
   snapshot.runtime = {
     degraded: fs.existsSync(path.join(PACE_RUNTIME, 'degraded')),
-    taskListUsed: fs.existsSync(path.join(PACE_RUNTIME, 'task-list-used')) || fs.existsSync(path.join(PACE_RUNTIME, 'todowrite-used')),
+    legacyTaskPanelUsed: fs.existsSync(path.join(PACE_RUNTIME, 'task-list-used')) || fs.existsSync(path.join(PACE_RUNTIME, 'todowrite-used')),
     blockCount
   };
 

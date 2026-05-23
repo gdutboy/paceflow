@@ -14,6 +14,8 @@ PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edi
 
 Project Root 是 PACEflow 管理边界；`local` artifact root 表示 Project Root 本地目录，不是当前子目录。普通子目录默认继承最近父级 Project Root；独立子项目先运行 `set-project-root --mode independent`，再选择 artifact root。
 
+继续、恢复或收口已有 CHG/HOTFIX 前，先 `Read` 对应 `changes/<id>.md`，确认 `## 任务清单`、实施详情和 `## 工作记录`；SessionStart 摘要只用于定位，不替代详情文件。
+
 如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录或继承父 Project Root 的子目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
 
 Helper 命令来源按以下顺序执行：

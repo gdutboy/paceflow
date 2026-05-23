@@ -1,4 +1,4 @@
-// SessionStart hook：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + Claude 任务列表同步
+// SessionStart hook：重置 Stop 计数器 + 多信号 PACE 检测创建模板 + 注入活跃区 + 跳过任务提醒 + CHG 执行上下文
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -574,6 +574,7 @@ if (paceSignal === 'artifact') {
     for (const s of activeChangeSummaries) {
       process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
     }
+    process.stdout.write(`继续、恢复或收口已有 CHG 前，先 Read 对应 changes/<id>.md，确认任务清单、实施详情和工作记录；本摘要只用于定位，不替代 CHG 详情。\n`);
     process.stdout.write('\n');
   }
 }
@@ -654,7 +655,7 @@ if (taskFullCached) {
       }
     }
 
-    // v4.3.6 方案 A + v6 修正：Claude 任务列表同步以详情 T-NNN 为权威，task.md 只是索引。
+    // v4.3.6 方案 A + v6 修正：执行上下文以详情 T-NNN 为权威，task.md 只是索引。
     const currentCategories = new Set(['running']);
     const currentSessionSummaries = activeChangeSummaries.filter(s => !isForeignSummary(s));
     const blockedSessionSummaries = currentSessionSummaries.filter(s => s.category === 'blocked');
@@ -671,7 +672,7 @@ if (taskFullCached) {
         process.stdout.write(`- ${s.id} category=${s.category} owner=${ownerDisplay(s)} pending=${s.pending ?? '?'}\n`);
       }
       if (foreignProgressSummaries.length > 5) process.stdout.write(`- ... 另有 ${foreignProgressSummaries.length - 5} 个\n`);
-      process.stdout.write('这些 CHG 不计入当前 session 的 Claude 任务列表；优先回到原 worktree/session，接手必须有用户明确指令与证据。\n\n');
+      process.stdout.write('这些 CHG 由其他 worktree/session 负责；当前 session 仅显示 owner 摘要。优先回到原 worktree/session，接手必须有用户明确指令与证据。\n\n');
       log(paceUtils.logEntry('SessionStart', 'FOREIGN_CHANGE_OWNER_SUMMARY', {
         cwd,
         count: foreignProgressSummaries.length,
@@ -684,7 +685,7 @@ if (taskFullCached) {
         process.stdout.write(`- ${s.id} owner=${ownerDisplay(s)} blocked=${s.blocked ?? '?'} pending=${s.pending ?? '?'}\n`);
       }
       if (blockedSessionSummaries.length > 5) process.stdout.write(`- ... 另有 ${blockedSessionSummaries.length - 5} 个\n`);
-      process.stdout.write('这些 CHG 不计入当前 session 的 Claude 任务列表；恢复前先确认用户意图，必要时派 update-status 将任务重新标为 [/]。\n\n');
+      process.stdout.write('这些 CHG 属于 deferred，不计入当前执行中的 T-NNN；恢复前先确认用户意图，必要时派 update-status 将任务重新标为 [/]。\n\n');
       log(paceUtils.logEntry('SessionStart', 'BLOCKED_CHANGE_SUMMARY', {
         cwd,
         count: blockedSessionSummaries.length,
@@ -692,13 +693,13 @@ if (taskFullCached) {
       }));
     }
     if (detailPending > 0) {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\nv6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN，请让 Claude 任务列表反映这些未完成任务。\n\n`);
+      process.stdout.write(`\n=== CHG 执行上下文 ===\nv6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN；继续前先 Read 对应 changes/<id>.md。Claude 任务面板只是工作记忆，按需要使用。\n\n`);
     } else if (hasCompleted) {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n活跃索引中有已完成/跳过变更待 close-chg，归档后再清空 Claude 任务列表；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
+      process.stdout.write(`\n=== CHG 执行上下文 ===\n活跃索引中有已完成/跳过变更待 close-chg；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
     } else if (hasIndexPending && paceSignal === 'artifact') {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前没有执行中的未完成 T-NNN；backlog / ready / blocked 属于 deferred，不需要按索引行创建任务列表项。Stop 会用可见提醒提示这些 deferred CHG。\n\n`);
+      process.stdout.write(`\n=== CHG 执行上下文 ===\n当前没有执行中的未完成 T-NNN；backlog / ready / blocked 属于 deferred。Stop 会用可见提醒提示这些 deferred CHG。\n\n`);
     } else {
-      process.stdout.write(`\n=== Claude 任务列表同步 ===\n当前无活跃 CHG。如 Claude 任务列表仍有残留项，请清空。\n\n`);
+      process.stdout.write(`\n=== CHG 执行上下文 ===\n当前无活跃 CHG。\n\n`);
     }
   } catch(e) {}
 }
