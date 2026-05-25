@@ -320,6 +320,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.59 | 2026-05-25 | 收敛 Claude 任务面板边界：移除 `TodoWrite` / `TaskCreate` / `TaskUpdate` hook 注册，`task-list-sync.js` 降级为 legacy observer；SessionStart 改为 CHG 执行上下文，明确任务面板只是工作记忆，PACE 权威仍是 `changes/<id>.md ## 任务清单`；workflow/artifact-management skill 增加继续/恢复/收口 CHG 前先 Read 详情文件的软提醒 |
 | v6.0.58 | 2026-05-22 | 引入显式 Project Root 解析：普通子目录默认继承最近父级 PACEflow 项目，artifact/root choice、runtime `.pace`、CHG owner、Stop 和 plan sync 都归属 effective Project Root；新增 `set-project-root.js --mode independent` 让真正独立子项目断开继承；SessionStart/helper 文案显示 Current CWD / Project Root / Artifact Root 边界 |
 | v6.0.57 | 2026-05-16 | 将 `PostToolUse` 的 `decision:"block" + continue:true` 引入生产最小试点：artifact-writer 写入 `walkthrough.md` 后若 wikilink 或 `[worktree:: ...] [branch:: ...]` 上下文仍不符合 v6 规范，hook 会让当前 turn 继续修复；每 session/目标只触发一次，避免循环 |
 | v6.0.56 | 2026-05-16 | 覆盖 Claude Code 2.1.143 后的 Windows 工具面：PreToolUse 新增 `PowerShell` / `Monitor` matcher，PowerShell 原生命令写 artifact 或 `.pace` 写入控制运行态会被阻止；Monitor 只能做只读观察，不能作为后台命令绕过 Bash artifact guard；PostToolUseFailure 同步覆盖 PowerShell/Monitor 失败恢复提示 |
@@ -389,4 +390,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v6.0.58 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.0.59 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)

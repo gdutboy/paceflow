@@ -1,7 +1,7 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.58（原始调研输入：PACEflow v5.1.4）
+> **当前执行版本**：PACEflow v6.0.59（原始调研输入：PACEflow v5.1.4）
 > **上游调研版本**：Claude Code v2.1.126（后续本机复核至 v2.1.141；官方文档复核至 v2.1.143）
 > **与 README 关系**：本文是行动项视图（按优先级分级、TODO 列表）；README 的“版本历史”表是发布交付视图。两者不要互相同步全文。
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
@@ -17,7 +17,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-22，v6.0.58）
+### 0.1 当前执行视图（2026-05-25，v6.0.59）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -31,7 +31,7 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.58）：
+执行状态（v6.0.59）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
@@ -44,6 +44,7 @@
 - v6.0.56 覆盖 Claude Code 2.1.143 后的 Windows 工具面：PreToolUse 新增 `PowerShell` / `Monitor` matcher；PowerShell 的 `Set-Content` / `Add-Content` / `Out-File` / `Remove-Item` / alias / redirection / `.ps1` wrapper 写 PaceFlow artifacts 或 `.pace` 写入控制运行态会被拒绝；Monitor 复用 Bash-like guard，只允许只读观察，不允许作为后台命令绕过 artifact/runtime-control 写保护；PostToolUseFailure 同步覆盖 PowerShell/Monitor。
 - v6.0.57 将 `PostToolUse continue:true` 投入生产最小试点：仅当 artifact-writer 写入 `walkthrough.md` 后仍缺正确 wikilink 或执行上下文时，PostToolUse 返回 `decision:"block" + continue:true`，要求当前 turn 继续修复；每 session/目标只触发一次，第二次降级为原有 additionalContext，避免循环。PreToolUse gate、artifact-root 选择、legacy migration、Agent 缺字段等仍不迁移。
 - v6.0.58 实现显式 Project Root：普通子目录默认继承最近父级 PACEflow 项目，artifact/root choice、runtime `.pace`、CHG owner、Stop、native plan sync 与 helper 均以 effective Project Root 为准；新增 `set-project-root.js --mode independent` 作为独立子项目入口。设计记录见 `docs/project-root-inheritance-design.md`，production smoke 见 `docs/production-smoke-v6.0.58.md`。
+- v6.0.59 收敛 Claude 任务面板边界：`hooks.json` 不再注册 `TodoWrite` / `TaskCreate` / `TaskUpdate`，`task-list-sync.js` 仅保留 legacy observer；SessionStart 使用 CHG 执行上下文，不再要求任务面板同步；workflow/artifact-management skill 提醒继续、恢复或收口已有 CHG 前先 Read `changes/<id>.md`。
 - v6.0.51 完成 `pre-tool-use.js` 结构拆分：Bash guard、artifact-writer Agent lifecycle guard、marker/direct artifact mutation guard 下沉到 `plugin/hooks/pre-tool-use/*.js`，主 hook 保留路由、stdout 输出与日志顺序。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。
@@ -139,7 +140,7 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.58）：
+最近一次验证结果（v6.0.59）：
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
