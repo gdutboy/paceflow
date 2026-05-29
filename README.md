@@ -368,6 +368,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.0.60 | 2026-05-30 | 修复 hook guard 审计发现：bash-guard 不再因脚本源码出现裸 artifact 文件名字面量而误拦普通脚本与官方验证命令（改用精确路径解析），并补齐 `change-owners` 运行态目录的 Bash 写保护使其与 PowerShell guard 对等；序列号锁改用非重入模式，杜绝同 session 并发预留生成重复编号；移除 `post-tool-use.js` 未注册的 Agent 死代码分支与无生产调用的 artifact-writer 锁原语；`pre-tool-use.js` 顶层异常改为 fail-closed deny |
 | v6.0.59 | 2026-05-25 | 收敛 Claude 任务面板边界：移除 `TodoWrite` / `TaskCreate` / `TaskUpdate` hook 注册，`task-list-sync.js` 降级为 legacy observer；SessionStart 改为 CHG 执行上下文，明确任务面板只是工作记忆，PACE 权威仍是 `changes/<id>.md ## 任务清单`；workflow/artifact-management skill 增加继续/恢复/收口 CHG 前先 Read 详情文件的软提醒 |
 | v6.0.58 | 2026-05-22 | 引入显式 Project Root 解析：普通子目录默认继承最近父级 PACEflow 项目，artifact/root choice、runtime `.pace`、CHG owner、Stop 和 plan sync 都归属 effective Project Root；新增 `set-project-root.js --mode independent` 让真正独立子项目断开继承；SessionStart/helper 文案显示 Current CWD / Project Root / Artifact Root 边界 |
 | v6.0.57 | 2026-05-16 | 将 `PostToolUse` 的 `decision:"block" + continue:true` 引入生产最小试点：artifact-writer 写入 `walkthrough.md` 后若 wikilink 或 `[worktree:: ...] [branch:: ...]` 上下文仍不符合 v6 规范，hook 会让当前 turn 继续修复；每 session/目标只触发一次，避免循环 |
