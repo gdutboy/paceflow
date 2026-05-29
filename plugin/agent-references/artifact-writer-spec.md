@@ -137,6 +137,8 @@ schema-version: "6.0"
 | `archived` | 缺 | 有 | `[x]`（ARCHIVE 下方） | `format-violation`（verified-date 缺失） |
 | `cancelled` | null | 缺 | `[-]`（ARCHIVE 下方） | 取消，不验证 |
 
+`cancelled` 只用于全部 T-NNN 都为 `[-]` 的 CHG/HOTFIX；混合 `[x]` + `[-]` 表示部分任务跳过但变更完成，仍使用 `completed`。
+
 ### 4.2 finding 状态机
 
 | frontmatter status | 索引行 checkbox |

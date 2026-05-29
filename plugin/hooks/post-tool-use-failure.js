@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.exit(0);
 }
 
-const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry, isArtifactWriterAgentType, releaseArtifactWriterLock, CODE_EXTS } = paceUtils;
+const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry, isArtifactWriterAgentType, CODE_EXTS } = paceUtils;
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
@@ -48,15 +48,12 @@ paceUtils.withStdinParsed((stdin) => {
     const commandLooksLikeValidation = bashLooksLikeValidationCommand(commandInput);
 
     if (toolName === 'Agent' && isArtifactWriterAgentType(agentType)) {
-      const release = releaseArtifactWriterLock(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
       const releasedResources = paceUtils.releaseArtifactResourcesForOwner(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
-      log(logEntry('PostToolUseFailure', release.released ? 'RELEASE_ARTIFACT_LOCK' : 'RELEASE_ARTIFACT_LOCK_SKIP', {
+      log(logEntry('PostToolUseFailure', 'RELEASE_ARTIFACT_RESOURCES_AFTER_AGENT_FAILURE', {
         proj,
         tool: toolName,
         agent_type: agentType,
         agent_id: stdin.agentId,
-        reason: release.reason,
-        lock: release.lock && release.lock.path,
         resource_locks: releasedResources.length,
         dur: Date.now() - t0,
       }));

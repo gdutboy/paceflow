@@ -17,7 +17,7 @@
 4. **路径追踪**：报告逻辑错误时，必须从"问题行"沿控制流追踪到入口点，确认执行路径可达。
 5. **实际对比**：声称"不一致"时，必须真正读取并对比两个文件的实际内容，不能凭记忆。
 6. **动态发现**：使用 Glob 发现文件，不假设文件数量或名称。发现的数量与文档不同本身可能是一个发现。
-7. **当前 v6 基线**：marketplace `source` 指向 `./plugin`；发布面是 4 个用户 skill + `artifact-writer` agent + hooks/agent-references/migrate；`internal/skills/audit`、docs、tests、tickets 不发布；v5 活跃流程只允许迁移/桥接；artifact-writer 持项目级锁写 artifact；Bash 不得修改 `.pace/artifact-writer.lock`。
+7. **当前 v6 基线**：marketplace `source` 指向 `./plugin`；发布面是 4 个用户 skill + `artifact-writer` agent + hooks/agent-references/migrate；`internal/skills/audit`、docs、tests、tickets 不发布；v5 活跃流程只允许迁移/桥接；artifact-writer 写入时持真实 artifact resource lock；legacy `.pace/artifact-writer.lock` 只作为跨版本兼容阻断信号。
 8. **不要追求提示词 100% 服从**：报告格式 warning、模型偶发拆分操作等，除非造成 artifact 错写、hook 误放行或阻塞循环，否则降级为 W/I。
 9. **Phase 1 不预筛选**：报告所有可疑发现，严重度单独标注；不要因为“可能低优先级”或“文档问题”提前丢弃。
 10. **防 stall**：大文件或大区间审计先用 `git log --stat <range> -- <file>` 定位 commit，再用 `git show <sha> -- <file>` 逐个读取；不要一次性无界 diff 长文件。
@@ -69,7 +69,7 @@ A. Bug 和逻辑错误
 - 条件分支：if/else 逻辑是否完备，是否有遗漏分支
 - 异常处理：try-catch 覆盖范围，异常时是否正确降级（exit 0）
 - 状态竞态：.pace/ 文件的读写竞态条件
-- artifact-writer lock：获取/释放/TTL/owner-mismatch/损坏锁自愈是否会误放行或误删
+- artifact resource lock：获取/释放/TTL/owner-mismatch/索引半事务是否会误放行或误删；legacy `.pace/artifact-writer.lock` 只检查兼容阻断
 - Bash 写保护：artifact 文件与 `.pace/artifact-writer.lock` 是否都被保护，读操作是否被误拦
 
 B. Hook I/O 协议合规

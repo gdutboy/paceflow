@@ -8,7 +8,8 @@ const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, acquireArtifactWriterLock, readArtifactWriterLock, artifactWriterLockMatches, releaseArtifactWriterLock, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
+const createLockUtils = require('../plugin/hooks/pace-utils/locks');
+const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -270,9 +271,9 @@ test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
 });
 
 // ============================================================
-// 5c. session id + artifact writer lock
+// 5c. session id + runtime locks
 // ============================================================
-console.log('\n--- session id + artifact writer lock ---');
+console.log('\n--- session id + runtime locks ---');
 
 test('parseHookStdin 解析 session_id 且 logEntry 自动带 sid', () => {
   const parsed = parseHookStdin(JSON.stringify({ session_id: 'session-test-1', tool_name: 'Bash' }));
@@ -280,54 +281,23 @@ test('parseHookStdin 解析 session_id 且 logEntry 自动带 sid', () => {
   assert.ok(logEntry('UnitHook', 'TEST', { proj: 'demo' }).includes('sid=session-test-1'));
 });
 
-test('artifact-writer lock 原子获取、拒绝第二会话、同会话释放', () => {
-  const dir = makeTmpDir('awl-basic');
-  const first = acquireArtifactWriterLock(dir, {
-    sessionId: 'sid-1',
-    agentId: 'agent-1',
+test('legacy artifact-writer lock 只作为兼容阻断信号读取', () => {
+  const dir = makeTmpDir('legacy-awl-read');
+  const lockPath = getArtifactWriterLockPath(dir);
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, JSON.stringify({
+    sessionId: 'sid-legacy',
+    agentId: 'agent-legacy',
     artifactDir: dir,
-    operation: 'create-chg',
-  });
-  assert.strictEqual(first.acquired, true);
-  assert.ok(fs.existsSync(getArtifactWriterLockPath(dir)));
-  assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-1');
-  assert.ok(!('pid' in readArtifactWriterLock(dir).raw), 'lock payload 不应暴露短生命周期 hook pid');
-
-  const second = acquireArtifactWriterLock(dir, {
-    sessionId: 'sid-2',
-    agentId: 'agent-2',
-    artifactDir: dir,
-    operation: 'create-chg',
-  });
-  assert.strictEqual(second.acquired, false);
-  assert.strictEqual(second.lock.sessionId, 'sid-1');
-  assert.strictEqual(artifactWriterLockMatches(dir, 'sid-1').ok, true);
-  assert.strictEqual(artifactWriterLockMatches(dir, 'sid-2').ok, false);
-
-  const wrongRelease = releaseArtifactWriterLock(dir, { sessionId: 'sid-2' });
-  assert.strictEqual(wrongRelease.released, false);
-  assert.ok(fs.existsSync(getArtifactWriterLockPath(dir)));
-
-  const release = releaseArtifactWriterLock(dir, { sessionId: 'sid-1' });
-  assert.strictEqual(release.released, true);
-  assert.ok(!fs.existsSync(getArtifactWriterLockPath(dir)));
+    timestampMs: Date.now(),
+  }), 'utf8');
+  assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-legacy');
+  assert.strictEqual(artifactWriterLockMatches(dir, 'sid-legacy').ok, true);
+  assert.strictEqual(artifactWriterLockMatches(dir, 'sid-other').ok, false);
 });
 
-test('artifact-writer lock 遇到损坏锁文件会自愈重建', () => {
-  const dir = makeTmpDir('awl-corrupt');
-  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
-  fs.writeFileSync(getArtifactWriterLockPath(dir), '{not json', 'utf8');
-  const acquired = acquireArtifactWriterLock(dir, {
-    sessionId: 'sid-corrupt',
-    artifactDir: dir,
-    operation: 'create-chg',
-  });
-  assert.strictEqual(acquired.acquired, true);
-  assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-corrupt');
-});
-
-test('artifact-writer stale lock 被其他进程删除时继续重试获取', () => {
-  const dir = makeTmpDir('awl-stale-enoent');
+test('legacy artifact-writer stale lock 读取时清理，不再重建项目级锁', () => {
+  const dir = makeTmpDir('legacy-awl-stale');
   const lockPath = getArtifactWriterLockPath(dir);
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
   fs.writeFileSync(lockPath, JSON.stringify({
@@ -335,29 +305,65 @@ test('artifact-writer stale lock 被其他进程删除时继续重试获取', ()
     artifactDir: dir,
     timestampMs: 1,
   }), 'utf8');
+  const match = artifactWriterLockMatches(dir, 'sid-stale');
+  assert.strictEqual(match.ok, false);
+  assert.strictEqual(match.reason, 'stale-cleared');
+  assert.strictEqual(fs.existsSync(lockPath), false);
+});
 
-  const originalUnlinkSync = fs.unlinkSync;
-  let injected = false;
-  fs.unlinkSync = (target) => {
-    if (!injected && target === lockPath) {
-      injected = true;
-      originalUnlinkSync(target);
-      const err = new Error('ENOENT: simulated concurrent stale lock cleanup');
-      err.code = 'ENOENT';
-      throw err;
-    }
-    return originalUnlinkSync(target);
-  };
+test('json lock 默认允许同 owner 重入，序列锁可显式关闭重入', () => {
+  const dir = makeTmpDir('json-lock-reentrant-option');
+  const lockUtils = createLockUtils({
+    getProjectRuntimeDir: d => path.join(d, '.pace'),
+    displayDir: d => `${String(d || '').replace(/\\/g, '/')}/`,
+    normalizeSessionId: s => String(s || '').trim(),
+    currentSessionId: () => 'sid-json-lock',
+    executionContextForCwd: () => ({ text: '[worktree:: main] [branch:: main]' }),
+    normalizePath: p => String(p || '').replace(/\\/g, '/'),
+    getArtifactDir: d => d,
+    todayISO: () => '2026-05-30',
+    CHANGE_OWNER_TTL_MS: paceUtils.CHANGE_OWNER_TTL_MS,
+    PROJECT_ROOT_FILE: paceUtils.PROJECT_ROOT_FILE,
+  });
+  const lockPath = path.join(dir, '.pace', 'locks', 'sequences', 'chg.lock');
+  const payload = { sessionId: 'sid-json-lock', ownerKey: 'session:sid-json-lock', resource: 'sequence:chg' };
+  const first = lockUtils.acquireJsonLock(lockPath, payload, { ttlMs: 30000, waitMs: 1 });
+  const exclusive = lockUtils.acquireJsonLock(lockPath, payload, { ttlMs: 30000, waitMs: 1, reentrant: false });
+  const reentrant = lockUtils.acquireJsonLock(lockPath, payload, { ttlMs: 30000, waitMs: 1 });
+  assert.strictEqual(first.acquired, true);
+  assert.strictEqual(exclusive.acquired, false);
+  assert.strictEqual(exclusive.reason, 'locked');
+  assert.strictEqual(reentrant.acquired, true);
+  assert.strictEqual(reentrant.reentrant, true);
+});
+
+test('reserveArtifactId 遇同 session sequence lock 不重入分配重复编号', () => {
+  const dir = makeTmpDir('reservation-sequence-no-reentrant');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  const origSid = process.env.CLAUDE_CODE_SESSION_ID;
+  process.env.CLAUDE_CODE_SESSION_ID = 'sid-sequence-lock';
   try {
-    const acquired = acquireArtifactWriterLock(dir, {
-      sessionId: 'sid-retry',
+    const compact = paceUtils.todayISO().replace(/-/g, '');
+    const lockPath = path.join(dir, '.pace', 'locks', 'sequences', `chg-${compact}.lock`);
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({
+      version: 'sequence-v1',
+      resource: `sequence:chg-${compact}`,
+      sessionId: 'sid-sequence-lock',
+      ownerKey: 'session:sid-sequence-lock',
+      timestampMs: Date.now(),
+    }), 'utf8');
+    const result = reserveArtifactId(dir, {
+      sessionId: 'sid-sequence-lock',
       artifactDir: dir,
       operation: 'create-chg',
+      prompt: 'operation: create-chg',
     });
-    assert.strictEqual(acquired.acquired, true);
-    assert.strictEqual(readArtifactWriterLock(dir).sessionId, 'sid-retry');
+    assert.strictEqual(result.reserved, false);
+    assert.strictEqual(result.reason, 'sequence-locked');
   } finally {
-    fs.unlinkSync = originalUnlinkSync;
+    if (origSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = origSid;
   }
 });
 
@@ -507,10 +513,13 @@ test('同一 session 多个 reservation 可按目标文件精确匹配', () => {
 
 test('isArtifactRuntimeControlPath 识别锁/sequence/reservation 控制面', () => {
   const dir = makeTmpDir('runtime-control');
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'locks')), true);
   assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'locks', 'artifacts', 'x.lock')), true);
   assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'sequences', 'chg.counter')), true);
   assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'reservations', 'session.json')), true);
   assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'index-transactions', 'session.json')), true);
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'change-owners')), true);
+  assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json')), true);
   assert.strictEqual(isArtifactRuntimeControlPath(dir, path.join(dir, '.pace', 'artifact-root')), false);
 });
 

@@ -2751,6 +2751,34 @@ test('9hc0b2. Bash 不得删除或重定向写入 artifact-writer.lock', () => {
   }
 });
 
+test('9hc0b2a. Bash 不得删除或移动 change-owners 运行态目录', () => {
+  const dir = makeV6Project('agent-change-owners-bash-protect');
+  const ownerPath = seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-owner' });
+  const ownerDir = path.dirname(ownerPath);
+
+  const commands = [
+    'rm -rf .pace/change-owners',
+    'rm -rf .pace/change-owners/',
+    'mv .pace/change-owners /tmp/pace-change-owners-bad',
+    `rm -f "${ownerPath}"`,
+  ];
+  for (const command of commands) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        session_id: 'sid-other',
+        tool_name: 'Bash',
+        tool_input: { command },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'), `应阻止命令: ${command}`);
+    assert.ok(r.stdout.includes('artifact 写入控制运行态'), `应说明 runtime 保护: ${command}`);
+    assert.ok(fs.existsSync(ownerDir), 'change-owners 目录应保留');
+    assert.ok(fs.existsSync(ownerPath), 'change owner 文件应保留');
+  }
+});
+
 test('9hc0b3. Write/Edit 不得修改 artifact 写入控制运行态', () => {
   const dir = makeV6Project('agent-artifact-runtime-control-write-deny');
   const targets = [
@@ -3971,6 +3999,69 @@ test('9hgd4. heredoc body 中的 > artifact 文本不误判为重定向', () => 
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
+test('9hgd5. Bash guard 放行验证脚本里的动态 artifact fixture 字符串', () => {
+  const dir = makeV6Project('ptu-bash-test-script-fixture-readonly');
+  const testsDir = path.join(dir, 'tests');
+  fs.mkdirSync(testsDir, { recursive: true });
+  const script = path.join(testsDir, 'fixture-check.js');
+  fs.writeFileSync(script, [
+    "const fs = require('fs');",
+    "const path = require('path');",
+    "function fixture(dir) { fs.writeFileSync(path.join(dir, 'task.md'), '# fixture\\n'); }",
+    "console.log('fixture strings only');",
+  ].join('\n'), 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: 'node tests/fixture-check.js' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('9hgd5a. Bash guard 仅放行 paceflow 官方验证脚本源码样本', () => {
+  const dir = makeV6Project('ptu-bash-paceflow-validation-script');
+  fs.mkdirSync(path.join(dir, 'plugin', '.claude-plugin'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'plugin', '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'paceflow' }), 'utf8');
+  fs.writeFileSync(path.join(dir, 'tests', 'test-hooks-e2e.js'), [
+    "const samples = [\"node -e \\\"require('fs').writeFileSync('task.md', 'x')\\\"\"];",
+    "console.log(samples.length);",
+  ].join('\n'), 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: 'node tests/test-hooks-e2e.js' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+});
+
+test('9hgd6. Bash guard 仍拒绝 tests 下脚本直接写 artifact 字面路径', () => {
+  const dir = makeV6Project('ptu-bash-test-script-direct-artifact-write');
+  const testsDir = path.join(dir, 'tests');
+  fs.mkdirSync(testsDir, { recursive: true });
+  const script = path.join(testsDir, 'direct-write.js');
+  fs.writeFileSync(script, [
+    "const fs = require('fs');",
+    "fs.writeFileSync('task.md', '# bad\\n');",
+  ].join('\n'), 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Bash',
+      tool_input: { command: 'node tests/direct-write.js' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact 文件'));
+});
+
 test('9hge. PowerShell 修改 artifact / runtime-control 被拒绝，只读放行', () => {
   const dir = makeV6Project('ptu-powershell-artifact');
   const commands = [
@@ -4706,7 +4797,7 @@ test('15f1. artifact-writer 多步收尾中间态不输出状态类 warning', ()
   assert.ok(!r.stdout.includes('缺少 verified-date'));
 });
 
-test('15f2. PostToolUse:Agent close/archive 只有目标已离开活跃索引才标记 owner closed', () => {
+test('15f2. PostToolUse 不处理 Agent close/archive owner 收口', () => {
   const dir = makeV6Project('post-agent-close-owner-still-active', {
     indexMark: '[x]',
     detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true }),
@@ -5066,6 +5157,10 @@ test('18. hooks.json 不再注册已退役的 TodoWrite/TaskCreate/TaskUpdate Pr
   const matchers = entries.map(e => e.matcher || '');
   assert.ok(!matchers.includes('TodoWrite|TaskCreate|TaskUpdate'));
   assert.ok(!entries.some(e => (e.hooks || []).some(h => JSON.stringify(h).includes('task-list-sync.js'))));
+
+  const postEntries = hooksConfig.hooks.PostToolUse || [];
+  const postMatchers = postEntries.flatMap(e => String(e.matcher || '').split('|'));
+  assert.ok(!postMatchers.includes('Agent'), 'PostToolUse 不应注册 Agent；Agent 失败由 PostToolUseFailure 处理');
 });
 
 test('18a. task-list-sync legacy observer 不注入 additionalContext', () => {

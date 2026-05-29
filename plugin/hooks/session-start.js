@@ -140,7 +140,7 @@ if (paceSignal && !rootChoicePending && eventType !== 'compact') {
 }
 
 // v4: PACE 项目才创建/重置运行态 .pace 文件；首次 root 选择前保持 SessionStart 零写入。
-if (paceSignal && !rootChoicePending) {
+if (paceSignal && !rootChoicePending && eventType !== 'compact') {
   try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
   try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
   // W-code-4: 使用 SESSION_SCOPED_FLAGS 常量（与 pace-utils 保持同步）
@@ -193,6 +193,12 @@ if (eventType === 'compact') {
         }
         if (snap.runtime?.degraded) {
           lines.push('Stop 检查上次仍有未解决项；本次会话会继续检查。');
+        }
+        if (Number.isFinite(Number(snap.runtime?.blockCount)) && Number(snap.runtime.blockCount) > 0) {
+          try {
+            fs.mkdirSync(PACE_RUNTIME, { recursive: true });
+            fs.writeFileSync(COUNTER_FILE, String(Number(snap.runtime.blockCount)), 'utf8');
+          } catch(e) {}
         }
         // v5.0.1: compact 后 native plan 恢复提示
         const pendingNativePlans = new Set(Array.isArray(snap.nativePlans) ? snap.nativePlans : []);

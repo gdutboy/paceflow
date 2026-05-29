@@ -90,7 +90,7 @@ function commandTextLooksMutating(c) {
     /(^|[;&|]\s*)(npm|pnpm|yarn)\s+(?:run|exec|x)\b/i.test(c) ||
     /(^|[;&|]\s*)npx\b[\s\S]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
     /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
-    /(^|[;&|]\s*)(python\d*|node)\b[\s\S]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+    /(^|[;&|]\s*)(python\d*|node)\b[^\n;&|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
 }
 
 function commandTextContainsWriteApi(c) {
@@ -100,6 +100,24 @@ function commandTextContainsWriteApi(c) {
 
 function bashCommandRunsScriptEngine(command) {
   return /(^|[\n;&|]\s*)(?:node|python\d*)\b/i.test(String(command || ''));
+}
+
+function isPaceflowValidationScriptTarget(target, cwd) {
+  let root = '';
+  let rel = '';
+  try {
+    root = path.resolve(cwd || process.cwd());
+    rel = path.relative(root, path.resolve(target)).replace(/\\/g, '/');
+  } catch(e) {
+    return false;
+  }
+  if (!['tests/test-pace-utils.js', 'tests/test-hooks-e2e.js'].includes(rel)) return false;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+    return manifest && manifest.name === 'paceflow';
+  } catch(e) {
+    return false;
+  }
 }
 
 function bashScriptExecutionTargets(command, cwd) {
@@ -259,7 +277,7 @@ function bashPathLooksArtifactRuntimeControl(target, cwd) {
     if (paceUtils.isArtifactRuntimeControlPath(cwd, resolved)) return true;
   } catch(e) {}
   return /(?:^|\/)\.pace\/artifact-writer\.lock$/.test(raw) ||
-    /(?:^|\/)\.pace\/(?:locks|sequences|reservations|index-transactions)(?:\/|$)/.test(raw) ||
+    /(?:^|\/)\.pace\/(?:locks|sequences|reservations|index-transactions|change-owners)(?:\/|$)/.test(raw) ||
     raw === 'artifact-writer.lock';
 }
 
@@ -295,15 +313,17 @@ function bashCommandReferencesArtifactRuntimeControl(command, cwd) {
     bashTextReferencesPathOrChild(c, `${runtime}/sequences`) ||
     bashTextReferencesPathOrChild(c, `${runtime}/reservations`) ||
     bashTextReferencesPathOrChild(c, `${runtime}/index-transactions`) ||
+    bashTextReferencesPathOrChild(c, `${runtime}/change-owners`) ||
     (relRuntime && (
       bashTextReferencesPathOrChild(c, `${relRuntime}/locks`) ||
       bashTextReferencesPathOrChild(c, `${relRuntime}/sequences`) ||
       bashTextReferencesPathOrChild(c, `${relRuntime}/reservations`) ||
-      bashTextReferencesPathOrChild(c, `${relRuntime}/index-transactions`)
+      bashTextReferencesPathOrChild(c, `${relRuntime}/index-transactions`) ||
+      bashTextReferencesPathOrChild(c, `${relRuntime}/change-owners`)
     )) ||
     c.includes(paceUtils.getArtifactWriterLockPath(cwd).replace(/\\/g, '/')) ||
     /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
-    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/(?:locks|sequences|reservations|index-transactions)(?:\/|$)/.test(c) ||
+    /(?:^|[\s"'`=;|&])(?:\.\/)?\.pace\/(?:locks|sequences|reservations|index-transactions|change-owners)(?:\/|$)/.test(c) ||
     /(?:^|[\s"'`=;|&])artifact-writer\.lock(?=$|[\s"'`;|&<>])/.test(c) ||
     bashCommandPathTokens(c).some(target => bashPathLooksArtifactRuntimeControl(target, cwd));
 }
@@ -413,29 +433,55 @@ function bashShellCommandReferencesArtifact(command, cwd, artDir) {
   return shellCommandScripts(command).some(script => bashCommandReferencesArtifact(script, cwd, artDir));
 }
 
-function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth = 0) {
+function scriptSourceWritesArtifactTarget(script, cwd, artDir) {
+  const c = bashSearchText(script);
+  const directCall = /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rmSync|renameSync|mkdirSync|write_text|write_bytes|open)\s*\(\s*(?:"([^"]+)"|'([^']+)')/gi;
+  let m;
+  while ((m = directCall.exec(c)) !== null) {
+    const target = m[1] || m[2] || '';
+    if (target && bashPathLooksArtifact(target, cwd, artDir)) return true;
+  }
+
+  const pathJoinCall = /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rmSync|renameSync|mkdirSync|write_text|write_bytes|open)\s*\(\s*path\.join\s*\(\s*(?:"([^"]+)"|'([^']+)')\s*,\s*(?:"([^"]+)"|'([^']+)')/gi;
+  while ((m = pathJoinCall.exec(c)) !== null) {
+    const root = m[1] || m[2] || '';
+    const child = m[3] || m[4] || '';
+    if (root && child && bashPathLooksArtifact(path.join(root, child), cwd, artDir)) return true;
+  }
+
+  const pathlibCall = /\bPath\s*\(\s*(?:"([^"]+)"|'([^']+)')\s*\)\s*\.\s*(?:write_text|write_bytes|unlink|rename|mkdir)\s*\(/gi;
+  while ((m = pathlibCall.exec(c)) !== null) {
+    const target = m[1] || m[2] || '';
+    if (target && bashPathLooksArtifact(target, cwd, artDir)) return true;
+  }
+  return false;
+}
+
+function bashCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth = 0, sourceMode = false) {
   const c = bashSearchText(command);
-  if (commandTextContainsWriteApi(c) &&
+  if (!sourceMode &&
+      commandTextContainsWriteApi(c) &&
       bashCommandRunsScriptEngine(c) &&
       (bashCommandReferencesArtifact(c, cwd, artDir) || bashShellCommandReferencesArtifact(c, cwd, artDir))) {
     return true;
   }
   for (const body of bashHeredocExecutionBodies(command, cwd)) {
     const normalizedBody = bashSearchText(body);
-    if (commandTextContainsWriteApi(normalizedBody) && bashCommandReferencesArtifact(normalizedBody, cwd, artDir)) return true;
+    if (commandTextContainsWriteApi(normalizedBody) && scriptSourceWritesArtifactTarget(normalizedBody, cwd, artDir)) return true;
     if (commandTextLooksMutating(normalizedBody) && bashCommandReferencesArtifact(normalizedBody, cwd, artDir)) return true;
     if (bashCommandRedirectsToArtifact(normalizedBody, cwd, artDir) || bashShellCommandRedirectsToArtifact(normalizedBody, cwd, artDir)) return true;
   }
   for (const target of bashScriptExecutionTargets(command, cwd)) {
     try {
+      if (isPaceflowValidationScriptTarget(target, cwd)) continue;
       const stat = fsStat(target);
       if (!stat || !stat.isFile() || stat.size > 256 * 1024) continue;
       const script = fsRead(target);
       const normalizedScript = bashSearchText(script);
-      if (commandTextContainsWriteApi(normalizedScript) && bashCommandReferencesArtifact(normalizedScript, cwd, artDir)) return true;
+      if (commandTextContainsWriteApi(normalizedScript) && scriptSourceWritesArtifactTarget(normalizedScript, cwd, artDir)) return true;
       if (commandTextLooksMutating(normalizedScript) && bashCommandReferencesArtifact(normalizedScript, cwd, artDir)) return true;
       if (bashCommandRedirectsToArtifact(normalizedScript, cwd, artDir) || bashShellCommandRedirectsToArtifact(normalizedScript, cwd, artDir)) return true;
-      if (depth < 2 && bashCommandEmbedsArtifactWriteScript(normalizedScript, cwd, artDir, depth + 1)) return true;
+      if (depth < 2 && bashCommandEmbedsArtifactWriteScript(normalizedScript, cwd, artDir, depth + 1, true)) return true;
     } catch(e) {}
   }
   return false;

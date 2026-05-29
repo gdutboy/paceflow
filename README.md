@@ -232,8 +232,11 @@ PACEflow 自动检测项目是否需要 PACE 流程，无需手动配置：
 | 信号 | 条件 | 说明 |
 |------|------|------|
 | 已有 artifact | 项目中存在 `changes/` | 最强信号 |
+| artifact-root 配置 | Project Root runtime 中存在 `.pace/artifact-root` | 手动选择 local/vault/自定义路径后启用 |
+| legacy v5 | 检测到旧 `task.md` / `implementation_plan.md` 活跃内容 | 只允许迁移或桥接到 v6 |
 | Superpowers 计划 | `docs/plans/` 下有计划文件 | 自动桥接 |
 | 手动标记 | `.pace-enabled` 文件存在 | 显式启用 |
+| 独立子项目标记 | `.pace/project-root` 由 helper 写入 | 子目录作为独立 Project Root |
 | 代码文件数 | 项目根目录 3+ 代码文件 | 兜底检测 |
 | 豁免 | `.pace/disabled` 文件存在 | 最高优先级跳过 |
 

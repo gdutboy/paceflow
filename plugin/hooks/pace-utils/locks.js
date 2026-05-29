@@ -47,12 +47,6 @@ module.exports = function createLockUtils(ctx) {
     return now - lock.timestampMs > ARTIFACT_WRITER_LOCK_TTL_MS;
   }
 
-  function formatArtifactWriterLock(lock) {
-    if (!lock || !lock.ok) return 'unknown lock';
-    const ageSec = lock.timestampMs ? Math.max(0, Math.round((Date.now() - lock.timestampMs) / 1000)) : '?';
-    return `session=${lock.sessionId || '-'} agent=${lock.agentId || '-'} artifact_dir=${ctx.displayDir(lock.artifactDir)} age=${ageSec}s lock=${lock.path}`;
-  }
-
   function operationFromAgentPrompt(prompt) {
     const text = String(prompt || '');
     const byField = text.match(/^\s*(?:operation|指令)\s*[:=]\s*([a-z0-9-]+)/mi);
@@ -79,48 +73,6 @@ module.exports = function createLockUtils(ctx) {
     return target ? target[1].toUpperCase() : '';
   }
 
-  function acquireArtifactWriterLock(cwd, info = {}) {
-    const lockPath = getArtifactWriterLockPath(cwd);
-    const runtimeDir = path.dirname(lockPath);
-    const sessionId = ctx.normalizeSessionId(info.sessionId || ctx.currentSessionId());
-    const now = Date.now();
-    const payload = {
-      sessionId,
-      agentId: String(info.agentId || ''),
-      artifactDir: String(info.artifactDir || ''),
-      cwd: String(cwd || ''),
-      operation: String(info.operation || ''),
-      createdAt: new Date(now).toISOString(),
-      timestampMs: now,
-    };
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        fs.mkdirSync(runtimeDir, { recursive: true });
-        const fd = fs.openSync(lockPath, 'wx');
-        try { fs.writeFileSync(fd, `${JSON.stringify(payload, null, 2)}\n`, 'utf8'); }
-        finally { fs.closeSync(fd); }
-        return { acquired: true, path: lockPath, lock: { ok: true, path: lockPath, ...payload } };
-      } catch(e) {
-        if (e && e.code === 'EEXIST') {
-          const existing = readArtifactWriterLock(cwd);
-          if (isArtifactWriterLockStale(existing, now)) {
-            try {
-              fs.unlinkSync(lockPath);
-            } catch(e2) {
-              if (!e2 || e2.code !== 'ENOENT') {
-                return { acquired: false, path: lockPath, lock: existing, reason: e2 && e2.message || String(e2) };
-              }
-            }
-            continue;
-          }
-          return { acquired: false, path: lockPath, lock: existing, reason: 'locked' };
-        }
-        return { acquired: false, path: lockPath, lock: null, reason: e.message || String(e) };
-      }
-    }
-    return { acquired: false, path: lockPath, lock: readArtifactWriterLock(cwd), reason: 'locked' };
-  }
-
   function artifactWriterLockMatches(cwd, sessionId) {
     const lock = readArtifactWriterLock(cwd);
     if (!lock.ok) return { ok: false, lock, reason: 'missing' };
@@ -133,26 +85,6 @@ module.exports = function createLockUtils(ctx) {
       return { ok: false, lock, reason: 'owner-mismatch' };
     }
     return { ok: true, lock, reason: '' };
-  }
-
-  function releaseArtifactWriterLock(cwd, info = {}) {
-    const lock = readArtifactWriterLock(cwd);
-    if (!lock.ok) return { released: false, lock, reason: 'missing' };
-    const sessionId = ctx.normalizeSessionId(info.sessionId || ctx.currentSessionId());
-    const agentId = String(info.agentId || '').trim();
-    const sameSession = sessionId && lock.sessionId && sessionId === lock.sessionId;
-    const sameAgent = agentId && lock.agentId && agentId === lock.agentId;
-    if (!sameSession && !sameAgent && !isArtifactWriterLockStale(lock)) {
-      return { released: false, lock, reason: 'owner-mismatch' };
-    }
-    // TOCTOU window: read/owner-check/unlink can race by microseconds. Acceptable
-    // because the next acquire still uses atomic open('wx') and will fail on EEXIST.
-    try {
-      fs.unlinkSync(lock.path);
-      return { released: true, lock, reason: '' };
-    } catch(e) {
-      return { released: false, lock, reason: e.message || String(e) };
-    }
   }
 
   function sleepSync(ms) {
@@ -211,7 +143,7 @@ module.exports = function createLockUtils(ctx) {
     return now - lock.timestampMs > ttlMs;
   }
 
-  function acquireJsonLock(lockPath, payload, { ttlMs, waitMs } = {}) {
+  function acquireJsonLock(lockPath, payload, { ttlMs, waitMs, reentrant = true } = {}) {
     const started = Date.now();
     const deadline = started + Math.max(0, waitMs || 0);
     let delay = 50;
@@ -236,7 +168,7 @@ module.exports = function createLockUtils(ctx) {
             }
             continue;
           }
-          if (lockMatchesOwner(existing, payload)) {
+          if (reentrant && lockMatchesOwner(existing, payload)) {
             return { acquired: true, reentrant: true, path: lockPath, lock: existing, waitedMs: now - started };
           }
           if (now < deadline) {
@@ -682,7 +614,7 @@ module.exports = function createLockUtils(ctx) {
       resource: `sequence:${sequenceName}`,
       sessionId: owner.sessionId,
       ownerKey: owner.ownerKey,
-    }, { ttlMs: ARTIFACT_SEQUENCE_LOCK_TTL_MS, waitMs: ARTIFACT_SEQUENCE_LOCK_WAIT_MS });
+    }, { ttlMs: ARTIFACT_SEQUENCE_LOCK_TTL_MS, waitMs: ARTIFACT_SEQUENCE_LOCK_WAIT_MS, reentrant: false });
     if (!lock.acquired) return { ok: false, reason: 'sequence-locked', lock: lock.lock };
     try {
       let current = 0;
@@ -692,7 +624,9 @@ module.exports = function createLockUtils(ctx) {
       fs.writeFileSync(counterPath, `${next}\n`, 'utf8');
       return { ok: true, number: next, counterPath };
     } finally {
-      try { fs.unlinkSync(lockPath); } catch(e) {}
+      if (!lock.reentrant) {
+        try { fs.unlinkSync(lockPath); } catch(e) {}
+      }
     }
   }
 
@@ -766,20 +700,17 @@ module.exports = function createLockUtils(ctx) {
     // helpers/hooks; accidental writes there are lower impact.
     return rel === ARTIFACT_WRITER_LOCK_FILE ||
       rel === ctx.PROJECT_ROOT_FILE ||
-      /^locks\//.test(rel) ||
-      /^sequences\//.test(rel) ||
-      /^reservations\//.test(rel) ||
-      /^index-transactions\//.test(rel) ||
-      /^change-owners\//.test(rel);
+      rel === 'locks' || /^locks\//.test(rel) ||
+      rel === 'sequences' || /^sequences\//.test(rel) ||
+      rel === 'reservations' || /^reservations\//.test(rel) ||
+      rel === 'index-transactions' || /^index-transactions\//.test(rel) ||
+      rel === 'change-owners' || /^change-owners\//.test(rel);
   }
 
   return {
     getArtifactWriterLockPath,
     readArtifactWriterLock,
-    acquireArtifactWriterLock,
     artifactWriterLockMatches,
-    releaseArtifactWriterLock,
-    formatArtifactWriterLock,
     operationFromAgentPrompt,
     changeIdFromAgentPrompt,
     explicitChangeTargetFromAgentPrompt,

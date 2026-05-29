@@ -85,7 +85,8 @@ Read + Edit 整个 section 替换为 content
   2. Edit 改 `<old>` 为 `<new-status>`（参考 spec §4 状态映射）
   3. **frontmatter 联动**（每次 update-status 后必执行）：
      - Read `## 任务清单` 段，统计任务状态
-     - 全部为 `[x]` 或 `[-]` → Edit frontmatter `status` → `completed`，并添加 `completed-date: <ISO 8601 datetime>`
+     - 全部为 `[-]` → Edit frontmatter `status` → `cancelled`，不写 `completed-date`
+     - 全部为 `[x]` 或 `[-]` 且至少一个 `[x]` → Edit frontmatter `status` → `completed`，并添加 `completed-date: <ISO 8601 datetime>`
      - 仍有 `[/]` 但 frontmatter `status: planned` → Edit frontmatter `status` → `in-progress`
      - 否则 frontmatter 不变
      - **datetime 格式强制**：`YYYY-MM-DDTHH:mm:ss+08:00`（含日期+时间+时区，如 `2026-05-03T03:05:13+08:00`），**禁止仅写 date** 如 `2026-05-03`。可用 `Bash: date -Iseconds` 或 `date '+%Y-%m-%dT%H:%M:%S+08:00'` 生成

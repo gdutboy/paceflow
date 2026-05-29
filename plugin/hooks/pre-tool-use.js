@@ -1131,6 +1131,10 @@ paceUtils.withStdinParsed((stdin) => {
   if (isFileMutationTool(toolName) && artDir !== cwd && paceSignal) {
     const cwdArtifactRel = paceUtils.artifactRelativePathForFile(cwd, filePath);
     if (cwdArtifactRel) {
+      if (artifactResourceLockHeld) {
+        paceUtils.releaseArtifactResourceLock(cwd, artifactResourceLockHeld, { sessionId: stdin.sessionId, agentId: stdin.agentId });
+        artifactResourceLockHeld = null;
+      }
       const correctPath = path.join(artDir, cwdArtifactRel).replace(/\\/g, '/');
       const reason = `当前 artifact_dir 是 ${displayDir(artDir)}。请将 artifact file_path 修改为：${correctPath}`;
       const output = {
@@ -1597,6 +1601,19 @@ paceUtils.withStdinParsed((stdin) => {
     log(projectLogEntry('PreToolUse', 'SKIP', { proj, tool: toolName, reason: 'no-task-content', dur: Date.now() - t0 }));
   }
   } catch(e) {
-    try { log(projectLogEntry('PreToolUse', 'ERROR', { proj, error: e.message })); } catch(e2) {}
+    const errorMessage = e && e.message ? e.message : String(e);
+    try { log(projectLogEntry('PreToolUse', 'ERROR', { proj, error: errorMessage })); } catch(e2) {}
+    const reason = [
+      'PACEflow PreToolUse guard 内部错误，已 fail-closed 阻止本次工具调用。',
+      `错误：${errorMessage}`,
+      '请重试；若连续出现，请查看 pace-hooks.log 并修复 hook 后再执行写入。'
+    ].join('\n');
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: reason,
+      },
+    }));
   }
 });

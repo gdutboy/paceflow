@@ -80,6 +80,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 - 每个 CHG 内可以有多个 `T-NNN`，但这些任务应服务于同一个闭环，并默认在一次执行流中完成。
 - 默认收尾路径是 `close-chg complete-open-tasks:true`，它会把仍 open 的 T-NNN 统一收口为 `[x]`、写 VERIFIED、归档索引并写 walkthrough。
 - `update-status` 不是逐步看板更新；只在暂停、阻塞、跳过、跨 session、长任务进度或多 CHG/worktree 可见性需要时使用。
+- 如果 CHG 的全部任务都被标为 `[-]`，该 CHG 表示取消，frontmatter 使用 `status: cancelled`，根索引进入 ARCHIVE 下方 `[-]`，不验证。
 
 ---
 
@@ -90,7 +91,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
 | 仅批准 C 阶段，暂不开始 | operation=`update-chg`，target=`CHG-...`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
 | 批准并开始首个任务 | operation=`update-chg`，target=`CHG-...`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
-| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status`，task-id=`T-NNN`；`new-status=[!]` 必须带 `status-reason` / `block-reason` / `pause-reason` |
+| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status`，task-id=`T-NNN`；`new-status=[!]` 必须带 `status-reason` / `block-reason` / `pause-reason`；全任务 `[-]` 表示取消 |
 | 追加工作记录/实施说明 | operation=`update-chg`，target=`CHG-...`，section=`work-record` / `implementation`，action=`append` |
 | 只记录 V 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`verify` |
 | 归档 CHG/HOTFIX | operation=`archive-chg`，target=`CHG-...` |

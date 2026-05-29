@@ -51,7 +51,6 @@ paceUtils.withStdinParsed((stdin) => {
   const artifactRel = resolvedFilePath ? paceUtils.artifactRelativePathForFile(artDir, resolvedFilePath) : null;
   const fileName = artifactRel ? path.basename(artifactRel) : (filePath ? path.basename(filePath) : '');
   const isFileMutationTool = ['Write', 'Edit', 'MultiEdit'].includes(toolName);
-  const isAgentTool = toolName === 'Agent';
   const isCodeFile = resolvedFilePath && CODE_EXTS.some(ext => resolvedFilePath.endsWith(ext));
   const isArtifactEdit = !!artifactRel && ARTIFACT_FILES.includes(artifactRel);
   const normalizedFile = paceUtils.normalizePath(resolvedFilePath || filePath || '');
@@ -88,35 +87,6 @@ paceUtils.withStdinParsed((stdin) => {
         changes: touched.join(','),
         dur: Date.now() - t0,
       }));
-    }
-  }
-  if (isAgentTool && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
-    const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt || '');
-    const target = paceUtils.explicitChangeTargetFromAgentPrompt(stdin.toolInput.prompt || '');
-    if (target && ['close-chg', 'archive-chg'].includes(operation)) {
-      const stillActive = getActiveChangeEntries(cwd).some(entry => entry.id === target);
-      if (stillActive) {
-        log(projectLogEntry('PostToolUse', 'CHANGE_OWNER_CLOSE_SKIPPED', {
-          proj,
-          target,
-          operation,
-          reason: 'target-still-active',
-          dur: Date.now() - t0,
-        }));
-      } else {
-        const closed = paceUtils.markChangeOwnerClosed(cwd, target, {
-          sessionId: stdin.sessionId,
-          agentId: stdin.agentId,
-          operation,
-        });
-        log(projectLogEntry('PostToolUse', closed.ok ? 'CHANGE_OWNER_CLOSED' : 'CHANGE_OWNER_CLOSE_SKIPPED', {
-          proj,
-          target,
-          operation,
-          reason: closed.reason || '',
-          dur: Date.now() - t0,
-        }));
-      }
     }
   }
   if (artifactRel && paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
@@ -254,8 +224,8 @@ paceUtils.withStdinParsed((stdin) => {
     }
   } else if (taskActive) {
     warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。PostToolUse 不再校验或修复 v5 活跃详情格式。迁移或桥接后仍需重试被阻止的原始代码写入；不要把迁移本身报告为代码任务完成。`);
-  } else if ((isFileMutationTool && isCodeFile) || isAgentTool) {
-    // task.md 不存在时，只对代码写入或 Agent 流程提示，避免无关文档编辑被 PACE 提醒打扰。
+  } else if (isFileMutationTool && isCodeFile) {
+    // task.md 不存在时，只对代码写入提示，避免无关文档编辑被 PACE 提醒打扰。
     const fallbackSignal = isPaceProject(cwd);
     if (fallbackSignal === 'superpowers' || fallbackSignal === 'manual') {
       warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在；写代码或派 artifact-writer 前请先创建 v6 CHG。${FORMAT_SNIPPETS.skillRef}`);
