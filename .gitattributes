@@ -2,3 +2,4 @@ plugin/hooks/templates/*.md text eol=lf
 plugin/agent-references/**/*.md text eol=lf
 plugin/agents/*.md text eol=lf
 plugin/skills/**/*.md text eol=lf
+/*.md text eol=lf

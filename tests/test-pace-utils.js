@@ -276,9 +276,18 @@ test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
 console.log('\n--- session id + runtime locks ---');
 
 test('parseHookStdin 解析 session_id 且 logEntry 自动带 sid', () => {
-  const parsed = parseHookStdin(JSON.stringify({ session_id: 'session-test-1', tool_name: 'Bash' }));
-  assert.strictEqual(parsed.sessionId, 'session-test-1');
-  assert.ok(logEntry('UnitHook', 'TEST', { proj: 'demo' }).includes('sid=session-test-1'));
+  // currentSessionId() 优先读 env.CLAUDE_CODE_SESSION_ID，会覆盖 parseHookStdin 记录的值；
+  // 真实 Claude Code 会话内该 env 非空，故测试前临时清除以验证 stdin→logEntry 链路，finally 恢复避免污染后续用例。
+  const savedSid = process.env.CLAUDE_CODE_SESSION_ID;
+  delete process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    const parsed = parseHookStdin(JSON.stringify({ session_id: 'session-test-1', tool_name: 'Bash' }));
+    assert.strictEqual(parsed.sessionId, 'session-test-1');
+    assert.ok(logEntry('UnitHook', 'TEST', { proj: 'demo' }).includes('sid=session-test-1'));
+  } finally {
+    if (savedSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedSid;
+  }
 });
 
 test('legacy artifact-writer lock 只作为兼容阻断信号读取', () => {
