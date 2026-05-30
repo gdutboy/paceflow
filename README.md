@@ -190,7 +190,7 @@ Bash、PowerShell、Monitor、Write/Edit/MultiEdit 都不能手写或破坏 `.pa
 
 `changes/<id>.md` 是 CHG 状态权威；索引 checkbox 只做展示和快速检查。`[ ] planned` 是 backlog；`[ ] + APPROVED` 是 ready/deferred，允许 Stop 但执行前仍必须 start；`[/] in-progress` 是当前执行；`[!]` 是 blocked/deferred，表示暂停或外部阻塞；`[x] completed` 仍需 verify/close；`archived` 才是完整闭环。
 
-Stop hook 对当前 session 的 running、completed 未验证、verified 未归档和结构不一致问题会硬阻断；对 ready/deferred/blocked CHG 使用可见提醒允许结束。`update-status` 只用于暂停、阻塞、跳过、跨 session 可见性或长任务状态维护；连续完成的 CHG 优先用 `close-chg complete-open-tasks:true` 一次收口。
+Stop hook 对当前 session 的 running、completed 未验证、verified 未归档和结构不一致问题会硬阻断；对 ready/deferred/blocked CHG 使用可见提醒允许结束。Claude Code v2.1.145+ 在 Stop 输入提供 `background_tasks` 时，PACEflow 会把“running CHG 仍有未完成 T-NNN，但后台 Workflow/subagent/team/shell 任务仍在运行”的场景视为主 session 暂停等待后台结果，放行 Stop 并显示可见提醒；结构损坏、未验证、待归档仍照常阻断。`update-status` 只用于暂停、阻塞、跳过、跨 session 可见性或长任务状态维护；连续完成的 CHG 优先用 `close-chg complete-open-tasks:true` 一次收口。
 
 ### Artifact 写保护与 Agent Contract
 

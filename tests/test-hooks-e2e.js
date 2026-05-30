@@ -4215,6 +4215,78 @@ test('10a. 多任务 CHG 部分完成 → 继续执行，不提示 verify/close/
   assert.ok(!r.stderr.includes('walkthrough.md 缺少'), '执行中且仍有 pending task 时不应提前要求 walkthrough');
 });
 
+test('10a1. running CHG 有后台任务时 Stop 软通过并显示等待提醒', () => {
+  const dir = makeV6Project('stop-background-work-running', {
+    walkToday: false,
+    detail: chgDetail({
+      status: 'in-progress',
+      approved: true,
+      tasks: [
+        '- [/] T-001 审计执行中',
+        '- [ ] T-002 汇总报告',
+      ],
+    }),
+    paceRuntime: { 'stop-block-count': '2' },
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-bg-work',
+      background_tasks: [{
+        id: 'wf_test_001',
+        type: 'workflow',
+        status: 'running',
+        name: 'PACEflow audit workflow',
+      }],
+      last_assistant_message: '后台审计已启动，等待 workflow 完成。',
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stderr, '');
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.systemMessage.includes('后台任务仍在运行'));
+  assert.ok(out.systemMessage.includes('CHG-20260504-01 running'));
+  assert.ok(out.systemMessage.includes('workflow'));
+  assert.strictEqual(fs.readFileSync(path.join(dir, '.pace', 'stop-block-count'), 'utf8'), '0');
+});
+
+test('10a2. 后台任务不放过 running CHG 的虚假完成声明', () => {
+  const dir = makeV6Project('stop-background-work-false-complete', {
+    walkToday: false,
+    detail: chgDetail({
+      status: 'in-progress',
+      approved: true,
+      tasks: [
+        '- [/] T-001 审计执行中',
+        '- [ ] T-002 汇总报告',
+      ],
+    }),
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-bg-work',
+      background_tasks: [{ id: 'agent_001', type: 'subagent', status: 'running', agent_type: 'Explore' }],
+      last_assistant_message: '任务完成',
+    },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('AI 声称完成'));
+});
+
+test('10a3. 后台任务不放过 artifact 结构不一致', () => {
+  const dir = makeV6Project('stop-background-work-mismatch', { implIndex: '' });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-bg-work',
+      background_tasks: [{ id: 'team_001', type: 'teammate', status: 'running', description: 'audit team' }],
+    },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('不一致'));
+});
+
 test('11. v6 completed 但未 verified → exit 2', () => {
   const dir = makeV6Project('stop-unverified', {
     indexMark: '[x]',

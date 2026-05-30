@@ -1,8 +1,8 @@
 # PACEflow 行动项规划 2026-05-02
 
 > **生成日期**：2026-05-02
-> **当前执行版本**：PACEflow v6.0.59（原始调研输入：PACEflow v5.1.4）
-> **上游调研版本**：Claude Code v2.1.126（后续本机复核至 v2.1.141；官方文档复核至 v2.1.143）
+> **当前执行版本**：PACEflow v6.0.60（原始调研输入：PACEflow v5.1.4）
+> **上游调研版本**：Claude Code v2.1.126（后续本机复核至 v2.1.141；官方文档复核至 v2.1.145+ Stop `background_tasks`）
 > **与 README 关系**：本文是行动项视图（按优先级分级、TODO 列表）；README 的“版本历史”表是发布交付视图。两者不要互相同步全文。
 > **触发**：用户告知 Claude Code 升级到 2.1.126，PACEflow 已久未升级，需调研增量
 
@@ -17,7 +17,7 @@
 - 本文档是**行动项视图**（基于调研得出的可执行计划）
 - 任何 CHG 启动后，对应行动项移到 `task.md` + `implementation_plan.md`
 
-### 0.1 当前执行视图（2026-05-25，v6.0.59）
+### 0.1 当前执行视图（2026-05-30，v6.0.60）
 
 本节覆盖原 v5.2 行动项优先级。下方旧章节保留为历史背景，不再作为当前执行顺序的权威来源。
 
@@ -31,7 +31,7 @@
 - GitHub issue 风险筛查（worktree、hooks、plugins、PreToolUse、SubagentStop、FileChanged/CwdChanged）
 - v6 当前代码审查：`plugin/hooks/pace-utils.js`、`plugin/hooks/pre-tool-use.js`、`plugin/hooks/session-start.js`、`plugin/hooks/task-list-sync.js`
 
-执行状态（v6.0.59）：
+执行状态（v6.0.60）：
 
 - P0-20260506-01 / P0-20260506-02：已完成。
 - P1-20260506-01 / P1-20260506-02 / P1-20260506-03 / P1-20260506-04 / P1-20260506-05：已完成。
@@ -45,6 +45,7 @@
 - v6.0.57 将 `PostToolUse continue:true` 投入生产最小试点：仅当 artifact-writer 写入 `walkthrough.md` 后仍缺正确 wikilink 或执行上下文时，PostToolUse 返回 `decision:"block" + continue:true`，要求当前 turn 继续修复；每 session/目标只触发一次，第二次降级为原有 additionalContext，避免循环。PreToolUse gate、artifact-root 选择、legacy migration、Agent 缺字段等仍不迁移。
 - v6.0.58 实现显式 Project Root：普通子目录默认继承最近父级 PACEflow 项目，artifact/root choice、runtime `.pace`、CHG owner、Stop、native plan sync 与 helper 均以 effective Project Root 为准；新增 `set-project-root.js --mode independent` 作为独立子项目入口。设计记录见 `docs/project-root-inheritance-design.md`，production smoke 见 `docs/production-smoke-v6.0.58.md`。
 - v6.0.59 收敛 Claude 任务面板边界：`hooks.json` 不再注册 `TodoWrite` / `TaskCreate` / `TaskUpdate`，`task-list-sync.js` 仅保留 legacy observer；SessionStart 使用 CHG 执行上下文，不再要求任务面板同步；workflow/artifact-management skill 提醒继续、恢复或收口已有 CHG 前先 Read `changes/<id>.md`。
+- 2026-05-30 背景执行边界记录：Claude Code Workflow、subagent、agent team 或后台 shell 任务执行时，主 session 可能需要 Stop 等待后台结果；若 PACEflow 只按 running CHG 未完成任务硬阻断，会把“已委托后台执行”误判为“试图带未完成任务退出”。官方 Stop 输入在 v2.1.145+ 提供 `background_tasks`，当前修复只将“running CHG 未完成任务”在存在后台任务时降级为可见 systemMessage 放行；结构损坏、未验证、verified 未归档仍保持硬阻断。不新增 artifact checkbox 状态，也不把后台任务自动视为完成。
 - v6.0.51 完成 `pre-tool-use.js` 结构拆分：Bash guard、artifact-writer Agent lifecycle guard、marker/direct artifact mutation guard 下沉到 `plugin/hooks/pre-tool-use/*.js`，主 hook 保留路由、stdout 输出与日志顺序。
 - 2026-05-08 production Smoke5 暴露的 P0 已在 v6.0.33 修复：模型不能再通过 Bash 删除/重写 `.pace/artifact-writer.lock`，锁 payload 不再暴露短生命周期 hook `pid`，锁拒绝文案只允许等待/重试，不再建议 Claude 删除锁。
 - 其余 P1/P2 PoC 与暂缓项仍按下表继续评估，不进入当前核心链路。

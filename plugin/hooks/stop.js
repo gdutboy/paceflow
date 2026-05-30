@@ -20,6 +20,7 @@ const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const warnings = [];
 const warningTypes = [];
 const softReminders = [];
+const backgroundWorkReminders = [];
 
 const paceSignal = isPaceProject(cwd);
 
@@ -56,6 +57,60 @@ function addWarning(type, message) {
   warningTypes.push(type || 'repair');
 }
 
+function activeBackgroundTasks(input) {
+  const raw = input && input.raw && typeof input.raw === 'object' ? input.raw : {};
+  const tasks = Array.isArray(input && input.background_tasks)
+    ? input.background_tasks
+    : (Array.isArray(raw.background_tasks) ? raw.background_tasks : []);
+  return tasks.filter(task => {
+    if (!task || typeof task !== 'object') return false;
+    const status = String(task.status || '').trim().toLowerCase();
+    return !/^(done|complete|completed|finished|success|succeeded|failed|error|cancelled|canceled|stopped)$/.test(status);
+  });
+}
+
+function describeBackgroundTask(task) {
+  const type = String(task.type || 'task').trim() || 'task';
+  const id = String(task.id || '').trim();
+  const name = String(task.name || task.agent_type || task.description || task.command || '').trim();
+  const status = String(task.status || '').trim();
+  const parts = [type];
+  if (name) parts.push(name.slice(0, 80));
+  if (id) parts.push(`id=${id}`);
+  if (status) parts.push(`status=${status}`);
+  return parts.join(' ');
+}
+
+function emitAllowedStopReminders({ deferredReminders, backgroundReminders, backgroundTasks, t0 }) {
+  if (deferredReminders.length === 0 && backgroundReminders.length === 0) return false;
+  resetHardBlockRuntime();
+  const parts = [];
+  if (backgroundReminders.length > 0) {
+    const shown = backgroundReminders.slice(0, 5);
+    const more = backgroundReminders.length > shown.length ? `；另有 ${backgroundReminders.length - shown.length} 个` : '';
+    const taskShown = backgroundTasks.slice(0, 3).map(describeBackgroundTask).join('；');
+    const taskMore = backgroundTasks.length > 3 ? `；另有 ${backgroundTasks.length - 3} 个后台任务` : '';
+    parts.push(`后台任务仍在运行，已允许主 session 暂停等待：${shown.join('；')}${more}${taskShown ? `；后台=${taskShown}${taskMore}` : ''}`);
+  }
+  if (deferredReminders.length > 0) {
+    const shown = deferredReminders.slice(0, 5);
+    const more = deferredReminders.length > shown.length ? `；另有 ${deferredReminders.length - shown.length} 个` : '';
+    parts.push(`仍有 deferred CHG 可后续处理：${shown.join('；')}${more}`);
+  }
+  const systemMessage = `PACEflow: ${parts.join('。')}。`;
+  process.stdout.write(JSON.stringify({ systemMessage }) + '\n');
+  const action = backgroundReminders.length > 0 ? 'SOFT_BACKGROUND_WORK_PASS' : 'SOFT_DEFERRED_PASS';
+  log(projectLogEntry('Stop', action, {
+    proj,
+    deferred_count: deferredReminders.length,
+    background_count: backgroundReminders.length,
+    background_tasks: backgroundTasks.map(describeBackgroundTask).join('; '),
+    changes: [...backgroundReminders, ...deferredReminders].map(r => (r.match(/^(CHG|HOTFIX)-\d{8}-\d{2}/) || [''])[0]).filter(Boolean).join(','),
+    dur: Date.now() - t0,
+  }));
+  return true;
+}
+
 function deferredNextAction(change) {
   if (change.category === 'backlog') return '先确认用户批准；若准备执行，派 approve-and-start';
   if (change.category === 'ready') return '已批准但未开始；执行前派 approve-and-start 或 update-status 将当前任务恢复为 [/]';
@@ -69,27 +124,13 @@ function resetHardBlockRuntime() {
   try { if (fs.existsSync(degradedFile)) fs.unlinkSync(degradedFile); } catch(e) {}
 }
 
-function emitSoftReminders(reminders, t0) {
-  if (reminders.length === 0) return false;
-  resetHardBlockRuntime();
-  const shown = reminders.slice(0, 5);
-  const more = reminders.length > shown.length ? `；另有 ${reminders.length - shown.length} 个` : '';
-  const systemMessage = `PACEflow: 仍有 deferred CHG 可后续处理（已允许结束）：${shown.join('；')}${more}。`;
-  process.stdout.write(JSON.stringify({ systemMessage }) + '\n');
-  log(projectLogEntry('Stop', 'SOFT_DEFERRED_PASS', {
-    proj,
-    count: reminders.length,
-    changes: reminders.map(r => (r.match(/^(CHG|HOTFIX)-\d{8}-\d{2}/) || [''])[0]).filter(Boolean).join(','),
-    dur: Date.now() - t0,
-  }));
-  return true;
-}
-
 try {
 const t0 = Date.now();
 // S-1: 统一 stdin 解析
 const stdin = paceUtils.parseStdinSync();
 const lastMessage = stdin.lastMessage;
+const backgroundTasks = activeBackgroundTasks(stdin);
+const hasBackgroundTasks = backgroundTasks.length > 0;
 log(projectLogEntry('Stop', 'ENTRY', { proj }));
 
 // I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
@@ -174,6 +215,18 @@ if (paceSignal === 'artifact') {
         continue;
       }
       if (change.tasks.pending > 0) {
+        if (hasBackgroundTasks) {
+          backgroundWorkReminders.push(`${change.id} running: 还有 ${change.tasks.pending} 个未完成任务；后台执行单元仍在运行，等待其返回后继续更新/验证/归档`);
+          log(projectLogEntry('Stop', 'SOFT_BACKGROUND_WORK_CHANGE', {
+            proj,
+            change: change.id,
+            pending: change.tasks.pending,
+            done: change.tasks.done,
+            total: change.tasks.total,
+            background_tasks: backgroundTasks.map(describeBackgroundTask).join('; '),
+          }));
+          continue;
+        }
         addWarning('execution', `${ownerPrefix}${change.id} 还有 ${change.tasks.pending} 个未完成任务（完成 ${change.tasks.done}/${change.tasks.total}）。若本轮仍可连续执行，请继续完成代码/测试，不必为中间任务逐个 update-status；只有暂停、阻塞、跳过或跨 session 时才派 update-chg action=update-status 维护 T-NNN 状态。`);
         continue;
       }
@@ -319,7 +372,7 @@ if (warnings.length > 0) {
   } // 关闭 isTeammate else
 } else {
   // 检查全部通过，重置计数器 + 清除降级标记
-  if (emitSoftReminders(softReminders, t0)) process.exit(0);
+  if (emitAllowedStopReminders({ deferredReminders: softReminders, backgroundReminders: backgroundWorkReminders, backgroundTasks, t0 })) process.exit(0);
   resetHardBlockRuntime();
   log(projectLogEntry('Stop', 'PASS', { proj, dur: Date.now() - t0 }));
   process.exit(0);
