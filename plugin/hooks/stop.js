@@ -59,13 +59,13 @@ function addWarning(type, message) {
 
 function activeBackgroundTasks(input) {
   const raw = input && input.raw && typeof input.raw === 'object' ? input.raw : {};
-  const tasks = Array.isArray(input && input.background_tasks)
-    ? input.background_tasks
-    : (Array.isArray(raw.background_tasks) ? raw.background_tasks : []);
+  // Claude Code removes completed/failed background work from this array; a
+  // present item with a non-empty status is active. session_crons is separate
+  // scheduling state and is intentionally not treated as background work here.
+  const tasks = Array.isArray(raw.background_tasks) ? raw.background_tasks : [];
   return tasks.filter(task => {
     if (!task || typeof task !== 'object') return false;
-    const status = String(task.status || '').trim().toLowerCase();
-    return !/^(done|complete|completed|finished|success|succeeded|failed|error|cancelled|canceled|stopped)$/.test(status);
+    return String(task.status || '').trim() !== '';
   });
 }
 
@@ -184,7 +184,7 @@ if (paceSignal === 'artifact') {
       } else if (change.reason === 'active-archived') {
         addWarning('repair', `${ownerPrefix}${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer close-chg 或 archive-chg 做索引修复：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。${FORMAT_SNIPPETS.closeOp}`);
       } else if (change.reason === 'active-cancelled') {
-        addWarning('repair', `${ownerPrefix}${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer 修复索引：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
+        addWarning('repair', `${ownerPrefix}${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer archive-chg 做取消归档：保持详情 status=cancelled，不验证；从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
       } else if (change.reason === 'task-list-empty') {
         addWarning('repair', `${ownerPrefix}${change.id} 详情 status=${change.status}，但 ## 任务清单 中没有可识别的 T-NNN 任务行。请派 artifact-writer 修复 changes/${change.slug}.md 任务清单。`);
       } else {
@@ -285,7 +285,12 @@ if (paceSignal === 'artifact') {
   }
 
 } else if (taskActive) {
-  addWarning('user-action', v5MigrationPromptMessage(cwd) || `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。不要继续在 task.md/implementation_plan.md/findings.md 手写 v5 活跃详情或 C/V 标记。若前一个代码写入被 hook 阻止，迁移或桥接后必须重试原始工具调用；不要把迁移本身报告为代码任务完成。`);
+  const legacyPrompt = v5MigrationPromptMessage(cwd);
+  if (legacyPrompt) {
+    addWarning('user-action', legacyPrompt);
+  } else {
+    log(projectLogEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'task-md-without-v5-signature' }));
+  }
 
 } else if (existing.length > 0) {
   // task.md 不存在，但有其他 artifact → 不完整

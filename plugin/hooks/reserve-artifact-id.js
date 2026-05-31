@@ -115,8 +115,8 @@ function main() {
     fail(args.cwd, 'DENY_INVALID_OPERATION', `reserve-artifact-id 只支持 create-chg 或 record-correction。\n\n${usage()}`, { operation: args.operation || '-' });
     return;
   }
-  if (args.operation === 'create-chg' && args.type && !['change', 'hotfix', 'research'].includes(args.type)) {
-    fail(args.cwd, 'DENY_INVALID_TYPE', 'create-chg --type 只支持 change / hotfix / research。', { type: args.type });
+  if (args.operation === 'create-chg' && args.type && !['change', 'hotfix'].includes(args.type)) {
+    fail(args.cwd, 'DENY_INVALID_TYPE', 'create-chg --type 只支持 change / hotfix；finding/research 请使用 artifact-writer record-finding，不通过 create-chg 预留。', { type: args.type });
     return;
   }
   if (!args.sessionId) {

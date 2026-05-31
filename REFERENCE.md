@@ -105,7 +105,7 @@ projects/<project>/
 | Hook | v6 职责 |
 |------|---------|
 | `session-start.js` | 创建/注入索引模板，输出活跃 CHG 摘要 |
-| `pre-tool-use.js` | 写代码前检查活跃 CHG、详情文件、APPROVED、可执行状态 |
+| `pre-tool-use.js` | 写代码、运行 Bash/PowerShell/Monitor 命令或派 artifact-writer 前，检查活跃 CHG、详情文件、APPROVED、可执行状态，并阻止直接写 artifact / `.pace` 控制面 |
 | `post-tool-use.js` | schema/wikilink/直接 C-V 写入/correction knowledge 提醒 |
 | `post-tool-use-failure.js` | 写入/验证工具失败后提醒不要误判完成 |
 | `subagent-stop.js` | 观察 `artifact-writer` 报告标题/状态并记录 transcript |

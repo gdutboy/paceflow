@@ -75,7 +75,7 @@ paceUtils.withStdinParsed((stdin) => {
     }
     return [...ids].sort();
   }
-  if (paceSignal === 'artifact' && stdin.sessionId && ((isFileMutationTool && isCodeFile && !isV6ArtifactEdit) || toolName === 'Bash')) {
+  if (paceSignal === 'artifact' && stdin.sessionId && isFileMutationTool && isCodeFile && !isV6ArtifactEdit) {
     const touched = paceUtils.touchChangeOwnersForSession(cwd, {
       sessionId: stdin.sessionId,
       states: ['active', 'closing'],

@@ -153,7 +153,7 @@ sources:
 - **Corrections 双写时**：`record-correction` → 评估通用性 → 通用则提取到 knowledge/
 - **审计/复盘发现时**：P0/P1 或可复用的问题模式 → 评估是否为通用模式
 
-> artifact-management 的"finding/correction 联动检查"会指引 AI 在 agent 写入详情后主动评估并触发本 SOP。
+> artifact-management 的 `references/change-lifecycle.md` 中 "Finding / Correction 联动" 会指引 AI 在 agent 写入详情后主动评估并触发本 SOP。
 
 ---
 

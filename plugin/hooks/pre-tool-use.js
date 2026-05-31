@@ -704,15 +704,10 @@ paceUtils.withStdinParsed((stdin) => {
     if (isBashTool(toolName)) {
       if (bashCommandMutatesArtifactRuntimeControl(bashCommand, cwd)) {
         const reason = bashArtifactRuntimeControlDenyReason(bashCommand);
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_BASH_ARTIFACT_RUNTIME${teammateTag}`, {
-          proj,
+        return hardDeny(reason, `DENY_BASH_ARTIFACT_RUNTIME${teammateTag}`, {
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           runtime: paceUtils.getProjectRuntimeDir(cwd),
-          dur: Date.now() - t0,
-        }));
-        return;
+        });
       }
       const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
         bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
@@ -736,15 +731,10 @@ paceUtils.withStdinParsed((stdin) => {
     if (isPowerShellTool(toolName)) {
       if (powershellCommandMutatesArtifactRuntimeControl(powershellCommand, cwd)) {
         const reason = powershellArtifactRuntimeControlDenyReason(powershellCommand);
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT_RUNTIME${teammateTag}`, {
-          proj,
+        return hardDeny(reason, `DENY_POWERSHELL_ARTIFACT_RUNTIME${teammateTag}`, {
           command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
           runtime: paceUtils.getProjectRuntimeDir(cwd),
-          dur: Date.now() - t0,
-        }));
-        return;
+        });
       }
       const mutatesArtifact = powershellCommandRedirectsToArtifact(powershellCommand, cwd, artDir) ||
         powershellCommandEmbedsArtifactWriteScript(powershellCommand, cwd, artDir) ||
@@ -767,15 +757,10 @@ paceUtils.withStdinParsed((stdin) => {
     if (isMonitorTool(toolName)) {
       if (bashCommandMutatesArtifactRuntimeControl(bashCommand, cwd)) {
         const reason = monitorArtifactRuntimeControlDenyReason(bashCommand);
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_MONITOR_ARTIFACT_RUNTIME${teammateTag}`, {
-          proj,
+        return hardDeny(reason, `DENY_MONITOR_ARTIFACT_RUNTIME${teammateTag}`, {
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
           runtime: paceUtils.getProjectRuntimeDir(cwd),
-          dur: Date.now() - t0,
-        }));
-        return;
+        });
       }
       const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
         bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
@@ -1283,19 +1268,13 @@ paceUtils.withStdinParsed((stdin) => {
     if (isFileMutationTool(toolName) && isInsideProject && markerMutation.hasMarkerMutation) {
       if (!isArtifactWriterAgent(stdin)) {
         const reason = markerMutationDenyReason(markerMutation);
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_MARKER${teammateTag}`, {
-          proj,
-          file: filePath,
+        return hardDeny(reason, `DENY_V6_MARKER${teammateTag}`, {
           agent_id: stdin.agentId,
           agent_type: stdin.agentType,
           addedApproved: markerMutation.addedApproved,
           addedVerified: markerMutation.addedVerified,
           setVerifiedDate: markerMutation.setVerifiedDate,
-          dur: Date.now() - t0,
-        }));
-        return;
+        });
       }
       log(projectLogEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
         proj,

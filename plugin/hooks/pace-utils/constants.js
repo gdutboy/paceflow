@@ -29,7 +29,6 @@ const PACE_ARTIFACT_ROOT_CONTENT = 'spec.md / task.md / implementation_plan.md /
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
 const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
 const COMPLETION_PHRASES = /(?:任务完成|已完成所有|全部完成|归档完毕)/;
-const TODO_DRIFT_THRESHOLD = 3;
 
 const SKILL_DIRS = [
   'pace-workflow',
@@ -110,7 +109,6 @@ module.exports = {
   ARCHIVE_MARKER,
   ARCHIVE_PATTERN,
   COMPLETION_PHRASES,
-  TODO_DRIFT_THRESHOLD,
   SKILL_DIRS,
   FORMAT_SNIPPETS,
   SESSION_SCOPED_FLAGS,

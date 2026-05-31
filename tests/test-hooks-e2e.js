@@ -474,6 +474,50 @@ test('2g. SessionStart 将当前 blocked CHG 单独展示且不计入执行中 T
   assert.ok(!r.stdout.includes('这些 CHG 不计入当前 session 的 Claude 任务列表'));
 });
 
+test('2h. SessionStart spec.md 截断保留禁止事项但省略依赖列表', () => {
+  const dir = makeV6Project('ss-spec-prohibitions', { withIndex: false, detail: false });
+  fs.writeFileSync(path.join(dir, 'spec.md'), [
+    '# Spec',
+    '',
+    '## 项目概述',
+    'overview',
+    '',
+    '## 技术栈',
+    'node',
+    '',
+    '## 禁止事项',
+    '- 禁止使用 legacy-api',
+    '',
+    '## 依赖列表',
+    '- very-long-dependency-list',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('禁止使用 legacy-api'));
+  assert.ok(!r.stdout.includes('very-long-dependency-list'));
+  assert.ok(r.stdout.includes('已省略依赖列表'));
+});
+
+test('2i. SessionStart findings 过期提醒正确解析 wikilink display 标题', () => {
+  const dir = makeV6Project('ss-findings-aging-title', { withIndex: false, detail: false });
+  fs.writeFileSync(path.join(dir, 'findings.md'), [
+    '# 调研记录',
+    '',
+    '## 摘要索引',
+    '',
+    '- [ ] [[finding-2000-01-01-login|登录优化]] — 结论 [date:: 2000-01-01] [impact:: P1]',
+    '',
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\n'), 'utf8');
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('Findings 过期提醒'));
+  assert.ok(r.stdout.includes('登录优化'));
+  assert.ok(!r.stdout.includes('(2000天) ['));
+});
+
 test('3. compact 恢复显示 activeChanges', () => {
   const dir = makeV6Project('ss-compact', {
     paceRuntime: {
@@ -943,6 +987,28 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
   assert.ok(delta.includes('act=PASS_V6_MARKER_AGENT'));
   assert.ok(delta.includes('agent_id=agent-log-pass'));
   assert.ok(delta.includes('agent_type=artifact-writer'));
+});
+
+test('9ab1. teammate 模式仍 hard-deny 直接写 C/V marker', () => {
+  const dir = makeV6Project('ptu-marker-teammate-deny');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'audit-team' },
+    stdin: {
+      agent_id: 'agent-team-marker',
+      agent_type: 'code-reviewer',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"permissionDecision":"deny"'));
+  assert.ok(!r.stdout.includes('additionalContext'));
 });
 
 test('9b. create-chg 首次预留编号后重派，写 verified-date null → 放行', () => {
@@ -2071,6 +2137,18 @@ test('9hc-helper2a. reserve-artifact-id helper 支持 HOTFIX 类型且 --new 避
   assert.ok(chg.stdout.includes(`reserved-id: CHG-${compact}-01`));
   assert.ok(hotfix.stdout.includes(`reserved-id: HOTFIX-${compact}-01`));
   assert.ok(hotfix.stdout.includes(`reserved-file: changes/hotfix-${compact}-01.md`));
+});
+
+test('9hc-helper2b. reserve-artifact-id helper 拒绝 create-chg --type research', () => {
+  const dir = makeV6Project('agent-reserve-helper-research-type', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--type', 'research'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-helper-research-type' },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stdout.includes('只支持 change / hotfix'));
+  assert.ok(r.stdout.includes('record-finding'));
 });
 
 test('9hc-helper3. reserve-artifact-id helper 支持 record-correction prefix', () => {
@@ -3501,6 +3579,31 @@ test('9hc4a1. update-chg action=verify 缺 verify-summary 在 Agent 启动前 DE
   assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
 });
 
+test('9hc4a1b. update-chg 缺 action 或未知 action 在 Agent 启动前 DENY', () => {
+  const dir = makeV6Project('agent-update-chg-action-required');
+  for (const actionLine of ['', 'action: unknown']) {
+    const r = runHook('pre-tool-use.js', {
+      cwd: dir,
+      stdin: {
+        tool_name: 'Agent',
+        tool_input: {
+          subagent_type: 'paceflow:artifact-writer',
+          description: 'Update CHG',
+          prompt: [
+            `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+            'operation: update-chg',
+            'target: CHG-20260504-01',
+            actionLine,
+          ].filter(Boolean).join('\n'),
+        },
+      },
+    });
+    assert.strictEqual(r.code, 0);
+    assert.ok(r.stdout.includes('"deny"'));
+    assert.ok(r.stdout.includes('update-chg 的 action 只能是 append / replace / approve / approve-and-start / update-status / verify'));
+  }
+});
+
 test('9hc4a2. archive-chg 缺 walkthrough-summary 在 Agent 启动前 DENY', () => {
   const dir = makeV6Project('agent-archive-missing-summary');
   const r = runHook('pre-tool-use.js', {
@@ -4062,6 +4165,10 @@ test('9hgd6. Bash guard 仍拒绝 tests 下脚本直接写 artifact 字面路径
   assert.ok(r.stdout.includes('禁止使用 Bash 修改 artifact 文件'));
 });
 
+test('9hgd7. Bash npx mutating 判断不跨换行误拦只读 artifact', () => {
+  assert.strictEqual(bashGuard.bashCommandLooksMutating('npx eslint src/\nwc -w task.md'), false);
+});
+
 test('9hge. PowerShell 修改 artifact / runtime-control 被拒绝，只读放行', () => {
   const dir = makeV6Project('ptu-powershell-artifact');
   const commands = [
@@ -4097,9 +4204,26 @@ test('9hge. PowerShell 修改 artifact / runtime-control 被拒绝，只读放�
   assert.ok(!readOnly.stdout.includes('"deny"'));
 });
 
+test('9hge0. PowerShell 验证脚本不因测试源码字面量误判 artifact 写入', () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  assert.strictEqual(
+    powershellGuard.powershellCommandEmbedsArtifactWriteScript('node tests/test-pace-utils.js', repoRoot, repoRoot),
+    false
+  );
+  assert.strictEqual(
+    powershellGuard.powershellCommandEmbedsArtifactWriteScript('node tests/test-hooks-e2e.js', repoRoot, repoRoot),
+    false
+  );
+});
+
 test('9hge1. PowerShell guard 识别 Windows JS 转义路径', () => {
   const script = 'const fs = require("fs");\nfs.writeFileSync("C:\\\\tmp\\\\pace\\\\task.md", "x");\n';
   assert.strictEqual(powershellGuard.powershellCommandReferencesArtifact(script, 'C:\\tmp\\pace', 'C:\\tmp\\pace'), true);
+});
+
+test('9hge1b. PowerShell node/python mutating 判断不跨语句误拦只读 artifact', () => {
+  const command = 'node build.js; Get-Content task.md | Select-String writeFile';
+  assert.strictEqual(powershellGuard.powershellCommandLooksMutating(command), false);
 });
 
 test('9hge2. PowerShell .ps1 包装器写 artifact 被拒绝', () => {
@@ -4117,6 +4241,22 @@ test('9hge2. PowerShell .ps1 包装器写 artifact 被拒绝', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('禁止使用 PowerShell 修改 artifact'));
+});
+
+test('9hge2b. teammate 模式仍 hard-deny runtime-control 删除', () => {
+  const dir = makeV6Project('ptu-teammate-runtime-control');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'audit-team' },
+    stdin: {
+      tool_name: 'PowerShell',
+      tool_input: { command: 'Remove-Item .pace\\locks\\artifacts\\x.lock -Force' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"permissionDecision":"deny"'));
+  assert.ok(!r.stdout.includes('additionalContext'));
+  assert.ok(r.stdout.includes('artifact 写入控制运行态'));
 });
 
 test('9hge3. Monitor 修改 artifact / runtime-control 被拒绝，只读放行', () => {
@@ -4248,6 +4388,63 @@ test('10a1. running CHG 有后台任务时 Stop 软通过并显示等待提醒',
   assert.ok(out.systemMessage.includes('CHG-20260504-01 running'));
   assert.ok(out.systemMessage.includes('workflow'));
   assert.strictEqual(fs.readFileSync(path.join(dir, '.pace', 'stop-block-count'), 'utf8'), '0');
+});
+
+test('10a1b. running CHG 有后台 shell 任务时 Stop 软通过', () => {
+  const dir = makeV6Project('stop-background-work-shell', {
+    walkToday: false,
+    detail: chgDetail({
+      status: 'in-progress',
+      approved: true,
+      tasks: [
+        '- [/] T-001 后台 shell 执行中',
+        '- [ ] T-002 汇总结果',
+      ],
+    }),
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-bg-shell',
+      background_tasks: [{
+        id: 'bash_001',
+        type: 'shell',
+        status: 'running',
+        description: 'long verification',
+        command: 'node tests/test-hooks-e2e.js',
+      }],
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.systemMessage.includes('后台任务仍在运行'));
+  assert.ok(out.systemMessage.includes('shell'));
+  assert.ok(out.systemMessage.includes('long verification'));
+});
+
+test('10a1c. 畸形 background_tasks 不触发 Stop 软通过', () => {
+  const dir = makeV6Project('stop-background-work-malformed', {
+    walkToday: false,
+    detail: chgDetail({
+      status: 'in-progress',
+      approved: true,
+      tasks: [
+        '- [/] T-001 执行中',
+        '- [ ] T-002 待完成',
+      ],
+    }),
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-bg-malformed',
+      background_tasks: [{ id: 'missing-status' }, { status: '' }, null, 'running'],
+      session_crons: [{ id: 'cron-001', status: 'running' }],
+    },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('未完成任务'));
+  assert.ok(!r.stdout.includes('后台任务仍在运行'));
 });
 
 test('10a2. 后台任务不放过 running CHG 的虚假完成声明', () => {
@@ -4434,6 +4631,19 @@ test('14b2. code-count 项目 idle Stop 不阻止 artifact-root 选择', () => {
   assert.ok(!fs.existsSync(path.join(dir, '.pace')), 'idle Stop 不应创建 .pace 运行态目录');
 });
 
+test('14b2b. 显式 artifact-root 但普通 task.md 非 v5 签名时 Stop 不误报 legacy', () => {
+  const dir = makeTmpDir('stop-manual-generic-task-md');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local', 'utf8');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'c.js'), 'c\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Generic Tasks\n\n- [ ] generic todo unrelated to PACE\n', 'utf8');
+  const r = runHook('stop.js', { cwd: dir, stdin: { stop_hook_active: false } });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stderr, '');
+});
+
 test('14b3. Stop 连续阻止时即使 .pace 缺失也能累计并降级', () => {
   const dir = makeV6Project('stop-downgrade-without-runtime');
   let last;
@@ -4579,6 +4789,7 @@ test('14i. [-] 或 cancelled 仍在活跃区 → inconsistent 阻止修复', () 
   assert.strictEqual(r.code, 2);
   assert.ok(r.stderr.includes('已取消'));
   assert.ok(r.stderr.includes('仍在活跃区'));
+  assert.ok(r.stderr.includes('archive-chg'));
 });
 
 test('14j. in-progress 详情没有 T-NNN 任务行 → inconsistent 阻止修复', () => {

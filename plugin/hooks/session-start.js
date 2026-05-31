@@ -418,16 +418,12 @@ for (const file of ARTIFACT_FILES) {
   const archiveMatch = full.match(ARCHIVE_PATTERN);
   let output = archiveMatch ? full.slice(0, archiveMatch.index) : full;
 
-  // T-385: spec.md 截断 — 保留项目概述+技术栈，省略编码规范/目录结构/依赖列表
+  // T-385: spec.md 截断 — 保留项目事实与禁止事项，省略依赖长列表
   if (file === 'spec.md') {
-    const techMatch = output.match(/^## 技术栈/m);
-    if (techMatch) {
-      const rest = output.slice(techMatch.index);
-      const nextH2 = rest.match(/\n## (?!技术栈)/);
-      if (nextH2) {
-        output = output.slice(0, techMatch.index + nextH2.index)
-          + '\n\n（已省略编码规范/目录结构/依赖列表，需要时 Read spec.md）\n';
-      }
+    const depsMatch = output.match(/^## 依赖列表/m);
+    if (depsMatch) {
+      output = output.slice(0, depsMatch.index)
+        + '\n\n（已省略依赖列表，需要时 Read spec.md）\n';
     }
   }
 
@@ -727,7 +723,8 @@ try {
         if (!dm) continue;
         const days = paceUtils.daysSinceISODate(dm[1], yyyy);
         if (days !== null && days >= 14) {
-          const title = (line.match(/^- \[ \] (.+?)(?:\s*[#\[]|$)/) || [])[1] || line.slice(6, 60);
+          const link = line.match(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/);
+          const title = (link && (link[2] || link[1]) || (line.match(/^- \[ \] ([^—#\[]+)/) || [])[1] || line.slice(6, 60)).trim();
           aged.push({ title, days });
         }
       }

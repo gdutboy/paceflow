@@ -15,7 +15,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const setupHelper = require('./fixture-setup');
 const teardownHelper = require('./fixture-teardown');
 const verifyHelper = require('./verify-output');
@@ -34,12 +33,147 @@ const ALLOWED_OPERATIONS = new Set([
 ]);
 
 function loadYaml(yamlPath) {
-  // 用 python3 -c 解析 YAML 并输出 JSON（项目无 npm 依赖）
-  const json = execSync(
-    `python3 -c "import sys, json, yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1]))))" "${yamlPath}"`,
-    { encoding: 'utf8' },
-  );
-  return JSON.parse(json);
+  return parseSimpleYaml(fs.readFileSync(yamlPath, 'utf8'));
+}
+
+function lineIndent(line) {
+  return (line.match(/^ */) || [''])[0].length;
+}
+
+function stripYamlComment(line) {
+  if (/^\s*#/.test(line)) return '';
+  return line;
+}
+
+function parseScalar(value) {
+  const raw = String(value || '').trim();
+  if (raw === '[]') return [];
+  if (raw.startsWith('{') && raw.endsWith('}')) {
+    const obj = {};
+    const body = raw.slice(1, -1).trim();
+    if (!body) return obj;
+    for (const part of body.split(/\s*,\s*/)) {
+      const m = part.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (!m) throw new Error(`Unsupported inline YAML object part: ${part}`);
+      obj[m[1]] = parseScalar(m[2]);
+    }
+    return obj;
+  }
+  if (raw === 'null') return null;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (/^-?\d+$/.test(raw)) return Number(raw);
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+function parseSimpleYaml(content) {
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n').map(stripYamlComment);
+  let i = 0;
+
+  function skipBlank() {
+    while (i < lines.length && !lines[i].trim()) i++;
+  }
+
+  function readBlockScalar(parentIndent) {
+    const blockIndent = parentIndent + 2;
+    const out = [];
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) {
+        out.push('');
+        i++;
+        continue;
+      }
+      if (lineIndent(line) < blockIndent) break;
+      out.push(line.slice(Math.min(blockIndent, line.length)));
+      i++;
+    }
+    return out.join('\n').replace(/\n+$/, '\n');
+  }
+
+  function parseValue(rest, indent) {
+    const trimmed = String(rest || '').trim();
+    if (trimmed === '|') {
+      i++;
+      return readBlockScalar(indent);
+    }
+    if (trimmed === '') {
+      i++;
+      return parseNode(indent + 2);
+    }
+    i++;
+    return parseScalar(trimmed);
+  }
+
+  function parseMap(indent) {
+    const obj = {};
+    while (i < lines.length) {
+      skipBlank();
+      if (i >= lines.length) break;
+      const line = lines[i];
+      const currentIndent = lineIndent(line);
+      if (currentIndent < indent) break;
+      if (currentIndent > indent) break;
+      const trimmed = line.trim();
+      if (trimmed.startsWith('- ')) break;
+      const match = trimmed.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
+      if (!match) throw new Error(`Unsupported YAML line: ${line}`);
+      obj[match[1]] = parseValue(match[2] || '', currentIndent);
+    }
+    return obj;
+  }
+
+  function parseList(indent) {
+    const arr = [];
+    while (i < lines.length) {
+      skipBlank();
+      if (i >= lines.length) break;
+      const line = lines[i];
+      const currentIndent = lineIndent(line);
+      if (currentIndent < indent) break;
+      if (currentIndent > indent) break;
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('- ')) break;
+      const rest = trimmed.slice(2);
+      if (!rest) {
+        i++;
+        arr.push(parseNode(indent + 2));
+        continue;
+      }
+      const pair = rest.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
+      if (!pair) {
+        i++;
+        arr.push(parseScalar(rest));
+        continue;
+      }
+      const item = {};
+      item[pair[1]] = pair[2] === undefined || pair[2] === '' ? (i++, parseNode(indent + 2)) : parseValue(pair[2], currentIndent);
+      while (i < lines.length) {
+        skipBlank();
+        if (i >= lines.length) break;
+        const next = lines[i];
+        const nextIndent = lineIndent(next);
+        if (nextIndent <= indent) break;
+        if (nextIndent !== indent + 2) break;
+        const m = next.trim().match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
+        if (!m) break;
+        item[m[1]] = parseValue(m[2] || '', nextIndent);
+      }
+      arr.push(item);
+    }
+    return arr;
+  }
+
+  function parseNode(indent) {
+    skipBlank();
+    if (i >= lines.length) return {};
+    return lines[i].trim().startsWith('- ') ? parseList(indent) : parseMap(indent);
+  }
+
+  return parseNode(0);
 }
 
 function renderInputFields(testCase, variables) {

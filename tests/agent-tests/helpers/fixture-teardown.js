@@ -5,7 +5,6 @@
  */
 
 const fs = require('fs');
-const { execSync } = require('child_process');
 
 function teardown(targetDir) {
   if (!targetDir || typeof targetDir !== 'string') return;
@@ -13,7 +12,7 @@ function teardown(targetDir) {
     throw new Error(`Refuse to teardown non-/tmp path: ${targetDir}`);
   }
   if (!fs.existsSync(targetDir)) return;
-  execSync(`rm -rf "${targetDir}"`);
+  fs.rmSync(targetDir, { recursive: true, force: true });
 }
 
 module.exports = { teardown };

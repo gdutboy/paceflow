@@ -335,6 +335,16 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     ].join('\n');
   }
 
+  if (operation === 'update-chg' && !['append', 'replace', 'approve', 'approve-and-start', 'update-status', 'verify'].includes(action)) {
+    return [
+      `派 artifact-writer 执行 update-chg 时缺少或写错 action：${action || '(missing)'}。`,
+      FORMAT_SNIPPETS.skillRef,
+      'update-chg 的 action 只能是 append / replace / approve / approve-and-start / update-status / verify。',
+      '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+      promptTemplateForOperation({ prompt, artDir, operation: 'update-chg', action: action || 'update-status' })
+    ].join('\n');
+  }
+
   if (mentionsApprovalAction) {
     const missing = [];
     if (!promptHasTrueField(text, 'approval-confirmed')) missing.push('approval-confirmed: true');
@@ -416,7 +426,7 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     return [
       '派 artifact-writer 执行 archive-chg 时缺少必填字段：walkthrough-summary。',
       FORMAT_SNIPPETS.skillRef,
-      'archive-chg 只用于已完成且已验证的 CHG/HOTFIX 归档或索引修复；仍需由主 session 提供完成摘要写入 walkthrough.md。',
+      'archive-chg 用于已完成且已验证的 CHG/HOTFIX 归档、已取消 CHG/HOTFIX 的索引归档，或终态索引修复；仍需由主 session 提供摘要写入 walkthrough.md。',
       '请重派同一个 agent，并使用完整 prompt 顶部模板：',
       promptTemplateForOperation({ prompt, artDir, operation: 'archive-chg' })
     ].join('\n');

@@ -6,7 +6,7 @@
  *
  * 检查项：
  * 1. files_created 中的文件是否存在
- * 2. files_modified 中的文件是否被修改（与 fixture 对比，至少行数差异 > 0）
+ * 2. files_modified 中的文件是否被修改（与 fixture/pre_files 基线做内容对比）
  * 3. validations 各项（frontmatter schema / wikilink / cross_index 等）
  * 4. agent 报告的 max_tokens / max_duration_ms 是否超限
  * 5. status 是否 SUCCESS
@@ -18,6 +18,25 @@ const { renderVariables } = require('./fixture-setup');
 
 const INDEX_FILES = new Set(['task', 'implementation_plan', 'walkthrough', 'findings', 'corrections']);
 const FIXTURES_ROOT = path.join(__dirname, '..', 'fixtures');
+const EXPECTED_KEYS = new Set([
+  'status', 'files_created', 'files_modified', 'files_created_optional',
+  'validations', 'filename_match', 'fixture_unchanged', 'body_completeness_check',
+  'report_title_strict', 'report_title_prefix_allowed', 'failure_reason_pattern',
+  'raw_must_contain', 'max_tokens', 'max_duration_ms', 'max_tool_uses', 'cleanup',
+]);
+const VALIDATION_KEYS = new Set([
+  'frontmatter_schema', 'wikilink_integrity', 'cross_index_consistency',
+  'chg_id_pattern', 'finding_id_pattern', 'correction_id_pattern',
+  'frontmatter_status', 'finding_status', 'summary_length_le_200',
+  'impact_in_index_row', 'correction_index_contains',
+  'knowledge_link_null', 'knowledge_link_value', 'project_scope_value',
+  'title_derived_from_wrong_behavior', 'approved_marker_set',
+  'verified_marker_set', 'completed_date_set', 'verified_date_set',
+  'archived_date_set', 'detail_task_status', 'task_marked',
+  'task_md_index_checkbox', 'impl_plan_index_checkbox',
+  'task_md_index_below_archive', 'impl_plan_index_below_archive',
+  'walkthrough_row_added', 'work_record_contains',
+]);
 
 function isIndexFile(filePath) {
   const baseName = path.basename(filePath, '.md');
@@ -269,6 +288,18 @@ function verify(testCase, targetDir, variables, agentReport) {
   const validations = [];
   const diffs = [];
   const exp = testCase.expected || {};
+  const expectedFixtureMap = buildExpectedFixtureMap(testCase, variables);
+
+  for (const key of Object.keys(exp)) {
+    if (!EXPECTED_KEYS.has(key)) {
+      validations.push({ name: `unknown_expected_key:${key}`, ok: false, reason: 'unknown expected key' });
+    }
+  }
+  for (const key of Object.keys(exp.validations || {})) {
+    if (!VALIDATION_KEYS.has(key)) {
+      validations.push({ name: `unknown_validation_key:${key}`, ok: false, reason: 'unknown validation key' });
+    }
+  }
 
   // 1. files_created
   for (const rel of (exp.files_created || [])) {
@@ -285,14 +316,25 @@ function verify(testCase, targetDir, variables, agentReport) {
     }
   }
 
-  // 2. files_modified（仅检查存在 + 内容非空，不与 fixture 对比 byte）
+  // 2. files_modified（与 fixture/pre_files 基线做内容对比）
   for (const rel of (exp.files_modified || [])) {
     const rendered = renderVariables(rel, variables);
     const full = path.join(targetDir, rendered);
     if (!fileExists(full)) {
       validations.push({ name: `files_modified:${rendered}`, ok: false, reason: 'not found' });
     } else {
-      validations.push({ name: `files_modified:${rendered}`, ok: true });
+      const normalizedRel = rendered.split(path.sep).join('/');
+      const before = expectedFixtureMap[normalizedRel];
+      if (before === undefined) {
+        validations.push({ name: `files_modified:${rendered}`, ok: false, reason: 'baseline missing' });
+      } else {
+        const after = fs.readFileSync(full, 'utf8');
+        validations.push({
+          name: `files_modified:${rendered}`,
+          ok: normalizeNewlines(before) !== normalizeNewlines(after),
+          reason: normalizeNewlines(before) === normalizeNewlines(after) ? 'unchanged from fixture/pre_files baseline' : undefined,
+        });
+      }
     }
   }
 
@@ -353,6 +395,34 @@ function verify(testCase, targetDir, variables, agentReport) {
     .filter((fp) => isDetailFile(fp));
   const createdDetailByPrefix = (prefix) =>
     createdDetailFiles.find((fp) => path.basename(fp).startsWith(prefix));
+
+  if (expectedValidations.chg_id_pattern) {
+    const fp = createdDetailFiles.find((file) => /(?:^|\/)(?:chg|hotfix)-/i.test(file.split(path.sep).join('/')));
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const expectedPattern = renderVariables(expectedValidations.chg_id_pattern, variables);
+    const actual = fm && normalizeFrontmatterScalar(fm['chg-id']);
+    validations.push({
+      name: 'chg_id_pattern',
+      ok: actual === expectedPattern,
+      actual,
+      expected: expectedPattern,
+      reason: fp ? undefined : 'change detail missing',
+    });
+  }
+
+  if (expectedValidations.cross_index_consistency === 'pass') {
+    const fp = createdDetailFiles.find((file) => /(?:^|\/)(?:chg|hotfix)-/i.test(file.split(path.sep).join('/')));
+    const slug = fp ? path.basename(fp, '.md') : '';
+    const taskContent = fileExists(path.join(targetDir, 'task.md')) ? fs.readFileSync(path.join(targetDir, 'task.md'), 'utf8') : '';
+    const implContent = fileExists(path.join(targetDir, 'implementation_plan.md')) ? fs.readFileSync(path.join(targetDir, 'implementation_plan.md'), 'utf8') : '';
+    const ok = Boolean(slug) && taskContent.includes(`[[${slug}]]`) && implContent.includes(`[[${slug}]]`);
+    validations.push({
+      name: 'cross_index_consistency',
+      ok,
+      actual: ok ? 'matched' : 'missing index link',
+      expected: slug ? `[[${slug}]] in task.md and implementation_plan.md` : 'change detail',
+    });
+  }
 
   if (expectedValidations.frontmatter_status) {
     const actual = targetFrontmatter && targetFrontmatter.status;
@@ -557,6 +627,20 @@ function verify(testCase, targetDir, variables, agentReport) {
     }
   }
 
+  if (expectedValidations.task_marked) {
+    const taskId = expectedValidations.task_marked['task-id'];
+    const expected = normalizeCheckbox(expectedValidations.task_marked.expected_status);
+    const actualRaw = targetDetail && taskId ? taskStatus(targetDetail, taskId) : null;
+    const actual = actualRaw === null ? null : normalizeCheckbox(actualRaw);
+    validations.push({
+      name: `task_marked:${taskId || '(missing)'}`,
+      ok: actual === expected,
+      actual,
+      expected,
+      reason: targetDetail ? undefined : 'target detail missing',
+    });
+  }
+
   for (const [key, rel] of [
     ['task_md_index_checkbox', 'task.md'],
     ['impl_plan_index_checkbox', 'implementation_plan.md'],
@@ -639,9 +723,8 @@ function verify(testCase, targetDir, variables, agentReport) {
   }
 
   if (exp.fixture_unchanged) {
-    const expectedMap = buildExpectedFixtureMap(testCase, variables);
     const actualMap = collectFileMap(targetDir);
-    const comparison = compareFileMaps(expectedMap, actualMap);
+    const comparison = compareFileMaps(expectedFixtureMap, actualMap);
     const ok = comparison.missing.length === 0 &&
       comparison.unexpected.length === 0 &&
       comparison.changed.length === 0;
@@ -739,6 +822,10 @@ function verify(testCase, targetDir, variables, agentReport) {
   // 5. agent status
   if (agentReport && agentReport.status && exp.status) {
     validations.push({ name: 'agent_status', ok: agentReport.status === exp.status, actual: agentReport.status, expected: exp.status });
+  }
+
+  if (validations.length === 0) {
+    validations.push({ name: 'validations_present', ok: false, reason: 'no validations executed' });
   }
 
   const passed = validations.every((v) => v.ok);

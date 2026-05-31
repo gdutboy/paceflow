@@ -3,7 +3,10 @@ function normalizeLineEndings(content) {
 }
 
 function hasNonNullVerifiedDate(text) {
-  const match = normalizeLineEndings(text).match(/^verified-date:[ \t]*(.*)$/m);
+  const normalized = normalizeLineEndings(text);
+  const frontmatter = normalized.match(/^\uFEFF?---\n([\s\S]*?)\n---/);
+  const target = frontmatter ? frontmatter[1] : normalized;
+  const match = target.match(/^verified-date:[ \t]*(.*)$/m);
   if (!match) return false;
   const value = match[1].trim().replace(/^["']|["']$/g, '');
   return value !== '' && value.toLowerCase() !== 'null';

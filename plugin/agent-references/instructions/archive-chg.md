@@ -5,7 +5,7 @@
 
 ## When To Use
 
-用于已完成且已验证的 CHG/HOTFIX 仍停在活跃索引区时，只做归档或索引修复。若主 session 刚完成验证，优先使用 `close-chg` 一次收口。
+用于已完成且已验证的 CHG/HOTFIX 仍停在活跃索引区时做归档或索引修复；也用于已取消（`status: cancelled`，全部任务 `[-]`）的 CHG/HOTFIX 做 index-only 取消归档。若主 session 刚完成验证，优先使用 `close-chg` 一次收口。
 
 ## Correct Prompt Example
 
@@ -26,12 +26,14 @@ walkthrough-summary: <完成摘要>
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
 1. 解析 target → 详情文件路径
 2. 文件不存在 → `target-not-found`
-3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed` 或 `archived`
+3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed`、`archived` 或 `cancelled`
    - 若 `status=archived` → 进入 index-only repair：不改详情 frontmatter，只检查/修复 task.md 与 implementation_plan.md 归档位置，并补 walkthrough（若缺）
-   - 若 `status=planned` / `in-progress` / `cancelled` → 报告 `format-violation: status not completed`
+   - 若 `status=cancelled` → 进入 cancelled archive-only：不改详情 frontmatter，不要求验证，只检查所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
+   - 若 `status=planned` / `in-progress` → 报告 `format-violation: status not terminal`
 4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
-5. **v6 V 阶段强制验证**（详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
+   - 若 `status=cancelled` 但存在非 `[-]` 任务 → 报告 `format-violation: cancelled tasks not all skipped`
+5. **v6 V 阶段强制验证**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
    - frontmatter `verified-date` 必须不为 null
    - 正文必须含 `<!-- VERIFIED -->` 标记
    - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 在验证通过后派 `close-chg`，或先派 `update-chg action=verify`
@@ -48,14 +50,15 @@ walkthrough-summary: <完成摘要>
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
    - 若 status 已是 `archived`：不改详情 frontmatter，继续索引 repair
+   - 若 status 是 `cancelled`：不改详情 frontmatter，不写 `archived-date` / `verified-date`，继续索引归档
    - 否则 Edit 改 `status` → `archived`
    - 若 `archived-date: null`，填 `<ISO 8601 datetime>`
    - 若 `completed-date` 仍为 null（兜底场景）→ 填同一 ISO 8601 datetime
 2. **task.md 索引行归档**（按"ARCHIVE 内容移动"两步 Edit）：
    - Read task.md
-   - 找到 `- [x] [[chg-xxx]] ...` 行
+   - 找到 `- [x] [[chg-xxx]] ...` 行；若 status 是 `cancelled`，找到 `- [-] [[chg-xxx]] ...` 行
    - Edit 1：从活跃区删除该行
-   - Edit 2：在 `<!-- ARCHIVE -->` 下方插入同一 `- [x] [[chg-xxx]] ...` 行（其余 wikilink / 标题 / 元数据原样保留）
+   - Edit 2：在 `<!-- ARCHIVE -->` 下方插入同一终态索引行（`[x]` 或 `[-]`，其余 wikilink / 标题 / 元数据原样保留）
 3. **implementation_plan.md 索引行归档**：同 task.md
 4. **walkthrough.md 添加完成索引行**：
    - Read walkthrough.md
@@ -71,7 +74,7 @@ walkthrough-summary: <完成摘要>
 ```
 当前文件状态：
   [活跃区内容]
-  - [x] [[chg-A]] CHG A    <- 待归档行
+  - [x] [[chg-A]] CHG A    <- 待归档行（cancelled 时为 [-]）
   - [ ] [[chg-B]] CHG B    <- 仍活跃（不动）
 
   <!-- ARCHIVE -->         <- 标记位置（不动）
@@ -98,7 +101,7 @@ walkthrough-summary: <完成摘要>
 
   <!-- ARCHIVE -->
 
-  - [x] [[chg-A]] CHG A    <- 新归档（最上）
+  - [x] [[chg-A]] CHG A    <- 新归档（最上；cancelled 时为 [-]）
   [其他归档区内容]
 ```
 
@@ -113,15 +116,17 @@ walkthrough-summary: <完成摘要>
 - `old_string`：`<!-- ARCHIVE -->\n`
 - `new_string`：`<!-- ARCHIVE -->\n\n- [x] [[chg-A]] <title> #change [tasks:: T-001~T-003]\n`
 
-注意：归档前活跃索引行必须已经是 `[x]`，归档只移动该行到 ARCHIVE 下方，其余 wikilink / 标题 / 元数据原样保留。
+注意：归档前活跃索引行必须已经是终态 checkbox：completed/archived 用 `[x]`，cancelled 用 `[-]`。归档只移动该行到 ARCHIVE 下方，其余 wikilink / 标题 / 元数据原样保留。
 
 ## 边界
 
 - 任务未全部完成（含 [/] 或 [ ]）→ `format-violation: tasks not done`
-- frontmatter status 不是 completed / archived → `format-violation: status not completed`
+- frontmatter status 不是 completed / archived / cancelled → `format-violation: status not terminal`
 - frontmatter status 已是 archived → 允许 index-only repair，不得报告 already archived
-- frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示验证通过后派 `close-chg`，或先派 `update-chg action=verify`）
-- frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）
+- frontmatter status 是 cancelled → 允许 index-only 取消归档；不要求 verified-date / `<!-- VERIFIED -->`，且不得改为 archived
+- frontmatter status 是 cancelled 但任务不全是 `[-]` → `format-violation: cancelled tasks not all skipped`
+- 非 cancelled 的 CHG/HOTFIX：frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示验证通过后派 `close-chg`，或先派 `update-chg action=verify`）
+- 非 cancelled 的 CHG/HOTFIX：frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）
 - 详情文件不存在 → `target-not-found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 - ARCHIVE 标记缺失但目标索引行仍在活跃区 → 先补 `<!-- ARCHIVE -->` 独占行再移动索引；缺标记且目标索引行也不存在 → `format-violation: archive marker missing`

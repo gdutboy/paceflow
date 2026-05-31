@@ -141,15 +141,13 @@
 
 #### 0.1.6 当前验证基线
 
-最近一次验证结果（v6.0.59）：
+最近一次验证结果（v6.0.60，本轮审计修复）：
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 237/237 PASS
-node tests/test-pace-utils.js                        # 159/159 PASS
-node tests/agent-tests/run-tests.js dummy            # PASS
-node tests/test-install.js                           # 26/26 PASS
-claude plugin validate ./plugin                      # PASS
+node tests/test-hooks-e2e.js                         # 256/256 PASS
+node tests/test-pace-utils.js                        # 160/160 PASS
+node -e '<load every tests/agent-tests/cases/*.yaml, prepare, teardown>'  # 29/29 PASS
 git diff --check                                     # PASS
 ```
 

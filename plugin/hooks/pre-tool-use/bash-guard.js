@@ -88,7 +88,7 @@ function commandTextLooksMutating(c) {
   return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
     /(^|[;&|]\s*)find\b[^;\n]*(?:\s-delete\b|\s-exec\s+(?:rm|mv|cp)\b)/i.test(c) ||
     /(^|[;&|]\s*)(npm|pnpm|yarn)\s+(?:run|exec|x)\b/i.test(c) ||
-    /(^|[;&|]\s*)npx\b[\s\S]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
+    /(^|[;&|]\s*)npx\b[^\n;&|]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
     /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
     /(^|[;&|]\s*)(python\d*|node)\b[^\n;&|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
 }

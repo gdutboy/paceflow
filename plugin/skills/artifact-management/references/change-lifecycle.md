@@ -65,7 +65,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 | V 只记录验证暂不归档 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg target=CHG-... action=verify` |
 | 默认 V+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true` |
 | 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg target=CHG-...` |
-| 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 全部 T-NNN 都为 `[-]` 时使用；不验证 |
+| 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 全部 T-NNN 都为 `[-]` 后派 `archive-chg target=CHG-...` 做取消归档；不验证、不改为 archived |
 
 `[ ] planned`（未批准 backlog 或已批准 ready）与 `[!] blocked` 都属于 Stop/调度层的 deferred：不改 artifact 状态机，允许 Stop 但会显示提醒；恢复执行前必须进入 `[/]`。
 
@@ -96,7 +96,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 - [ ] `verified-date` 非 null
 - [ ] `<!-- VERIFIED -->` 存在且紧邻 `<!-- APPROVED -->`
 - [ ] `walkthrough.md` 有当天索引行
-- [ ] 已派 `close-chg`（或已验证后派 `archive-chg`），根索引不再留在活跃区
+- [ ] 已派 `close-chg`（或已验证后派 `archive-chg`；cancelled 则派 `archive-chg` 做取消归档），根索引不再留在活跃区
 
 Stop hook 会阻止 completed 未 verified、verified 未归档、索引/详情不一致等状态。
 

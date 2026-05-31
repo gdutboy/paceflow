@@ -7,7 +7,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const FIXTURES_ROOT = path.join(__dirname, '..', 'fixtures');
 
@@ -47,10 +46,10 @@ function copyFixture(fixtureName, targetDir) {
     throw new Error(`Fixture not found: ${src}`);
   }
   if (fs.existsSync(targetDir)) {
-    execSync(`rm -rf "${targetDir}"`);
+    fs.rmSync(targetDir, { recursive: true, force: true });
   }
   fs.mkdirSync(targetDir, { recursive: true });
-  execSync(`cp -r "${src}/." "${targetDir}/"`);
+  fs.cpSync(src, targetDir, { recursive: true });
 }
 
 /**
