@@ -3582,6 +3582,8 @@ test('9hc4a1. update-chg action=verify 缺 verify-summary 在 Agent 启动前 DE
 test('9hc4a1b. update-chg 缺 action 或未知 action 在 Agent 启动前 DENY', () => {
   const dir = makeV6Project('agent-update-chg-action-required');
   for (const actionLine of ['', 'action: unknown']) {
+    const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
+    try { fs.rmSync(ownerPath, { force: true }); } catch(e) {}
     const r = runHook('pre-tool-use.js', {
       cwd: dir,
       stdin: {
@@ -3601,6 +3603,7 @@ test('9hc4a1b. update-chg 缺 action 或未知 action 在 Agent 启动前 DENY',
     assert.strictEqual(r.code, 0);
     assert.ok(r.stdout.includes('"deny"'));
     assert.ok(r.stdout.includes('update-chg 的 action 只能是 append / replace / approve / approve-and-start / update-status / verify'));
+    assert.ok(!fs.existsSync(ownerPath), '被 deny 的 update-chg 不应写入 owner state');
   }
 });
 
@@ -4790,6 +4793,22 @@ test('14i. [-] 或 cancelled 仍在活跃区 → inconsistent 阻止修复', () 
   assert.ok(r.stderr.includes('已取消'));
   assert.ok(r.stderr.includes('仍在活跃区'));
   assert.ok(r.stderr.includes('archive-chg'));
+});
+
+test('14i1. cancelled CHG 已归档到 ARCHIVE 下方后 Stop 放行', () => {
+  const dir = makeV6ProjectWithChanges('stop-cancelled-archived-pass', [
+    { id: 'CHG-20260504-01', indexMark: '[-]', status: 'cancelled', task: '[-]', approved: true },
+  ], { walkToday: false });
+  for (const rel of ['task.md', 'implementation_plan.md']) {
+    const fp = path.join(dir, rel);
+    const line = '- [-] [[chg-20260504-01]] 变更 CHG-20260504-01 #change [tasks:: T-001]';
+    const content = fs.readFileSync(fp, 'utf8');
+    fs.writeFileSync(fp, content.replace(`${line}\n\n<!-- ARCHIVE -->`, `<!-- ARCHIVE -->\n\n${line}`), 'utf8');
+  }
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-cancelled-archived-pass' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stderr.includes('仍在活跃区'));
+  assert.ok(!r.stderr.includes('archive-chg'));
 });
 
 test('14j. in-progress 详情没有 T-NNN 任务行 → inconsistent 阻止修复', () => {

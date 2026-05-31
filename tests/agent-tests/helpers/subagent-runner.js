@@ -40,20 +40,57 @@ function lineIndent(line) {
   return (line.match(/^ */) || [''])[0].length;
 }
 
-function stripYamlComment(line) {
-  if (/^\s*#/.test(line)) return '';
-  return line;
+function isIgnorableYamlLine(line) {
+  return !String(line || '').trim() || /^\s*#/.test(line);
+}
+
+function stripInlineYamlComment(value) {
+  const raw = String(value || '');
+  let quote = null;
+  for (let idx = 0; idx < raw.length; idx += 1) {
+    const ch = raw[idx];
+    const prev = idx > 0 ? raw[idx - 1] : '';
+    if ((ch === '"' || ch === "'") && prev !== '\\') {
+      if (quote === ch) quote = null;
+      else if (!quote) quote = ch;
+      continue;
+    }
+    if (ch === '#' && !quote && (idx === 0 || /\s/.test(prev))) {
+      return raw.slice(0, idx);
+    }
+  }
+  return raw;
+}
+
+function splitInlineYamlObject(body) {
+  const parts = [];
+  let quote = null;
+  let start = 0;
+  for (let idx = 0; idx < body.length; idx += 1) {
+    const ch = body[idx];
+    const prev = idx > 0 ? body[idx - 1] : '';
+    if ((ch === '"' || ch === "'") && prev !== '\\') {
+      if (quote === ch) quote = null;
+      else if (!quote) quote = ch;
+    } else if (ch === ',' && !quote) {
+      parts.push(body.slice(start, idx));
+      start = idx + 1;
+    }
+  }
+  parts.push(body.slice(start));
+  return parts;
 }
 
 function parseScalar(value) {
-  const raw = String(value || '').trim();
+  const raw = stripInlineYamlComment(value).trim();
   if (raw === '[]') return [];
   if (raw.startsWith('{') && raw.endsWith('}')) {
     const obj = {};
     const body = raw.slice(1, -1).trim();
     if (!body) return obj;
-    for (const part of body.split(/\s*,\s*/)) {
-      const m = part.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    for (const part of splitInlineYamlObject(body)) {
+      const item = part.trim();
+      const m = item.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
       if (!m) throw new Error(`Unsupported inline YAML object part: ${part}`);
       obj[m[1]] = parseScalar(m[2]);
     }
@@ -70,11 +107,11 @@ function parseScalar(value) {
 }
 
 function parseSimpleYaml(content) {
-  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n').map(stripYamlComment);
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
   let i = 0;
 
   function skipBlank() {
-    while (i < lines.length && !lines[i].trim()) i++;
+    while (i < lines.length && isIgnorableYamlLine(lines[i])) i++;
   }
 
   function readBlockScalar(parentIndent) {
@@ -95,7 +132,7 @@ function parseSimpleYaml(content) {
   }
 
   function parseValue(rest, indent) {
-    const trimmed = String(rest || '').trim();
+    const trimmed = stripInlineYamlComment(rest).trim();
     if (trimmed === '|') {
       i++;
       return readBlockScalar(indent);
@@ -118,6 +155,10 @@ function parseSimpleYaml(content) {
       if (currentIndent < indent) break;
       if (currentIndent > indent) break;
       const trimmed = line.trim();
+      if (/^#/.test(trimmed)) {
+        i++;
+        continue;
+      }
       if (trimmed.startsWith('- ')) break;
       const match = trimmed.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
       if (!match) throw new Error(`Unsupported YAML line: ${line}`);
@@ -136,6 +177,10 @@ function parseSimpleYaml(content) {
       if (currentIndent < indent) break;
       if (currentIndent > indent) break;
       const trimmed = line.trim();
+      if (/^#/.test(trimmed)) {
+        i++;
+        continue;
+      }
       if (!trimmed.startsWith('- ')) break;
       const rest = trimmed.slice(2);
       if (!rest) {
@@ -158,7 +203,12 @@ function parseSimpleYaml(content) {
         const nextIndent = lineIndent(next);
         if (nextIndent <= indent) break;
         if (nextIndent !== indent + 2) break;
-        const m = next.trim().match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
+        const nextTrimmed = next.trim();
+        if (/^#/.test(nextTrimmed)) {
+          i++;
+          continue;
+        }
+        const m = nextTrimmed.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
         if (!m) break;
         item[m[1]] = parseValue(m[2] || '', nextIndent);
       }
@@ -371,6 +421,7 @@ function appendManifest(date, entry) {
 
 module.exports = {
   loadYaml,
+  parseSimpleYaml,
   prepare,
   verifyAndReport,
   teardown,

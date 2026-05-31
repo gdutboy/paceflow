@@ -145,9 +145,10 @@
 
 ```bash
 for f in plugin/hooks/*.js plugin/hooks/pre-tool-use/*.js plugin/migrate/*.js; do node --check "$f"; done  # PASS
-node tests/test-hooks-e2e.js                         # 256/256 PASS
+node tests/test-hooks-e2e.js                         # 257/257 PASS
 node tests/test-pace-utils.js                        # 160/160 PASS
-node -e '<load every tests/agent-tests/cases/*.yaml, prepare, teardown>'  # 29/29 PASS
+node tests/test-agent-tests-helpers.js               # 7/7 PASS
+node tests/agent-tests/run-tests.js dummy            # PASS
 git diff --check                                     # PASS
 ```
 
