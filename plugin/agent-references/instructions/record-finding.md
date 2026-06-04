@@ -85,4 +85,4 @@ body: <完整 Markdown 正文>
 - related-changes 中 wikilink 指向不存在的 CHG → 警告但不阻止（建议主 session 检查）
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 
-> **§边界 vs §8 通用验证规则关系**：本节是 lex specialis（特殊条款），优先级高于上层 `../artifact-writer-spec.md` §8 通用 wikilink 强校验。merges / related-changes 字段允许"warn but don't block"，其他字段仍按 §8 通用强校验。
+> **§边界 vs §9 通用验证规则关系**：本节是 lex specialis（特殊条款），优先级高于上层 `../artifact-writer-spec.md` §9 通用 wikilink 强校验。merges / related-changes 字段允许"warn but don't block"，其他字段仍按 §9 通用强校验。

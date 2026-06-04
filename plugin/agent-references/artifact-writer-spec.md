@@ -49,7 +49,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 chg-id: CHG-YYYYMMDD-NN              # CHG-* 或 HOTFIX-* 大写
 status: planned                      # planned | in-progress | completed | archived | cancelled
 date: YYYY-MM-DD
-type: change                         # change | hotfix | research
+type: change                         # change | hotfix
 parent-tasks: ["[[task]]"]
 parent-impl: ["[[implementation_plan]]"]
 related-finding: null                # "[[finding-xxx]]" 或 null

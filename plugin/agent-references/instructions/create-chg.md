@@ -27,7 +27,7 @@ technical-decision: <How>
 
 - `title`（必填）
 - `tasks`（必填，至少 1 个；推荐格式 `["任务描述", ...]`，artifact-writer 为当前 CHG/HOTFIX 分配 `T-001...`）
-- `type`（默认 change，可选 hotfix / research）
+- `type`（默认 change，可选 hotfix）
 - `related-finding`（可选，wikilink）
 - `background` / `scope` / `technical-decision`（可选）
 - `execution-context`（可选但推荐，由 reserve helper 输出，例如 `[worktree:: main] [branch:: main]`）

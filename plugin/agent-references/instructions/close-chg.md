@@ -60,6 +60,8 @@ walkthrough-summary: <完成摘要>
 4. 任务收口规则：
    - 若存在 `[ ]` / `[/]` 且 `complete-open-tasks` 不是 true → `format-violation: tasks not done`
    - 若 `complete-open-tasks: true`，把所有 `[ ]` / `[/]` T-NNN 改为 `[x]`
+   - W3：若 `## 任务清单` 全部为 `[-]`（全跳过、收口后无任何 `[x]`）→ `format-violation: all tasks skipped, use cancelled + archive-chg`，不写 `completed`、不归档。全 `[-]` 语义是 cancelled（见 `update-chg.md` 全 `[-]` → `cancelled`），应派 `update-chg` 推 `cancelled` 后用 `archive-chg` 取消式归档，而非 close-chg 写 `completed`。
+   - close-chg 写 `completed` 的前提：收口后任务全为 `[x]` / `[-]` 且至少有一个 `[x]`（与 `update-chg.md` 一致）。
 
 ## 操作步骤
 

@@ -23,6 +23,7 @@ PACEflow 的运行时行为必须由以下位置定义：
 ```bash
 node tests/test-pace-utils.js
 node tests/test-hooks-e2e.js
+node tests/test-agent-tests-helpers.js
 claude plugin validate ./plugin
 git diff --check
 ```
