@@ -7,6 +7,9 @@ const fs = require('fs');
 const path = require('path');
 
 const paceUtils = require('../plugin/hooks/pace-utils');
+const cmdRecognition = require('../plugin/hooks/pre-tool-use/command-recognition');
+const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
+const powershellGuard = require('../plugin/hooks/pre-tool-use/powershell-guard');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
 const createLockUtils = require('../plugin/hooks/pace-utils/locks');
 const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
@@ -255,6 +258,186 @@ test('artifactRelativePathForFile: 普通代码文件返回 null', () => {
   const dir = makeTmpDir('arff-code');
   assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src', 'task.md')), null);
   assert.strictEqual(artifactRelativePathForFile(dir, path.join(dir, 'src.js')), null);
+});
+
+// PU-001：绝对路径含 `.`/`..` 段必须折叠后再判定，否则 `<proj>/./changes/x.md`
+// 绕过 marker-guard 等全部 artifact 写保护，并可注入 `<!-- APPROVED -->` 伪造批准门。
+test('resolveToolFilePath: 绝对路径折叠 `.` 段（PU-001）', () => {
+  assert.strictEqual(resolveToolFilePath('/tmp/project', '/tmp/project/./changes/chg-x.md'), '/tmp/project/changes/chg-x.md');
+});
+
+test('resolveToolFilePath: 绝对路径折叠 `..` 段（PU-001）', () => {
+  assert.strictEqual(resolveToolFilePath('/tmp/project', '/tmp/project/sub/../changes/chg-x.md'), '/tmp/project/changes/chg-x.md');
+});
+
+test('resolveToolFilePath: 折叠不破坏 Windows 盘符路径（PU-001）', () => {
+  // path.posix.normalize 纯字符串折叠，保留 `C:/`；若误用 path.resolve 会在非 win32 上把盘符当相对路径破坏
+  assert.strictEqual(resolveToolFilePath('C:/proj', 'C:/proj/./changes/chg-x.md'), 'C:/proj/changes/chg-x.md');
+});
+
+test('isArtifactRelativePath: `.` 段形态仍判定为 artifact（PU-001 纵深防御）', () => {
+  assert.strictEqual(isArtifactRelativePath('./changes/chg-x.md'), true);
+  assert.strictEqual(isArtifactRelativePath('changes/./chg-x.md'), true);
+  assert.strictEqual(isArtifactRelativePath('./task.md'), true);
+  assert.strictEqual(isArtifactRelativePath('../outside/changes/x.md'), false);
+});
+
+test('artifactRelativePathForFile: `.`/`..` 段绝对路径不绕过 artifact 判定（PU-001）', () => {
+  const dir = makeTmpDir('arff-dot-segment');
+  // 字符串拼接构造含 `.` 的绝对路径（path.join 会自动折叠，无法复现绕过）
+  assert.strictEqual(artifactRelativePathForFile(dir, dir + '/./changes/chg-x.md'), 'changes/chg-x.md');
+  assert.strictEqual(artifactRelativePathForFile(dir, dir + '/sub/../changes/chg-x.md'), 'changes/chg-x.md');
+  // control：无 `.` 段仍正常解析
+  assert.strictEqual(artifactRelativePathForFile(dir, dir + '/changes/chg-x.md'), 'changes/chg-x.md');
+});
+
+// ============================================================
+// command-recognition 共享识别原语（CHG-20260604-01）
+// ============================================================
+console.log('\n--- command-recognition ---');
+
+const { segmentAnchorPrefix, scanRedirectTargets, commandRunsScriptEngine, BASH_WRAPPERS } = cmdRecognition;
+
+test('segmentAnchorPrefix: 换行/分号/&&/管道/分组后的动词都被段首锚定', () => {
+  const re = new RegExp(segmentAnchorPrefix({ extraChars: '\\n;&|(){}', wrappers: BASH_WRAPPERS }) + 'rm\\b', 'i');
+  assert.ok(re.test('echo hi\nrm task.md'), '换行');
+  assert.ok(re.test('echo hi; rm task.md'), '分号');
+  assert.ok(re.test('echo hi && rm task.md'), '&&');
+  assert.ok(re.test('echo hi | rm task.md'), '管道');
+  assert.ok(re.test('{ rm task.md; }'), '花括号分组');
+  assert.ok(re.test('(rm task.md)'), '圆括号分组');
+  assert.ok(re.test('rm task.md'), '裸命令');
+});
+
+test('segmentAnchorPrefix: wrapper 与 for…do 前缀剥离后锚定动词', () => {
+  const re = new RegExp(segmentAnchorPrefix({ extraChars: '\\n;&|(){}', wrappers: BASH_WRAPPERS, allowLoops: true }) + 'rm\\b', 'i');
+  assert.ok(re.test('env rm task.md'), 'env');
+  assert.ok(re.test('env FOO=1 rm task.md'), 'env 赋值');
+  assert.ok(re.test('sudo rm task.md'), 'sudo');
+  assert.ok(re.test('sudo -n rm task.md'), 'sudo flag');
+  assert.ok(re.test('nohup rm task.md'), 'nohup');
+  assert.ok(re.test('for f in .pace/locks/*; do rm "$f"; done'), 'for…do');
+});
+
+test('segmentAnchorPrefix: 不把动词作为单词一部分误锚定', () => {
+  const re = new RegExp(segmentAnchorPrefix({ extraChars: '\\n;&|(){}', wrappers: BASH_WRAPPERS }) + 'rm\\b', 'i');
+  assert.ok(!re.test('confirm task.md'), 'confirm 不含段首 rm');
+});
+
+test('scanRedirectTargets: 提取重定向目标，单引号内反斜杠字面不吞引号（BG-03）', () => {
+  assert.deepStrictEqual(scanRedirectTargets('echo x > task.md', '\\'), ['task.md']);
+  assert.deepStrictEqual(scanRedirectTargets('echo x >> changes/y.md', '\\'), ['changes/y.md']);
+  assert.ok(scanRedirectTargets("echo 'C:\\' > task.md", '\\').includes('task.md'), '单引号字面后的 redirect 不漏检');
+});
+
+test('scanRedirectTargets: 引号内的 > 不算重定向', () => {
+  assert.deepStrictEqual(scanRedirectTargets('echo "a > b"', '\\'), []);
+  assert.deepStrictEqual(scanRedirectTargets("echo 'a > b'", '\\'), []);
+});
+
+test('commandRunsScriptEngine: 裸/路径前缀/env 包装的 node/python 都识别（BG-04）', () => {
+  assert.strictEqual(commandRunsScriptEngine('node x.js'), true, '裸 node');
+  assert.strictEqual(commandRunsScriptEngine('/usr/bin/node x.js'), true, '路径前缀');
+  assert.strictEqual(commandRunsScriptEngine('env node x.js'), true, 'env 包装');
+  assert.strictEqual(commandRunsScriptEngine('env FOO=1 python3 x.py'), true, 'env 赋值 + python3');
+  assert.strictEqual(commandRunsScriptEngine('echo hi\nnode x.js'), true, '换行后');
+  assert.strictEqual(commandRunsScriptEngine('cat x.js'), false, 'cat 不是引擎');
+  assert.strictEqual(commandRunsScriptEngine('grep node x'), false, 'node 作搜索词不算');
+});
+
+// ============================================================
+// bash-guard 识别层修复（CHG-20260604-01 T-002：BG-01~04）
+// ============================================================
+console.log('\n--- bash-guard BG-01~04 ---');
+
+test('bash-guard BG-01: 换行/分组/wrapper/for…do/&& 分隔的 mutating 动词都识别', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(m('echo hi\nrm x.md'), '换行 rm');
+  assert.ok(m('for f in a b; do rm "$f"; done'), 'for…do rm');
+  assert.ok(m('{ rm x.md; }'), '花括号分组');
+  assert.ok(m('(rm x.md)'), '圆括号分组');
+  assert.ok(m('env rm x.md'), 'env wrapper');
+  assert.ok(m('sudo -n rm x.md'), 'sudo wrapper');
+  assert.ok(m('echo ok && rm x.md'), '&& 链式');
+  assert.ok(m('rm x.md'), '裸 rm（回归）');
+  assert.ok(m('echo hi; rm x.md'), '分号（回归）');
+});
+
+test('bash-guard BG-02: in-place 编辑器扩展识别', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(m('sed --in-place s/a/b/ x.md'), 'sed --in-place');
+  assert.ok(m('sed -i s/a/b/ x.md'), 'sed -i（回归）');
+  assert.ok(m('perl -i -pe s/a/b/ x.md'), 'perl -i -pe 拆分选项');
+  assert.ok(m('perl -pi -e s/a/b/ x.md'), 'perl -pi 连写（回归）');
+  assert.ok(m('sponge x.md'), 'sponge');
+  assert.ok(m('gawk -i inplace {print} x.md'), 'gawk -i inplace');
+});
+
+test('bash-guard: 只读命令不误判 mutating（防 over-block）', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(!m('cat x.md'), 'cat');
+  assert.ok(!m('grep foo x.md'), 'grep');
+  assert.ok(!m('wc -l x.md'), 'wc');
+});
+
+test('bash-guard BG-01: runtime-control 锁经 for…do/分组/wrapper/换行删除均拦截', () => {
+  const dir = makeTmpDir('bg-runtime');
+  const mut = (cmd) => bashGuard.bashCommandMutatesArtifactRuntimeControl(cmd, dir);
+  assert.ok(mut('rm .pace/locks/x'), '裸 rm 锁（回归）');
+  assert.ok(mut('for f in .pace/locks/*; do rm "$f"; done'), 'for…do 删锁');
+  assert.ok(mut('{ rm .pace/artifact-writer.lock; }'), '分组删锁');
+  assert.ok(mut('env rm .pace/artifact-writer.lock'), 'env 删锁');
+  assert.ok(mut('echo hi\nrm .pace/locks/x'), '换行删锁');
+});
+
+test('bash-guard BG-03: 单引号字面后的重定向到 artifact 不漏检', () => {
+  const dir = makeTmpDir('bg-redirect');
+  assert.ok(bashGuard.bashCommandRedirectsToArtifact("echo 'C:\\' > task.md", dir, dir), '单引号字面后 redirect 不漏');
+  assert.ok(bashGuard.bashCommandRedirectsToArtifact('echo x > task.md', dir, dir), '普通 redirect（回归）');
+});
+
+// ============================================================
+// powershell-guard 识别层修复（CHG-20260604-01 T-003：PSG-01~04 + A08）
+// ============================================================
+console.log('\n--- powershell-guard PSG/A08 ---');
+
+test('powershell-guard PSG-01/02: 语句前缀 &/&&/分组/管道 ForEach 的 mutating 都识别', () => {
+  const m = powershellGuard.powershellCommandLooksMutating;
+  assert.ok(m('& Remove-Item x.md'), '& 调用操作符');
+  assert.ok(m('Get-Date && Remove-Item x.md'), '&& 链式');
+  assert.ok(m('$null=(Remove-Item x.md)'), '分组 (...)');
+  assert.ok(m('gci | % { Remove-Item $_.FullName }'), '管道 ForEach { }');
+  assert.ok(m('Remove-Item x.md'), '裸（回归）');
+  assert.ok(m('Get-Date; Remove-Item x.md'), '分号（回归）');
+});
+
+test('powershell-guard A08: 默认别名 ri/rni/cpi/mi/clc 与 git 还原识别', () => {
+  const m = powershellGuard.powershellCommandLooksMutating;
+  assert.ok(m('ri x.md'), 'ri (Remove-Item)');
+  assert.ok(m('rni a b'), 'rni (Rename-Item)');
+  assert.ok(m('cpi a b'), 'cpi (Copy-Item)');
+  assert.ok(m('mi a b'), 'mi (Move-Item)');
+  assert.ok(m('clc x.md'), 'clc (Clear-Content)');
+  assert.ok(m('git checkout x.md'), 'git checkout（与 bash 对称）');
+});
+
+test('powershell-guard A08: ri 别名删 runtime-control 锁被拦截', () => {
+  const dir = makeTmpDir('ps-runtime');
+  const mut = (cmd) => powershellGuard.powershellCommandMutatesArtifactRuntimeControl(cmd, dir);
+  assert.ok(mut('Remove-Item .pace/artifact-writer.lock'), 'Remove-Item 锁（回归）');
+  assert.ok(mut('ri .pace/artifact-writer.lock'), 'ri 删锁（A08）');
+  assert.ok(mut('& Remove-Item .pace/locks/x'), '& 前缀删锁（PSG-01）');
+});
+
+test('powershell-guard PSG-03: 反引号转义路径仍匹配 artifact', () => {
+  const dir = makeTmpDir('ps-backtick');
+  assert.ok(powershellGuard.powershellCommandReferencesArtifact('Set-Content ta`sk.md x', dir, dir), '反引号转义路径 ta`sk.md');
+});
+
+test('powershell-guard PSG-04/A02: 只读命令含 writeFileSync token 不 over-block', () => {
+  const dir = makeTmpDir('ps-overblock');
+  assert.ok(!powershellGuard.powershellCommandEmbedsArtifactWriteScript('Get-Content task.md | Select-String writeFileSync', dir, dir), '只读 Select-String token 放行');
+  assert.ok(powershellGuard.powershellCommandEmbedsArtifactWriteScript("node -e \"require('fs').writeFileSync('task.md','x')\"", dir, dir), 'node 引擎写 artifact 仍拦');
 });
 
 test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {

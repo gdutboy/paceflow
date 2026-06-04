@@ -4,6 +4,36 @@ const path = require('path');
 const paceUtils = require('../pace-utils');
 
 const { ARTIFACT_FILES } = paceUtils;
+const { segmentAnchorPrefix, scanRedirectTargets, commandRunsScriptEngine, BASH_WRAPPERS } = require('./command-recognition');
+
+// 段首锚点（共享识别层）：覆盖 命令起始 / 换行 / ;&| / 分组 (){} / && / for…do / wrapper（env/sudo/...）。
+// 该锚点同时喂 runtime-control(hardDeny) 与 artifact-write(denyOrHint) 两条处置档——修一处即修两分支（BG-01）。
+const MUTATING_ANCHOR = segmentAnchorPrefix({ extraChars: '\\n;&|(){}', wrappers: BASH_WRAPPERS, allowLoops: true });
+
+// in-place 文件编辑器：直接改写目标文件（区别于写 stdout）。BG-02 补全 --in-place / 拆分 -i / sponge / gawk -i inplace / ex / vim -es。
+const INPLACE_EDITOR_SOURCE = '(?:' + [
+  "sed\\b[^;\\n]*\\s(?:-i(?:\\b|[.\\w'-])|--in-place)",
+  "perl\\b[^;\\n]*\\s-[^\\s;]*pi\\b",
+  "perl\\b[^;\\n]*\\s-i(?:\\b|[.\\w'-])",
+  "sponge\\b",
+  "(?:g|m)?awk\\b[^;\\n]*-i\\s+inplace",
+  "ex\\s+-[^\\s;]*c\\b",
+  "vim\\s+-[^\\s;]*es\\b",
+].join('|') + ')';
+
+const MUTATING_VERB_SOURCE = '(?:' + [
+  'rm', 'mv', 'cp', 'touch', 'mkdir', 'rmdir', 'truncate', 'tee', 'dd',
+  'install', 'chmod', 'chown', 'dos2unix', 'unix2dos',
+].join('|') + ')\\b';
+
+const MUTATING_PATTERNS = [
+  new RegExp(MUTATING_ANCHOR + '(?:' + INPLACE_EDITOR_SOURCE + '|' + MUTATING_VERB_SOURCE + "|git\\s+(?:checkout|restore|clean|reset|mv|rm)\\b)", 'i'),
+  new RegExp(MUTATING_ANCHOR + 'find\\b[^;\\n]*(?:\\s-delete\\b|\\s-exec\\s+(?:rm|mv|cp)\\b)', 'i'),
+  new RegExp(MUTATING_ANCHOR + '(?:npm|pnpm|yarn)\\s+(?:run|exec|x)\\b', 'i'),
+  new RegExp(MUTATING_ANCHOR + 'npx\\b[^\\n;&|]*(?:--write\\b|-w\\b|--fix\\b)', 'i'),
+  new RegExp(MUTATING_ANCHOR + '(?:prettier\\b[^;\\n]*(?:--write\\b|-w\\b)|eslint\\b[^;\\n]*--fix\\b|biome\\b[^;\\n]*(?:--write\\b|--fix\\b))', 'i'),
+  new RegExp(MUTATING_ANCHOR + '(?:python\\d*|node)\\b[^\\n;&|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\\s*\\()', 'i'),
+];
 
 function normalizeCommandSearchText(value) {
   return String(value || '')
@@ -85,12 +115,7 @@ function shellCommandScripts(command) {
 }
 
 function commandTextLooksMutating(c) {
-  return /(^|[;&|]\s*)(sed\b[^;\n]*\s-i(?:\b|[.\w'-])|perl\b[^;\n]*\s-[^\s;]*pi\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|rmdir\b|truncate\b|tee\b|dd\b|install\b|chmod\b|chown\b|dos2unix\b|unix2dos\b|git\s+(?:checkout|restore|clean|reset|mv|rm)\b)/i.test(c) ||
-    /(^|[;&|]\s*)find\b[^;\n]*(?:\s-delete\b|\s-exec\s+(?:rm|mv|cp)\b)/i.test(c) ||
-    /(^|[;&|]\s*)(npm|pnpm|yarn)\s+(?:run|exec|x)\b/i.test(c) ||
-    /(^|[;&|]\s*)npx\b[^\n;&|]*(?:--write\b|-w\b|--fix\b)/i.test(c) ||
-    /(^|[;&|]\s*)(prettier\b[^;\n]*(?:--write\b|-w\b)|eslint\b[^;\n]*--fix\b|biome\b[^;\n]*(?:--write\b|--fix\b))/i.test(c) ||
-    /(^|[;&|]\s*)(python\d*|node)\b[^\n;&|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c);
+  return MUTATING_PATTERNS.some((re) => re.test(c));
 }
 
 function commandTextContainsWriteApi(c) {
@@ -99,7 +124,8 @@ function commandTextContainsWriteApi(c) {
 }
 
 function bashCommandRunsScriptEngine(command) {
-  return /(^|[\n;&|]\s*)(?:node|python\d*)\b/i.test(String(command || ''));
+  // 共享引擎识别：允许路径前缀（/usr/bin/node）与 env 包装（env node）——修 BG-04。
+  return commandRunsScriptEngine(command, { anchorChars: '\\n;&|' });
 }
 
 function isPaceflowValidationScriptTarget(target, cwd) {
@@ -125,7 +151,7 @@ function bashScriptExecutionTargets(command, cwd) {
   const c = stripHeredocBodies(command);
   const specs = [
     {
-      re: /(^|[\n;&|]\s*)(?:node|python\d*)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi,
+      re: /(^|[\n;&|]\s*)(?:env(?:\s+\w+=\S*)*\s+)?(?:[^\s;&|]*\/)?(?:node|python\d*)\s+((?:"[^"]+"|'[^']+'|[^\s;&|]+)(?:\s+(?:"[^"]+"|'[^']+'|[^\s;&|]+))*)/gi,
       ext: /\.(?:[cm]?js|py)$/i,
     },
     {
@@ -184,46 +210,8 @@ function bashCommandLooksMutating(command) {
 }
 
 function bashOutputRedirectTargets(command) {
-  const c = stripHeredocBodies(command);
-  const targets = [];
-  let quote = null;
-  let escaped = false;
-  for (let i = 0; i < c.length; i++) {
-    const ch = c[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      quote = ch;
-      continue;
-    }
-    if (ch !== '>') continue;
-
-    let j = i + 1;
-    if (c[j] === '>') j++;
-    if (c[j] === '|') j++;
-    while (/\s/.test(c[j] || '')) j++;
-    if (!c[j]) continue;
-
-    let target = '';
-    if (c[j] === '"' || c[j] === "'") {
-      const endQuote = c[j++];
-      while (j < c.length && c[j] !== endQuote) target += c[j++];
-    } else {
-      while (j < c.length && !/[\s;&|<>]/.test(c[j])) target += c[j++];
-    }
-    if (target) targets.push(target);
-  }
-  return targets;
+  // 共享扫描器：单引号内反斜杠字面（修 BG-03）；bash 转义符为 \，反引号是命令替换引号。
+  return scanRedirectTargets(stripHeredocBodies(command), { escapeChar: '\\', backtickIsQuote: true });
 }
 
 function bashCommandPathTokens(command) {

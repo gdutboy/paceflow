@@ -4,10 +4,38 @@ const path = require('path');
 const paceUtils = require('../pace-utils');
 
 const { ARTIFACT_FILES } = paceUtils;
+const { segmentAnchorPrefix, scanRedirectTargets, commandRunsScriptEngine } = require('./command-recognition');
+
+// 段首锚点（共享识别层）：PowerShell 侧覆盖 起始 / 换行 / ;| / & 调用操作符 / && || / 分组 (){} /
+// 管道 ForEach `{ }`。修 PSG-01/02：& Remove-Item、Get-Date && Remove-Item、$null=(Remove-Item)、
+// gci | % { Remove-Item } 等语句前缀此前绕过段首锚点。
+const PS_MUTATING_ANCHOR = segmentAnchorPrefix({ extraChars: '\\n;|&(){}' });
+
+// PowerShell mutating cmdlet 与默认别名全集。A08 补全 ri/rni/cpi/mi/si/spi/rd/clc/ren 等真正默认
+// 别名（此前别名集只有 *nix 兼容别名 rm/mv/cp，漏了 PowerShell 内置别名，可被 ri 删锁绕过）。
+const PS_MUTATING_CMDLETS = [
+  'Set-Content', 'Add-Content', 'Out-File', 'Tee-Object', 'New-Item', 'Remove-Item',
+  'Move-Item', 'Copy-Item', 'Clear-Content', 'Rename-Item', 'Set-Item',
+  'Remove-ItemProperty', 'Set-ItemProperty', 'Invoke-WebRequest', 'Invoke-RestMethod',
+  'Export-Csv', 'Export-Clixml', 'Compress-Archive', 'Expand-Archive', 'Start-Process', 'Start-Job',
+  'mkdir', 'rmdir', 'rm', 'del', 'erase', 'mv', 'move', 'cp', 'copy', 'ni', 'sc', 'ac', 'tee',
+  'iwr', 'irm', 'curl', 'wget', 'saps',
+  'ri', 'rni', 'cpi', 'mi', 'si', 'spi', 'rd', 'clc', 'ren',
+].join('|');
+
+// positional 接受文件名的 cmdlet/别名子集（不含网络/进程类）。
+const PS_POSITIONAL_CMDLETS = [
+  'Set-Content', 'Add-Content', 'Out-File', 'Tee-Object', 'New-Item', 'Remove-Item',
+  'Move-Item', 'Copy-Item', 'Clear-Content', 'Rename-Item', 'Set-Item',
+  'Remove-ItemProperty', 'Set-ItemProperty', 'Export-Csv', 'Export-Clixml',
+  'Compress-Archive', 'Expand-Archive', 'mkdir', 'rmdir', 'rm', 'del', 'erase',
+  'mv', 'move', 'cp', 'copy', 'ni', 'sc', 'ac', 'tee',
+  'ri', 'rni', 'cpi', 'mi', 'si', 'spi', 'rd', 'clc', 'ren',
+].join('|');
 
 function normalizePowerShellSearchText(value) {
   return String(value || '')
-    .replace(/`(["'`\s\\])/g, '$1')
+    .replace(/`([\s\S])/g, '$1')   // PSG-03：剥任意位置单反引号转义（ta`sk.md 运行时是 task.md）
     .replace(/\\+/g, '/')
     .replace(/\b([A-Za-z]:)\/+/g, '$1/')
     .replace(/([^:])\/{2,}/g, '$1/');
@@ -39,9 +67,8 @@ function powershellCommandPathTokens(command) {
 
 function powershellMutatingCommandSegments(command) {
   const c = stripHereStrings(command);
-  const mutatingCommand =
-    '(?:Set-Content|Add-Content|Out-File|Tee-Object|New-Item|Remove-Item|Move-Item|Copy-Item|Clear-Content|Rename-Item|Set-Item|Remove-ItemProperty|Set-ItemProperty|Invoke-WebRequest|Invoke-RestMethod|Export-Csv|Export-Clixml|Compress-Archive|Expand-Archive|Start-Process|Start-Job|mkdir|rmdir|rm|del|erase|mv|move|cp|copy|ni|sc|ac|tee|iwr|irm|curl|wget|saps)';
-  const re = new RegExp(`(?:^|[\\n;|]\\s*)(${mutatingCommand}\\b[^\\n;|]*)`, 'gi');
+  // PSG-01/02 共享锚点（含 & / 分组 / &&）+ A08 别名全集。
+  const re = new RegExp(PS_MUTATING_ANCHOR + `((?:${PS_MUTATING_CMDLETS})\\b[^\\n;|]*)`, 'gi');
   const segments = [];
   let match;
   while ((match = re.exec(c)) !== null) {
@@ -67,7 +94,7 @@ function powershellNamedWriteTargets(command) {
 
 function powershellPositionalWriteTargets(command) {
   const targets = [];
-  const positionalCommands = /^(?:Set-Content|Add-Content|Out-File|Tee-Object|New-Item|Remove-Item|Move-Item|Copy-Item|Clear-Content|Rename-Item|Set-Item|Remove-ItemProperty|Set-ItemProperty|Export-Csv|Export-Clixml|Compress-Archive|Expand-Archive|mkdir|rmdir|rm|del|erase|mv|move|cp|copy|ni|sc|ac|tee)$/i;
+  const positionalCommands = new RegExp(`^(?:${PS_POSITIONAL_CMDLETS})$`, 'i');
   for (const segment of powershellMutatingCommandSegments(command)) {
     const tokens = powershellCommandTokens(segment);
     if (tokens.length < 2 || !positionalCommands.test(tokens[0])) continue;
@@ -80,51 +107,15 @@ function powershellPositionalWriteTargets(command) {
 }
 
 function powershellOutputRedirectTargets(command) {
-  const c = stripHereStrings(command);
-  const targets = [];
-  let quote = null;
-  let escaped = false;
-  for (let i = 0; i < c.length; i++) {
-    const ch = c[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '`') {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      continue;
-    }
-    if (ch !== '>') continue;
-
-    let j = i + 1;
-    if (c[j] === '>') j++;
-    while (/\s/.test(c[j] || '')) j++;
-    if (!c[j] || c[j] === '&') continue;
-
-    let target = '';
-    if (c[j] === '"' || c[j] === "'") {
-      const endQuote = c[j++];
-      while (j < c.length && c[j] !== endQuote) target += c[j++];
-    } else {
-      while (j < c.length && !/[\s;|<>]/.test(c[j])) target += c[j++];
-    }
-    if (target) targets.push(target);
-  }
-  return targets;
+  // 共享扫描器：PowerShell 转义符为反引号（非引号），单引号内字面。
+  return scanRedirectTargets(stripHereStrings(command), { escapeChar: '`', backtickIsQuote: false });
 }
 
 function commandTextLooksMutating(command) {
   const c = normalizePowerShellSearchText(stripHereStrings(command));
-  return /(^|[\n;|]\s*)(?:Set-Content|Add-Content|Out-File|Tee-Object|New-Item|Remove-Item|Move-Item|Copy-Item|Clear-Content|Rename-Item|Set-Item|Remove-ItemProperty|Set-ItemProperty|Invoke-WebRequest|Invoke-RestMethod|Export-Csv|Export-Clixml|Compress-Archive|Expand-Archive|Start-Process|Start-Job|mkdir|rmdir|rm|del|erase|mv|move|cp|copy|ni|sc|ac|tee|iwr|irm|curl|wget|saps)\b/i.test(c) ||
-    /(^|[\n;|]\s*)(?:node|python\d*)\b[^\n;|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\s*\()/i.test(c) ||
+  // PSG-01/02 共享锚点 + A08 别名全集 + git 还原拦截（与 bash 对称）。
+  return new RegExp(PS_MUTATING_ANCHOR + `(?:${PS_MUTATING_CMDLETS}|git\\s+(?:checkout|restore|clean|reset|mv|rm))\\b`, 'i').test(c) ||
+    new RegExp(PS_MUTATING_ANCHOR + '(?:node|python\\d*)\\b[^\\n;|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\\s*\\()', 'i').test(c) ||
     /\[(?:System\.)?IO\.File\]::(?:WriteAllText|WriteAllBytes|WriteAllLines|AppendAllText|AppendAllLines|Delete|Move|Copy|Replace|Create)\b/i.test(c) ||
     /\[(?:System\.)?IO\.(?:StreamWriter|FileStream)\]::new\b/i.test(c) ||
     /\[(?:System\.)?IO\.Directory\]::(?:Delete|Move|CreateDirectory)\b/i.test(c);
@@ -357,9 +348,26 @@ function scriptSourceWritesArtifactTarget(script, cwd, artDir) {
     powershellPositionalWriteTargets(c).some(target => powershellPathLooksArtifact(target, cwd, artDir));
 }
 
+// 仅 .NET 原生写 API（无需脚本引擎即可写文件），用于与 JS/Python 风格 token 区分。
+function commandTextContainsDotNetWriteApi(command) {
+  const c = normalizePowerShellSearchText(stripHereStrings(command));
+  return /\[(?:System\.)?IO\.File\]::(?:WriteAllText|WriteAllBytes|WriteAllLines|AppendAllText|AppendAllLines|Delete|Move|Copy|Replace|Create)\b/i.test(c) ||
+    /\[(?:System\.)?IO\.(?:StreamWriter|FileStream)\]::new\b/i.test(c) ||
+    /\[(?:System\.)?IO\.Directory\]::(?:Delete|Move|CreateDirectory)\b/i.test(c);
+}
+
+// 共享引擎识别：允许路径前缀（C:\tools\node.exe）与 env 包装。
+function powershellCommandRunsScriptEngine(command) {
+  return commandRunsScriptEngine(command, { anchorChars: '\\n;|&' });
+}
+
 function powershellCommandEmbedsArtifactWriteScript(command, cwd, artDir, depth = 0, sourceMode = false) {
   const c = normalizePowerShellSearchText(stripHereStrings(command));
-  if (!sourceMode && commandTextContainsWriteApi(c) && powershellCommandReferencesArtifact(c, cwd, artDir)) {
+  // PSG-04/A02：JS/Python 风格 write API token（writeFileSync 等）需真调脚本引擎才算内联写脚本；
+  // .NET 原生写 API（[IO.File]::WriteAllText 等）无需引擎。这样只读命令（Get-Content | Select-String
+  // writeFileSync）含 token 但既不调引擎又非 .NET 写，不再被 over-block。
+  if (!sourceMode && commandTextContainsWriteApi(c) && powershellCommandReferencesArtifact(c, cwd, artDir) &&
+      (powershellCommandRunsScriptEngine(c) || commandTextContainsDotNetWriteApi(c))) {
     return true;
   }
   for (const target of powershellScriptExecutionTargets(command, cwd)) {

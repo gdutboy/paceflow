@@ -54,12 +54,17 @@ function isPortableAbsolutePath(p) {
 function resolveToolFilePath(cwd, filePath) {
   const normalized = String(filePath || '').replace(/\\/g, '/');
   if (!normalized) return '';
-  if (isPortableAbsolutePath(normalized)) return normalized;
+  // 绝对路径用 path.posix.normalize 折叠 `.`/`..`：纯字符串折叠不依赖 cwd，
+  // 正确保留 `C:/` 盘符（path.resolve 在非 win32 上会把 `C:/...` 当相对路径破坏）。
+  // 不折叠会让 `<proj>/./changes/x.md` 绕过 artifact 写保护并伪造批准标志（PU-001）。
+  if (isPortableAbsolutePath(normalized)) return path.posix.normalize(normalized);
   return path.resolve(cwd || process.cwd(), normalized).replace(/\\/g, '/');
 }
 
 function isArtifactRelativePath(relPath) {
-  const rel = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  // 先折叠 `.`/`..` 再剥前导斜杠：纵深防御 PU-001，防止 `./changes/x.md`、
+  // `changes/./x.md` 等形态绕过下方锚定正则。
+  const rel = path.posix.normalize(String(relPath || '').replace(/\\/g, '/')).replace(/^\/+/, '');
   if (ARTIFACT_FILES.includes(rel)) return true;
   return /^changes\/.+\.md$/i.test(rel);
 }

@@ -883,6 +883,38 @@ test('9m2. 非 artifact changes/ 路径写 C/V 字符串不触发 marker gate', 
   assert.ok(!r.stdout.includes('action=verify'));
 });
 
+test('9pu1. PU-001：file_path 含 ./ 段注入 marker 仍被 artifact 写保护拦截', () => {
+  const dir = makeV6Project('ptu-pu001-dotslash');
+  // control：正常 changes/ 路径写 marker → deny（现有 marker gate）
+  const control = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: path.join(dir, 'changes', 'chg-20260504-01.md'),
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.ok(control.stdout.includes('deny'));
+  // PU-001：字符串拼接构造含 ./ 段的绝对路径（path.join 会折叠 . 无法复现绕过）；
+  // 修复前 ./changes/x.md 不匹配 artifact 正则 → marker-guard 整体跳过 → allow（伪造批准门）
+  const injectedFp = dir + '/./changes/chg-20260504-01.md';
+  const injected = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: injectedFp,
+        old_string: '<!-- APPROVED -->',
+        new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->',
+      },
+    },
+  });
+  assert.ok(injected.stdout.includes('deny'));
+});
+
 test('9a. artifact-writer subagent 可写 APPROVED / VERIFIED 标志', () => {
   const dir = makeV6Project('ptu-marker-agent');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
@@ -4244,6 +4276,68 @@ test('9hge2. PowerShell .ps1 包装器写 artifact 被拒绝', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('禁止使用 PowerShell 修改 artifact'));
+});
+
+test('9cha-bypass. CHG-A 守卫绕过端到端：换行/分组/wrapper/for/&& 与 PS 前缀/别名均 deny', () => {
+  const dir = makeV6Project('cha-guard-bypass');
+  seedArtifactWriterLock(dir, 'sid-bypass-owner');
+
+  // Bash runtime-control 锁的绕过写法（BG-01 P0：此前 4 种自然写法全 ALLOW）
+  const bashRuntimeBypass = [
+    'for f in .pace/locks/*; do rm "$f"; done',
+    '{ rm .pace/artifact-writer.lock; }',
+    'env rm .pace/artifact-writer.lock',
+    'echo hi\nrm .pace/artifact-writer.lock',
+  ];
+  for (const command of bashRuntimeBypass) {
+    const r = runHook('pre-tool-use.js', { cwd: dir, stdin: { session_id: 'sid-other', tool_name: 'Bash', tool_input: { command } } });
+    assert.ok(r.stdout.includes('"deny"'), `Bash 绕过应 deny: ${command}`);
+    assert.ok(r.stdout.includes('artifact 写入控制运行态'), `Bash 绕过应说明 runtime 保护: ${command}`);
+  }
+
+  // Bash artifact 的绕过写法（换行/分组/for…do）
+  const bashArtifactBypass = [
+    'echo hi\nrm changes/chg-20260504-01.md',
+    '{ rm task.md; }',
+    'for f in task.md; do rm "$f"; done',
+  ];
+  for (const command of bashArtifactBypass) {
+    const r = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'Bash', tool_input: { command } } });
+    assert.ok(r.stdout.includes('"deny"'), `Bash artifact 绕过应 deny: ${command}`);
+  }
+
+  // PowerShell & 前缀 / ri 别名 / && 删 runtime-control（PSG-01/02 + A08）
+  const psRuntimeBypass = [
+    '& Remove-Item .pace/artifact-writer.lock',
+    'ri .pace/artifact-writer.lock',
+    'Get-Date && Remove-Item .pace/locks/x',
+  ];
+  for (const command of psRuntimeBypass) {
+    const r = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'PowerShell', tool_input: { command } } });
+    assert.ok(r.stdout.includes('"deny"'), `PowerShell 绕过应 deny: ${command}`);
+    assert.ok(r.stdout.includes('artifact 写入控制运行态'), `PowerShell 绕过应说明 runtime 保护: ${command}`);
+  }
+
+  // PowerShell ri 别名改 artifact
+  const psArtifact = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'PowerShell', tool_input: { command: 'ri changes/chg-20260504-01.md' } } });
+  assert.ok(psArtifact.stdout.includes('"deny"'), 'PowerShell ri 改 artifact 应 deny');
+});
+
+test('9cha-symmetry. bash↔powershell 守卫对称 + over-block 防回归', () => {
+  const dir = makeV6Project('cha-guard-symmetry');
+  seedArtifactWriterLock(dir, 'sid-sym-owner');
+
+  // 对称：同语义删锁两侧都 deny
+  const bash = runHook('pre-tool-use.js', { cwd: dir, stdin: { session_id: 'sid-other', tool_name: 'Bash', tool_input: { command: 'rm .pace/locks/x' } } });
+  const ps = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'PowerShell', tool_input: { command: 'Remove-Item .pace/locks/x' } } });
+  assert.ok(bash.stdout.includes('"deny"'), 'bash 删锁 deny');
+  assert.ok(ps.stdout.includes('"deny"'), 'powershell 删锁 deny');
+
+  // over-block 防回归：只读 grep / Select-String 含 writeFileSync token 仍放行
+  const bashRead = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'Bash', tool_input: { command: 'grep writeFileSync task.md' } } });
+  const psRead = runHook('pre-tool-use.js', { cwd: dir, stdin: { tool_name: 'PowerShell', tool_input: { command: 'Get-Content task.md | Select-String writeFileSync' } } });
+  assert.ok(!bashRead.stdout.includes('"deny"'), 'bash 只读 grep token 放行');
+  assert.ok(!psRead.stdout.includes('"deny"'), 'powershell 只读 Select-String token 放行');
 });
 
 test('9hge2b. teammate 模式仍 hard-deny runtime-control 删除', () => {
