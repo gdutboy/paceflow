@@ -471,8 +471,10 @@ for (const file of ARTIFACT_FILES) {
         const date = (header.match(/^## (\d{4}-\d{2}-\d{2})/) || [])[1] || '';
         return { text: output.slice(start, end).trimEnd(), date, index };
       });
+      // 详情段落是 close-chg prepend（最新在最前、index 小=新），date 相等时按 index 升序挑最新；
+      // 与上方索引表 append（index 大=新、tie 用 b.index-a.index）方向相反，故此处 tie-breaker 不同。
       const latest = sections
-        .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index)
+        .sort((a, b) => b.date.localeCompare(a.date) || a.index - b.index)
         .slice(0, 3);
       output = output.slice(0, pos[0])
         + latest.map(section => section.text).join('\n')

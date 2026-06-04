@@ -424,6 +424,42 @@ test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
   assert.ok(r.stdout.indexOf('2026-05-12') < r.stdout.indexOf('2026-05-11'));
 });
 
+test('2e2. SessionStart walkthrough 详情段落截断同日多条保留最新而非最旧', () => {
+  // v6 实际格式：walkthrough active 区是 `## YYYY-MM-DD [[slug]]` 详情段落，
+  // close-chg prepend（最新在最前）。当同一天多条记录时，date 主键比较相等，
+  // 截断排序会落到 index tie-breaker；prepend 下 index 小=新，必须保留最新而非最旧。
+  const dir = makeV6Project('ss-walkthrough-detail-same-day', { walkToday: false });
+  const detail = [
+    '# 工作记录',
+    '',
+    '## 最近工作',
+    '',
+    '## 2026-06-04 [[chg-20260604-03]] 第三个变更最新',
+    '正文三',
+    '',
+    '## 2026-06-04 [[chg-20260604-02]] 第二个变更',
+    '正文二',
+    '',
+    '## 2026-06-04 [[chg-20260604-01]] 第一个变更',
+    '正文一',
+    '',
+    '## 2026-06-04 [[hotfix-20260604-01]] 最旧修复',
+    '正文修复',
+    '',
+    '<!-- ARCHIVE -->',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(dir, 'walkthrough.md'), detail, 'utf8');
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  // 4 条同日 → 保留最新 3 条（chg-03/02/01），省略最旧 1 条（hotfix-01）
+  assert.ok(r.stdout.includes('chg-20260604-03'), '最新条目 chg-03 必须保留');
+  assert.ok(r.stdout.includes('chg-20260604-02'));
+  assert.ok(r.stdout.includes('chg-20260604-01'));
+  assert.ok(!r.stdout.includes('hotfix-20260604-01'), '最旧条目 hotfix-01 应被省略');
+  assert.ok(r.stdout.includes('已省略 1 条旧详情'));
+});
+
 test('2f. SessionStart owner-aware：foreign running CHG 不计入当前执行上下文', () => {
   const dir = makeV6ProjectWithChanges('ss-owner-aware-foreign-running', [{
     id: 'CHG-20260504-02',
