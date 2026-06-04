@@ -421,6 +421,29 @@ module.exports = function createLockUtils(ctx) {
     return path.join(ctx.getProjectRuntimeDir(cwd), 'change-owners');
   }
 
+  // RSL-01/02：按 mtime + TTL 清理 change-owners / reservations 的 stale json，遏制无界增长与
+  // owner-key 不匹配的孤儿泄漏。closed owner 与超 TTL 文件清理，活跃（fresh）记录保留。
+  // 由 SessionStart 每会话调用一次。
+  function sweepStaleRuntimeOwners(cwd, { ttlMs = ctx.CHANGE_OWNER_TTL_MS, now = Date.now() } = {}) {
+    const swept = [];
+    for (const dir of [getChangeOwnerDir(cwd), getArtifactReservationDir(cwd)]) {
+      let files = [];
+      try { files = fs.readdirSync(dir); } catch(e) { continue; }
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const fp = path.join(dir, file);
+        let mtimeMs = 0;
+        try { mtimeMs = fs.statSync(fp).mtimeMs; } catch(e) { continue; }
+        let closed = false;
+        try { closed = JSON.parse(fs.readFileSync(fp, 'utf8')).state === 'closed'; } catch(e) {}
+        if (closed || (now - mtimeMs > ttlMs)) {
+          try { fs.unlinkSync(fp); swept.push(fp); } catch(e) {}
+        }
+      }
+    }
+    return swept;
+  }
+
   function getChangeOwnerPath(cwd, changeId) {
     const id = normalizeChangeId(changeId);
     if (!id) return '';
@@ -555,6 +578,9 @@ module.exports = function createLockUtils(ctx) {
     if (sameSession) return { disposition: closed ? 'current-closed' : 'current', owner, current: true, sameSession: true, sameCheckout, fresh: true, stale: false };
     if (closed) return { disposition: 'closed', owner, current: false, fresh: true, stale: false };
     if (sameCheckout) return { disposition: 'current-worktree', owner, current: true, sameSession: false, sameCheckout: true, fresh: !stale, stale };
+    // STOP-03：无法确定 current session（sid 空——stdin 缺 session_id 且 env 无）时不判 foreign，
+    // 避免把可能属于当前 session 的 running CHG 误当 foreign 跳过、放行未完成 CHG。
+    if (!sid) return { disposition: 'unknown', owner, current: false, fresh: false, stale: false };
     if (stale) return { disposition: 'foreign-stale', owner, current: false, fresh: false, stale: true };
     return { disposition: 'foreign-fresh', owner, current: false, fresh: true, stale: false };
   }
@@ -729,6 +755,7 @@ module.exports = function createLockUtils(ctx) {
     acquireArtifactResourceLock,
     releaseArtifactResourceLock,
     releaseArtifactResourcesForOwner,
+    sweepStaleRuntimeOwners,
     markIndexChangesTouchedAndMaybeRelease,
     readArtifactIndexTransaction,
     formatArtifactResourceLock,

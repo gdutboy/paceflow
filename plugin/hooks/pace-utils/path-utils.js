@@ -241,7 +241,8 @@ function hasGitRootMarker(dir) {
 }
 
 function hasChangesDir(dir) {
-  try { return !!dir && fs.existsSync(path.join(dir, 'changes')); } catch(e) { return false; }
+  // PU-002：用 isDirectory 区分目录与同名文件，避免同名文件 changes（非目录）被误判为 PACE 项目
+  try { return !!dir && fs.statSync(path.join(dir, 'changes')).isDirectory(); } catch(e) { return false; }
 }
 
 function artifactDirFromChoiceForRoot(root, choice) {

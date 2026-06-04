@@ -162,6 +162,8 @@ if (paceSignal && !rootChoicePending && eventType !== 'compact') {
       }
     }
   } catch(e) {}
+  // RSL-01/02：每会话清理 stale change-owners / reservations，遏制无界增长与孤儿泄漏
+  try { paceUtils.sweepStaleRuntimeOwners(cwd); } catch(e) {}
 }
 
 // v4.5: compact 事件读取 PreCompact 快照

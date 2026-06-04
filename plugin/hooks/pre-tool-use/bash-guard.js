@@ -32,7 +32,10 @@ const MUTATING_PATTERNS = [
   new RegExp(MUTATING_ANCHOR + '(?:npm|pnpm|yarn)\\s+(?:run|exec|x)\\b', 'i'),
   new RegExp(MUTATING_ANCHOR + 'npx\\b[^\\n;&|]*(?:--write\\b|-w\\b|--fix\\b)', 'i'),
   new RegExp(MUTATING_ANCHOR + '(?:prettier\\b[^;\\n]*(?:--write\\b|-w\\b)|eslint\\b[^;\\n]*--fix\\b|biome\\b[^;\\n]*(?:--write\\b|--fix\\b))', 'i'),
-  new RegExp(MUTATING_ANCHOR + '(?:python\\d*|node)\\b[^\\n;&|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\\s*\\()', 'i'),
+  // BG-05：open 只在写模式（第二参 mode 含 w/a/x/+）判 mutating，read-only open(f)/open(f,'r'/'rb') 不 over-block。
+  new RegExp(MUTATING_ANCHOR + '(?:python\\d*|node|deno|bun|ts-node)\\b[^\\n;&|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\\s*\\([^,)]*,\\s*[\'"][^\'"]*[wax+])', 'i'),
+  // BG-06：ruby/php 内联写 artifact（File.write/IO.write/file_put_contents/fwrite/fputs，或 File.open/fopen/File.new 写模式）。
+  new RegExp(MUTATING_ANCHOR + '(?:ruby|php)\\b[^\\n;&|]*(?:File\\.write|IO\\.write|file_put_contents|fwrite|fputs|(?:File\\.(?:open|new)|fopen)\\s*\\([^,)]*,\\s*[\'"][^\'"]*[wax+])', 'i'),
 ];
 
 function normalizeCommandSearchText(value) {

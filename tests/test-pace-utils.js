@@ -38,6 +38,13 @@ test('有 changes/ → artifact', () => {
   assert.strictEqual(isPaceProject(dir), 'artifact');
 });
 
+test('changes 为同名文件（非目录）→ 不误判 artifact（PU-002）', () => {
+  // hasChangesDir / isPaceProject 原用 existsSync，对同名文件 changes（非目录）误判为 PACE 项目
+  const dir = makeTmpDir('changes-is-file');
+  fs.writeFileSync(path.join(dir, 'changes'), 'not a directory');
+  assert.strictEqual(isPaceProject(dir), false);
+});
+
 test('旧 v5 artifact 根文件但无 changes/ → legacy', () => {
   const dir = makeTmpDir('legacy-v5-signal');
   fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n');
@@ -381,6 +388,29 @@ test('bash-guard: 只读命令不误判 mutating（防 over-block）', () => {
   assert.ok(!m('cat x.md'), 'cat');
   assert.ok(!m('grep foo x.md'), 'grep');
   assert.ok(!m('wc -l x.md'), 'wc');
+});
+
+test('bash-guard BG-05: python/node open() 仅写模式判 mutating，read-only open 不 over-block', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(!m("python -c \"open('x.md').read()\""), 'read-only open(f) 单参');
+  assert.ok(!m("python -c \"open('x.md', 'r').read()\""), "open(f,'r') 读模式");
+  assert.ok(!m("python3 -c \"data = open('x.md', 'rb').read()\""), "open(f,'rb') 读二进制");
+  assert.ok(m("python -c \"open('x.md', 'w').write('z')\""), "open(f,'w') 写");
+  assert.ok(m("python -c \"open('x.md', 'a').write('z')\""), "open(f,'a') 追加");
+  assert.ok(m("python -c \"open('x.md', 'r+').write('z')\""), "open(f,'r+') 读写");
+});
+
+test('bash-guard BG-06: 替代引擎 deno/bun/ts-node/ruby/php 内联写 artifact 被检测', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(m("deno eval \"Deno.writeFileSync('x.md', d)\""), 'deno writeFileSync');
+  assert.ok(m("bun -e \"require('fs').writeFileSync('x.md', d)\""), 'bun writeFileSync');
+  assert.ok(m("ts-node -e \"require('fs').writeFileSync('x.md', d)\""), 'ts-node writeFileSync');
+  assert.ok(m("ruby -e \"File.write('x.md', 'z')\""), 'ruby File.write');
+  assert.ok(m("php -r \"file_put_contents('x.md', 'z');\""), 'php file_put_contents');
+  assert.ok(m("php -r \"fopen('x.md', 'w');\""), 'php fopen 写模式');
+  // 只读不误判（防 over-block）
+  assert.ok(!m("ruby -e \"File.read('x.md')\""), 'ruby File.read 只读');
+  assert.ok(!m("php -r \"file_get_contents('x.md');\""), 'php file_get_contents 只读');
 });
 
 test('bash-guard BG-01: runtime-control 锁经 for…do/分组/wrapper/换行删除均拦截', () => {
@@ -1407,6 +1437,55 @@ test('change owner runtime: 当前 session / foreign fresh 可区分', () => {
   foreign.branch = 'other-branch';
   fs.writeFileSync(written.path, `${JSON.stringify(foreign, null, 2)}\n`, 'utf8');
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-other').disposition, 'foreign-fresh');
+});
+
+test('changeOwnerStatus: sid 无法确定（缺 session_id + env 空）时 foreign owner 判 unknown 不 foreign（STOP-03）', () => {
+  const dir = makeTmpDir('owner-stop03');
+  const lockUtils = createLockUtils({
+    getProjectRuntimeDir: d => path.join(d, '.pace'),
+    displayDir: d => `${String(d || '').replace(/\\/g, '/')}/`,
+    normalizeSessionId: s => String(s || '').trim(),
+    currentSessionId: () => '',
+    executionContextForCwd: d => ({ cwd: d, stateDir: d, worktree: 'wt-current', branch: 'br-current', text: '[worktree:: wt-current] [branch:: br-current]' }),
+    normalizePath: p => String(p || '').replace(/\\/g, '/'),
+    getArtifactDir: d => d,
+    todayISO: () => '2026-06-05',
+    CHANGE_OWNER_TTL_MS: paceUtils.CHANGE_OWNER_TTL_MS,
+    PROJECT_ROOT_FILE: paceUtils.PROJECT_ROOT_FILE,
+  });
+  const written = lockUtils.writeChangeOwner(dir, 'CHG-20260605-91', { sessionId: 'sid-other', operation: 'create-chg', state: 'active' });
+  // 改为别的 worktree（foreign），且 timestamp 保持 fresh
+  const owner = JSON.parse(fs.readFileSync(written.path, 'utf8'));
+  owner.cwd = path.join(dir, 'other'); owner.stateDir = path.join(dir, 'other'); owner.worktree = 'wt-other'; owner.branch = 'br-other';
+  fs.writeFileSync(written.path, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
+  // stdin 缺 session_id（''）+ currentSessionId 也空 → sid 无法确定，不应判 foreign（否则 Stop 漏检 running CHG）
+  const status = lockUtils.changeOwnerStatus(dir, 'CHG-20260605-91', '');
+  assert.strictEqual(status.disposition, 'unknown', 'sid 空时不应判 foreign-fresh');
+});
+
+test('sweepStaleRuntimeOwners: 清理超 TTL 的 change-owner/reservation 保留 fresh（RSL-01/02）', () => {
+  const dir = makeTmpDir('rsl-sweep');
+  const lockUtils = createLockUtils({
+    getProjectRuntimeDir: d => path.join(d, '.pace'),
+    displayDir: d => `${String(d || '').replace(/\\/g, '/')}/`,
+    normalizeSessionId: s => String(s || '').trim(),
+    currentSessionId: () => 'sid-sweep',
+    executionContextForCwd: d => ({ cwd: d, stateDir: d, worktree: 'main', branch: 'main', text: '[worktree:: main] [branch:: main]' }),
+    normalizePath: p => String(p || '').replace(/\\/g, '/'),
+    getArtifactDir: d => d,
+    todayISO: () => '2026-06-05',
+    CHANGE_OWNER_TTL_MS: paceUtils.CHANGE_OWNER_TTL_MS,
+    PROJECT_ROOT_FILE: paceUtils.PROJECT_ROOT_FILE,
+  });
+  const fresh = lockUtils.writeChangeOwner(dir, 'CHG-20260605-81', { sessionId: 'sid-sweep', operation: 'create-chg', state: 'active' });
+  const stale = lockUtils.writeChangeOwner(dir, 'CHG-20260605-82', { sessionId: 'sid-old', operation: 'create-chg', state: 'active' });
+  // 把 stale owner 的 mtime 改到 2 小时前（超 30min TTL）
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  fs.utimesSync(stale.path, old, old);
+  const swept = lockUtils.sweepStaleRuntimeOwners(dir);
+  assert.ok(!fs.existsSync(stale.path), 'stale change-owner（2h，超 TTL）被清理，遏制无界增长');
+  assert.ok(fs.existsSync(fresh.path), 'fresh change-owner 保留');
+  assert.ok(Array.isArray(swept) && swept.length >= 1, '返回被清理文件列表');
 });
 
 test('change owner heartbeat: 当前 session 工具活动刷新 owner timestamp', () => {

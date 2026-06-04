@@ -138,6 +138,7 @@ const {
   acquireArtifactResourceLock,
   releaseArtifactResourceLock,
   releaseArtifactResourcesForOwner,
+  sweepStaleRuntimeOwners,
   markIndexChangesTouchedAndMaybeRelease,
   readArtifactIndexTransaction,
   formatArtifactResourceLock,
@@ -308,7 +309,8 @@ function artifactRootConfigError(cwd) {
 }
 
 function hasChangesDir(dir) {
-  try { return !!dir && fs.existsSync(path.join(dir, 'changes')); } catch(e) { return false; }
+  // PU-002：用 isDirectory 区分目录与同名文件，避免同名文件 changes（非目录）被误判为 PACE 项目
+  try { return !!dir && fs.statSync(path.join(dir, 'changes')).isDirectory(); } catch(e) { return false; }
 }
 
 function legacyV5FilesInDir(dir) {
@@ -573,11 +575,11 @@ function isPaceProject(cwd) {
     })();
     const configuredDir = getConfiguredArtifactDir(cwd);
     if (configuredDir) {
-      if (fs.existsSync(path.join(configuredDir, 'changes'))) return 'artifact';
+      if (hasChangesDir(configuredDir)) return 'artifact';
     } else {
       const stateDir = getProjectStateDir(cwd);
-      // 信号 1（最强）：v6 项目必须有 changes/ 目录
-      if (fs.existsSync(path.join(stateDir, 'changes'))) return 'artifact';
+      // 信号 1（最强）：v6 项目必须有 changes/ 目录（PU-002：isDirectory 区分同名文件）
+      if (hasChangesDir(stateDir)) return 'artifact';
       // T-422: VAULT_PATH 空值守卫 — 无 vault 时跳过 vault 信号检查
       if (VAULT_PATH) {
         for (const projectName of getProjectNameCandidates(cwd)) {
@@ -763,6 +765,7 @@ module.exports = {
   artifactWriterLockMatches,
   artifactResourceForRel, getArtifactResourceLockPath, readArtifactResourceLock,
   acquireArtifactResourceLock, releaseArtifactResourceLock, releaseArtifactResourcesForOwner,
+  sweepStaleRuntimeOwners,
   markIndexChangesTouchedAndMaybeRelease, readArtifactIndexTransaction, formatArtifactResourceLock,
   reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
   isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt, explicitChangeTargetFromAgentPrompt,
