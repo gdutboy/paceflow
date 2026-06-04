@@ -1147,6 +1147,22 @@ paceUtils.withStdinParsed((stdin) => {
     );
   }
 
+  // A04：非 artifact 信号项目（manual/.pace-enabled/code-count）的 Edit/MultiEdit managed artifact
+  // 也拦截，与上方 Write 兜底对称。artifact 信号走下方 `paceSignal === 'artifact'` 块内的 marker 检测
+  // + Edit 兜底（此处 paceSignal !== 'artifact' 守卫避免抢占 DENY_V6_MARKER 路径）。
+  if (isArtifactWriterManagedRel(artifactRelForMutation) && isEditMutationTool(toolName) &&
+      paceSignal !== 'artifact' && !isArtifactWriterAgent(stdin)) {
+    return hardDeny(
+      paceUtils.appendArtifactDirHint(cwd, directArtifactMutationDenyReason(toolName, artifactRelForMutation)),
+      'DENY_DIRECT_ARTIFACT_EDIT',
+      {
+        artifact: artifactRelForMutation,
+        agent_id: stdin.agentId,
+        agent_type: stdin.agentType,
+      }
+    );
+  }
+
   if (isEditMutationTool(toolName) && isInsideProject && paceSignal) {
     const artifactRel = paceUtils.artifactRelativePathForFile(artDir, filePath);
     if (artifactRel && fs.existsSync(filePath) && isArtifactWriterAgent(stdin)) {

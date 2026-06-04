@@ -95,19 +95,17 @@ function inferCloseTarget(stdin) {
     ...readTranscriptStrings(stdin.agentTranscriptPath),
   ].filter(Boolean);
 
-  let operation = '';
+  // PSP-02：operation 与 target 必须同源——target 只从产出 close-chg/archive-chg 的同一 candidate
+  // 取（显式 target 或唯一 CHG ID），不再遍历其他 candidate 借 target，避免 operation 在 prompt、
+  // target 在 transcript/lastMessage 指向另一个 CHG 时关错 change-owner。同源无 target 时降级 SKIP。
   for (const text of candidates) {
-    operation = paceUtils.operationFromAgentPrompt(text);
-    if (operation === 'close-chg' || operation === 'archive-chg') break;
-    operation = '';
-  }
-  if (!operation) return { operation: '', target: '', reason: 'missing-operation' };
-
-  for (const text of candidates) {
+    const operation = paceUtils.operationFromAgentPrompt(text);
+    if (operation !== 'close-chg' && operation !== 'archive-chg') continue;
     const target = paceUtils.explicitChangeTargetFromAgentPrompt(text) || uniqueChangeIdFromText(text);
     if (target) return { operation, target, reason: '' };
+    return { operation, target: '', reason: 'missing-target' };
   }
-  return { operation, target: '', reason: 'missing-target' };
+  return { operation: '', target: '', reason: 'missing-operation' };
 }
 
 function closeOwnerIfArchived(stdin, status, t0) {
@@ -157,6 +155,9 @@ function writeContext(message) {
   }));
 }
 
+// require.main 守卫：顶层 parseStdinSync()（同步读 stdin）仅在作为 hook 主程序运行时执行；
+// 被 require（如单元测试）时跳过，使内部纯函数（inferCloseTarget 等）可直接单测。
+if (require.main === module) {
 try {
   const t0 = Date.now();
   const stdin = paceUtils.parseStdinSync();
@@ -223,3 +224,6 @@ try {
 } catch(e) {
   try { log(logEntry('SubagentStop', 'ERROR', { proj, error: e.message })); } catch(e2) {}
 }
+}
+
+module.exports = { inferCloseTarget, uniqueChangeIdFromText };

@@ -269,13 +269,19 @@ function promptMentionsVerifyAction(prompt) {
     /\bverify\s+操作/i.test(text);
 }
 
+// A05：promptFieldValue 捕获到行尾（不被空格终止），operation/action 行带尾随说明文字时
+// 取首个空白分隔 token，使 `operation: close-chg 顺便归档` 仍解析为 close-chg，生命周期字段强制不失效。
+function firstToken(value) {
+  return String(value || '').trim().split(/\s+/)[0] || '';
+}
+
 function promptDeclaredOperation(prompt) {
-  const value = promptFieldValue(prompt, 'operation') || promptFieldValue(prompt, '指令') || paceUtils.operationFromAgentPrompt(prompt);
+  const value = firstToken(promptFieldValue(prompt, 'operation')) || firstToken(promptFieldValue(prompt, '指令')) || paceUtils.operationFromAgentPrompt(prompt);
   return value.toLowerCase();
 }
 
 function promptDeclaredAction(prompt) {
-  const value = promptFieldValue(prompt, 'action');
+  const value = firstToken(promptFieldValue(prompt, 'action'));
   if (value) return value.toLowerCase();
   const text = String(prompt || '');
   const m = text.match(/(?:^|[\n,，;；])\s*(approve-and-start|update-status|approve)(?=$|[\s,，;；:：])/i);

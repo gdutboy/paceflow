@@ -395,7 +395,9 @@ function getV5MigrationInfo(cwd) {
 
 function v5MigrationPromptMessage(cwd) {
   const info = getV5MigrationInfo(cwd);
-  if (!info.detected) return '';
+  // A06：仅 detected 不足以提示——ignored/declined/migrated（needsPrompt=false）必须抑制，
+  // 否则用户选 ignored 后 detected 仍 true，Stop 每次硬阻断死锁。
+  if (!info.detected || !info.needsPrompt) return '';
   const script = info.scriptPath.replace(/\\/g, '/');
   const artifactDir = info.dir.replace(/\\/g, '/');
   return [

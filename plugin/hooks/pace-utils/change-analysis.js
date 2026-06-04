@@ -155,7 +155,7 @@ module.exports = function createChangeAnalysis(ctx) {
       const id = slug.startsWith('chg-')
         ? `CHG-${slug.slice(4).toUpperCase()}`
         : `HOTFIX-${slug.slice(7).toUpperCase()}`;
-      entries.push({ checkbox: m[1], slug, id, rest: (m[3] || '').trim(), line, malformed });
+      entries.push({ checkbox: m[1].toLowerCase(), slug, id, rest: (m[3] || '').trim(), line, malformed });
     }
     return entries;
   }

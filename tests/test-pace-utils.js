@@ -10,6 +10,8 @@ const paceUtils = require('../plugin/hooks/pace-utils');
 const cmdRecognition = require('../plugin/hooks/pre-tool-use/command-recognition');
 const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
 const powershellGuard = require('../plugin/hooks/pre-tool-use/powershell-guard');
+const lifecycleGuard = require('../plugin/hooks/pre-tool-use/agent-lifecycle-guard');
+const subagentStop = require('../plugin/hooks/subagent-stop');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
 const createLockUtils = require('../plugin/hooks/pace-utils/locks');
 const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
@@ -438,6 +440,59 @@ test('powershell-guard PSG-04/A02: 只读命令含 writeFileSync token 不 over-
   const dir = makeTmpDir('ps-overblock');
   assert.ok(!powershellGuard.powershellCommandEmbedsArtifactWriteScript('Get-Content task.md | Select-String writeFileSync', dir, dir), '只读 Select-String token 放行');
   assert.ok(powershellGuard.powershellCommandEmbedsArtifactWriteScript("node -e \"require('fs').writeFileSync('task.md','x')\"", dir, dir), 'node 引擎写 artifact 仍拦');
+});
+
+// ============================================================
+// CHG-B 解析/生命周期正确性（A05/A06/A07）
+// ============================================================
+console.log('\n--- CHG-B parse/lifecycle ---');
+
+test('A05: agent-lifecycle-guard operation/action 行带尾随文字仍强制必填字段', () => {
+  const deny = lifecycleGuard.agentLifecyclePromptDenyReason;
+  assert.ok(deny('operation: close-chg 顺便归档\ntarget: CHG-20260101-01').includes('缺少必填字段'), 'close-chg 尾随文字缺字段应 deny');
+  assert.ok(deny('operation: update-chg 立刻\naction: approve-and-start\ntarget: CHG-20260101-01').includes('缺少必填字段'), 'update-chg 尾随 + approve-and-start 缺字段应 deny');
+  assert.ok(deny('operation: close-chg\ntarget: CHG-20260101-01').includes('缺少必填字段'), '干净 close-chg 缺字段 deny（回归）');
+  assert.strictEqual(deny('operation: close-chg\ntarget: CHG-20260101-01\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nwalkthrough-summary: done'), '', '完整 close-chg 放行（回归）');
+});
+
+test('A06: v5 ignored 后 v5MigrationPromptMessage 抑制（修 Stop 死锁）', () => {
+  const dir = makeTmpDir('a06-v5-ignored');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy v5 item\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] Legacy v5 impl\n', 'utf8');
+  assert.ok(paceUtils.v5MigrationPromptMessage(dir), 'v5 detected + needsPrompt 应返回迁移提示');
+  const statePath = paceUtils.getV5MigrationInfo(dir).statePath;
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, 'ignored\n', 'utf8');
+  assert.strictEqual(paceUtils.v5MigrationPromptMessage(dir), '', 'ignored 后抑制提示');
+});
+
+test('A07: 大写 [X] 索引行不污染 classifyChange', () => {
+  const dir = makeTmpDir('a07-uppercase-checkbox');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-01.md'),
+    '---\nchg-id: CHG-20260101-01\nstatus: completed\ntype: change\nschema-version: "6.0"\nverified-date: null\n---\n\n## 任务清单\n\n- [x] T-001 done\n\n<!-- APPROVED -->\n\n## 实施详情\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# t\n\n## 活跃任务\n\n- [X] [[chg-20260101-01]] 测试 #change [tasks:: T-001]\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# i\n\n## 变更索引\n\n- [x] [[chg-20260101-01]] 测试 #change [tasks:: T-001]\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const e = paceUtils.getActiveChangeEntries(dir).find(x => x.id === 'CHG-20260101-01');
+  assert.ok(e, '应解析到 CHG-20260101-01');
+  const cls = paceUtils.classifyChange(e);
+  assert.notStrictEqual(cls.reason, 'index-mismatch', '大写 [X] 不应误报 index-mismatch');
+  assert.strictEqual(cls.category, 'closing-required', '应判 closing-required');
+});
+
+test('PSP-02: inferCloseTarget operation/target 同源（不跨 candidate 借 target）', () => {
+  const ict = subagentStop.inferCloseTarget;
+  // 同源：同一 candidate 同时有 operation + 显式 target → 正常返回
+  const same = ict({ toolInput: { prompt: 'operation: close-chg\ntarget: CHG-20260101-01' }, raw: {} });
+  assert.strictEqual(same.operation, 'close-chg');
+  assert.strictEqual(same.target, 'CHG-20260101-01');
+  // 不同源：operation 在 prompt（无 target），CHG id 只在 lastMessage → missing-target（不借）
+  const diff = ict({ toolInput: { prompt: 'operation: close-chg' }, lastMessage: '处理了 CHG-20260202-02 相关讨论', raw: {} });
+  assert.strictEqual(diff.operation, 'close-chg');
+  assert.strictEqual(diff.target, '', '不同源不借 target');
+  assert.strictEqual(diff.reason, 'missing-target');
+  // 无 close/archive operation → missing-operation
+  assert.strictEqual(ict({ lastMessage: 'CHG-20260202-02 完成', raw: {} }).reason, 'missing-operation');
 });
 
 test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {

@@ -2719,6 +2719,25 @@ test('9hc0a2. PostToolUseFailure:Agent 清理 artifact-writer resource lock', ()
   assert.ok(!fs.existsSync(lockPath), 'Agent 工具失败时应清理 resource lock');
 });
 
+test('9a04. 非 artifact 信号项目 Edit managed artifact 与 Write 对称拦截（A04）', () => {
+  const dir = makeTmpDir('ptu-a04-manual-signal');
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] T-001 任务\n\n<!-- ARCHIVE -->\n', 'utf8');
+  // manual 信号（.pace-enabled，无 changes/），Edit managed artifact 注入 marker → 修复前 allow，修复后 deny
+  const edit = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'task.md'), old_string: '## 活跃任务', new_string: '## 活跃任务\n\n<!-- APPROVED -->' } },
+  });
+  assert.ok(edit.stdout.includes('"deny"'), 'manual 信号 Edit managed artifact 应 deny');
+  assert.ok(edit.stdout.includes('artifact-writer'), 'deny 文案应指向 artifact-writer');
+  // 对照 Write 同样 deny（本就对称，回归）
+  const write = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Write', tool_input: { file_path: path.join(dir, 'task.md'), content: 'x' } },
+  });
+  assert.ok(write.stdout.includes('"deny"'), 'manual 信号 Write managed artifact deny（回归）');
+});
+
 test('9hc0a3. PreToolUse 读取 artifact resource stale lock 时自愈', () => {
   const dir = makeV6Project('agent-artifact-stale-lock-read-self-heal');
   const lockPath = seedArtifactResourceLock(dir, 'detail:changes/chg-20260504-01.md', {
