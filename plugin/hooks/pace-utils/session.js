@@ -23,6 +23,9 @@ function parseHookStdin(rawInput) {
   let parsed = {};
   let ok = false;
   try { parsed = JSON.parse(rawInput); ok = true; } catch(e) {}
+  // PUC-02/ROB-01：JSON.parse 对字面量 null/数组/数字返回非对象真值（ok=true），
+  // 后续 parsed.session_id 等属性访问会对 null 抛 TypeError；归一为空对象并置 ok=false。
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { parsed = {}; ok = false; }
   const sessionId = normalizeSessionId(parsed.session_id || parsed.sessionId || process.env.CLAUDE_CODE_SESSION_ID || '');
   if (sessionId) _lastHookSessionId = sessionId;
   return {
@@ -50,7 +53,12 @@ function withStdinParsed(callback) {
   let input = '';
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (chunk) => { input += chunk; });
-  process.stdin.on('end', () => { callback(parseHookStdin(input), input); });
+  process.stdin.on('end', () => {
+    // ROB-01：纵深防御，parseHookStdin 异常时以空输入兜底，避免异步入口未捕获异常致进程崩溃 fail-open
+    let parsed;
+    try { parsed = parseHookStdin(input); } catch (e) { parsed = parseHookStdin(''); }
+    callback(parsed, input);
+  });
 }
 
 function parseStdinSync() {

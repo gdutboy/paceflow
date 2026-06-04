@@ -55,7 +55,8 @@ module.exports = function createPlanUtils(ctx) {
     if (plans.length === 0) return [];
     const syncedPath = path.join(ctx.getProjectRuntimeDir(cwd), 'synced-plans');
     let synced = [];
-    try { synced = fs.readFileSync(syncedPath, 'utf8').split('\n').filter(Boolean); } catch(e) {}
+    // PL-01：读取侧与写入侧（syncPlanFile normalizeLineEndings）对齐，先归一再 split，消除 CRLF 尾随 \r 致已同步 plan 误判
+    try { synced = normalizeLineEndings(fs.readFileSync(syncedPath, 'utf8')).split('\n').map(s => s.trim()).filter(Boolean); } catch(e) {}
     const syncedSet = new Set(synced);
     for (const f of synced) {
       syncedSet.add(f.replace(/\.md$/, '-design.md'));

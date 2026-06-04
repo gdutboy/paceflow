@@ -202,7 +202,8 @@ paceUtils.withStdinParsed((stdin) => {
       }
     }
 
-    if (artifactRel && /^changes\/corrections\/.+\.md$/i.test(artifactRel) && newString) {
+    // FC-01：纳入 Write 创建路径（content），record-correction 新建 correction 用 Write 提供 content、newString 为空
+    if (artifactRel && /^changes\/corrections\/.+\.md$/i.test(artifactRel) && (newString || content)) {
       warnings.push('检测到 correction 详情变更。请确认已同步写入 knowledge/ 或在 corrections.md 索引标注 [knowledge:: project-only]。');
     }
     if (artifactRel === 'walkthrough.md') {

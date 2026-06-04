@@ -9,15 +9,20 @@ const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
-  const args = { choice: '', cwd: '', help: false, unknown: [] };
+  const args = { choice: '', cwd: '', help: false, unknown: [], missingValue: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
       args.help = true;
     } else if (arg === '--choice' || arg === '-c') {
-      args.choice = String(argv[++i] || '');
+      // H-01：取值前 peek 下一 token，是另一个 flag 或缺失则视为缺值，不吞 flag、不静默写损坏配置
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) { args.missingValue.push(arg); }
+      else { args.choice = String(argv[++i]); }
     } else if (arg === '--cwd') {
-      args.cwd = String(argv[++i] || '');
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) { args.missingValue.push(arg); }
+      else { args.cwd = String(argv[++i]); }
     } else if (arg.startsWith('-')) {
       args.unknown.push(arg);
     } else if (!args.choice) {
@@ -97,6 +102,10 @@ function main() {
   }
   if (args.unknown.length > 0) {
     fail(args.cwd, 'DENY_UNKNOWN_OPTION', `set-artifact-root 不支持参数：${args.unknown.join(', ')}。\n只支持 --choice 与 --cwd。\n\n${usage()}`, { options: args.unknown.join(',') });
+    return;
+  }
+  if (args.missingValue.length > 0) {
+    fail(args.cwd, 'DENY_MISSING_VALUE', `参数缺少取值：${args.missingValue.join(', ')}。\n--choice 与 --cwd 必须各自紧跟一个值（不能是另一个 flag）。\n\n${usage()}`, { options: args.missingValue.join(',') });
     return;
   }
   if (!args.choice) {

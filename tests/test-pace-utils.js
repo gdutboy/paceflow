@@ -645,6 +645,29 @@ test('json lock 默认允许同 owner 重入，序列锁可显式关闭重入', 
   assert.strictEqual(reentrant.reentrant, true);
 });
 
+test('acquireJsonLock: in-flight 空锁文件（mtime 新）不被判 stale 抢占（ROB-02）', () => {
+  const dir = makeTmpDir('json-lock-inflight-empty');
+  const lockUtils = createLockUtils({
+    getProjectRuntimeDir: d => path.join(d, '.pace'),
+    displayDir: d => `${String(d || '').replace(/\\/g, '/')}/`,
+    normalizeSessionId: s => String(s || '').trim(),
+    currentSessionId: () => 'sid-inflight',
+    executionContextForCwd: () => ({ text: '[worktree:: main] [branch:: main]' }),
+    normalizePath: p => String(p || '').replace(/\\/g, '/'),
+    getArtifactDir: d => d,
+    todayISO: () => '2026-06-04',
+    CHANGE_OWNER_TTL_MS: paceUtils.CHANGE_OWNER_TTL_MS,
+    PROJECT_ROOT_FILE: paceUtils.PROJECT_ROOT_FILE,
+  });
+  const lockPath = path.join(dir, '.pace', 'locks', 'sequences', 'chg.lock');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  // 模拟另一进程 openSync(wx) 已建锁但尚未写 body 的 in-flight 空文件窗口
+  fs.writeFileSync(lockPath, '');
+  const r = lockUtils.acquireJsonLock(lockPath, { sessionId: 'sid-other', ownerKey: 'session:sid-other', resource: 'sequence:chg' }, { ttlMs: 30000, waitMs: 5, reentrant: false });
+  assert.strictEqual(r.acquired, false, 'in-flight 空锁（mtime 新）不应被判 stale 抢占');
+  assert.ok(fs.existsSync(lockPath), 'in-flight 空锁文件不应被 unlink');
+});
+
 test('reserveArtifactId 遇同 session sequence lock 不重入分配重复编号', () => {
   const dir = makeTmpDir('reservation-sequence-no-reentrant');
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
@@ -1702,6 +1725,20 @@ test('listUnsyncedPlanFiles: 主文件已同步时 -design.md 伴随文件也视
   assert.strictEqual(unsynced[0].name, '2026-03-08-other.md');
 });
 
+test('listUnsyncedPlanFiles: synced-plans 含 CRLF 时已同步 plan 仍正确识别（PL-01）', () => {
+  // PL-01：读取侧未规整 CRLF，synced name 残留尾随 \r 与无 \r 的 p.name 不相等，
+  // 已 bridge 的 plan 被误判未同步 → 重复 bridge over-block。
+  const dir = makeTmpDir('usp-crlf');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-01-feature-a.md'), '');
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-03-08-feature-b.md'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  // synced-plans 以 CRLF 入库（Windows 编辑器 / git autocrlf）
+  fs.writeFileSync(path.join(dir, '.pace', 'synced-plans'), '2026-03-01-feature-a.md\r\n2026-03-08-feature-b.md\r\n');
+  const unsynced = paceUtils.listUnsyncedPlanFiles(dir);
+  assert.strictEqual(unsynced.length, 0, 'CRLF synced-plans 下两个 plan 都应识别为已同步');
+});
+
 test('bridge candidate plans: 旧 plan 不作为当前 bridge 信号', () => {
   const dir = makeTmpDir('usp-stale-bridge');
   const planDir = path.join(dir, 'docs', 'plans');
@@ -2034,6 +2071,18 @@ test('parseHookStdin — 非 JSON → ok:false + 全空字段', () => {
   const r = paceUtils.parseHookStdin('not json {{{');
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.toolName, '');
+});
+
+test('parseHookStdin — JSON 字面量 null/数组/数字归一为安全空对象不抛（PUC-02/ROB-01）', () => {
+  // JSON.parse('null') 返回 null（不抛、ok=true），后续 parsed.session_id 访问 null 抛 TypeError，
+  // withStdinParsed 无 try/catch → 进程崩溃 fail-open；数组/数字/false/字符串虽不抛但非对象，应一并归一。
+  for (const raw of ['null', '[]', '123', 'false', '"str"']) {
+    const r = paceUtils.parseHookStdin(raw);
+    assert.strictEqual(r.ok, false, `${raw} 应归一为 ok:false`);
+    assert.strictEqual(r.toolName, '');
+    assert.strictEqual(r.filePath, '');
+    assert.deepStrictEqual(r.toolInput, {});
+  }
 });
 
 test('parseHookStdin — 部分字段缺失 → 默认值', () => {

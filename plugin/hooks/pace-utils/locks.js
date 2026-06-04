@@ -132,13 +132,22 @@ module.exports = function createLockUtils(ctx) {
         raw: parsed,
       };
     } catch(e) {
-      return { ok: false, path: lockPath, error: e.message, code: e.code || '' };
+      // ROB-02：读取/解析失败时附带锁文件 mtime，供 jsonLockIsStale 区分 in-flight 空窗口与真损坏锁
+      let mtimeMs = 0;
+      try { mtimeMs = fs.statSync(lockPath).mtimeMs; } catch(e2) {}
+      return { ok: false, path: lockPath, error: e.message, code: e.code || '', mtimeMs };
     }
   }
 
   function jsonLockIsStale(lock, ttlMs, now = Date.now()) {
     if (!lock) return false;
-    if (!lock.ok) return true;
+    if (!lock.ok) {
+      // ROB-02：读取/解析失败（含另一进程 openSync(wx) 后尚未写 body 的 in-flight 空文件窗口）
+      // 不立即判 stale，给 mtime 短宽限期；超过宽限才视为损坏锁清理，避免抢占 in-flight 锁致双持。
+      const INFLIGHT_GRACE_MS = 1000;
+      if (lock.mtimeMs && now - lock.mtimeMs <= INFLIGHT_GRACE_MS) return false;
+      return true;
+    }
     if (!lock.timestampMs) return true;
     return now - lock.timestampMs > ttlMs;
   }

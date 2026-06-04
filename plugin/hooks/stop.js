@@ -30,6 +30,15 @@ if (!paceSignal) {
   process.exit(0);
 }
 
+// PUC-01：artifact-root 配置为 vault 但运行时 PACE_VAULT_PATH 缺失 → fail-closed 阻断。
+// 否则 getArtifactDir 会静默降级到本地路径，漏检 vault 里的活跃 CHG（fail-open）。
+const rootConfigError = paceUtils.artifactRootConfigError(cwd);
+if (rootConfigError) {
+  process.stderr.write(`PACE 完成度检查未通过（artifact-root 配置异常，已 fail-closed）：\n${rootConfigError.message}\n`);
+  log(projectLogEntry('Stop', 'BLOCK', { proj, reason: rootConfigError.code, note: 'vault 配置但 PACE_VAULT_PATH 缺失，fail-closed 阻断' }));
+  process.exit(2);
+}
+
 // 防无限循环：读取连续阻止计数
 // I-12: 消除 existsSync TOCTOU 竞态，直接 try-catch readFileSync
 function getBlockCount() {
@@ -41,7 +50,8 @@ function setBlockCount(n, { ensure = false } = {}) {
   try {
     if (ensure) fs.mkdirSync(PACE_RUNTIME, { recursive: true });
     fs.writeFileSync(COUNTER_FILE, String(n), 'utf8');
-  } catch(e) {}
+    return true;
+  } catch(e) { return false; }
 }
 
 function isDeferredCategory(category) {
@@ -349,8 +359,13 @@ if (warnings.length > 0) {
       log(projectLogEntry('Stop', 'DOWNGRADE', { proj, blockCount, maxBlocks: MAX_BLOCKS, checks: warnings.join('; '), note: '.pace/degraded written' }));
       process.exit(0);
     } else {
+      // STOP-02：counter 不可写时防无限循环机制失效（getBlockCount 恒 0、永远到不了 MAX_BLOCKS），
+      // 降级放行避免 Stop 永久 exit 2 死循环——counter 不可写时 fail-open 优于 fail-closed 死锁。
+      if (!setBlockCount(blockCount + 1, { ensure: true })) {
+        log(projectLogEntry('Stop', 'COUNTER_UNWRITABLE', { proj, blockCount, checks: warnings.join('; '), note: 'counter 不可写，降级放行避免 Stop 死循环' }));
+        process.exit(0);
+      }
       // v4：exit 2 阻止 Claude 停止，stderr 反馈给 Claude
-      setBlockCount(blockCount + 1, { ensure: true });
       // T-330: stderr 编号列表 + 降级递进式消息
       const stderrLines = warnings.map((w, i) => `[${i+1}] ${w}`);
       stderrLines.push(`[提示] 处理上述 PACEflow 检查前，${FORMAT_SNIPPETS.skillRef}。`);

@@ -2308,6 +2308,21 @@ test('9hc-helper4a1. set-artifact-root helper 报告覆写旧 choice 且拒绝 e
   assert.ok(conflict.stdout.includes('DENY_ENV_CHOICE_CONFLICT') || conflict.stdout.includes('环境变量'));
 });
 
+test('9hc-helper4a3. set-artifact-root --choice 缺值吞掉后续 --cwd flag → fail-closed 不写配置（H-01）', () => {
+  const dir = makeTmpDir('set-root-missing-choice');
+  const other = makeTmpDir('set-root-other-cwd');
+  // bug：--choice 用 argv[++i] 无条件吞掉下一 token，把 --cwd 当作 choice 值，写出伪造配置且 exit 0
+  const r = runSetArtifactRootHelper({ cwd: dir, args: ['--choice', '--cwd', other] });
+  assert.notStrictEqual(r.code, 0, '取值型 flag 缺值应 fail-closed（exit≠0）');
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'artifact-root')), '缺值时不应写出 artifact-root 配置');
+});
+
+test('9hc-helper4a4. set-artifact-root --cwd 末尾缺值 → fail-closed（H-01）', () => {
+  const dir = makeTmpDir('set-root-missing-cwd');
+  const r = runSetArtifactRootHelper({ cwd: dir, args: ['--choice', 'local', '--cwd'] });
+  assert.notStrictEqual(r.code, 0, '--cwd 缺值应 fail-closed');
+});
+
 test('9hc-helper4a2. 继承子目录 set-artifact-root 写父 Project Root runtime', () => {
   const root = makeTmpDir('set-root-helper-subdir-parent');
   const child = path.join(root, 'packages', 'api');
@@ -4485,6 +4500,29 @@ test('10. v6 未完成详情任务 → exit 2', () => {
   assert.ok(r.stderr.includes('未完成任务'));
 });
 
+test('10X. Stop counter 文件不可写时降级放行而非 exit 2 死循环（STOP-02）', () => {
+  const dir = makeV6Project('stop-counter-unwritable');
+  // 把 counter 路径建成目录，使 writeFileSync 必抛 EISDIR（跨平台稳定模拟不可写，避免依赖权限位）。
+  // bug：写失败被静默吞，getBlockCount 恒 0，永远到不了 MAX_BLOCKS 降级分支 → 每次 exit 2 死循环。
+  fs.mkdirSync(path.join(dir, '.pace', 'stop-block-count'), { recursive: true });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 0, 'counter 不可写时应降级放行避免 Stop 永久 exit 2 死循环');
+});
+
+test('10Y. Stop 在 artifact-root=vault 但 PACE_VAULT_PATH 缺失时 fail-closed 阻断（PUC-01）', () => {
+  // artifact-root 配置为 vault（artifact 实际在 vault），但运行时 PACE_VAULT_PATH 缺失：
+  // getArtifactDir 会静默降级到本地路径、漏检 vault 里的活跃 CHG（fail-open）。
+  // 应改为 fail-closed 阻断并提示恢复 PACE_VAULT_PATH。
+  const dir = makeV6Project('stop-vault-env-missing', {
+    withIndex: false,
+    detail: false,
+    paceRuntime: { 'artifact-root': 'vault\n' },
+  });
+  const r = runHook('stop.js', { cwd: dir, env: { PACE_VAULT_PATH: '' } });
+  assert.strictEqual(r.code, 2, 'vault 配置但 PACE_VAULT_PATH 缺失应 fail-closed 阻断而非静默放行');
+  assert.ok(r.stderr.includes('PACE_VAULT_PATH'), '应提示 PACE_VAULT_PATH 缺失');
+});
+
 test('10a. 多任务 CHG 部分完成 → 继续执行，不提示 verify/close/archive', () => {
   const dir = makeV6Project('stop-partial-multitask', {
     walkToday: false,
@@ -5447,6 +5485,19 @@ test('16. correction 详情变更 → knowledge 提醒', () => {
   const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('knowledge'));
+});
+
+test('16b. correction 新建（Write content 路径）→ knowledge 提醒', () => {
+  // record-correction 的 canonical 动作是 Write 新建（content 字段、无 edits/new_string），
+  // FC-01：HINT 触发判据原为 `&& newString`，Write 路径 newString 为空被短路，提醒漏发。
+  const dir = makeV6Project('post-correction-write');
+  const fp = path.join(dir, 'changes', 'corrections', 'correction-20260504-write.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Write', tool_input: { file_path: fp, content: '---\nschema-version: "6.0"\n---\n# Correction\n详情正文\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('knowledge'), 'Write 创建 correction 也应触发 knowledge 同步提醒');
 });
 
 test('17. vault 内 changes 详情编辑 → cli-refresh flag', () => {
