@@ -162,7 +162,7 @@ brainstorming（需求探索 + 方案设计）
 
 ### Agent Teams 兼容性
 
-Teammate 身份自动检测（`CLAUDE_CODE_TEAM_NAME` 环境变量），阻止性 hook 降级为提示性建议，信息性 hook 保持生效，多 agent 协作不中断。
+Teammate 身份自动检测（`CLAUDE_CODE_TEAM_NAME` 环境变量）。定位 **teammate = 纯执行者**：主 session 负责任务编排与更新，teammate 不参与任务管理（artifact 状态需单一权威源）。流程引导类 deny（artifact-root 选择、迁移、桥接——需主 session 与用户交互）对 teammate 降级为提示避免死锁；批准/完整性/runtime-control 类 deny（C/E 阶段门、无活跃 CHG、索引完整性、marker 伪造、删锁、直接写 artifact）对 teammate **仍硬阻断**。详见 REFERENCE「PreToolUse 拒绝档位与 teammate 降级」。
 
 ---
 
@@ -349,9 +349,12 @@ paceflow/
 
 **Subagent**（Task 工具）：在主进程内执行，共享 hooks，所有 hook 均生效。
 
-**Agent Teams**：独立进程，各自加载 hooks。`isTeammate()` 自动检测 teammate 身份：
-- 阻止性 hook → 降级为 HINT
+**Agent Teams**：独立平级进程（≠ subagent 的主进程内子调用），各自加载 hooks。定位 **teammate = 纯执行者**，任务管理（批准 / 建 CHG / 改状态 / 归档）归主 session 单一权威源。`isTeammate()` 自动检测后：
+- **流程引导类** deny（artifact-root 选择、v5 迁移、native plan 桥接——需主 session 交互完成）→ 降级为 HINT（避免死锁 teammate）
+- **批准 / 完整性 / runtime-control 类** deny（C/E 阶段门、无活跃 CHG、索引完整性三门、marker 伪造、删锁、直接写 artifact）→ **不降级，teammate 也硬阻断**
 - 信息性 hook → 保持生效
+
+调研 fan-out 这类「给结果就好、回流主 session」的场景应用 **subagent**（Task / Agent 工具），不用 teammate。完整三档 × teammate 降级表见 REFERENCE「PreToolUse 拒绝档位与 teammate 降级」。
 
 **已知限制**：
 - Claude 任务面板不作为 PaceFlow artifact 权威；任务面板和 CHG 详情不一致时，以 `changes/<id>.md` 为准。

@@ -192,12 +192,18 @@ paceUtils.withStdinParsed((stdin) => {
   log(projectLogEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
-  function denyOrHint(reason) {
+  function denyOrHint(reason, { hardInTeammate = false } = {}) {
     const enrichedReason = paceUtils.appendArtifactDirHint(cwd, reason);
-    if (isTeammate()) {
+    // teammate = 纯执行者，任务管理归主 session（单一权威源）。流程引导类 deny（artifact-root 选择/迁移/桥接，
+    // 需主 session 与用户交互完成）对 teammate 软化为提示，避免死锁；但写代码门（hardInTeammate）即使 teammate
+    // 也硬阻断 + 回报引导，避免 teammate 在未批准/无活跃 CHG/索引损坏时越界写代码绕过 PACE。
+    if (isTeammate() && !hardInTeammate) {
       return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${enrichedReason}` } };
     }
-    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: enrichedReason } };
+    const finalReason = (isTeammate() && hardInTeammate)
+      ? `${enrichedReason}\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）`
+      : enrichedReason;
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: finalReason } };
   }
   function hardDeny(reason, action, fields = {}) {
     const output = {
@@ -1334,7 +1340,7 @@ paceUtils.withStdinParsed((stdin) => {
           `v6 索引行格式损坏：${ids} 的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。`,
           '请派 artifact-writer 修复索引行边界；修复后再继续写项目文件。'
         ].join('\n');
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MALFORMED${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
@@ -1348,7 +1354,7 @@ paceUtils.withStdinParsed((stdin) => {
           '请派 artifact-writer 修复索引；不要用 Bash、临时脚本、Obsidian CLI 或主 session 直接改 artifact。',
           '如果 artifact-writer 修复索引也被同一检查阻止，请停止重试并报告 hook 日志。'
         ].join('\n');
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
@@ -1358,7 +1364,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (missingDetails.length > 0) {
         const ids = missingDetails.map(e => e.id).join(', ');
         const reason = `v6 详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。`;
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
@@ -1371,7 +1377,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = doneEntries.length > 0
           ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
           : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`;
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
         return;
@@ -1381,7 +1387,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (approvedEntries.length === 0) {
         const ids = gatedEntries.map(e => e.id).join(', ');
         const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
@@ -1395,7 +1401,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
         const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。`;
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;

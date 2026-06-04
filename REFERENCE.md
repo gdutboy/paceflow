@@ -125,6 +125,24 @@ Helper 脚本不是 hook 事件，但属于发布运行时入口：
 
 Helper 成功返回 exit code 0；业务校验失败返回 exit code 2 并在 stdout 给出可读修复信息。Hook 脚本自身通常以容错为主，除 PreToolUse/Stop 的明确阻断外，不把内部错误升级为 shell 崩溃。
 
+## 5.1 PreToolUse 拒绝档位与 teammate 降级
+
+PreToolUse 的拒绝分三档。**teammate 模式（`CLAUDE_CODE_TEAM_NAME` 非空）只软化第一档**，另两档不降级。
+
+| 档位 | 实现 | 正常模式 | teammate 模式 | 典型守卫 |
+|------|------|----------|---------------|---------|
+| 流程引导类 | `denyOrHint(reason)`（无 `hardInTeammate`）| deny | **降级为 additionalContext（放行+提示）** | artifact-root 选择、v5 迁移、native plan 桥接、强信号/code-count 引导 |
+| 批准/完整性类 | `denyOrHint(reason, { hardInTeammate: true })` | deny | **仍 deny（不降级）+ 回报主 session 引导** | C 阶段批准门、E 阶段就绪门、无活跃 CHG、索引完整性三门（malformed / mismatch / detail-missing）|
+| 完整性/安全类 | `hardDeny()` 或 inline-deny | deny | **仍 deny（不降级）** | marker 伪造（APPROVED/VERIFIED）、runtime-control 删锁、改 `.pace` 控制面、直接 Write/Edit artifact、bad stdin/tool、ID 预留、status 校验、change-owner 隔离 |
+
+**设计定位：teammate = 纯执行者。** 主 session 负责任务编排与更新（批准、建/归档 CHG、改任务状态），teammate 只在主 session 已批准的 CHG 范围内执行（写代码、跑测试、调研）。根本理由：artifact 状态必须有单一权威源，否则多个独立 teammate session 并发改 artifact 会让任务状态失去一致视图，无法维护上下文。
+
+在此定位下，「无阻断」与「遵循规则」自动统一：teammate 跟随已批准 CHG 执行时所有写代码门天然通过（无阻断）；一旦在未批准 / 无活跃 CHG / 索引损坏时写代码，或试图碰任务管理、runtime，则硬阻断（遵循规则）。流程引导类（artifact-root 选择、迁移、桥接）保持软化，因为它们需主 session 与用户交互完成，硬拦会死锁 teammate。
+
+**日志 action 的 `_TEAMMATE` 后缀 ≠ 被降级。** marker 伪造、runtime-control 等带 `_TEAMMATE` 后缀但走 `hardDeny`，teammate 下仍硬阻断——后缀只标记"在 teammate 进程触发"，不代表软化。
+
+**teammate ≠ subagent。** subagent（Task / Agent 工具）在主进程内执行、结果回流主 session、共享主 session 上下文、不独立触发 PACE owner；teammate 是独立平级 session，有自己的 session_id。调研 fan-out 这类「给结果就好、回流主 session」的场景应用 subagent，不用 teammate。
+
 ---
 
 ## 6. 安装

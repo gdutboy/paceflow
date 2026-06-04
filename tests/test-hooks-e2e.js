@@ -1079,6 +1079,84 @@ test('9ab1. teammate 模式仍 hard-deny 直接写 C/V marker', () => {
   assert.ok(!r.stdout.includes('additionalContext'));
 });
 
+test('9ab2. teammate 模式未批准 C 阶段写代码 → hard-deny（不软化，纯执行者边界）', () => {
+  const dir = makeV6Project('ptu-c-phase-teammate', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'exec-team' },
+    stdin: codeEditStdin(dir),
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"permissionDecision":"deny"'), 'teammate 未批准写代码应硬阻断');
+  assert.ok(!r.stdout.includes('additionalContext'), 'C 门对 teammate 不应软化为提示');
+  assert.ok(r.stdout.includes('任务管理归主 session'), '应含 teammate 回报主 session 引导');
+});
+
+test('9ab3. teammate 模式无活跃 CHG 写代码 → hard-deny（不软化）', () => {
+  const dir = makeV6Project('ptu-no-active-teammate', { withIndex: false, detail: false });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'exec-team' },
+    stdin: codeEditStdin(dir),
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"permissionDecision":"deny"'), 'teammate 无活跃 CHG 写代码应硬阻断');
+  assert.ok(!r.stdout.includes('additionalContext'), 'no-active 门对 teammate 不应软化');
+});
+
+test('9ab4. teammate 模式索引格式损坏写代码 → hard-deny（不软化）', () => {
+  const dir = makeV6Project('ptu-malformed-teammate', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }),
+  });
+  const malformed = '<!-- 注释 -->- [ ] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 项目任务追踪\n\n## 活跃任务\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 实施计划\n\n## 变更索引\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'exec-team' },
+    stdin: codeEditStdin(dir),
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"permissionDecision":"deny"'), 'teammate 索引损坏写代码应硬阻断');
+  assert.ok(!r.stdout.includes('additionalContext'), '索引完整性门对 teammate 不应软化');
+});
+
+test('9ab5. teammate 模式已批准但 E 阶段未就绪写代码 → hard-deny（不软化）', () => {
+  const dir = makeV6Project('ptu-e-phase-teammate', {
+    indexMark: '[ ]',
+    detail: chgDetail({ status: 'planned', task: '[ ]', approved: true }),
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'exec-team' },
+    stdin: codeEditStdin(dir),
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"permissionDecision":"deny"'), 'teammate E 未就绪写代码应硬阻断');
+  assert.ok(!r.stdout.includes('additionalContext'), 'E 门对 teammate 不应软化');
+  assert.ok(r.stdout.includes('E 阶段未就绪'), '确认触发的是 E 门');
+});
+
+test('9ab7. teammate 模式 native plan 桥接门写代码 → 仍软化为提示（保持软化基线）', () => {
+  // 保持软化的流程引导类守卫（桥接需主 session 跑 pace-bridge，teammate 做不了）在 teammate 下应仍软化，
+  // 固化此行为防未来误把它也升 hardInTeammate（那会死锁 teammate）。
+  const dir = makeTmpDir('ptu-bridge-teammate');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', `${today()}-feature.md`), '# Plan\n');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    env: { CLAUDE_CODE_TEAM_NAME: 'exec-team' },
+    stdin: codeEditStdin(dir),
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('additionalContext'), '桥接引导类门对 teammate 应保持软化（不死锁 teammate）');
+  assert.ok(!r.stdout.includes('"permissionDecision":"deny"'), '保持软化的门不应硬阻断');
+});
+
 test('9b. create-chg 首次预留编号后重派，写 verified-date null → 放行', () => {
   const dir = makeV6Project('ptu-create-null', { withIndex: false, detail: false });
   const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\n使用 create-chg 流程创建一个新的变更记录。`;
