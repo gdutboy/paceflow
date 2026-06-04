@@ -106,6 +106,26 @@ test('verify-output files_modified 必须相对 fixture/pre_files 基线发生�
   assert.strictEqual(changedResult.passed, true);
 });
 
+test('ATF-02. failure_reason_pattern 在 agent raw 为空时判 fail 而非静默跳过', () => {
+  const { dir, variables } = setupEmptyFixture('verify-empty-raw-failpat');
+  // 用例显式要求 failure_reason_pattern，但 agent raw 为空 → 当前 bug 跳过检查致负向用例 fail-open；应判 fail。
+  const result = verifyHelper.verify({
+    setup: { fixture: 'empty-v6' },
+    expected: { failure_reason_pattern: 'missing-fields' },
+  }, dir, variables, { status: 'FAILED' });
+  assert.ok(result.validations.some((v) => v.name === 'failure_reason_pattern' && !v.ok), 'raw 空时 failure_reason_pattern 应判 fail');
+});
+
+test('ATF-02b. 显式 report_title_strict 与 raw_must_contain 在 agent raw 为空时判 fail', () => {
+  const { dir, variables } = setupEmptyFixture('verify-empty-raw-title');
+  const result = verifyHelper.verify({
+    setup: { fixture: 'empty-v6' },
+    expected: { report_title_strict: '## 自定义报告标题', raw_must_contain: 'SUCCESS' },
+  }, dir, variables, { status: 'SUCCESS' });
+  assert.ok(result.validations.some((v) => v.name === 'report_title_strict' && !v.ok), '显式 title-strict 在 raw 空时应判 fail');
+  assert.ok(result.validations.some((v) => v.name === 'raw_must_contain' && !v.ok), 'raw_must_contain 在 raw 空时应判 fail');
+});
+
 console.log('\n--- claude-output-to-report ---');
 
 test('claude-output-to-report convert 支持 JSON result usage 与 SUCCESS 状态', () => {

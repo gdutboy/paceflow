@@ -752,7 +752,12 @@ function verify(testCase, targetDir, variables, agentReport) {
   const titleStrict = exp.report_title_strict === false
     ? null
     : (exp.report_title_strict || '## artifact-writer 报告');
-  if (agentReport && titleStrict && agentReport.raw) {
+  const titleStrictExplicit = exp.report_title_strict !== undefined && exp.report_title_strict !== false;
+  if (agentReport && titleStrict && !agentReport.raw && titleStrictExplicit) {
+    // ATF-02：显式要求 report_title_strict 但 agent raw 为空 → 判 fail，不静默跳过（负向用例不再 fail-open）；
+    // 默认激活（exp 未显式设）时保持跳过，避免误伤仅传占位 agentReport 的用例。
+    validations.push({ name: 'report_title_strict', ok: false, actual: '<empty raw>', expected: titleStrict, reason: 'agent raw output empty' });
+  } else if (agentReport && titleStrict && agentReport.raw) {
     const lines = agentReport.raw.split(/\r?\n/);
     const firstLine = (lines[0] || '').trim();
     const ok = firstLine === titleStrict;
@@ -797,26 +802,36 @@ function verify(testCase, targetDir, variables, agentReport) {
   }
 
   // 4.2 failure_reason_pattern（regex 匹配 raw 报告中的失败码）
-  if (agentReport && exp.failure_reason_pattern && agentReport.raw) {
-    const re = new RegExp(exp.failure_reason_pattern, 'i');
-    const ok = re.test(agentReport.raw);
-    validations.push({
-      name: 'failure_reason_pattern',
-      ok,
-      actual: ok ? 'matched' : 'not matched',
-      expected: exp.failure_reason_pattern,
-    });
+  if (agentReport && exp.failure_reason_pattern) {
+    // ATF-02：raw 空时不再跳过，判 fail（期望 FAILED 码的负向用例不再 fail-open）
+    if (!agentReport.raw) {
+      validations.push({ name: 'failure_reason_pattern', ok: false, actual: '<empty raw>', expected: exp.failure_reason_pattern, reason: 'agent raw output empty' });
+    } else {
+      const re = new RegExp(exp.failure_reason_pattern, 'i');
+      const ok = re.test(agentReport.raw);
+      validations.push({
+        name: 'failure_reason_pattern',
+        ok,
+        actual: ok ? 'matched' : 'not matched',
+        expected: exp.failure_reason_pattern,
+      });
+    }
   }
 
-  if (agentReport && exp.raw_must_contain && agentReport.raw) {
+  if (agentReport && exp.raw_must_contain) {
     const expectedRaw = renderVariables(exp.raw_must_contain, variables);
-    const ok = agentReport.raw.includes(expectedRaw);
-    validations.push({
-      name: 'raw_must_contain',
-      ok,
-      actual: ok ? 'matched' : 'not matched',
-      expected: expectedRaw,
-    });
+    // ATF-02：raw 空时不再跳过，判 fail
+    if (!agentReport.raw) {
+      validations.push({ name: 'raw_must_contain', ok: false, actual: '<empty raw>', expected: expectedRaw, reason: 'agent raw output empty' });
+    } else {
+      const ok = agentReport.raw.includes(expectedRaw);
+      validations.push({
+        name: 'raw_must_contain',
+        ok,
+        actual: ok ? 'matched' : 'not matched',
+        expected: expectedRaw,
+      });
+    }
   }
 
   // 5. agent status

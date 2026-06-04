@@ -327,6 +327,12 @@ function codeEditStdin(dir) {
   return { tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'src.js'), old_string: 'a', new_string: 'b' } };
 }
 
+// W2/TS-01：日志增量守卫——logger 在 >1MB 时截断保留后半，after 可能短于 before，
+// 此时裸 after.slice(before.length) 返回空字符串致日志断言误判；守卫则返回全部 after。
+function logDelta(before, after) {
+  return after.length >= before.length ? after.slice(before.length) : after;
+}
+
 function makeLegacyProject(label) {
   const dir = makeTmpDir(label);
   fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n', 'utf8');
@@ -337,6 +343,14 @@ function makeLegacyProject(label) {
 }
 
 console.log('\n--- session-start.js ---');
+
+test('W2. logDelta 在日志被 1MB 截断（after 短于 before）时返回全部 after 而非空字符串', () => {
+  // logger.js 在日志 > 1MB 时截断保留后半，after.length < before.length；裸 after.slice(before.length)
+  // 会返回空字符串致日志增量断言误判。logDelta 守卫：after 短于 before 时返回全部 after。
+  assert.strictEqual(logDelta('aaaa', 'aaaabb'), 'bb', '正常增量取尾部新增');
+  assert.strictEqual(logDelta('aaaabbbb', 'cc'), 'cc', '截断后 after 短于 before → 返回全部 after 而非空');
+  assert.strictEqual(logDelta('', 'xx'), 'xx', 'before 为空 → 返回全部 after');
+});
 
 test('1. 非 PACE 项目静默放行', () => {
   const dir = makeTmpDir('ss-empty');
@@ -1048,7 +1062,7 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
 
   const after = fs.readFileSync(logFile, 'utf8');
   const projectLogLines = after.split('\n').filter(line => line.includes(projectNameForDir(dir))).join('\n');
-  const delta = projectLogLines || after.slice(before.length);
+  const delta = projectLogLines || logDelta(before, after);
   assert.ok(delta.includes('act=DENY_V6_MARKER'));
   assert.ok(delta.includes('agent_id=agent-log-deny'));
   assert.ok(delta.includes('agent_type=code-reviewer'));
@@ -5879,7 +5893,7 @@ test('21. StopFailure PACE 项目记录日志', () => {
   const r = runHook('stop-failure.js', { cwd: dir, stdin: { error_type: 'rate_limit', stop_reason: 'api_error' } });
   assert.strictEqual(r.code, 0);
   const after = fs.readFileSync(logFile, 'utf8');
-  const delta = after.slice(before.length);
+  const delta = logDelta(before, after);
   assert.ok(delta.includes('StopFailure'));
   assert.ok(delta.includes('rate_limit'));
 });
@@ -5999,7 +6013,7 @@ test('22c. PostToolUseFailure 保留未完成 index:changes 事务锁', () => {
   assert.strictEqual(r.code, 0);
   assert.ok(fs.existsSync(lockPath), 'index:changes 半事务失败时应保留锁，等待同 agent 重试或 SubagentStop 清理');
   const afterLog = fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8');
-  const delta = afterLog.slice(beforeLog.length);
+  const delta = logDelta(beforeLog, afterLog);
   assert.ok(delta.includes('KEEP_ARTIFACT_RESOURCE_LOCK'));
   assert.ok(delta.includes('index-transaction-open-after-failure'));
 });
