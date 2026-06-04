@@ -12,6 +12,7 @@ const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
 const powershellGuard = require('../plugin/hooks/pre-tool-use/powershell-guard');
 const lifecycleGuard = require('../plugin/hooks/pre-tool-use/agent-lifecycle-guard');
 const subagentStop = require('../plugin/hooks/subagent-stop');
+const batchArchiveV5 = require('../plugin/migrate/batch-archive-v5');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
 const createLockUtils = require('../plugin/hooks/pace-utils/locks');
 const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
@@ -493,6 +494,66 @@ test('PSP-02: inferCloseTarget operation/target 同源（不跨 candidate 借 ta
   assert.strictEqual(diff.reason, 'missing-target');
   // 无 close/archive operation → missing-operation
   assert.strictEqual(ict({ lastMessage: 'CHG-20260202-02 完成', raw: {} }).reason, 'missing-operation');
+});
+
+// ============================================================
+// CHG-C v5 迁移闭环（MIGV5-03/TM-01 transformV5Body）
+// ============================================================
+console.log('\n--- CHG-C transformV5Body ---');
+
+test('MIGV5-03/TM-01: transformV5Body frontmatter 检测排除 block scalar 缩进与主题分隔线', () => {
+  const tv = batchArchiveV5.transformV5Body;
+  // TM-01：frontmatter 内 block scalar 缩进的 --- 不应被误判为 frontmatter 结束
+  const blockScalar = '---\nsummary: |\n  line1\n  ---\n  line2\nkey: val\n---\n\n# 标题\n正文\n';
+  const out1 = tv(blockScalar);
+  assert.ok(out1.includes('## (v5 历史) 标题'), 'block scalar 缩进 --- 不应截断 frontmatter（标题应在正文区降级）');
+  // MIGV5-03：开头主题分隔线 ---（无 YAML key）不应被当 frontmatter
+  const hrule = '---\n\n# 真正的标题\n正文内容\n---\n更多\n';
+  const out2 = tv(hrule);
+  assert.ok(!out2.includes('### v5 原始 frontmatter'), '开头主题分隔线不应被当 frontmatter');
+  // 回归：正常 frontmatter 正确识别
+  const normal = '---\nsummary: x\nstatus: active\n---\n\n# 任务\n内容\n';
+  const out3 = tv(normal);
+  assert.ok(out3.includes('### v5 原始 frontmatter'), '正常 frontmatter 应识别');
+  assert.ok(out3.includes('summary: x'), 'frontmatter 内容保留');
+  assert.ok(out3.includes('## (v5 历史) 任务'), 'H1 降级');
+});
+
+test('MIGV5-01: --force 无 backup 且目标已 v6 时拒绝迁移，防销毁原始数据', () => {
+  const dir = makeTmpDir('migv5-force-protect');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  // 模拟已迁移的 v6 task.md（含 v5 历史归档标志），且无 .v5-backup
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n\n<!-- ARCHIVE -->\n\n## v5 历史归档\n旧内容\n', 'utf8');
+  assert.throws(() => batchArchiveV5.archiveV5(dir, false, true), /已是迁移后的 v6|销毁/);
+});
+
+test('MIGV5-02: 阶段一失败时零写盘（两阶段原子性）', () => {
+  const dir = makeTmpDir('migv5-stage1-atomic');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] item\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'findings.md'), '# 调研记录\n\n- [ ] f\n', 'utf8');
+  // findings.md.v5-backup 是目录 + force → 阶段一 readFileSync(目录) 抛错，整体中止
+  fs.mkdirSync(path.join(dir, 'findings.md.v5-backup'), { recursive: true });
+  assert.throws(() => batchArchiveV5.archiveV5(dir, false, true));
+  // 阶段一失败 → 未写任何 backup、未建 changes/（零写盘）
+  assert.ok(!fs.existsSync(path.join(dir, 'task.md.v5-backup')), '阶段一失败不应已写 task.md backup');
+  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '阶段一失败不应已建 changes/');
+});
+
+test('A03: 迁移成功写 migrated state，回滚后 v5 可被重新检测', () => {
+  const dir = makeTmpDir('migv5-a03-state');
+  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] item\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] impl\n', 'utf8');
+  batchArchiveV5.archiveV5(dir, false, false);
+  const info = paceUtils.getV5MigrationInfo(dir);
+  assert.strictEqual(info.state, 'migrated', '迁移成功应写 migrated state');
+  // 模拟按回滚指引回滚：恢复文件 + 删 changes/ + 删 state
+  for (const f of ['task.md', 'implementation_plan.md']) {
+    const bp = path.join(dir, `${f}.v5-backup`);
+    if (fs.existsSync(bp)) fs.copyFileSync(bp, path.join(dir, f));
+  }
+  fs.rmSync(path.join(dir, 'changes'), { recursive: true, force: true });
+  fs.rmSync(info.statePath, { force: true });
+  assert.strictEqual(paceUtils.getV5MigrationInfo(dir).detected, true, '回滚后 v5 应可被重新检测（不再落入盲区）');
 });
 
 test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
