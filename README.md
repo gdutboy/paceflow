@@ -359,6 +359,7 @@ paceflow/
 **已知限制**：
 - Claude 任务面板不作为 PaceFlow artifact 权威；任务面板和 CHG 详情不一致时，以 `changes/<id>.md` 为准。
 - 多 teammate 并发修改 `.pace/` 理论竞态风险（未实际触发）
+- 多个独立 clone（各自 `.git` + 各自本地 `.pace`）共享同一云同步 vault project 并发开 CHG 时，编号串行化（sequence counter/lock）绑本地 project-runtime、不跨 clone，可能分配重复 CHG/HOTFIX/CORRECTION 编号（LOCKS-001）。`.pace` 含 counter 本地不同步、仅 `changes/` 经云端同步，触发需两端近乎同时 reserve 且云同步状态恰好一致，概率极低。建议单人单活跃 clone，避免多机并发对同一 vault project 开 CHG
 
 ## 日志
 
