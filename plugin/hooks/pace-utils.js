@@ -25,6 +25,8 @@ const {
   CODE_EXTS,
   ARTIFACT_FILES,
   MIGRATABLE_ARTIFACT_FILES,
+  ARCHIVE_REQUIRED_FILES,
+  ARCHIVE_MISSING_INJECT_LIMIT,
   VAULT_PATH,
   ARTIFACT_ROOT_CHOICE_FILE,
   PROJECT_ROOT_FILE,
@@ -632,6 +634,11 @@ function checkArchiveFormat(cwd, filename) {
   // I-6: 匹配所有级别的错误标题格式（# ARCHIVE ~ ###### ARCHIVE）
   const hasWrong = /^#{1,6}\s+ARCHIVE/m.test(content);
   if (hasWrong && !hasCorrect) return `${filename} 使用了错误的 ARCHIVE 标记格式（应为 <!-- ARCHIVE -->）`;
+  // 层1：应保持双区结构的文件（ARCHIVE_REQUIRED_FILES，排除无双区的 spec.md）完全缺失 ARCHIVE 标记时报警——
+  // session-start 注入依赖该标记切分活跃区，缺失会导致整个文件全文注入 context（findings/walkthrough 可达 10 万字符）。
+  if (!hasCorrect && ARCHIVE_REQUIRED_FILES.includes(filename)) {
+    return `${filename} 缺少 <!-- ARCHIVE --> 标记。session-start 注入依赖该标记切分活跃区，缺失会导致整个文件全文注入 context。请派 artifact-writer 修复双区结构。`;
+  }
   return null;
 }
 
@@ -749,7 +756,7 @@ module.exports = {
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
   RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, PACE_ARTIFACT_ROOT_CONTENT,
-  ARCHIVE_MARKER, ARCHIVE_PATTERN, COMPLETION_PHRASES,
+  ARCHIVE_MARKER, ARCHIVE_PATTERN, ARCHIVE_REQUIRED_FILES, ARCHIVE_MISSING_INJECT_LIMIT, COMPLETION_PHRASES,
   SKILL_DIRS, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, FORMAT_SNIPPETS, PLAN_DIRS,
   // 基础工具
   resolveProjectCwd, ts, todayISO, daysSinceISODate, countCodeFiles, getProjectName, getProjectNameCandidates, rawProjectNameCandidates, normalizePath, displayDir,

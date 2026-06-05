@@ -208,6 +208,23 @@ test('文件不存在 → null', () => {
   assert.strictEqual(checkArchiveFormat(dir, 'nonexistent.md'), null);
 });
 
+test('checkArchiveFormat: 应有 ARCHIVE 的双区文件完全缺失标记 → 返回缺失警告（findings.md，层1）', () => {
+  const dir = makeTmpDir('caf-missing-archive');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true }); // 建 changes/ → dir 成为本地 artifact root，getArtifactDir(dir)=dir
+  // findings.md 属 ARCHIVE_REQUIRED_FILES，但既无 <!-- ARCHIVE --> 也无 ## ARCHIVE
+  fs.writeFileSync(path.join(dir, 'findings.md'), '# 调研记录\n\n## 未解决问题\n\n- [ ] something\n');
+  const result = checkArchiveFormat(dir, 'findings.md');
+  assert.ok(result !== null, '应返回缺失警告（防 session-start 全文注入）');
+  assert.ok(/缺少|ARCHIVE/.test(result), `消息应提示 ARCHIVE 缺失: ${result}`);
+});
+
+test('checkArchiveFormat: spec.md 无 ARCHIVE → null（spec 无双区，不误报，层1关键）', () => {
+  const dir = makeTmpDir('caf-spec-noarchive');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'spec.md'), '# 规格\n\n技术栈说明\n');
+  assert.strictEqual(checkArchiveFormat(dir, 'spec.md'), null, 'spec.md 不在 ARCHIVE_REQUIRED_FILES，缺失不应报错');
+});
+
 // ============================================================
 // 5. getProjectName()
 // ============================================================

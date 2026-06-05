@@ -422,6 +422,21 @@ test('2d. SessionStart 超大注入会在 50KB 前截断并给路径化提示', 
   assert.ok(r.stdout.includes('请按需 Read artifact 文件'));
 });
 
+test('2d2. SessionStart 对缺失 ARCHIVE 的双区大文件截断注入兜底，防全文灌爆 context（层2）', () => {
+  const dir = makeV6Project('ss-archive-missing');
+  // findings.md 故意无 <!-- ARCHIVE --> 标记 + 大量开放 [ ] 项（findings 智能截断对 [ ] 全量保留，不跳过）+ 超 30000 字符。
+  // 纯英文 filler 保证字符数≈字节数，便于把总输出控制在 50KB 全局截断阈值内——确保测的是层2 而非全局截断。
+  const filler = '- [ ] [[finding-open-x]] open research placeholder abcxyz [date:: 2026-01-01] [impact:: P3]\n';
+  const huge = '# 调研记录\n\n## 未解决问题\n\n' + filler.repeat(400) + 'UNIQUE_TAIL_MARKER_ZZZ\n';
+  fs.writeFileSync(path.join(dir, 'findings.md'), huge, 'utf8');
+  const r = runHookDetailed('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(huge.length > 30000, `fixture 应超 ARCHIVE_MISSING_INJECT_LIMIT，实际 ${huge.length}`);
+  assert.ok(Buffer.byteLength(r.stdout, 'utf8') < 50000, '总输出仍 < 50KB，确保是层2 截断而非全局 50KB 截断主导');
+  assert.ok(!r.stdout.includes('UNIQUE_TAIL_MARKER_ZZZ'), 'findings 尾部不应注入——证明层2 截断了缺 ARCHIVE 的全文');
+  assert.ok(r.stdout.includes('缺少 <!-- ARCHIVE -->'), '应含层2 ARCHIVE 缺失截断警告');
+});
+
 test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
   const dir = makeV6Project('ss-walkthrough-recent', { walkToday: false });
   const rows = Array.from({ length: 12 }, (_, i) => {

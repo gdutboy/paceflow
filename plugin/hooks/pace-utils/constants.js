@@ -6,6 +6,11 @@ const PACE_VERSION = 'v6.1.1';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
+// 应保持 <!-- ARCHIVE --> 双区结构的文件（spec.md 无活跃/归档之分，排除）。
+// checkArchiveFormat 缺失检测（层1）与 session-start 注入兜底（层2）共用此集合。
+const ARCHIVE_REQUIRED_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md');
+// 层2：应有 ARCHIVE 的文件缺标记且全文超此字符数时，session-start 截断注入兜底，防全文灌爆 context。
+const ARCHIVE_MISSING_INJECT_LIMIT = Math.max(2000, Number(process.env.PACE_ARCHIVE_MISSING_INJECT_LIMIT) || 30000);
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const PROJECT_ROOT_FILE = 'project-root';
@@ -87,6 +92,8 @@ module.exports = {
   CODE_EXTS,
   ARTIFACT_FILES,
   MIGRATABLE_ARTIFACT_FILES,
+  ARCHIVE_REQUIRED_FILES,
+  ARCHIVE_MISSING_INJECT_LIMIT,
   VAULT_PATH,
   ARTIFACT_ROOT_CHOICE_FILE,
   PROJECT_ROOT_FILE,

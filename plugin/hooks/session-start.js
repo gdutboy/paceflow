@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, formatBridgeHint, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
+const { PACE_VERSION, ts, todayISO, isPaceProject, ARTIFACT_FILES, SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, readFull, createTemplates, ensureProjectInfra, scanRelatedNotes, getArtifactDir, getProjectName, formatBridgeHint, FORMAT_SNIPPETS, ARCHIVE_MARKER, ARCHIVE_PATTERN, ARCHIVE_REQUIRED_FILES, ARCHIVE_MISSING_INJECT_LIMIT, extractOpenKeys, detectLegacyImplFormat, summarizeActiveChanges, artifactRootChoiceNeeded, artifactRootChoiceMessage } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -418,7 +418,16 @@ for (const file of ARTIFACT_FILES) {
 
   process.stdout.write(`=== ${file} ===\n`);
   const archiveMatch = full.match(ARCHIVE_PATTERN);
-  let output = archiveMatch ? full.slice(0, archiveMatch.index) : full;
+  let output;
+  if (archiveMatch) {
+    output = full.slice(0, archiveMatch.index);
+  } else if (ARCHIVE_REQUIRED_FILES.includes(file) && full.length > ARCHIVE_MISSING_INJECT_LIMIT) {
+    // 层2：应有 ARCHIVE 的双区文件缺标记且超限 → 截断兜底，防全文灌爆 context（findings/walkthrough 可达 10 万字符）
+    output = full.slice(0, ARCHIVE_MISSING_INJECT_LIMIT)
+      + `\n\n（⚠️ ${file} 缺少 <!-- ARCHIVE --> 标记，已截断注入以防全文灌爆 context；请派 artifact-writer 修复双区结构）\n`;
+  } else {
+    output = full;
+  }
 
   // T-385: spec.md 截断 — 保留项目事实与禁止事项，省略依赖长列表
   if (file === 'spec.md') {
