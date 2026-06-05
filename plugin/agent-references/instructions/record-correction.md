@@ -73,28 +73,34 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## 详情文件结构
 
+frontmatter 五个文本字段填**简述**（一句话，从输入的完整文本提炼），用单引号包裹；**完整文本写入正文对应段落**。两份分离：frontmatter 简述给 AI 快读/Dataview，正文完整给人读。
+
 ```markdown
 ---
-[frontmatter, 见 spec §2.3，注意经过 knowledge-link 归一]
+[frontmatter, 见 spec §2.3：五个文本字段填简述（single-quoted），经 knowledge-link 归一]
 ---
 
 # Correction: <派生的 title>
 
+## 触发引用
+
+<trigger-quote 完整原话>
+
 ## 错误行为
 
-<wrong-behavior>
+<wrong-behavior 完整>
 
 ## 正确做法
 
-<correct-behavior>
+<correct-behavior 完整>
 
 ## 触发场景
 
-<trigger-scenario>
+<trigger-scenario 完整>
 
 ## 根本原因
 
-<root-cause>
+<root-cause 完整>
 
 ## 关联知识
 

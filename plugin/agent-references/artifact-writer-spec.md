@@ -82,15 +82,17 @@ schema-version: "6.0"
 ```yaml
 correction-id: CORRECTION-YYYY-MM-DD-NN
 date: YYYY-MM-DD
-trigger-quote: ""
-wrong-behavior: ""                   # ≥ 20 字符
-correct-behavior: ""                 # ≥ 20 字符
-trigger-scenario: ""
-root-cause: ""
-knowledge-link: null                 # "[[note]]" 或下方 project-scope
+trigger-quote: '触发原话简述（一句话）'
+wrong-behavior: '错误行为简述（一句话，≥ 20 字符）'
+correct-behavior: '正确做法简述（一句话，≥ 20 字符）'
+trigger-scenario: '触发场景简述（一句话）'
+root-cause: '根因简述（一句话）'
+knowledge-link: "[[note]]"           # 或 null（配 project-scope）
 project-scope: null                  # "project-only" 或 null
 schema-version: "6.0"
 ```
+
+五个文本字段（`trigger-quote` / `wrong-behavior` / `correct-behavior` / `trigger-scenario` / `root-cause`）在 frontmatter 填**简述**（一句话，便于 AI 快读与 Dataview 查询），用单引号 `'...'` 包裹（防内部双引号破 YAML）；**完整详情写入正文对应段落**（见 `instructions/record-correction.md` 详情文件结构），不进 frontmatter。
 
 `correction-id` 是稳定 ID；详情文件名和 wikilink 必须追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。
 
