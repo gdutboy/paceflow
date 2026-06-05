@@ -421,10 +421,12 @@ for (const file of ARTIFACT_FILES) {
   let output;
   if (archiveMatch) {
     output = full.slice(0, archiveMatch.index);
-  } else if (ARCHIVE_REQUIRED_FILES.includes(file) && full.length > ARCHIVE_MISSING_INJECT_LIMIT) {
+  } else if (ARCHIVE_REQUIRED_FILES.includes(file) && Buffer.byteLength(full, 'utf8') > ARCHIVE_MISSING_INJECT_LIMIT) {
     // 层2：应有 ARCHIVE 的双区文件缺标记且超限 → 截断兜底，防全文灌爆 context（findings/walkthrough 可达 10 万字符）
-    output = full.slice(0, ARCHIVE_MISSING_INJECT_LIMIT)
-      + `\n\n（⚠️ ${file} 缺少 <!-- ARCHIVE --> 标记，已截断注入以防全文灌爆 context；请派 artifact-writer 修复双区结构）\n`;
+    const archiveFooter = `\n\n（⚠️ ${file} 缺少 <!-- ARCHIVE --> 标记，已截断注入以防全文灌爆 context；请派 artifact-writer 修复双区结构）\n`;
+    // ARCH-01：按 UTF-8 字节截断，并把 footer 字节算进预算——确保整段（含警告）≤ 阈值，footer 不被全局字节守卫抢先截断而不可达（CJK ~3 字节/字符）。
+    output = sliceUtf8ToBytes(full, Math.max(0, ARCHIVE_MISSING_INJECT_LIMIT - Buffer.byteLength(archiveFooter, 'utf8')))
+      + archiveFooter;
   } else {
     output = full;
   }

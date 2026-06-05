@@ -190,7 +190,9 @@ function archiveV5(projectPath, dryRun, force) {
         fs.writeFileSync(p.backupPath, p.original, 'utf8');
         newArtifacts.push(p.backupPath);
       }
-      restoreFiles.push({ filePath: p.filePath, before: p.original });
+      // MIGV5-02-REG：回滚 before 用 filePath 调用前真实字节——force+hasBackup 时 p.original 是原始 v5 备份（sourcePath=backupPath），
+      // 用它回滚会把文件写成原始 v5、丢失调用前真实状态。此处 filePath 尚未被下一行覆盖，readFileSync 得到的正是调用前内容。
+      restoreFiles.push({ filePath: p.filePath, before: fs.readFileSync(p.filePath, 'utf8') });
       fs.writeFileSync(p.filePath, p.newContent, 'utf8');
       const backupNote = p.hasBackup ? `使用已有 ${p.file}.v5-backup 作为源，不覆盖备份` : `备份 ${p.file}.v5-backup (${p.original.length} 字符)`;
       console.log(`[DONE] ${p.file}：${backupNote}，新文件 ${p.newContent.length} 字符`);

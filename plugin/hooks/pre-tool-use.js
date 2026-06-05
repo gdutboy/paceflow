@@ -722,7 +722,7 @@ paceUtils.withStdinParsed((stdin) => {
           (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
         const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : bashArtifactDenyReason(bashCommand);
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_BASH_ARTIFACT${teammateTag}`, {
           proj,
@@ -748,7 +748,7 @@ paceUtils.withStdinParsed((stdin) => {
           powershellCommandReferencesArtifact(powershellCommand, cwd, artDir));
       if (mutatesArtifact) {
         const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : powershellArtifactDenyReason(powershellCommand);
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT${teammateTag}`, {
           proj,
@@ -775,7 +775,7 @@ paceUtils.withStdinParsed((stdin) => {
           (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
         const reason = v5MigrationInfo.needsPrompt ? v5MigrationReason : monitorArtifactDenyReason(bashCommand);
-        const output = denyOrHint(reason);
+        const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_MONITOR_ARTIFACT${teammateTag}`, {
           proj,

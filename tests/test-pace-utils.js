@@ -344,6 +344,7 @@ test('segmentAnchorPrefix: wrapper 与 for…do 前缀剥离后锚定动词', ()
   assert.ok(re.test('sudo -n rm task.md'), 'sudo flag');
   assert.ok(re.test('nohup rm task.md'), 'nohup');
   assert.ok(re.test('for f in .pace/locks/*; do rm "$f"; done'), 'for…do');
+  assert.ok(re.test('ls | xargs rm task.md'), 'xargs 管道剥离（RES-GUARD）');
 });
 
 test('segmentAnchorPrefix: 不把动词作为单词一部分误锚定', () => {
@@ -430,6 +431,15 @@ test('bash-guard BG-06: 替代引擎 deno/bun/ts-node/ruby/php 内联写 artifac
   assert.ok(!m("php -r \"file_get_contents('x.md');\""), 'php file_get_contents 只读');
 });
 
+test('bash-guard RES-GUARD: xargs 包装的 mutating 动词识别 + 只读不误判（审计 xargs 两轮点名残留）', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(m('ls | xargs rm task.md'), 'xargs rm');
+  assert.ok(m('find . -name "*.md" | xargs rm'), 'find | xargs rm');
+  assert.ok(m('cat list | xargs -n1 rm'), 'xargs -n1 选项剥离');
+  assert.ok(!m('ls | xargs cat'), 'xargs cat 只读不误判（防 over-block）');
+  assert.ok(!m('ls | xargs grep foo'), 'xargs grep 只读不误判');
+});
+
 test('bash-guard BG-01: runtime-control 锁经 for…do/分组/wrapper/换行删除均拦截', () => {
   const dir = makeTmpDir('bg-runtime');
   const mut = (cmd) => bashGuard.bashCommandMutatesArtifactRuntimeControl(cmd, dir);
@@ -488,6 +498,55 @@ test('powershell-guard PSG-04/A02: 只读命令含 writeFileSync token 不 over-
   const dir = makeTmpDir('ps-overblock');
   assert.ok(!powershellGuard.powershellCommandEmbedsArtifactWriteScript('Get-Content task.md | Select-String writeFileSync', dir, dir), '只读 Select-String token 放行');
   assert.ok(powershellGuard.powershellCommandEmbedsArtifactWriteScript("node -e \"require('fs').writeFileSync('task.md','x')\"", dir, dir), 'node 引擎写 artifact 仍拦');
+});
+
+test('powershell-guard RES-GUARD: `n/`r 语句分隔后的 mutating 识别（PSG-03 反噬修正）', () => {
+  const m = powershellGuard.powershellCommandLooksMutating;
+  // PowerShell `n 是单行多语句最地道写法，应当语句分隔符识别——不被剥成字面 n 而失锚
+  assert.ok(m('Write-Host hi`nRemove-Item task.md'), '`n 分隔的 Remove-Item');
+  assert.ok(m('Write-Host hi`r`nRemove-Item task.md'), '`r`n 分隔（CRLF）');
+  // 只读不误判：`n 分隔的纯读命令不算 mutating（防 over-block）
+  assert.ok(!m('Write-Host hi`nGet-Content task.md'), '`n 分隔 Get-Content 只读不误判');
+  // 回归护栏：`s 等非分隔转义仍剥成字面（ta`sk.md → task.md，PSG-03 原行为）
+  const dir = makeTmpDir('ps-backtick-regress');
+  assert.ok(powershellGuard.powershellCommandReferencesArtifact('Set-Content ta`sk.md x', dir, dir), 'ta`sk.md 仍匹配 task.md');
+});
+
+test('powershell-guard RES-GUARD: `n 分隔删 runtime-control 锁被拦截', () => {
+  const dir = makeTmpDir('ps-backtick-n-lock');
+  const mut = (cmd) => powershellGuard.powershellCommandMutatesArtifactRuntimeControl(cmd, dir);
+  assert.ok(mut('Write-Host x`nRemove-Item .pace/artifact-writer.lock'), '`n 分隔删锁');
+});
+
+test('powershell-guard HOTFIX-01: 双引号字面内 `n 不当语句分隔（over-block 防护，CHG-08 T-003 回归）', () => {
+  const m = powershellGuard.powershellCommandLooksMutating;
+  // 双引号字符串字面内的 `n 是输出文本换行、非命令分隔——字面内以 mutating cmdlet 开头的行不应被误判 mutating
+  assert.ok(!m('Write-Output "task.md`nRemove-Item temp`ndone"'), '字面内 `n + Remove-Item 行首不误判（over-block）');
+  assert.ok(!m('Write-Output "Updated task.md`nNew-Item logs created"'), '字面内 `n + New-Item 行首不误判');
+  assert.ok(!m('Write-Host "See task.md`nMove-Item backup saved"'), '字面内 `n + Move-Item 行首不误判');
+  // 回归护栏：引号【外】的 `n 仍当语句分隔——T-003 多语句绕过检测保住
+  assert.ok(m('Write-Host hi`nRemove-Item task.md'), '引号外 `n 多语句仍检测（T-003 不退）');
+  assert.ok(m('Write-Host hi`r`nRemove-Item task.md'), '引号外 `r`n 仍检测');
+});
+
+test('bash-guard HCR-01: open() mode= 关键字参数写模式识别（BG-05 收窄反噬修正）', () => {
+  const m = bashGuard.bashCommandLooksMutating;
+  assert.ok(m("python -c \"open('task.md', mode='w')\""), 'mode= 关键字（第二参）');
+  assert.ok(m("python -c \"open(file='task.md', mode='w')\""), 'file=/mode= 全关键字');
+  assert.ok(m("python3 -c \"open('task.md', encoding='utf8', mode='w')\""), 'mode= 在第三参');
+  // 位置参回归 + 只读不误判（防 over-block）
+  assert.ok(m("python -c \"open('task.md', 'w')\""), '位置参 w（回归）');
+  assert.ok(!m("python -c \"open('task.md', mode='r')\""), 'mode=r 只读不误判');
+  assert.ok(!m("python -c \"open('task.md').read()\""), '无模式只读（回归）');
+});
+
+test('powershell-guard HCR-01: open() mode= 识别 + 只读不 over-block（与 bash BG-05 对称）', () => {
+  const m = powershellGuard.powershellCommandLooksMutating;
+  assert.ok(m("python -c \"open('task.md', mode='w')\""), 'ps open mode=w');
+  assert.ok(m("python -c \"open('task.md', 'w')\""), 'ps open 位置参 w');
+  // 修 bash↔ps 不对称：ps:118 裸 open\\s*\\( 此前 over-block 只读
+  assert.ok(!m("python -c \"open('task.md').read()\""), 'ps 只读 open 不 over-block');
+  assert.ok(!m("python -c \"open('task.md', 'r')\""), 'ps open 读模式不误判');
 });
 
 // ============================================================
@@ -584,6 +643,24 @@ test('MIGV5-02: 阶段一失败时零写盘（两阶段原子性）', () => {
   // 阶段一失败 → 未写任何 backup、未建 changes/（零写盘）
   assert.ok(!fs.existsSync(path.join(dir, 'task.md.v5-backup')), '阶段一失败不应已写 task.md backup');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '阶段一失败不应已建 changes/');
+});
+
+test('MIGV5-02-REG: force+hasBackup 阶段二失败回滚还原【调用前真实状态】而非原始 v5 备份', () => {
+  const dir = makeTmpDir('migv5-02-reg');
+  // 每个 migratable artifact：当前内容=调用前真实状态（CURRENT），.v5-backup=原始 v5（ORIGINAL）——二者不同是本回归关键
+  const v5Files = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+  for (const f of v5Files) {
+    fs.writeFileSync(path.join(dir, f), `# ${f}\n\n调用前真实状态 CURRENT_${f}\n`, 'utf8');
+    fs.writeFileSync(path.join(dir, `${f}.v5-backup`), `# ${f}\n\n原始 v5 备份 ORIGINAL_${f}\n`, 'utf8');
+  }
+  // 注入阶段二写失败：findings.md（plan 末位）改成目录 → 阶段二 writeFileSync(目录) 抛 EISDIR，触发回滚前面已写的 task/impl/walkthrough
+  fs.rmSync(path.join(dir, 'findings.md'));
+  fs.mkdirSync(path.join(dir, 'findings.md'));
+  assert.throws(() => batchArchiveV5.archiveV5(dir, false, true), /回滚|失败/);
+  // force+hasBackup 时 sourcePath=backup，p.original 是原始 v5；回滚 before 若用 p.original 会把 task.md 写成原始 v5（保真度回归）
+  const taskAfter = fs.readFileSync(path.join(dir, 'task.md'), 'utf8');
+  assert.ok(taskAfter.includes('CURRENT_task.md'), '回滚应还原 task.md 调用前真实状态');
+  assert.ok(!taskAfter.includes('ORIGINAL_task.md'), 'force+hasBackup 回滚不应还原成原始 v5 备份内容');
 });
 
 test('A03: 迁移成功写 migrated state，回滚后 v5 可被重新检测', () => {

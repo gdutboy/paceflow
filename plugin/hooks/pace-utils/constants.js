@@ -2,15 +2,17 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v6.1.3';
+const PACE_VERSION = 'v6.1.4';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
 // 应保持 <!-- ARCHIVE --> 双区结构的文件（spec.md 无活跃/归档之分，排除）。
 // checkArchiveFormat 缺失检测（层1）与 session-start 注入兜底（层2）共用此集合。
 const ARCHIVE_REQUIRED_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md');
-// 层2：应有 ARCHIVE 的文件缺标记且全文超此字符数时，session-start 截断注入兜底，防全文灌爆 context。
-const ARCHIVE_MISSING_INJECT_LIMIT = Math.max(2000, Number(process.env.PACE_ARCHIVE_MISSING_INJECT_LIMIT) || 30000);
+// 层2：应有 ARCHIVE 的文件缺标记且全文超此【字节】数时，session-start 按 UTF-8 字节截断注入兜底，防全文灌爆 context。
+// ARCH-01：单位是字节（非字符）——全局 SESSION_OUTPUT_BUDGET_BYTES(46000) 字节守卫先于注入安装；层2 若按字符截断，
+// CJK（~3 字节/字符）会让截断内容远超字节预算、缺失警告 footer 被守卫抢先截断而不可达。取 20000 < 46000 留足余量。
+const ARCHIVE_MISSING_INJECT_LIMIT = Math.max(2000, Number(process.env.PACE_ARCHIVE_MISSING_INJECT_LIMIT) || 20000);
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const PROJECT_ROOT_FILE = 'project-root';

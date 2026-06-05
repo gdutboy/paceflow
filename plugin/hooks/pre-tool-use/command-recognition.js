@@ -16,6 +16,7 @@ const BASH_WRAPPERS = [
   'busybox',
   'stdbuf(?:\\s+-\\S+)*',
   'nice(?:\\s+-\\S+)*',
+  'xargs(?:\\s+-\\S+)*',     // RES-GUARD：xargs rm/mv 等（审计两轮点名）；-I {} 占位符目标 reference 不可达，归 T-008 finding
 ];
 
 // 脚本引擎默认集：可内联执行写文件代码的解释器。python\d* 覆盖 python / python3。

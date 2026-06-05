@@ -34,8 +34,25 @@ const PS_POSITIONAL_CMDLETS = [
 ].join('|');
 
 function normalizePowerShellSearchText(value) {
-  return String(value || '')
-    .replace(/`([\s\S])/g, '$1')   // PSG-03：剥任意位置单反引号转义（ta`sk.md 运行时是 task.md）
+  const s = String(value || '');
+  // PSG-03 修正 + HOTFIX-20260606-01 over-block 防护：backtick 转义按引号上下文处理。
+  // 引号【外】的 `n/`r 转真换行、`t 转空格（真命令分隔，供段首锚点识别 `n 多语句绕过）；
+  // 引号【内】字符串字面的 `n 等是输出文本、非命令边界，统一剥成字面字符（保持 ta`sk.md→task.md），
+  // 避免把字面内以 cmdlet 开头的行误锚成 mutating 语句、over-block 合法只读 Write-Output/Write-Host。
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '`' && i + 1 < s.length) {
+      const nx = s[i + 1];
+      if (!quote && (nx === 'n' || nx === 'r')) { out += '\n'; i++; continue; }
+      if (!quote && nx === 't') { out += ' '; i++; continue; }
+      out += nx; i++; continue;   // 引号内任意转义、引号外其他转义 → 剥成字面字符
+    }
+    if (ch === '"' || ch === "'") quote = quote === ch ? null : (quote || ch);
+    out += ch;
+  }
+  return out
     .replace(/\\+/g, '/')
     .replace(/\b([A-Za-z]:)\/+/g, '$1/')
     .replace(/([^:])\/{2,}/g, '$1/');
@@ -115,7 +132,7 @@ function commandTextLooksMutating(command) {
   const c = normalizePowerShellSearchText(stripHereStrings(command));
   // PSG-01/02 共享锚点 + A08 别名全集 + git 还原拦截（与 bash 对称）。
   return new RegExp(PS_MUTATING_ANCHOR + `(?:${PS_MUTATING_CMDLETS}|git\\s+(?:checkout|restore|clean|reset|mv|rm))\\b`, 'i').test(c) ||
-    new RegExp(PS_MUTATING_ANCHOR + '(?:node|python\\d*)\\b[^\\n;|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\\s*\\()', 'i').test(c) ||
+    new RegExp(PS_MUTATING_ANCHOR + '(?:node|python\\d*)\\b[^\\n;|]*(?:writeFile|appendFile|rmSync|renameSync|mkdirSync|write_text|write_bytes|open\\s*\\([^)]*?,\\s*(?:mode\\s*=\\s*)?[\'"][^\'"]*[wax+])', 'i').test(c) ||
     /\[(?:System\.)?IO\.File\]::(?:WriteAllText|WriteAllBytes|WriteAllLines|AppendAllText|AppendAllLines|Delete|Move|Copy|Replace|Create)\b/i.test(c) ||
     /\[(?:System\.)?IO\.(?:StreamWriter|FileStream)\]::new\b/i.test(c) ||
     /\[(?:System\.)?IO\.Directory\]::(?:Delete|Move|CreateDirectory)\b/i.test(c);
@@ -124,7 +141,7 @@ function commandTextLooksMutating(command) {
 function commandTextContainsWriteApi(command) {
   const c = normalizePowerShellSearchText(stripHereStrings(command));
   return /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rmSync|renameSync|mkdirSync|write_text|write_bytes)\b/i.test(c) ||
-    /\bopen\s*\([^)]*,\s*['"][wax+]/i.test(c) ||
+    /\bopen\s*\([^)]*?,\s*(?:mode\s*=\s*)?['"][wax+]/i.test(c) ||
     /\[(?:System\.)?IO\.File\]::(?:WriteAllText|WriteAllBytes|WriteAllLines|AppendAllText|AppendAllLines|Delete|Move|Copy|Replace|Create)\b/i.test(c) ||
     /\[(?:System\.)?IO\.(?:StreamWriter|FileStream)\]::new\b/i.test(c) ||
     /\[(?:System\.)?IO\.Directory\]::(?:Delete|Move|CreateDirectory)\b/i.test(c);
