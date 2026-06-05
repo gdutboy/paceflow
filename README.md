@@ -372,6 +372,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.1.2 | 2026-06-05 | ARCHIVE 缺失检测盲区两层修复（defense-in-depth）：层1 `checkArchiveFormat` 检测应有 ARCHIVE 的双区文件（排除无双区的 spec.md）完全缺失标记并在 post-tool-use 编辑时 / stop 退出时提醒修复；层2 `session-start` 注入对缺标记且超 `ARCHIVE_MISSING_INJECT_LIMIT` 的大文件截断兜底，防 findings/walkthrough 等 ARCHIVE 被删时全文灌爆 context。补上 pre-tool-use 归档 deny 仅覆盖 task/impl 的范围缺口 |
 | v6.1.1 | 2026-06-05 | v6.1.0 发布后完整性收尾：LOCKS-001 跨 runtime 重复 ID 复核后降级为已知限制（README 文档化 + finding accepted，因需 artifact-root-bound 运行态架构改动且触发条件苛刻）；审计 P2 代码类 6 处修复——bash-guard `open` 仅写模式判 mutating 消除 read-only over-block（BG-05）、内联写检测扩 deno/bun/ts-node/ruby/php（BG-06）、`changeOwnerStatus` sid 空判 unknown 不漏检 running CHG（STOP-03）、`hasChangesDir` isDirectory 区分同名文件（PU-002）、change-owners/reservations stale sweep 遏制无界增长（RSL-01/02）；审计 P3/I 级 record-finding 归档为技术债 |
 | v6.1.0 | 2026-06-04 | audit-2026-06-01/06-03 修复批次：PU-001 批准门伪造（路径 `.` 段绕过 marker-guard，改用 `path.posix.normalize` 折叠）；抽取 bash/powershell 共享守卫识别层根治单点污染多分支；解析/生命周期五处（operation 首 token / checkbox 归一 / v5 ignored 死锁 / owner 同源 / Edit 对称）；v5→v6 迁移闭环四处；compact 注入 walkthrough 详情截断方向（同日多条保留最新）；并发/fail-open 七处（锁原子上线 / stdin null / 配置缺失 fail-closed / Stop counter 死循环）；**TEAMMATE 纯执行者边界**——写代码门（C/E/no-active/索引）升 hardDeny + 三档降级文档化；测试基建（日志 delta 截断守卫 + agent-tests raw 非空断言）；`.gitattributes` 行尾归一 + P2 文档一致性。LOCKS-001 跨 runtime 重复 ID 因需 artifact-root-bound 运行态架构决策 deferred |
 | v6.0.61 | 2026-06-03 | 修复 agent-tests YAML parser 回归 + 补 framework 单元测试 |
@@ -446,4 +447,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v6.1.1 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.1.2 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
