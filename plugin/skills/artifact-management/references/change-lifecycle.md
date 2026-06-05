@@ -18,7 +18,7 @@ changes/chg-yyyymmdd-nn.md
 changes/hotfix-yyyymmdd-nn.md
 ```
 
-ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill 根目录（不是本 `references/` 目录）为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`。不要用 `find` / `ls` 搜索 `~/.claude/plugins/cache` 猜版本：
+ID 由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，以当前 skill 根目录（而非本 `references/` 目录）为基准拼出同版本绝对路径 `../../hooks/reserve-artifact-id.js`。helper 路径以 hook 命令或 skill 根目录为准，不扫描 `~/.claude/plugins/cache` 猜版本：
 
 ```bash
 node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" --operation create-chg
@@ -42,9 +42,9 @@ node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" -
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new
 ```
 
-再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号，主 session 不自行写入 artifact 文件。
+再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号；artifact 文件统一由 artifact writer 写入。
 
-reserve helper 从目标项目 cwd 与 artifact-root 配置解析 artifact_dir，不接受 `--artifact-dir` / `--artifact-root` / `--project-dir`；自动化场景只可用 `--cwd` 指定项目 cwd。普通子目录默认继承最近父级 Project Root，`local` 表示 Project Root 本地目录。若用户已明确选择 vault/local 但配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper；若当前子目录是独立项目，先运行 `set-project-root --mode independent`。不要手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录或继承父 Project Root 的子目录里手写该文件。
+reserve helper 从目标项目 cwd 与 artifact-root 配置解析 artifact_dir；自动化场景用 `--cwd` 指定项目 cwd，其余 artifact/root/project 路径由 helper 自行解析。普通子目录默认继承最近父级 Project Root，`local` 表示 Project Root 本地目录。若用户已明确选择 vault/local 但配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper；若当前子目录是独立项目，先运行 `set-project-root --mode independent`。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。
 
 `T-NNN` 是单个 CHG/HOTFIX 内的局部任务编号。不同 CHG 可以都从 `T-001` 开始；所有状态更新必须同时带 `target: CHG-...` 和 `task-id: T-...`，避免多 worktree / 多 CHG 并发时产生歧义。
 
@@ -88,7 +88,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 
 结束一个 CHG/HOTFIX 前必须满足：
 
-- [ ] 验证前不要派 `verify` / `close-chg`；验证必须先运行并读取结果
+- [ ] 先运行并读取验证结果，再派 `verify` / `close-chg`
 - [ ] `changes/<id>.md` 所有任务为 `[x]` 或 `[-]`（最后任务可由 `close-chg complete-open-tasks=true` 收口）
 - [ ] frontmatter `status: completed`
 - [ ] `completed-date` 非 null

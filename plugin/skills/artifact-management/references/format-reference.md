@@ -8,7 +8,7 @@
 
 ### spec.md
 
-`spec.md` 是 artifact root 内的项目事实文件，记录项目目标、技术栈、依赖、配置、目录结构和编码约定。它由主 session 直接 `Edit` 维护，不由 `artifact-writer` 创建 CHG 生命周期记录；已有文件禁止用 `Write` 覆盖。
+`spec.md` 是 artifact root 内的项目事实文件，记录项目目标、技术栈、依赖、配置、目录结构和编码约定。它由主 session 直接 `Edit` 维护，不由 `artifact-writer` 创建 CHG 生命周期记录；已有文件用 `Edit` 增量更新。
 
 `spec.md` 不含 `<!-- ARCHIVE -->` / `<!-- APPROVED -->` / `<!-- VERIFIED -->`，也不参与 `close-chg` / `archive-chg` 的索引归档。
 
@@ -52,7 +52,7 @@
 <!-- ARCHIVE -->
 ```
 
-已知 worktree/branch 上下文时，在完成内容中保留 `[worktree:: ...] [branch:: ...]`；如果 close-chg 时没有这些上下文，允许省略，不要手写占位。
+已知 worktree/branch 上下文时，在完成内容中保留 `[worktree:: ...] [branch:: ...]`；如果 close-chg 时没有这些上下文，直接省略该标记（仅在上下文已知时填写真实值）。
 
 ### findings.md
 

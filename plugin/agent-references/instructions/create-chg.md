@@ -32,38 +32,37 @@ technical-decision: <How>
 - `background` / `scope` / `technical-decision`（可选）
 - `execution-context`（可选但推荐，由 reserve helper 输出，例如 `[worktree:: main] [branch:: main]`）
 
-缺失必填字段时必须立即报告 `missing-fields`，且不得推断 / 兜底：
-- 缺 `title` 或 `title` 为空 → `missing-fields: title`，禁止用 `background` / `scope` / task 描述派生标题
+缺失必填字段时立即报告 `missing-fields`，字段值以 prompt 原样为准：
+- 缺 `title` 或 `title` 为空 → `missing-fields: title`，`title` 只能取自 prompt 显式 `title`，与 `background` / `scope` / task 描述无关
 - 缺 `tasks` 或 `tasks` 为空 → `missing-fields: tasks`
-- 任一必填字段缺失时，不使用 hook 预留编号写入，不读取索引，不 Write / Edit 任何 artifact；报告 `missing-fields`
+- 任一必填字段缺失时仅报告 `missing-fields`：跳过 hook 预留编号写入、跳过读取索引、跳过对任何 artifact 的 Write / Edit
 
 ## 操作步骤
 
-> **报告标题强制**：最终输出的第一行必须字面是 `## artifact-writer 报告`。禁止简化为 `## 报告`，禁止改写为 `## create-chg 报告` / `## 执行报告` / `## 操作摘要`，禁止在标题前添加任何说明文字。`report_title_strict` 会机械检查，标题不匹配即 FAIL。
+> **报告标题强制**：最终输出的第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无说明文字、无空行）。`report_title_strict` 会机械检查，标题不匹配即 FAIL。
 
-0. 前置检查：先校验必填字段；缺字段 → `missing-fields` 且不写文件。再用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
+0. 前置检查：先校验必填字段；缺字段 → 报告 `missing-fields` 并停止（不写文件）。再用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
-2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，可保留该 CHG 内编号，但不得扫描全项目分配全局 T-ID。
+2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，保留该 CHG 内编号。任务编号始终是 CHG 局部的，编号来源限于本次输入顺序或输入自带的 `T-NNN`。
 3. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
 4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
 5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部；按下方"索引插入契约"组织替换片段）
 6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区；按下方"索引插入契约"组织替换片段）
-7. 基于 payload + Edit 成功 + hook 反馈做低成本验证；除非 hook 报告本次目标问题，不要再 Read 刚写好的详情文件或两个索引文件
+7. 基于 payload + Edit 成功 + hook 反馈做低成本验证；验证只依据这三项信号即可，仅当 hook 报告本次目标问题时才重新 Read 详情文件或两个索引文件
 
-资源约束：
-- 不读 `walkthrough.md` / `findings.md` / `corrections.md`
-- 不搜索 `~/.claude`
-- 不为报告统计大小或行数运行 `wc` / `du`
+资源约束（本操作只触达详情文件与 `task.md` / `implementation_plan.md` 两个索引）：
+- 读取范围限于上述目标文件，`walkthrough.md` / `findings.md` / `corrections.md` 与 `~/.claude` 均不在本操作范围内
+- 报告中的体量描述基于已掌握的 payload，无需运行 `wc` / `du` 统计大小或行数
 
 ## CHG-ID 分配（hook reservation + 二次防御）
 
-并发派多 agent 时不能靠扫描索引分配 nn。主 session 应先运行 hook/skill 提供的 `reserve-artifact-id.js --operation create-chg` 绝对路径命令，原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写进 Agent prompt。artifact-writer 必须优先使用 prompt 中的 hook 预留编号；不得重新扫描索引自行分配编号。
+并发派多 agent 时，编号唯一来源是 hook 预留：主 session 先运行 hook/skill 提供的 `reserve-artifact-id.js --operation create-chg` 绝对路径命令，原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写进 Agent prompt。artifact-writer 始终使用 prompt 中的 hook 预留编号（`reserved-id` 是 nn 的权威来源）。
 
 二次防御：
 
 1. 若 prompt 已包含 helper 或 hook deny 文案给出的 `reserved-id` / `reserved-file`：直接使用该编号与文件路径。
-2. 若缺少 reserved 信息但仍要新建 `changes/chg-*.md` / `changes/hotfix-*.md`，不要自行扫描；报告 `hook-deny` 或让主 session 重新派遣 artifact-writer。
-3. 写入目标文件已存在 → 报告 `file-conflict`，主 session 重新派遣；不要用 Write 覆盖已有详情。
+2. 若缺少 reserved 信息：报告 `hook-deny` 并停止，由主 session 重新预留后再派遣 artifact-writer（新建 `changes/chg-*.md` / `changes/hotfix-*.md` 始终以 reserved 信息为前提）。
+3. 写入目标文件已存在 → 报告 `file-conflict` 并停止，由主 session 重新派遣；已有详情保持原样（Write 仅用于尚不存在的预留文件）。
 
 ## 详情文件结构
 
@@ -148,15 +147,15 @@ new_string:
 ```
 </example>
 
-写入前自检 `new_string`：如果 `old_string` 以换行开头，`new_string` 也保留一个前导换行，使新增索引行不会粘到上一行注释、标题或正文后面。验证"跨索引一致性"时，按行首格式 `^- \[[ x/!-]\] \[\[(chg|hotfix)-YYYYMMDD-NN\]\]` 检查，不只检查文件里是否出现 wikilink。
+写入前自检 `new_string`：如果 `old_string` 以换行开头，`new_string` 也保留一个前导换行，使新增索引行与上一行注释、标题或正文之间保留空行隔开。验证"跨索引一致性"时，按行首格式 `^- \[[ x/!-]\] \[\[(chg|hotfix)-YYYYMMDD-NN\]\]` 逐行匹配（以行首 checkbox + wikilink 的完整格式为准）。
 
 刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
 
-若 prompt 包含 `execution-context`，task.md 与 implementation_plan.md 的索引行必须保留其中的 `[worktree:: ...] [branch:: ...]` 字段，方便多 worktree 并发时人读区分。不要把 session id、lock、owner state 写入 artifact；这些运行态只写 `.pace/`。
+若 prompt 包含 `execution-context`，task.md 与 implementation_plan.md 的索引行必须保留其中的 `[worktree:: ...] [branch:: ...]` 字段，方便多 worktree 并发时人读区分。artifact 索引只写 `[worktree:: ...] [branch:: ...]` 这类人读上下文；session id、lock、owner state 等运行态只写 `.pace/`。
 
 ## 边界
 
-- 缺 `title` 或 `title` 为空 → `missing-fields: title`，不得使用其他字段兜底
+- 缺 `title` 或 `title` 为空 → `missing-fields: title`（`title` 只取自 prompt 显式字段）
 - 缺 `tasks` 或 `tasks` 为空 → `missing-fields: tasks`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 

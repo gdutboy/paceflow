@@ -23,25 +23,25 @@ walkthrough-summary: <完成摘要>
 
 ## 前置检查
 
-0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
+0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 解析 target → 详情文件路径
 2. 文件不存在 → `target-not-found`
 3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed`、`archived` 或 `cancelled`
-   - 若 `status=archived` → 进入 index-only repair：不改详情 frontmatter，只检查/修复 task.md 与 implementation_plan.md 归档位置，并补 walkthrough（若缺）
-   - 若 `status=cancelled` → 进入 cancelled archive-only：不改详情 frontmatter，不要求验证，只检查所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
+   - 若 `status=archived` → 进入 index-only repair：保留详情 frontmatter 原样，只检查/修复 task.md 与 implementation_plan.md 归档位置，并补 walkthrough（若缺）
+   - 若 `status=cancelled` → 进入 cancelled archive-only：保留详情 frontmatter 原样（跳过验证检查），校验所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
    - 若 `status=planned` / `in-progress` → 报告 `format-violation: status not terminal`
 4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
    - 若 `status=cancelled` 但存在非 `[-]` 任务 → 报告 `format-violation: cancelled tasks not all skipped`
 5. **v6 V 阶段强制验证**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
-   - frontmatter `verified-date` 必须不为 null
+   - frontmatter `verified-date` 必须为非 null 值
    - 正文必须含 `<!-- VERIFIED -->` 标记
    - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 在验证通过后派 `close-chg`，或先派 `update-chg action=verify`
    - 两者仅一者存在（不一致）→ 报告 `format-violation: verification state inconsistent`，提示派 `update-chg action=verify` 修复
 
 ## 操作步骤
 
-> **CRLF / stale-read / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，立即重新 `Read` 目标 artifact，基于最新内容重试；这通常是并发 session 改了索引快照，不是 hook 锁失败。
+> **CRLF / stale-read / Edit 匹配失败处理**：修改 artifact 始终只用 `Edit` / `MultiEdit`。若 `Edit` 因换行符差异匹配失败，直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，立即重新 `Read` 目标 artifact，基于最新内容重试；这通常是并发 session 改了索引快照（属并发改动）。
 
 0. **根索引结构预检**：
    - Read `task.md` 与 `implementation_plan.md`
@@ -49,8 +49,8 @@ walkthrough-summary: <完成摘要>
    - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
-   - 若 status 已是 `archived`：不改详情 frontmatter，继续索引 repair
-   - 若 status 是 `cancelled`：不改详情 frontmatter，不写 `archived-date` / `verified-date`，继续索引归档
+   - 若 status 已是 `archived`：保留详情 frontmatter 原样，继续索引 repair
+   - 若 status 是 `cancelled`：保留详情 frontmatter 原样（含 `archived-date` / `verified-date` 维持 null），继续索引归档
    - 否则 Edit 改 `status` → `archived`
    - 若 `archived-date: null`，填 `<ISO 8601 datetime>`
    - 若 `completed-date` 仍为 null（兜底场景）→ 填同一 ISO 8601 datetime
@@ -62,10 +62,11 @@ walkthrough-summary: <完成摘要>
 3. **implementation_plan.md 索引行归档**：同 task.md
 4. **walkthrough.md 添加完成索引行**：
    - Read walkthrough.md
-   - `<slug>` 必须是目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`。禁止用标题 slug。
-   - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。不要写 session id、owner state 或 lock 信息。
+   - `<slug>` 取目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`（slug 来源是文件名，与标题无关）。
+   - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
    - 若已有包含 `[[<slug>]]` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加；若该行缺少索引行已有的执行上下文，则 Edit 该行补齐。
-   - 在"## 最近工作"表格活跃区追加：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`（没有上下文时省略 `[worktree:: ...] [branch:: ...]`）
+   - 在"## 最近工作"表头与分隔行的下一行**插入为第一条**（最新在顶，prepend）：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`（没有上下文时省略 `[worktree:: ...] [branch:: ...]`）
+   - 若 `## 最近工作` 下尚无表头，先写入表头 `| 日期 | 完成内容 | 关联变更 |` 与分隔行 `| --- | --- | --- |`，再把上面的表格行作为表头下第一条写入（见 `artifact-writer-spec.md` §5.3）。
 
 ## ARCHIVE 内容移动（详解）
 
@@ -122,8 +123,8 @@ walkthrough-summary: <完成摘要>
 
 - 任务未全部完成（含 [/] 或 [ ]）→ `format-violation: tasks not done`
 - frontmatter status 不是 completed / archived / cancelled → `format-violation: status not terminal`
-- frontmatter status 已是 archived → 允许 index-only repair，不得报告 already archived
-- frontmatter status 是 cancelled → 允许 index-only 取消归档；不要求 verified-date / `<!-- VERIFIED -->`，且不得改为 archived
+- frontmatter status 已是 archived → 走 index-only repair，报告中说明本次为索引修复（如 `reason: index checked/repaired`）
+- frontmatter status 是 cancelled → 走 index-only 取消归档；跳过 verified-date / `<!-- VERIFIED -->` 检查，并保持 status 为 cancelled
 - frontmatter status 是 cancelled 但任务不全是 `[-]` → `format-violation: cancelled tasks not all skipped`
 - 非 cancelled 的 CHG/HOTFIX：frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示验证通过后派 `close-chg`，或先派 `update-chg action=verify`）
 - 非 cancelled 的 CHG/HOTFIX：frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）

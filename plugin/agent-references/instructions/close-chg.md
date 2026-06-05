@@ -37,16 +37,16 @@ walkthrough-summary: <完成摘要>
 4. 追加验证工作记录
 5. 归档到 ARCHIVE 下方并写 `walkthrough.md`
 
-**禁止**由 agent 自行判断验证是否通过。`verification-confirmed` 缺失或非 true 时，不得写任何 artifact。
+验证是否通过由主 session 判定后经 `verification-confirmed: true` 传入，agent 以此字段为唯一依据。`verification-confirmed` 为布尔 `true` 是写入任何 artifact 的前提；缺失或非 true 时仅报告对应错误码并停止。
 
-主路径：一个连续 CHG 的代码写完后，主 session 先运行验证并读取结果；验证通过后直接派 `close-chg verification-confirmed: true complete-open-tasks: true`。即使详情中仍有 `[ ]` / `[/]` 的 T-NNN，只要这些任务已经在本轮执行并由验证覆盖，也由 close-chg 统一收口。不要先派逐个 `update-status [x]` 再派 `update-chg action=verify` 再归档，除非用户明确要求暂不归档或需要跨 session 留存进度。
+主路径：一个连续 CHG 的代码写完后，主 session 先运行验证并读取结果；验证通过后直接派 `close-chg verification-confirmed: true complete-open-tasks: true`。即使详情中仍有 `[ ]` / `[/]` 的 T-NNN，只要这些任务已经在本轮执行并由验证覆盖，也由 close-chg 统一收口。逐个 `update-status [x]` + `update-chg action=verify` + 归档的拆分路径，仅在用户明确要求暂不归档或需要跨 session 留存进度时使用。
 
-> **报告标题强制**：最终报告第一行必须字面使用 `## artifact-writer 报告`。禁止在标题前输出任何自然语言、空行或说明，尤其禁止 `所有编辑均已通过。生成报告。` / `操作完成，报告如下：` / `验证通过。` 等前缀。失败、幂等、部分修复场景同样适用。
-> **全局对话样式豁免**：最终报告不得继承主 session / CLAUDE.md 的时间戳、Insight 块、固定结尾语或任何前后缀。第一个字符必须是 `#`。
+> **报告标题强制**：最终报告第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无自然语言、无空行、无说明前缀）。失败、幂等、部分修复场景同样适用。
+> **全局对话样式豁免**：最终报告自成一体，第一个字符是 `#`；时间戳、Insight 块、固定结尾语等主 session / CLAUDE.md 样式均不进入本报告。
 
 ## 前置检查
 
-0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。
+0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 解析 target → 详情文件路径；文件不存在 → `target-not-found`
 2. 校验必填字段：
    - 缺 `verification-confirmed` / `complete-open-tasks` / `verify-summary` / `walkthrough-summary` → `missing-fields`
@@ -54,18 +54,17 @@ walkthrough-summary: <完成摘要>
    - `complete-open-tasks` 非布尔 `true` → `format-violation`
 3. Read 详情文件，校验：
    - `<!-- APPROVED -->` 必须存在
-   - frontmatter `status` 不得是 `cancelled`
+   - frontmatter `status` 必须是非 cancelled 的活跃终态前状态（`planned` / `in-progress` / `completed` / `archived`）；`cancelled` 改走 `archive-chg` 取消式归档
    - `verified-date` 与 `<!-- VERIFIED -->` 必须同时存在或同时不存在；仅一者存在 → `format-violation: verification state inconsistent`
-   - 任务清单不得包含 `[!]`
+   - 任务清单全部为 `[ ]` / `[/]` / `[x]` / `[-]`（出现 `[!]` 阻塞任务时先解除阻塞）
 4. 任务收口规则：
-   - 若存在 `[ ]` / `[/]` 且 `complete-open-tasks` 不是 true → `format-violation: tasks not done`
-   - 若 `complete-open-tasks: true`，把所有 `[ ]` / `[/]` T-NNN 改为 `[x]`
-   - W3：若 `## 任务清单` 全部为 `[-]`（全跳过、收口后无任何 `[x]`）→ `format-violation: all tasks skipped, use cancelled + archive-chg`，不写 `completed`、不归档。全 `[-]` 语义是 cancelled（见 `update-chg.md` 全 `[-]` → `cancelled`），应派 `update-chg` 推 `cancelled` 后用 `archive-chg` 取消式归档，而非 close-chg 写 `completed`。
+   - `complete-open-tasks: true` 是收口 `[ ]` / `[/]` 任务的前提；满足时把所有 `[ ]` / `[/]` T-NNN 改为 `[x]`。否则（存在 `[ ]` / `[/]` 但 `complete-open-tasks` 非 true）→ `format-violation: tasks not done`
+   - W3：若 `## 任务清单` 全部为 `[-]`（全跳过、收口后无任何 `[x]`）→ `format-violation: all tasks skipped, use cancelled + archive-chg`，此时保持 status 不变、不归档。全 `[-]` 语义是 cancelled（见 `update-chg.md` 全 `[-]` → `cancelled`），应派 `update-chg` 推 `cancelled` 后用 `archive-chg` 取消式归档（cancelled 的收尾归 `archive-chg`，close-chg 只写非 cancelled 的 `completed`）。
    - close-chg 写 `completed` 的前提：收口后任务全为 `[x]` / `[-]` 且至少有一个 `[x]`（与 `update-chg.md` 一致）。
 
 ## 操作步骤
 
-> **CRLF / stale-read / Edit 匹配失败处理**：若 `Edit` 因换行符差异匹配失败，禁止使用 `Write` 覆盖文件，禁止用 `Bash sed -i` / `perl -pi` / 重定向 / 脚本写文件修改 artifact。直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，这表示其他 session 已改过文件快照；立即重新 `Read` 目标 artifact，基于最新内容重试，不要解释为 hook 锁失败。
+> **CRLF / stale-read / Edit 匹配失败处理**：修改 artifact 始终只用 `Edit` / `MultiEdit`。若 `Edit` 因换行符差异匹配失败，直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，说明其他 session 已改过文件快照（属并发改动）；立即重新 `Read` 目标 artifact，基于最新内容重试。
 
 ### 0. 根索引结构预检
 
@@ -73,7 +72,7 @@ walkthrough-summary: <完成摘要>
 
 - 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`，再继续后续步骤。
 - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`。
-- 禁止先把详情改成 `status: archived`，再回头发现根索引无法归档。
+- 顺序约束：先在本步确认两个根索引均可归档（标记存在或已补、目标索引行可定位），再进入后续修改详情 `status: archived` 的步骤。
 
 ### 1. 完成状态联动
 
@@ -106,10 +105,11 @@ walkthrough-summary: <完成摘要>
   - 两处都没有 → `format-violation: index row not found`
 - Read `implementation_plan.md` 同上
 - Read `walkthrough.md`
-  - `<slug>` 必须是目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`。禁止用标题 slug。
-  - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。不要写 session id、owner state 或 lock 信息。
+  - `<slug>` 取目标详情文件名去掉 `.md` 后的 CHG/HOTFIX slug，例如 `CHG-20260511-02` 对应 `[[chg-20260511-02]]`（slug 来源是文件名，与标题无关）。
+  - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
   - 若今日或历史已有包含 `[[<slug>]]` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加；若该行缺少索引行已有的执行上下文，则 Edit 该行补齐。
-  - 否则在 `## 最近工作` 表格活跃区追加：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`（没有上下文时省略 `[worktree:: ...] [branch:: ...]`）
+  - 否则在 `## 最近工作` 表头与分隔行的下一行**插入为第一条**（最新在顶，prepend）：`| <YYYY-MM-DD> | [[<slug>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`（没有上下文时省略 `[worktree:: ...] [branch:: ...]`）
+  - 若 `## 最近工作` 下尚无表头，先写入表头 `| 日期 | 完成内容 | 关联变更 |` 与分隔行 `| --- | --- | --- |`，再把上面的表格行作为表头下第一条写入（见 `artifact-writer-spec.md` §5.3）。
 
 ### 4. 归档详情状态
 
@@ -135,10 +135,10 @@ walkthrough-summary: <完成摘要>
 
 ## 最终报告硬约束（最后执行）
 
-完成所有 Write/Edit 后，不要先描述“编辑成功”“准备生成报告”“验证通过”。最终回答必须从下面这一行开始：
+完成所有 Write/Edit 后，最终回答从下面这一行开始：
 
 ```markdown
 ## artifact-writer 报告
 ```
 
-禁止在报告前写任何过渡句或说明文字。只输出报告本身，第一个字符必须是 `#`。
+只输出报告本身，第一个字符是 `#`，标题前直接进入该行（无过渡句、无说明文字）。

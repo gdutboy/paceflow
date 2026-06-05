@@ -5,7 +5,7 @@
 
 ## When To Use
 
-用于更新既有 CHG/HOTFIX：批准、批准并开始、暂停/恢复任务、追加记录或只记录验证。连续执行并已验证通过时，默认改用 `close-chg`，不要把最后收尾拆成多次 update。
+用于更新既有 CHG/HOTFIX：批准、批准并开始、暂停/恢复任务、追加记录或只记录验证。连续执行并已验证通过时，默认改用 `close-chg` 一次完成收尾（最后收尾交给单次 `close-chg`，而非多次 update）。
 
 ## Correct Prompt Examples
 
@@ -58,13 +58,13 @@ verify-summary: <已运行并读取的验证结果>
 
 ## 操作步骤
 
-> **报告标题强制**：所有 action（append / replace / update-status / approve / approve-and-start / verify）完成后，报告标题字面使用 `## artifact-writer 报告`（见 `agents/artifact-writer.md` §报告格式与§你不要做的事 #9）。**禁止**改写为 `## 执行报告` / `## artifact-writer 执行报告` / `## 强制报告格式` / `## 操作摘要` 等变体，**禁止**加任何副标题如 `（批量 update-status + frontmatter 联动）`。
-> **全局对话样式豁免**：最终报告不得继承主 session / CLAUDE.md 的时间戳、Insight 块、固定结尾语或任何前后缀。第一行必须直接是 `## artifact-writer 报告`。
-> **错误码层级**：`operation=update-chg` 已识别时，非法 `action` 是字段值非法，必须报告 `format-violation`；禁止报告 `out-of-scope`。`out-of-scope` 仅用于未知 operation（如 `delete-chg`）。
+> **报告标题强制**：所有 action（append / replace / update-status / approve / approve-and-start / verify）完成后，报告第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题作为独立单行（见 `agents/artifact-writer.md` §报告格式）。失败、幂等、部分修复场景同样适用。
+> **全局对话样式豁免**：最终报告自成一体，第一行直接是 `## artifact-writer 报告`；时间戳、Insight 块、固定结尾语等主 session / CLAUDE.md 样式均不进入本报告。
+> **错误码层级**：`operation=update-chg` 已识别时，非法 `action` 属于字段值非法，报告 `format-violation`。`out-of-scope` 的适用范围仅限未知 operation（如 `delete-chg`）。
 
 ### 通用前置
 
-0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
+0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 解析 target → 路径：`changes/chg-yyyymmdd-nn.md` 或 `changes/hotfix-yyyymmdd-nn.md`
 2. 文件不存在 → 报告 `target-not-found`
 
@@ -79,7 +79,7 @@ Read + Edit 整个 section 替换为 content
 ### action=update-status
 
 - 仅适用于 `section=tasks`
-- `new-status=[!]` 表示暂停/阻塞，必须带 `status-reason` / `block-reason` / `pause-reason` 之一；原因写入 `## 工作记录`。`[!]` 不是完成，也不是让其他 worktree 自动接手的信号。
+- `new-status=[!]` 表示暂停/阻塞，必须带 `status-reason` / `block-reason` / `pause-reason` 之一；原因写入 `## 工作记录`。`[!]` 的语义仅为「该任务当前挂起、等待同一 owner 后续恢复」（与完成态 `[x]` 区分，且不触发其他 worktree 接手）。
 - 子流程：
   1. Read changes/chg-xxx.md 找到 `- [<old>] T-NNN`
   2. Edit 改 `<old>` 为 `<new-status>`（参考 spec §4 状态映射）
@@ -89,7 +89,7 @@ Read + Edit 整个 section 替换为 content
      - 全部为 `[x]` 或 `[-]` 且至少一个 `[x]` → Edit frontmatter `status` → `completed`，并添加 `completed-date: <ISO 8601 datetime>`
      - 仍有 `[/]` 但 frontmatter `status: planned` → Edit frontmatter `status` → `in-progress`
      - 否则 frontmatter 不变
-     - **datetime 格式强制**：`YYYY-MM-DDTHH:mm:ss+08:00`（含日期+时间+时区，如 `2026-05-03T03:05:13+08:00`），**禁止仅写 date** 如 `2026-05-03`。可用 `Bash: date -Iseconds` 或 `date '+%Y-%m-%dT%H:%M:%S+08:00'` 生成
+     - **datetime 格式强制**：`YYYY-MM-DDTHH:mm:ss+08:00`，三段齐全——日期 + 时间 + 时区（如 `2026-05-03T03:05:13+08:00`）。用 `Bash: date -Iseconds` 或 `date '+%Y-%m-%dT%H:%M:%S+08:00'` 生成即可满足该格式
   4. **根索引 checkbox 联动**（frontmatter status 变化或暂停/恢复时必执行）：
      - 若 `new-status=[!]`，根索引 checkbox 改为 `[!]`
      - 若 `new-status=[/]` 且根索引当前为 `[!]`，根索引 checkbox 改回 `[/]`
@@ -102,17 +102,17 @@ Read + Edit 整个 section 替换为 content
      - Read + Edit `implementation_plan.md` 同上
      - 若 frontmatter status 未变（如多个 [x] 但仍有 [/]），跳过此步
 
-连续执行的同一 CHG 不需要每完成一个 T-NNN 就派 `update-status [x]`。CHG 是连续执行、可验证、可关闭的最小变更单元；若主 session 正在同一执行流里继续完成剩余任务，应继续写代码/测试，最后验证通过后直接派 `close-chg complete-open-tasks: true`，由 close-chg 一次完成 open tasks 收口、completed、VERIFIED、归档和 walkthrough。`update-status [!]` 只用于暂停/阻塞；`update-status [x]` 只用于跨 session、长任务进度可见性，或最后任务暂不验证/暂不收尾时停在 completed。
+连续执行的同一 CHG，逐个 T-NNN 的 `[x]` 收口可以合并到收尾一次完成。CHG 是连续执行、可验证、可关闭的最小变更单元；若主 session 正在同一执行流里继续完成剩余任务，应继续写代码/测试，最后验证通过后直接派 `close-chg complete-open-tasks: true`，由 close-chg 一次完成 open tasks 收口、completed、VERIFIED、归档和 walkthrough。`update-status [!]` 的适用场景是暂停/阻塞；`update-status [x]` 的适用场景是跨 session、长任务进度可见性，或最后任务暂不验证/暂不收尾时停在 completed。
 
 ### action=approve
 
 C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED -->` 标记。
 
 **硬前置**：
-- `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。禁止由 agent 自行推断用户已批准。
+- `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。批准状态以 prompt 显式 `approval-confirmed: true` 为唯一依据。
 - `approval-source` 必填，推荐枚举：`user-directive` / `ask-user-question` / `accepted-plan` / `prior-approved-plan`。
 - `approval-evidence` 必填，写一句用户原话或已确认方案摘要。agent 不验证证据真伪，但报告中必须保留，方便审计。
-- `action=approve` 只能表示“已批准但暂不开始”，即 ready/deferred；它不是项目文件写入许可。若 prompt 同时要求 `status: in-progress`、标记 `[/]` 或“开始执行”，必须报告 `format-violation`，提示改用 `action=approve-and-start`。
+- `action=approve` 的语义限定为“已批准但暂不开始”（ready/deferred），仅插入 APPROVED 标记，不授予项目文件写入许可。若 prompt 同时要求 `status: in-progress`、标记 `[/]` 或“开始执行”，报告 `format-violation` 并提示改用 `action=approve-and-start`。
 
 子流程：
 1. Read changes/chg-xxx.md
@@ -135,7 +135,7 @@ C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED --
    ## 实施详情
    ```
 
-   注意：APPROVED 上下各保留一空行，**禁止紧贴**任务行（`- [ ] T-902\n<!-- APPROVED -->` 是错误格式）。
+   注意：`<!-- APPROVED -->` 独占一行，上方保留最后一个任务行原有的空行、下方保留一个空行（即与任务行之间始终隔一个空行）。
 
 4. status 不变（保持 `planned` 直到第一个 `[/]` 由 update-status 推升 `in-progress`）
 
@@ -146,7 +146,7 @@ C 阶段批准后由主 session 调用，向详情文件插入 `<!-- APPROVED --
 C 阶段用户已明确批准、并准备开始整个 CHG 时由主 session 调用。`task-id` 是执行锚点（first task anchor）：它只标记本轮连续执行从哪个 T-NNN 开始，不表示只批准或只执行这一个任务。此 action 将 `approve` 与首次 `update-status` 合并，避免同一个 CHG 连续派两次 agent。
 
 **硬前置**：
-- `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。禁止由 agent 自行推断用户已批准。
+- `approval-confirmed` 必须为布尔 `true`；缺失 → `missing-fields`，非 true → `format-violation`。批准状态以 prompt 显式 `approval-confirmed: true` 为唯一依据。
 - `approval-source` 必填，推荐枚举：`user-directive` / `ask-user-question` / `accepted-plan` / `prior-approved-plan`。
 - `approval-evidence` 必填，写一句用户原话或已确认方案摘要。agent 不验证证据真伪，但报告中必须保留，方便审计。
 - `task-id` 必填，指明要标记为 `[/]` 的首个 T-NNN；同一 CHG 内后续任务默认由主 session 连续完成，并由 `close-chg complete-open-tasks:true` 统一收口。
@@ -182,7 +182,7 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
 子流程：
 1. Read `changes/chg-xxx.md`（target 解析失败 → `target-not-found`）
 2. **前置校验**（任一失败即 `format-violation`，不写文件）：
-   - frontmatter `status` 必须等于 `completed`（其他状态不允许验证）
+   - frontmatter `status` 必须等于 `completed`（验证仅在 `completed` 状态下进行）
    - `<!-- APPROVED -->` 必须存在
 3. **幂等检查**（已完整验证 → SUCCESS 幂等，不写文件）：
    - frontmatter `verified-date` 已有非 null 值 **AND** `<!-- VERIFIED -->` 已存在
@@ -195,8 +195,7 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
    - Edit 详情正文：在 `<!-- APPROVED -->` 行之后、紧邻插入 `<!-- VERIFIED -->`（不空行间隔）
    - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary> |`
 6. 报告 `status: SUCCESS`，`files_modified: ["changes/chg-xxx.md"]`
-   - 最终回答第一行必须直接是 `## artifact-writer 报告`
-   - 禁止在报告前写任何过渡句或说明文字
+   - 最终回答第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无过渡句、无说明文字）
 
 修改前：
 ```
@@ -232,7 +231,7 @@ V 阶段验证通过后由主 session 调用，写入"双表示、单权威"的 
 
 - target 不存在 → `target-not-found`
 - section 不在枚举内 → `format-violation`
-- action 不在 `append` / `replace` / `update-status` / `approve` / `approve-and-start` / `verify` 枚举内 → `format-violation`（不是 `out-of-scope`）
+- action 不在 `append` / `replace` / `update-status` / `approve` / `approve-and-start` / `verify` 枚举内 → `format-violation`（operation 已识别时归为字段值非法）
 - action=update-status 但 section ≠ tasks → `format-violation`
 - task-id 在 tasks 段中找不到 → `target-not-found`
 - action=approve 但 `<!-- APPROVED -->` 已存在 → SUCCESS 幂等（reason: `already approved, no change`）

@@ -28,9 +28,9 @@ flowchart TD
     F -->|不满足| C
 ```
 
-启用后遵循 P-A-C-E-V。禁止用主 session 直接 Edit/Write artifact 来绕过 agent。
+启用后遵循 P-A-C-E-V。artifact 写入统一派 `artifact-writer` agent，主 session 通过 agent 完成创建/更新。
 
-在已触发 PACEflow 信号的项目中，代码修改任务即使只涉及 1-2 个文件，也先按本 skill 判断流程；不要等第一次 Edit 被 hook 拦截后才进入 PACE。
+在已触发 PACEflow 信号的项目中，代码修改任务即使只涉及 1-2 个文件，也先按本 skill 判断流程；收到代码任务立即按流程判断，在第一次 Edit 前进入 PACE。
 
 Artifact 根目录以 hook 注入或 PreToolUse 提示为准。`artifact_dir` 仅用于 PaceFlow artifacts：`spec.md` / `task.md` / `implementation_plan.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
@@ -40,7 +40,7 @@ Project Root 是 PACEflow 管理边界；`local` artifact root 表示 Project Ro
 
 `spec.md` 是 artifact root 内的项目事实文件，用于记录技术栈、依赖、配置、目录结构和编码约定等长期事实。它由主 session 按需要直接 `Edit` 维护，不派 `artifact-writer`，也不参与 CHG/HOTFIX 的批准、验证或归档流程。
 
-若用户已经明确选择 Obsidian vault、本地项目目录或自定义 artifact 目录，但 artifact-root 配置尚未写入，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 或继承父 Project Root 的子目录里手写该文件。helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传自造的 `--artifact-dir` / `--artifact-root` / `--project-dir`。
+若用户已经明确选择 Obsidian vault、本地项目目录或自定义 artifact 目录，但 artifact-root 配置尚未写入，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。helper 接受自身文档列出的参数；自动化用 `--cwd` 指定项目 cwd，其余 artifact/root/project 路径由 helper 自行解析。
 
 Helper 命令来源按以下顺序执行：
 
@@ -54,7 +54,7 @@ node "<skill-root>/../../hooks/set-artifact-root.js" --choice vault
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg
 ```
 
-3. 如果当前上下文没有完整 hook 命令，也没有可用的 skill 根目录元数据，先触发/等待 hook 给出 helper 命令。不要用 `find` / `ls` 搜索 `~/.claude/plugins/cache` 猜版本。
+3. 如果当前上下文没有完整 hook 命令，也没有可用的 skill 根目录元数据，先触发/等待 hook 给出 helper 命令。helper 路径以 hook 命令或 skill 根目录为准，不扫描 `~/.claude/plugins/cache` 猜版本。
 
 参考：Superpowers/native plan 桥接细节见 [references/superpowers-integration.md](references/superpowers-integration.md)。
 
@@ -74,10 +74,10 @@ P 阶段产物：
 CHG 不是大计划容器，而是**连续执行、可验证、可关闭的最小变更单元**。
 
 - 一个 CHG 应该能在当前执行流中连续完成、运行验证、并用 `close-chg` 收尾。
-- 一个 CHG 内可以有多个 `T-NNN`，但这些任务必须服务于同一个闭环，不应横跨多个独立功能/模块。
+- 一个 CHG 内可以有多个 `T-NNN`，但这些任务必须服务于同一个闭环，限定在单个独立功能/模块内。
 - 大计划应拆成多个可独立完成和验证的 CHG。比如数据结构/迁移、后端接口、前端调用、文档配置通常应是不同 CHG。
 - 如果某个任务预计要暂停、等待用户、跨 session 继续、或在不同 worktree 并发推进，优先拆出独立 CHG。
-- Artifact 是流程恢复和审计机制，不是逐步项目管理看板；不要为了每个小步骤都派 agent 更新任务状态。
+- Artifact 是流程恢复和审计机制，按闭环里程碑派 agent 更新任务状态即可，无需为每个小步骤逐一更新。
 
 ---
 
@@ -133,21 +133,21 @@ technical-decision: <How>
 
 A 阶段完成标志：`task.md` 与 `implementation_plan.md` 有同一个活跃 `[[chg-*]]` / `[[hotfix-*]]` 索引，且 `changes/<id>.md` 存在。
 
-若没有先运行 helper，`create-chg` 首次派遣会被 hook 阻止并返回 `reserved-id` / `reserved-file`；把这些字段原样加入 Agent prompt 后重派，不要让 agent 自行扫描索引分配编号。
+若没有先运行 helper，`create-chg` 首次派遣会被 hook 阻止并返回 `reserved-id` / `reserved-file`；把这些字段原样加入 Agent prompt 后重派，编号一律来自 helper 预留。
 
 ---
 
 ## Legacy v5 与 Worktree
 
-检测到旧 v5 artifact（有 `task.md` / `implementation_plan.md` 活跃内容但无 `changes/`）时，先按 hook 提示执行 dry-run 迁移或桥接为 v6 CHG；迁移确认前不要创建 `changes/`，也不要把迁移本身报告成原代码任务完成。迁移或桥接完成后，再重试被阻止的原始写代码动作。
+检测到旧 v5 artifact（有 `task.md` / `implementation_plan.md` 活跃内容但无 `changes/`）时，先按 hook 提示执行 dry-run 迁移或桥接为 v6 CHG；`changes/` 在迁移确认后才创建，迁移本身作为迁移动作单独说明、与原代码任务完成分开汇报。迁移或桥接完成后，再重试被阻止的原始写代码动作。
 
-Git worktree 中的 artifact root 与运行态 `.pace/` 归一到宿主项目。普通子目录默认继承最近父级 Project Root。主 session 修改普通项目文件仍以当前 cwd/worktree 为准；只有 PaceFlow artifacts 与 `.pace` 运行态走 Project Root 共享位置。不要在 worktree 分支目录或继承子目录手写 `.pace/artifact-root`；独立子项目先用 `set-project-root --mode independent` 声明边界。
+Git worktree 中的 artifact root 与运行态 `.pace/` 归一到宿主项目。普通子目录默认继承最近父级 Project Root。主 session 修改普通项目文件仍以当前 cwd/worktree 为准；只有 PaceFlow artifacts 与 `.pace` 运行态走 Project Root 共享位置。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。独立子项目先用 `set-project-root --mode independent` 声明边界。
 
 ---
 
 ## C (Check)
 
-未批准前禁止修改代码。
+改代码前先获批准：`<!-- APPROVED -->` 已写入 `changes/<id>.md` 且对应任务为 `[/]`。
 
 需要用户确认时，先停止执行并询问是否批准当前 CHG。用户批准且准备开始时派：
 
@@ -164,11 +164,11 @@ approval-evidence: <用户原话或已确认方案摘要>
 
 若只是先批准、暂不执行，则派 `update-chg action=approve`，同样必须带 `approval-confirmed: true`、`approval-source`、`approval-evidence`。C 阶段批准标记只写入 `changes/<id>.md`；`task.md` 只保留索引，不承载批准标记。
 
-如果用户已经直接要求“开始做/按方案执行/继续实现”，或已通过 plan/AskUserQuestion 明确批准，可以把这句话或确认摘要作为 `approval-evidence`；但仍必须先派 `approve-and-start`，再写代码，不能跳过 C 阶段。
+如果用户已经直接要求“开始做/按方案执行/继续实现”，或已通过 plan/AskUserQuestion 明确批准，可以把这句话或确认摘要作为 `approval-evidence`；仍先派 `approve-and-start` 再写代码，让 C 阶段先行完成。
 
-需要 AskUserQuestion 确认批准时，必须提供 2-3 个互斥选项，例如“批准并开始”与“暂不执行”；不要只提供单个确认选项。
+需要 AskUserQuestion 确认批准时，提供 2-3 个互斥选项，例如“批准并开始”与“暂不执行”。
 
-PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 都存在，详情文件存在，已 APPROVED，且状态/checkbox 已进入可执行状态。`APPROVED` 只是 C 阶段完成；`[ ] planned + APPROVED` 仍是 ready/deferred，不能写项目文件，必须先 `approve-and-start` 或恢复为 `[/]`。
+PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 都存在，详情文件存在，已 APPROVED，且状态/checkbox 已进入可执行状态。`APPROVED` 标志 C 阶段完成；`[ ] planned + APPROVED` 属 ready/deferred，写项目文件前先 `approve-and-start` 或恢复为 `[/]` 进入 `in-progress`。
 
 `[!]` 是 blocked/deferred：
 - PreToolUse 仍会阻止继续写项目文件。
@@ -178,7 +178,7 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 
 ## E (Execute)
 
-按 CHG 的 `## 任务清单` 连续执行代码修改。默认路径是：批准并开始 → 写代码/测试 → 运行并读取验证 → `close-chg complete-open-tasks:true` 一次收口。不要把同一个连续 CHG 的每个 T-NNN 完成都变成一次 `update-status` agent 调用。
+按 CHG 的 `## 任务清单` 连续执行代码修改。默认路径是：批准并开始 → 写代码/测试 → 运行并读取验证 → `close-chg complete-open-tasks:true` 一次收口。同一个连续 CHG 的多个 T-NNN 由这一次 `close-chg` 统一收口；`update-status` 仅在暂停/阻塞/跳过/跨 session 时单独调用。
 
 | 场景 | agent 操作 |
 |------|------------|
@@ -192,9 +192,9 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 | 补充实施说明 | `update-chg target=CHG-... section=implementation action=append` |
 | 记录执行过程 | `update-chg target=CHG-... section=work-record action=append` |
 
-`update-status [!]` 是暂停/阻塞信号，不是完成，也不是让其他 worktree 自动接手的信号。恢复前先确认用户意图，再把任务重新标为 `[/]` 继续，或按用户决策标 `[-]` / 取消。
+`update-status [!]` 仅表示暂停/阻塞，保持任务待恢复，其他 worktree 仍需显式接手。恢复前先确认用户意图，再把任务重新标为 `[/]` 继续，或按用户决策标 `[-]` / 取消。
 
-`update-status [x]` 是跨 session/非连续任务记录的例外路径，不是连续执行中的默认路径。最后一个任务代码写完后不要先派 `update-status` 再验证；先运行验证并读取结果，验证通过后用 `close-chg complete-open-tasks=true` 一次收口。若暂时不准备验证或必须把进度留给后续 session，才用 `update-status [x]` 把进度停在 completed 待验证状态。
+`update-status [x]` 是跨 session/非连续任务记录的例外路径；连续执行的默认路径是 `close-chg`。最后一个任务代码写完后，先运行验证并读取结果，验证通过后用 `close-chg complete-open-tasks=true` 一次收口（由它收尾最后任务，无需先派 `update-status`）。若暂时不准备验证或必须把进度留给后续 session，才用 `update-status [x]` 把进度停在 completed 待验证状态。
 
 方案根本性错误时：将当前任务标 `[!]`，停止写代码，重新说明偏差并回到 A/C；更新方案和重新批准也必须通过 artifact writer。
 
@@ -202,7 +202,7 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 
 ## V (Verify)
 
-执行验证前不要声称完成。验证遵循 `superpowers:verification-before-completion` 的 IDENTIFY → RUN → READ → VERIFY → CLAIM；无测试框架时用可复现的手动命令或浏览器验证。
+先运行验证、读取结果，再声称完成。验证遵循 `superpowers:verification-before-completion` 的 IDENTIFY → RUN → READ → VERIFY → CLAIM；无测试框架时用可复现的手动命令或浏览器验证。
 
 验证通过后优先派一次收尾合并操作：
 

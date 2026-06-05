@@ -32,14 +32,14 @@ body: <完整 Markdown 正文>
 - `rejection-reason`（status=rejected 时必填，≥ 10 字符）
 
 `body` 是 opaque Markdown payload，必须原样写入详情文件：
-- 不得摘要、截断、改写、重排、合并段落或删除重复内容
-- 不得把正文中的 wikilink 当成 frontmatter 强约束引用
-- 允许的唯一归一化是换行风格（CRLF/LF）；正文字符、段落顺序、代码块、表格、引用块必须保持
-- 如果无法完整写入 body，不得报告 SUCCESS
+- body 按主 session 原文逐字符写入，保持段落顺序、代码块、表格、引用块、重复内容完全不变
+- 正文中的 wikilink 视为正文文本本身（仅 frontmatter 字段参与 wikilink 强约束）
+- 唯一允许的归一化是换行风格（CRLF/LF）
+- 只有 body 完整写入后才报告 SUCCESS
 
 ## 操作步骤
 
-0. 前置检查：用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 检查 `$ARTIFACT_DIR/changes` 目录必须已存在；`MISSING` → 报告 `not-pace-project`，禁止创建 base `changes/`，禁止写任何 artifact。禁止用 `ls "$ARTIFACT_DIR/changes"` 空输出判断目录不存在。
+0. 前置检查：用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 生成 finding-id（FINDING-YYYY-MM-DD-slug，slug 参考 spec slug 规则）
 2. `mkdir -p changes/findings/`（仅在 base `changes/` 已存在时）
 3. Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下；`body` 必须使用输入原文）

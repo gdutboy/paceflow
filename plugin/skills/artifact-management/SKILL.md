@@ -16,7 +16,7 @@ Project Root 是 PACEflow 管理边界；`local` artifact root 表示 Project Ro
 
 继续、恢复或收口已有 CHG/HOTFIX 前，先 `Read` 对应 `changes/<id>.md`，确认 `## 任务清单`、实施详情和 `## 工作记录`；SessionStart 摘要只用于定位，不替代详情文件。
 
-如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。禁止手写 `.pace/artifact-root`，尤其不要在 git worktree 分支目录或继承父 Project Root 的子目录里手写该文件。reserve helper 只接受自身文档列出的参数；自动化只可用 `--cwd` 指定项目 cwd，不传 `--artifact-dir` / `--artifact-root` / `--project-dir`。
+如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。reserve helper 接受自身文档列出的参数；自动化用 `--cwd` 指定项目 cwd，其余 artifact/root/project 路径由 helper 自行解析。
 
 Helper 命令来源按以下顺序执行：
 
@@ -32,7 +32,7 @@ node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation record-correc
 ```
 
 3. 如果从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。
-4. 如果当前上下文没有完整 hook 命令，也没有可用的 skill 根目录元数据，先触发/等待 hook 给出 helper 命令。不要用 `find` / `ls` 搜索 `~/.claude/plugins/cache` 猜版本。
+4. 如果当前上下文没有完整 hook 命令，也没有可用的 skill 根目录元数据，先触发/等待 hook 给出 helper 命令。helper 路径以 hook 命令或 skill 根目录为准，不扫描 `~/.claude/plugins/cache` 猜版本。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
@@ -68,7 +68,7 @@ changes/
 
 `task.md`、`implementation_plan.md`、`walkthrough.md`、`findings.md`、`corrections.md` 只保留索引。任务清单、实施详情、工作记录、finding 详情、correction 详情都写入 `changes/**`。
 
-`spec.md` 是项目事实文件，不是 artifact-writer 管理对象。技术栈、依赖、配置、目录结构或编码约定变化时，由主 session 用 `Edit` 同步；不要用 `Write` 覆盖已有 `spec.md`。它不含 `ARCHIVE` / `APPROVED` / `VERIFIED` 标记，也不被 `close-chg` 或 `archive-chg` 修改。
+`spec.md` 是项目事实文件，不是 artifact-writer 管理对象。技术栈、依赖、配置、目录结构或编码约定变化时，由主 session 用 `Edit` 增量同步已有 `spec.md`。它不含 `ARCHIVE` / `APPROVED` / `VERIFIED` 标记，也不被 `close-chg` 或 `archive-chg` 修改。
 
 ---
 
@@ -101,18 +101,18 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 `action=approve` 只完成 C 阶段，CHG 仍是 ready/deferred，不能据此写项目文件；只有 `approve-and-start` 或将任务恢复为 `[/]` 后才进入 E 阶段。`[!]` 表示 blocked/deferred：允许 Stop，但 Stop 会显示人可见提醒，恢复前不能继续写项目文件。
 
-Legacy v5 项目必须先按 hook 提示 dry-run/迁移或桥接到 v6；不要在旧 v5 活跃区继续手写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
+Legacy v5 项目先按 hook 提示 dry-run/迁移或桥接到 v6，迁移后再在 v6 `changes/**` 写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
 
-主 session 禁止：
-- 直接写 `<!-- APPROVED -->` / `<!-- VERIFIED -->`
-- 直接设置 `verified-date`
-- 在 `task.md` 或 `implementation_plan.md` 写 CHG 三级标题详情段
-- 在 `findings.md` 写 finding 详情段
-- 用移动 `<!-- ARCHIVE -->` 标记的方式归档 CHG 详情
+以下内容只由 `artifact-writer` 写入，主 session 通过派遣 agent 完成：
+- `<!-- APPROVED -->` / `<!-- VERIFIED -->` 标记由 `update-chg` / `close-chg` 写入
+- `verified-date` 由 `close-chg`（或 `update-chg action=verify`）设置
+- CHG 三级标题详情段写入 `changes/<id>.md`，`task.md` / `implementation_plan.md` 只留 wikilink 索引
+- finding 详情段写入 `changes/findings/<id>.md`，`findings.md` 只留摘要索引
+- CHG 归档由 `close-chg` / `archive-chg` 移动索引行并更新 frontmatter 完成
 
 ### 最小字段模板
 
-复制模板时保留字段名，不要只在正文里提到 CHG-ID 或 task-id。
+复制模板时保留字段名，CHG-ID 与 task-id 都用对应字段承载。
 
 创建 CHG/HOTFIX：
 
@@ -211,7 +211,7 @@ impact: P0 | P1 | P2 | P3
 body: <完整 Markdown 正文>
 ```
 
-用户纠正类记录使用 `record-correction`，不要把 `type: correction` 写入 `record-finding`。
+用户纠正类记录使用 `record-correction`；`record-finding` 的 `type` 限于 `research | observation | comparison | bug-report`。
 
 记录 correction：
 
@@ -273,12 +273,12 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`。`create-chg --type` 只支持 `change` / `hotfix`；finding/research 沉淀走 `record-finding`，不要用 `--type research` 预留 CHG。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`。`create-chg --type` 只支持 `change` / `hotfix`；finding/research 沉淀走 `record-finding`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 前原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。先按 helper 命令来源运行 `reserve-artifact-id.js --operation record-correction`，再把 helper 输出的 `reserved-file-prefix` 原样写入 Agent prompt。
 
-不要从 `implementation_plan.md` 的内嵌详情推导编号；v6 没有内嵌详情区。
+编号一律来自 helper 预留；v6 的 `implementation_plan.md` 只保留索引，无内嵌详情区可供推导。
 
 ---
 
@@ -396,7 +396,7 @@ verify-summary: <已运行并阅读的验证结果>
 walkthrough-summary: <完成摘要>
 ```
 
-连续执行的 CHG 不需要在每个 T-NNN 完成后都派 `update-status`。只要主 session 已运行并读取验证结果，`close-chg complete-open-tasks:true` 就是默认收口方式。
+连续执行的 CHG 由收尾的 `close-chg` 统一收口多个 T-NNN。只要主 session 已运行并读取验证结果，`close-chg complete-open-tasks:true` 就是默认收口方式。
 
 ---
 

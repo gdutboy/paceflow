@@ -455,7 +455,7 @@ for (const file of ARTIFACT_FILES) {
       const omitted = dataRows.length - 10;
       const keep = new Set(dataRows
         .slice()
-        .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index)
+        .sort((a, b) => b.date.localeCompare(a.date) || a.index - b.index)
         .slice(0, 10)
         .map(row => row.index));
       const firstRowStart = dataRows[0].lineStart;
@@ -463,14 +463,15 @@ for (const file of ARTIFACT_FILES) {
       const lastRowEnd = last.lineEnd >= 0 ? last.lineEnd : output.length;
       const keptLines = dataRows
         .filter(row => keep.has(row.index))
-        .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index)
+        .sort((a, b) => b.date.localeCompare(a.date) || a.index - b.index)
         .map(row => row.line);
       output = output.slice(0, firstRowStart)
         + keptLines.join('\n') + '\n'
         + `| ... | （已省略 ${omitted} 条旧记录，需要时 Read walkthrough.md） | | | |\n`
         + output.slice(lastRowEnd >= 0 ? lastRowEnd + 1 : output.length);
     }
-    // 详情截断：最近 3 条详情段落
+    // 详情截断：保留最近 3 条 `## YYYY-MM-DD` 段落，防 context 膨胀。
+    // 兼容 ARCHIVE 历史区的段落格式；active 区当前是表格行（走上方索引表截断），全表格时 pos.length=0、本段不触发。（CHG-20260605-05）
     const pos = [];
     const re = /^## \d{4}-\d{2}-\d{2}/gm;
     while ((m = re.exec(output)) !== null) pos.push(m.index);

@@ -16,7 +16,7 @@ description: >
 
 > **SessionStart 自动注入**：SessionStart hook 会自动扫描 `thoughts/` 和 `knowledge/` 目录中与当前项目相关的笔记（通过 frontmatter `projects` 字段匹配），将 L0 摘要注入到会话上下文中。startup 最多注入 5 条，compact 恢复时缩减为最多 3 条以控制上下文占用。
 
-> **状态体系说明**：knowledge/thoughts 笔记使用 `discussing`/`concluded`/`archived` 状态标记（frontmatter `status` 字段），与 task.md/implementation_plan.md 的 checkbox 状态标记（`[ ]`/`[/]`/`[x]`）是**完全独立的含义系统**，不可混用。
+> **状态体系说明**：knowledge/thoughts 笔记使用 `discussing`/`concluded`/`archived` 状态标记（frontmatter `status` 字段），与 task.md/implementation_plan.md 的 checkbox 状态标记（`[ ]`/`[/]`/`[x]`）是**两套独立的含义系统**，各自在自身文件类型内使用。
 
 ---
 
@@ -125,11 +125,11 @@ sources:
 - 同一踩坑经验在 2+ 个项目出现
 - 用户要求提取知识
 
-### 不创建的情况
+### 留在别处的情况
 
 - 项目特有的实现细节 → 留在 `changes/findings/<id>.md`
-- 一次性调试信息 → 不持久化
-- 已有同主题笔记 → 更新现有笔记而非新建
+- 一次性调试信息 → 用完即弃，留在当前会话上下文
+- 已有同主题笔记 → 更新现有笔记承载新内容
 
 ---
 
@@ -141,7 +141,7 @@ sources:
 2. **检查 knowledge/ 是否已有同主题笔记**：正确做法是先使用当前环境可用的只读搜索工具检索 `knowledge/` 目录中的标题和标签；专用搜索工具不可用时，用只读 Bash `rg` / `grep` / `find` fallback。搜索失败只影响检索方式，不代表知识库流程失败。
 3. **已有** → Edit 追加新内容到 `## 详情` section，更新 `updated` 日期和 `sources`
 4. **未有** → Write 创建新笔记，使用 knowledge/ 模板，`status: concluded`
-5. **关联 finding**：`record-finding` 当前不维护 knowledge frontmatter 字段，且当前没有 `modify-finding` 指令；不要虚构 `update-chg` 能修改 finding 详情。通用知识的反向链接优先写在 knowledge 笔记正文引用原 finding；若确实需要补充 artifact 记录，派 `artifact-writer record-finding` 新建一条补充 finding，说明与原 finding / knowledge 笔记的关系。
+5. **关联 finding**：`record-finding` 当前不维护 knowledge frontmatter 字段，且当前没有 `modify-finding` 指令；finding 详情创建后保持不变（`update-chg` 不修改 finding 详情）。通用知识的反向链接优先写在 knowledge 笔记正文引用原 finding；若确实需要补充 artifact 记录，派 `artifact-writer record-finding` 新建一条补充 finding，说明与原 finding / knowledge 笔记的关系。
 
 > 提取的知识必须自包含——不依赖原 finding 的上下文就能理解。摘要是结论，详情是完整推理。
 
