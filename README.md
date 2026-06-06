@@ -372,6 +372,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v6.2.0 | 2026-06-06 | Review gate（REVIEWED 状态机门）：CHG 收口前新增与 VERIFIED 同构的 `REVIEWED` 阶段——状态机加「completed+verified 但未 reviewed」门（`stop.js` warning 级软门，复用现成 `stop-block-count` counter 连阻 3 次降级、不死锁），主 session 按本 CHG diff **自选** review agent、用可发布通用方法论 `review-methodology.md` direct、对抗审计、按 severity 闸（P0/P1 处置、P2/P3 backlog）+ 迭代闸（HOTFIX 深度=1）路由 findings；`update-chg action=review` / `close-chg` 折叠落 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录` 证据，**只记录「审计这步跑过」不裁决质量**（阻断-on-步骤、非-on-结论）。五阶段落地：hooks 触发层 + artifact-writer 写侧 + pace-workflow R 段编排 + 可发布方法论 + REFERENCE；经 dogfood 三棱镜对抗审计自审（无 P0/P1，2 P2 + 便宜 P3 全修，含「测试全绿但未机械验 REVIEWED」诚实性缺口闭合） |
 | v6.1.4 | 2026-06-06 | 审计 audit-2026-06-05 核心残留精准修复 + over-block 回归 HOTFIX（纪律工具定位，不做 blocklist 架构根治）：TM① teammate shell 删/覆 artifact 升 hardDeny、`xargs` 入 wrapper、PowerShell `` `n `` 引号感知归一化（修 PSG-03 反噬且不 over-block 字符串字面）、`open(mode=)` 关键字 bash↔powershell 对称（BG-05/HCR-01 回归）、ARCHIVE 层2 footer 按 UTF-8 字节截断使 CJK 缺失警告可达（修 v6.1.2 债）、VT-01 9a04 去 vacuous（三重门去信号 + revert 判别力实证）、MIGV5-02-REG force+hasBackup 回滚逐字节保真；守卫识别层 blocklist 结构性架构债 + 6 个 P3 record-finding 归档；HOTFIX 修 CHG-08 T-003 引入的 PS over-block 回归（normalize 引号感知，对抗式回归验证发现并钉死） |
 | v6.1.3 | 2026-06-05 | walkthrough 格式漂移修复 + prompt 文档正向化 + 表格 prepend 统一 + correction frontmatter YAML 修复：walkthrough instruction 补正向表头健壮性条款、存量段落迁回表格行；7 模式约 70 处负向 framing 改正向对齐官方 prompting practices（18 文档 skills/instructions/agent/spec）；walkthrough 表格 prepend 统一（session-start tie-breaker + 新增 e2e 2e3 + instruction）；correction frontmatter 回归原始简述设计（spec §2.3 五字段简述 single-quoted + 正文完整 + 补 `## 触发引用`）修复长文本含引号破 YAML |
 | v6.1.2 | 2026-06-05 | ARCHIVE 缺失检测盲区两层修复（defense-in-depth）：层1 `checkArchiveFormat` 检测应有 ARCHIVE 的双区文件（排除无双区的 spec.md）完全缺失标记并在 post-tool-use 编辑时 / stop 退出时提醒修复；层2 `session-start` 注入对缺标记且超 `ARCHIVE_MISSING_INJECT_LIMIT` 的大文件截断兜底，防 findings/walkthrough 等 ARCHIVE 被删时全文灌爆 context。补上 pre-tool-use 归档 deny 仅覆盖 task/impl 的范围缺口 |
@@ -449,4 +450,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v6.1.4 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
+**版本**: v6.2.0 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify)
