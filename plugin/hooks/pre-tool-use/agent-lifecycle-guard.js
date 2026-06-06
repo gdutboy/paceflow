@@ -104,6 +104,18 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
     ].join('\n');
   }
 
+  if (op === 'update-chg' && act === 'review') {
+    return [
+      ...lines,
+      'operation: update-chg',
+      `target: ${id}`,
+      'action: review',
+      'review-confirmed: true',
+      'review-source: manual | <所选 review agent 名>',
+      "review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>",
+    ].join('\n');
+  }
+
   if (op === 'close-chg') {
     return [
       ...lines,
@@ -112,6 +124,9 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
       'verification-confirmed: true',
       'complete-open-tasks: true',
       'verify-summary: <已运行并读取的验证结果>',
+      'review-confirmed: true',
+      'review-source: manual | <所选 review agent 名>',
+      "review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>",
       'walkthrough-summary: <完成摘要>',
     ].join('\n');
   }
@@ -330,6 +345,7 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
   const mentionsArchiveChg = operation === 'archive-chg';
   const mentionsUpdateStatus = operation === 'update-chg' && action === 'update-status';
   const mentionsVerifyOnly = operation === 'update-chg' && action === 'verify';
+  const mentionsReviewOnly = operation === 'update-chg' && action === 'review';
 
   if (!operation) {
     return [
@@ -341,11 +357,11 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     ].join('\n');
   }
 
-  if (operation === 'update-chg' && !['append', 'replace', 'approve', 'approve-and-start', 'update-status', 'verify'].includes(action)) {
+  if (operation === 'update-chg' && !['append', 'replace', 'approve', 'approve-and-start', 'update-status', 'verify', 'review'].includes(action)) {
     return [
       `派 artifact-writer 执行 update-chg 时缺少或写错 action：${action || '(missing)'}。`,
       FORMAT_SNIPPETS.skillRef,
-      'update-chg 的 action 只能是 append / replace / approve / approve-and-start / update-status / verify。',
+      'update-chg 的 action 只能是 append / replace / approve / approve-and-start / update-status / verify / review。',
       '请重派同一个 agent，并使用完整 prompt 顶部模板：',
       promptTemplateForOperation({ prompt, artDir, operation: 'update-chg', action: action || 'update-status' })
     ].join('\n');
@@ -411,17 +427,36 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     ].join('\n');
   }
 
+  if (mentionsReviewOnly) {
+    const missing = [];
+    if (!promptHasTrueField(text, 'review-confirmed')) missing.push('review-confirmed: true');
+    if (!promptHasNonEmptyField(text, 'review-source')) missing.push('review-source');
+    if (!promptHasNonEmptyField(text, 'review-findings')) missing.push('review-findings');
+    if (missing.length > 0) {
+      return [
+        `派 artifact-writer 执行 update-chg action=review 时缺少必填字段：${missing.join(', ')}。`,
+        FORMAT_SNIPPETS.skillRef,
+        '审计是确认边界：主 session 必须先编排对抗审计、路由 findings，确认审计跑过后才允许写 REVIEWED；agent 以 review-confirmed 为唯一依据，不自行判断。',
+        '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+        promptTemplateForOperation({ prompt, artDir, operation, action })
+      ].join('\n');
+    }
+  }
+
   if (mentionsCloseChg) {
     const missing = [];
     if (!promptHasTrueField(text, 'verification-confirmed')) missing.push('verification-confirmed: true');
     if (!promptHasTrueField(text, 'complete-open-tasks')) missing.push('complete-open-tasks: true');
     if (!promptHasNonEmptyField(text, 'verify-summary')) missing.push('verify-summary');
+    if (!promptHasTrueField(text, 'review-confirmed')) missing.push('review-confirmed: true');
+    if (!promptHasNonEmptyField(text, 'review-source')) missing.push('review-source');
+    if (!promptHasNonEmptyField(text, 'review-findings')) missing.push('review-findings');
     if (!promptHasNonEmptyField(text, 'walkthrough-summary')) missing.push('walkthrough-summary');
     if (missing.length > 0) {
       return [
         `派 artifact-writer 执行 close-chg 时缺少必填字段：${missing.join(', ')}。`,
         FORMAT_SNIPPETS.skillRef,
-        'close-chg 只能在主 session 已运行并读取验证结果、确认通过后调用；agent 不得自行判断验证是否通过。',
+        'close-chg 只能在主 session 已运行并读取验证结果、且已编排对抗审计并路由 findings 后调用；验证是否通过经 verification-confirmed、审计是否跑过经 review-confirmed 传入，agent 不得自行判断。',
         '请重派同一个 agent，并使用完整 prompt 顶部模板：',
         promptTemplateForOperation({ prompt, artDir, operation: 'close-chg' })
       ].join('\n');

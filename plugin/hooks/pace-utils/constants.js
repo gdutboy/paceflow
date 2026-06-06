@@ -2,7 +2,7 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v6.2.0';
+const PACE_VERSION = 'v6.2.1';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
@@ -51,11 +51,12 @@ const FORMAT_SNIPPETS = {
   implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
   approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；approve/approve-and-start 都必须带 approval-confirmed、approval-source、approval-evidence',
   verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；主路径是验证结果已读取后 close-chg，暂不归档时才用 update-chg action=verify',
+  reviewed: '<!-- REVIEWED --> 紧邻 changes/<id>.md 内 <!-- VERIFIED --> 下一行；R 阶段对抗审计跑过后由 close-chg 折叠写入（含 review-confirmed/review-source/review-findings），暂不归档时才用 update-chg action=review',
   statusHelp: '[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 暂停/阻塞 | [-] 跳过',
   changeStatusHelp: '[ ] 规划中 | [/] 进行中 | [x] 完成 | [-] 废弃 | [!] 暂停/阻塞',
   formatRule: 'hook 检测格式为行首 "- [/] "（Markdown checkbox），表格或 emoji 格式无法识别',
   approveAndStartOp: '批准并开始 = 派 artifact-writer approve-and-start；字段格式见 Skill(paceflow:artifact-management)',
-  closeOp: '收尾 = 先运行并读取验证结果；通过后派 artifact-writer close-chg；字段格式见 Skill(paceflow:artifact-management)',
+  closeOp: '收尾 = 先运行并读取验证结果，再编排对抗审计并路由 findings；通过后派 artifact-writer close-chg（含 verification-confirmed + review-confirmed/review-source/review-findings）；字段格式见 Skill(paceflow:artifact-management)',
   reserveHelper: `预留编号 = 主 session 先运行 Bash: node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部`,
   syncPlanHelper: `同步 plan = 桥接成功后运行 Bash: node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"`,
   setArtifactRootHelper: `选择 artifact root = 用户选择后运行 Bash: node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,

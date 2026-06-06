@@ -32,22 +32,34 @@ function detectChangeDetailMarkerMutation({ artifactRel, newString, oldString, c
       addedApproved: false,
       addedVerified: false,
       setVerifiedDate: false,
+      addedReviewed: false,
+      setReviewedDate: false,
     };
   }
   const addedApproved = mutationText.includes('<!-- APPROVED -->') && !previousText.includes('<!-- APPROVED -->');
   const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !previousText.includes('<!-- VERIFIED -->');
   const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
     !paceUtils.hasNonNullVerifiedDate(previousText);
+  const addedReviewed = mutationText.includes('<!-- REVIEWED -->') && !previousText.includes('<!-- REVIEWED -->');
+  const setReviewedDate = paceUtils.hasNonNullReviewedDate(mutationText) &&
+    !paceUtils.hasNonNullReviewedDate(previousText);
   return {
-    hasMarkerMutation: addedApproved || addedVerified || setVerifiedDate,
+    hasMarkerMutation: addedApproved || addedVerified || setVerifiedDate || addedReviewed || setReviewedDate,
     addedApproved,
     addedVerified,
     setVerifiedDate,
+    addedReviewed,
+    setReviewedDate,
   };
 }
 
 function markerMutationDenyReason(mutation) {
-  return `禁止主 session 直接写入 ${mutation.addedApproved ? 'APPROVED' : 'VERIFIED/verified-date'} 标志；请派 artifact-writer 执行对应批准或验证/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`;
+  const marker = mutation.addedApproved
+    ? 'APPROVED'
+    : (mutation.addedVerified || mutation.setVerifiedDate)
+      ? 'VERIFIED/verified-date'
+      : 'REVIEWED/reviewed-date';
+  return `禁止主 session 直接写入 ${marker} 标志；请派 artifact-writer 执行对应批准/验证/审计/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`;
 }
 
 module.exports = {

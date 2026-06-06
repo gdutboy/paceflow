@@ -68,7 +68,7 @@ changes/
 
 `task.md`、`implementation_plan.md`、`walkthrough.md`、`findings.md`、`corrections.md` 只保留索引。任务清单、实施详情、工作记录、finding 详情、correction 详情都写入 `changes/**`。
 
-`spec.md` 是项目事实文件，不是 artifact-writer 管理对象。技术栈、依赖、配置、目录结构或编码约定变化时，由主 session 用 `Edit` 增量同步已有 `spec.md`。它不含 `ARCHIVE` / `APPROVED` / `VERIFIED` 标记，也不被 `close-chg` 或 `archive-chg` 修改。
+`spec.md` 是项目事实文件，不是 artifact-writer 管理对象。技术栈、依赖、配置、目录结构或编码约定变化时，由主 session 用 `Edit` 增量同步已有 `spec.md`。它不含 `ARCHIVE` / `APPROVED` / `VERIFIED` / `REVIEWED` 标记，也不被 `close-chg` 或 `archive-chg` 修改。
 
 ---
 
@@ -94,8 +94,9 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status`，task-id=`T-NNN`；`new-status=[!]` 必须带 `status-reason` / `block-reason` / `pause-reason`；全任务 `[-]` 表示取消 |
 | 追加工作记录/实施说明 | operation=`update-chg`，target=`CHG-...`，section=`work-record` / `implementation`，action=`append` |
 | 只记录 V 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`verify` |
+| 只记录 R 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`review` |
 | 归档 CHG/HOTFIX | operation=`archive-chg`，target=`CHG-...`；已取消 CHG 也用此操作做取消归档 |
-| 最后任务验证后完成并归档 | operation=`close-chg`，target=`CHG-...`，需要 `verification-confirmed: true` + `complete-open-tasks: true` |
+| 最后任务验证审计后完成并归档 | operation=`close-chg`，target=`CHG-...`，需要 `verification-confirmed: true` + `complete-open-tasks: true` + `review-confirmed: true`（附 review-source / review-findings） |
 | 记录 finding | operation=`record-finding` |
 | 记录 correction | 先运行 reserve helper `--operation record-correction`，再派 operation=`record-correction` 并带 `reserved-file-prefix` |
 
@@ -104,8 +105,9 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 Legacy v5 项目先按 hook 提示 dry-run/迁移或桥接到 v6，迁移后再在 v6 `changes/**` 写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
 
 以下内容只由 `artifact-writer` 写入，主 session 通过派遣 agent 完成：
-- `<!-- APPROVED -->` / `<!-- VERIFIED -->` 标记由 `update-chg` / `close-chg` 写入
+- `<!-- APPROVED -->` / `<!-- VERIFIED -->` / `<!-- REVIEWED -->` 标记由 `update-chg` / `close-chg` 写入
 - `verified-date` 由 `close-chg`（或 `update-chg action=verify`）设置
+- `reviewed-date` 由 `close-chg`（或 `update-chg action=review`）设置
 - CHG 三级标题详情段写入 `changes/<id>.md`，`task.md` / `implementation_plan.md` 只留 wikilink 索引
 - finding 详情段写入 `changes/findings/<id>.md`，`findings.md` 只留摘要索引
 - CHG 归档由 `close-chg` / `archive-chg` 移动索引行并更新 frontmatter 完成
@@ -298,7 +300,8 @@ knowledge-link: [[note]] 或 project-scope: project-only
 | `planned` | `[ ]` | 已创建，未批准执行 |
 | `in-progress` | `[/]` | 已批准并开始执行 |
 | `completed` + 未 verified | `[x]` 活跃区 | 执行完成，V 阶段待验证 |
-| `completed` + verified | `[x]` 活跃区 | 验证通过，待归档 |
+| `completed` + verified 未 reviewed | `[x]` 活跃区 | 验证通过，R 阶段待审计 |
+| `completed` + verified + reviewed | `[x]` 活跃区 | 验证审计均通过，待归档 |
 | `archived` | `[x]` ARCHIVE 下方 | 已归档 |
 | `cancelled` | `[-]` ARCHIVE 下方 | 取消，不验证 |
 
@@ -448,5 +451,5 @@ walkthrough-summary: <完成摘要>
 
 ## 关联 Skill
 
-- `paceflow:pace-workflow`：P-A-C-E-V 流程控制。
+- `paceflow:pace-workflow`：P-A-C-E-V-R 流程控制。
 - `paceflow:pace-knowledge`：finding/correction 需要沉淀到 knowledge/ 时使用。

@@ -364,7 +364,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 报告格式（强制）
 
-**所有 6 类指令的所有 action（含 update-chg 的 append / replace / update-status / approve / approve-and-start / verify）必须使用以下格式**，最终回答第一行字面量为 `## artifact-writer 报告`，且作为整份输出的第一个字符起始（标题前不含任何自然语言、空行或说明）。标题保持原文这一行；简单操作可省略 N/A 段（如无新建文件），标题与字段名保持不变。
+**所有 6 类指令的所有 action（含 update-chg 的 append / replace / update-status / approve / approve-and-start / verify / review）必须使用以下格式**，最终回答第一行字面量为 `## artifact-writer 报告`，且作为整份输出的第一个字符起始（标题前不含任何自然语言、空行或说明）。标题保持原文这一行；简单操作可省略 N/A 段（如无新建文件），标题与字段名保持不变。
 
 最终报告只保留下方格式的内容；时间戳、Insight 块、固定结尾语、寒暄、说明性前后缀等主 session 回复样式留在主 session。
 

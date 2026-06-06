@@ -5,7 +5,7 @@
 
 ## When To Use
 
-用于已完成且已验证的 CHG/HOTFIX 仍停在活跃索引区时做归档或索引修复；也用于已取消（`status: cancelled`，全部任务 `[-]`）的 CHG/HOTFIX 做 index-only 取消归档。若主 session 刚完成验证，优先使用 `close-chg` 一次收口。
+用于已完成、已验证且已审计的 CHG/HOTFIX 仍停在活跃索引区时做归档或索引修复；也用于已取消（`status: cancelled`，全部任务 `[-]`）的 CHG/HOTFIX 做 index-only 取消归档。若主 session 刚完成验证，优先使用 `close-chg` 一次收口。
 
 ## Correct Prompt Example
 
@@ -38,6 +38,11 @@ walkthrough-summary: <完成摘要>
    - 正文必须含 `<!-- VERIFIED -->` 标记
    - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 在验证通过后派 `close-chg`，或先派 `update-chg action=verify`
    - 两者仅一者存在（不一致）→ 报告 `format-violation: verification state inconsistent`，提示派 `update-chg action=verify` 修复
+6. **v6 R 阶段强制审计**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7.1 REVIEWED 标记规则）：
+   - frontmatter `reviewed-date` 必须为非 null 值
+   - 正文必须含 `<!-- REVIEWED -->` 标记
+   - 任一缺失 → 报告 `format-violation: not reviewed`，提示主 session 编排对抗审计后派 `close-chg`，或先派 `update-chg action=review`
+   - 两者仅一者存在（不一致）→ 报告 `format-violation: review state inconsistent`，提示派 `update-chg action=review` 修复
 
 ## 操作步骤
 
@@ -50,7 +55,7 @@ walkthrough-summary: <完成摘要>
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
    - 若 status 已是 `archived`：保留详情 frontmatter 原样，继续索引 repair
-   - 若 status 是 `cancelled`：保留详情 frontmatter 原样（含 `archived-date` / `verified-date` 维持 null），继续索引归档
+   - 若 status 是 `cancelled`：保留详情 frontmatter 原样（含 `archived-date` / `verified-date` / `reviewed-date` 维持 null），继续索引归档
    - 否则 Edit 改 `status` → `archived`
    - 若 `archived-date: null`，填 `<ISO 8601 datetime>`
    - 若 `completed-date` 仍为 null（兜底场景）→ 填同一 ISO 8601 datetime
@@ -128,6 +133,8 @@ walkthrough-summary: <完成摘要>
 - frontmatter status 是 cancelled 但任务不全是 `[-]` → `format-violation: cancelled tasks not all skipped`
 - 非 cancelled 的 CHG/HOTFIX：frontmatter `verified-date` 为 null **AND** 正文缺 `<!-- VERIFIED -->` → `format-violation: not verified`（提示验证通过后派 `close-chg`，或先派 `update-chg action=verify`）
 - 非 cancelled 的 CHG/HOTFIX：frontmatter `verified-date` 与正文 `<!-- VERIFIED -->` 不一致（仅一者存在） → `format-violation: verification state inconsistent`（提示派 `update-chg action=verify` 修复）
+- 非 cancelled 的 CHG/HOTFIX：frontmatter `reviewed-date` 为 null **AND** 正文缺 `<!-- REVIEWED -->` → `format-violation: not reviewed`（提示编排审计后派 `close-chg`，或先派 `update-chg action=review`）
+- 非 cancelled 的 CHG/HOTFIX：frontmatter `reviewed-date` 与正文 `<!-- REVIEWED -->` 不一致（仅一者存在） → `format-violation: review state inconsistent`（提示派 `update-chg action=review` 修复）
 - 详情文件不存在 → `target-not-found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 - ARCHIVE 标记缺失但目标索引行仍在活跃区 → 先补 `<!-- ARCHIVE -->` 独占行再移动索引；缺标记且目标索引行也不存在 → `format-violation: archive marker missing`

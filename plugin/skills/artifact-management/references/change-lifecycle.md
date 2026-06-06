@@ -63,7 +63,8 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 | E 暂停/阻塞 | `in-progress` | `[!]` | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!] status-reason=<原因>` |
 | E 跨 session 进度留存 | `in-progress` 或 `completed` | `[/]` 或 `[x]` | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[/]` 或 `new-status=[x]` |
 | V 只记录验证暂不归档 | `completed` + `verified-date` | `[x]` 活跃区 | `update-chg target=CHG-... action=verify` |
-| 默认 V+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true` |
+| R 只记录审计暂不归档 | `completed` + `verified-date` + `reviewed-date` | `[x]` 活跃区 | `update-chg target=CHG-... action=review review-confirmed=true review-source=<source> review-findings=<P0/P1/P2/P3 计数+处置>` |
+| 默认 V+R+归档合并 | `archived` | `[x]` ARCHIVE 下方 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true review-confirmed=true review-source=<source> review-findings=<...>`（一把梭折叠 VERIFIED + REVIEWED + 归档） |
 | 归档 | `archived` | `[x]` ARCHIVE 下方 | `archive-chg target=CHG-...` |
 | 取消 | `cancelled` | `[-]` ARCHIVE 下方 | 全部 T-NNN 都为 `[-]` 后派 `archive-chg target=CHG-...` 做取消归档；不验证、不改为 archived |
 
@@ -80,7 +81,8 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 | C | 确认用户是否已批准 | 写 `<!-- APPROVED -->`；若立即开始则用 `approve-and-start`。确认可来自直接执行指令、AskUserQuestion、已接受方案或已批准计划 |
 | E | 修改代码；只有暂停/阻塞/跳过/跨 session 时维护进度请求 | 按请求更新 T-NNN、frontmatter、根索引、工作记录 |
 | V | 运行验证并阅读结果 | 主路径用 `close-chg complete-open-tasks=true` 合并最后任务收口、VERIFIED 与归档 |
-| 归档 | 确认验证通过后派归档 | `close-chg` 更新详情 status、移动索引并写 walkthrough |
+| R | 对本 CHG diff 编排对抗审计（派 review subagent、读 P0-P3 报告、路由 findings），判定 `review-confirmed` | 收尾时由 `close-chg` 在 VERIFIED 之后、归档之前折叠 REVIEWED；只记录审计暂不归档时走 `update-chg action=review`（不跑审计、不裁决质量） |
+| 归档 | 确认验证通过且审计已跑过后派归档 | `close-chg` 更新详情 status、移动索引并写 walkthrough |
 
 ---
 
@@ -95,10 +97,13 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 - [ ] 已运行并阅读验证结果
 - [ ] `verified-date` 非 null
 - [ ] `<!-- VERIFIED -->` 存在且紧邻 `<!-- APPROVED -->`
+- [ ] 已对本 CHG diff 跑过对抗审计并路由 findings（P0/P1 开 HOTFIX 或记 won't-fix；P2/P3 派 `record-finding`）
+- [ ] `reviewed-date` 非 null
+- [ ] `<!-- REVIEWED -->` 存在且紧邻 `<!-- VERIFIED -->` 下一行
 - [ ] `walkthrough.md` 有当天索引行
 - [ ] 已派 `close-chg`（或已验证后派 `archive-chg`；cancelled 则派 `archive-chg` 做取消归档），根索引不再留在活跃区
 
-Stop hook 会阻止 completed 未 verified、verified 未归档、索引/详情不一致等状态。
+Stop hook 会阻止 completed 未 verified、verified 未归档、索引/详情不一致等状态。已 verified 但未 reviewed 时 Stop 同样拦截（warning 级软门，连阻数次后自动降级放行），要求先对本 CHG diff 跑 R 阶段对抗审计并落 `reviewed-date` + `<!-- REVIEWED -->`。
 
 ---
 

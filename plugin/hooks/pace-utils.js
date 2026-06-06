@@ -59,6 +59,7 @@ const {
 const {
   normalizeLineEndings,
   hasNonNullVerifiedDate,
+  hasNonNullReviewedDate,
 } = require('./pace-utils/line-endings');
 
 const {
@@ -780,7 +781,7 @@ module.exports = {
   getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, touchChangeOwnersForSession, changeOwnerStatus, ownerTakeoverConfirmed,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
-  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate,
+  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate, hasNonNullReviewedDate,
   // 计划文件
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, syncPlanFile,
   // 统计与检查

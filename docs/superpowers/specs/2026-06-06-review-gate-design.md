@@ -1,7 +1,7 @@
-# PACEflow Review Gate 设计（草案）
+# PACEflow Review Gate 设计（已实现 v6.2.0）
 
 > 日期：2026-06-06
-> 状态：草案——设计已收敛，待 codex review gate 对照研究后定稿
+> 状态：已实现并随 v6.2.0 发布（CHG-20260606-02/03/04/05 四阶段 + HOTFIX-20260606-02 dogfood 修复 + CHG-20260606-06 发布）；本文档为设计依据，发布面实现以 `plugin/**` 与 `REFERENCE.md` 为准
 > 来源：GitHub issue #3 `[improvement] 4 quality gates for close-chg flow`
 > 相关：`docs/action-plan-2026-05-02.md` §0.1.11（P1-design 备忘，本设计取代之）；本次 brainstorming session
 

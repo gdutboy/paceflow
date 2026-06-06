@@ -157,6 +157,15 @@ paceUtils.withStdinParsed((stdin) => {
               warnings.push(`${filePath} frontmatter verified-date 为占位 null/空，但已出现 VERIFIED/archived 信号。`);
             }
           }
+          if (!('reviewed-date' in fm)) {
+            warnings.push(`${filePath} 缺少 frontmatter reviewed-date。`);
+          } else {
+            const status = paceUtils.normalizeFrontmatterStatus(fm.status).toLowerCase();
+            const reviewClaimed = status === 'archived' || content.includes('<!-- REVIEWED -->');
+            if (reviewClaimed && !paceUtils.hasNonNullReviewedDate(content)) {
+              warnings.push(`${filePath} frontmatter reviewed-date 为占位 null/空，但已出现 REVIEWED/archived 信号。`);
+            }
+          }
         }
       } catch(e) {}
     }
@@ -167,8 +176,11 @@ paceUtils.withStdinParsed((stdin) => {
       const addedVerified = mutationText.includes('<!-- VERIFIED -->') && !oldString.includes('<!-- VERIFIED -->');
       const setVerifiedDate = paceUtils.hasNonNullVerifiedDate(mutationText) &&
         !paceUtils.hasNonNullVerifiedDate(oldString || '');
-      if ((addedApproved || addedVerified || setVerifiedDate) && !paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
-        warnings.push(`检测到 C/V 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的对应批准或验证/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`);
+      const addedReviewed = mutationText.includes('<!-- REVIEWED -->') && !oldString.includes('<!-- REVIEWED -->');
+      const setReviewedDate = paceUtils.hasNonNullReviewedDate(mutationText) &&
+        !paceUtils.hasNonNullReviewedDate(oldString || '');
+      if ((addedApproved || addedVerified || setVerifiedDate || addedReviewed || setReviewedDate) && !paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
+        warnings.push(`检测到 C/V/R 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的对应批准/验证/审计/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`);
       }
     }
 

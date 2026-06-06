@@ -935,7 +935,7 @@ test('9. 主 session 直接写 VERIFIED → DENY artifact-writer 操作', () => 
     },
   });
   assert.ok(r.stdout.includes('deny'));
-  assert.ok(r.stdout.includes('对应批准或验证/收尾操作'));
+  assert.ok(r.stdout.includes('对应批准/验证/审计/收尾操作'));
 });
 
 test('9m. MultiEdit 直接写 VERIFIED → DENY artifact-writer 操作', () => {
@@ -957,7 +957,25 @@ test('9m. MultiEdit 直接写 VERIFIED → DENY artifact-writer 操作', () => {
     },
   });
   assert.ok(r.stdout.includes('deny'));
-  assert.ok(r.stdout.includes('对应批准或验证/收尾操作'));
+  assert.ok(r.stdout.includes('对应批准/验证/审计/收尾操作'));
+});
+
+test('9r. 主 session 直接写 REVIEWED → DENY（精确 REVIEWED 原因码）', () => {
+  const dir = makeV6Project('ptu-marker-reviewed');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '<!-- VERIFIED -->',
+        new_string: '<!-- VERIFIED -->\n<!-- REVIEWED -->',
+      },
+    },
+  });
+  assert.ok(r.stdout.includes('deny'));
+  assert.ok(r.stdout.includes('REVIEWED/reviewed-date'));
 });
 
 test('9m2. 非 artifact changes/ 路径写 C/V 字符串不触发 marker gate', () => {
@@ -3787,6 +3805,9 @@ test('9hc4. close-chg 完整收尾 prompt → 放行', () => {
           'verification-confirmed: true',
           'complete-open-tasks: true',
           'verify-summary: node hello.js 输出 Hello World，PASS',
+          'review-confirmed: true',
+          'review-source: manual',
+          'review-findings: P0/P1/P2/P3 = 0/0/0/0',
           'walkthrough-summary: 创建 hello.js 并验证通过',
         ].join('\n'),
       },
@@ -3813,6 +3834,9 @@ test('9hc4a0. close-chg walkthrough 提到 approve-and-start 不误判为批准'
           'verification-confirmed: true',
           'complete-open-tasks: true',
           'verify-summary: grep README.md PASS',
+          'review-confirmed: true',
+          'review-source: manual',
+          'review-findings: P0/P1/P2/P3 = 0/0/0/0',
           'walkthrough-summary: 创建 CHG 后直接写文件被阻止；执行 approve-and-start 后修改文件并验证通过。',
         ].join('\n'),
       },
@@ -3917,6 +3941,9 @@ test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', ()
           'verification-confirmed: true',
           'complete-open-tasks: true',
           'verify-summary: node hello.js 输出 Hello World，PASS',
+          'review-confirmed: true',
+          'review-source: manual',
+          'review-findings: P0/P1/P2/P3 = 0/0/0/0',
           'walkthrough-summary: 创建 hello.js 并验证通过',
         ].join('\n'),
       },
@@ -3926,6 +3953,79 @@ test('9hc4a. artifact-writer 不得接手其他 fresh session owner 的 CHG', ()
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('另一个 Claude Code session'));
   assert.ok(!r.stdout.includes('owner-takeover-confirmed'));
+});
+
+test('9hc4r. close-chg 缺 review-confirmed → DENY（审计门）', () => {
+  const dir = makeV6Project('agent-close-no-review');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Close CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: close-chg',
+          'target: CHG-20260504-01',
+          'verification-confirmed: true',
+          'complete-open-tasks: true',
+          'verify-summary: node hello.js PASS',
+          'walkthrough-summary: 完成',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('review-confirmed'));
+});
+
+test('9hc-review1. update-chg action=review 带齐三字段 → 放行', () => {
+  const dir = makeV6Project('agent-review-ok');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Review CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: review',
+          'review-confirmed: true',
+          'review-source: manual',
+          'review-findings: P0/P1/P2/P3 = 0/0/0/0',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
+});
+
+test('9hc-review2. update-chg action=review 缺 review-confirmed → DENY', () => {
+  const dir = makeV6Project('agent-review-missing');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Review CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: review',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('review-confirmed'));
 });
 
 test('9hc4b. update/close/archive 必须显式 target，不能从正文 CHG-ID 推断 owner', () => {
@@ -5330,6 +5430,26 @@ test('15. v6 schema 缺 verified-date → warning', () => {
   assert.ok(r.stdout.includes('verified-date'));
 });
 
+test('15r. v6 schema 缺 reviewed-date → warning', () => {
+  const detail = chgDetail().replace('reviewed-date: null\n', '');
+  const dir = makeV6Project('post-schema-reviewed', { detail });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('reviewed-date'));
+});
+
+test('15rb. v6 REVIEWED 标记存在但 reviewed-date 占位 → warning', () => {
+  const detail = chgDetail()
+    .replace('reviewed-date: null', 'reviewed-date: ""')
+    .replace('<!-- APPROVED -->', '<!-- APPROVED -->\n<!-- REVIEWED -->');
+  const dir = makeV6Project('post-schema-empty-reviewed-with-marker', { detail });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('reviewed-date 为占位 null/空'));
+});
+
 test('15a0. v6 schema verified-date null 且未验证 → 不误报占位 warning', () => {
   const detail = chgDetail().replace('verified-date: null', 'verified-date: ""');
   const dir = makeV6Project('post-schema-empty-verified-date', { detail });
@@ -5387,7 +5507,7 @@ test('15b. PostToolUse 对非 artifact-writer C/V 标志写入仍提醒', () => 
     },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('C/V 阶段标志被直接写入'));
+  assert.ok(r.stdout.includes('C/V/R 阶段标志被直接写入'));
   assert.ok(r.stdout.includes('artifact-writer'));
 });
 

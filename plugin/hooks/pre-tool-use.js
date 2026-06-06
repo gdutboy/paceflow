@@ -1296,6 +1296,8 @@ paceUtils.withStdinParsed((stdin) => {
           addedApproved: markerMutation.addedApproved,
           addedVerified: markerMutation.addedVerified,
           setVerifiedDate: markerMutation.setVerifiedDate,
+          addedReviewed: markerMutation.addedReviewed,
+          setReviewedDate: markerMutation.setReviewedDate,
         });
       }
       log(projectLogEntry('PreToolUse', 'PASS_V6_MARKER_AGENT', {
@@ -1306,6 +1308,8 @@ paceUtils.withStdinParsed((stdin) => {
         addedApproved: markerMutation.addedApproved,
         addedVerified: markerMutation.addedVerified,
         setVerifiedDate: markerMutation.setVerifiedDate,
+        addedReviewed: markerMutation.addedReviewed,
+        setReviewedDate: markerMutation.setReviewedDate,
         dur: Date.now() - t0,
       }));
     }

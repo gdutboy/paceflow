@@ -80,6 +80,23 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 
 ---
 
+## R 阶段：对抗审计
+
+V 通过后、close 之前，主 session 对本 CHG 的 diff 做一次**对抗审计**，把"审计这步跑过了"连同验证、归档一起记录。R 与 V 同构平行：标志 `reviewed-date` ↔ `verified-date`、`<!-- REVIEWED -->` ↔ `<!-- VERIFIED -->`（REVIEWED 紧邻 VERIFIED 下一行）、`review-confirmed` ↔ `verification-confirmed`、`action=review` ↔ `action=verify`。
+
+**定位（铁律）**：R 只强制"审计发生 + 记录"，**从不裁决代码质量**。完整七条对抗审计方法论（独立发现 / 证据优先级 / 报告全部再验证 / 三件武器 / 严重度纪律 / 误报防御 / 记录基线）见同目录 `review-methodology.md`。
+
+| 维度 | 要求 | 说明 |
+|------|------|------|
+| **审计棱镜** | 按 diff 内容自选，不固化"标准 agent" | 改控制流/边界/正则/状态机 → 逻辑正确性 + 路径追踪棱镜；改多处需对齐文件 → 一致性 + 实际 diff 棱镜；改对外契约/配置/安全 → 协议合规 + 鲁棒性棱镜；琐碎低风险 → 主 session 自己瞄一眼（`review-source: manual`） |
+| **派发方式** | 审计 subagent 必须 **inline / foreground** 派发 | Task/Agent 工具同步等待，**不可 background / detached**；否则主 session 可能在审计在途时 end-turn，撞上 Stop 的"未审计"拦截 |
+| **findings 路由** | 按 severity 分流，**不阻断 close** | P0/P1 → 开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix（`record-finding`）；P2/P3 → 派 `record-finding` 进 backlog |
+| **迭代闸** | 审计 findings 生出的 HOTFIX 默认不自动重审（深度=1） | 防止"审计→修→再审→再修"无止境递归 |
+
+审计完成后优先派 `artifact-writer close-chg verification-confirmed=true complete-open-tasks=true review-confirmed=true review-source=<source> review-findings=<P0/P1/P2/P3 计数+处置>` 一把梭折叠 VERIFIED + REVIEWED + 归档；只想记录审计暂不归档时，才派 `update-chg action=review`。**阻断-on-步骤、不阻断-on-结论**：close 前必须"审计跑过并记录处置"，但绝不要求"P0/P1 修完"才让 close。
+
+---
+
 ## Hook 强制行为汇总
 
 | 阶段 | Hook | 行为 |
@@ -90,3 +107,4 @@ invoke `superpowers:finishing-a-development-branch` — 验证测试 → 选择 
 | E | PreToolUse | 项目外文件豁免 PACE 检查 |
 | V | Stop | `status: completed` 但缺 `verified-date` / `<!-- VERIFIED -->` → **block** |
 | V | Stop | 已 verified 但仍在活跃索引中 → **block**，优先要求 `close-chg`；`archive-chg` 仅用于已 verified 的单独归档修复 |
+| R | Stop | 已 verified 但未 reviewed（缺 `reviewed-date` / `<!-- REVIEWED -->`） → **block**（warning 级软门，连阻数次后自动降级放行），要求先跑 R 阶段对抗审计并记录 |

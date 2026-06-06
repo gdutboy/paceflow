@@ -50,9 +50,10 @@ description: >
 - marketplace `source` 指向 `./plugin`；发布面是 4 个用户 skill + `artifact-writer` agent + hooks/agent-references/migrate；`internal/skills/audit/`、docs、tests、tickets 不随 marketplace 发布
 - v6-only `changes/**` 详情模型；v5 活跃流程只允许迁移/桥接，不继续兼容
 - artifact root 可为 local/vault/custom，真实 git worktree 沿用宿主项目 `.pace/artifact-root`
-- `artifact-writer` 是唯一 artifact 写入者；主 session 不得直写 C/V 标记
+- `artifact-writer` 是唯一 artifact 写入者；主 session 不得直写 C/V/R 标记（含 `<!-- REVIEWED -->` 与 frontmatter `reviewed-date`）
 - 项目级 `artifact-writer.lock` 串行化 shared artifact 写入；Bash 不得修改该锁
 - `approve-and-start` 与 `close-chg` 是主路径合并操作；验证证据由主 session 运行并读取
+- review gate 与 V 阶段同构：R 阶段标志 `<!-- REVIEWED -->` / `reviewed-date` 与 VERIFIED / `verified-date` 平行（`action=review` ↔ `action=verify`），`close-chg` 折叠 VERIFIED 时同样折叠 REVIEWED；`agent-lifecycle-guard.js` 对 `close-chg` 与 `action=review` 强制 `review-confirmed` / `review-source` / `review-findings`（缺则 hard-deny），`stop.js` 对“已 verified 但未 reviewed”给软门提醒；review gate 只记录审计步骤发生+记录，不裁决质量
 - `SubagentStop` 报告标题问题是观察/恢复提示，不是 artifact 功能阻断
 
 ## 审查范围

@@ -28,7 +28,7 @@ flowchart TD
     F -->|不满足| C
 ```
 
-启用后遵循 P-A-C-E-V。artifact 写入统一派 `artifact-writer` agent，主 session 通过 agent 完成创建/更新。
+启用后遵循 P-A-C-E-V-R。artifact 写入统一派 `artifact-writer` agent，主 session 通过 agent 完成创建/更新。
 
 在已触发 PACEflow 信号的项目中，代码修改任务即使只涉及 1-2 个文件，也先按本 skill 判断流程；收到代码任务立即按流程判断，在第一次 Edit 前进入 PACE。
 

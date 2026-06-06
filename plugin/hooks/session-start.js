@@ -229,13 +229,15 @@ if (eventType === 'compact') {
             `walkthrough 索引：${FORMAT_SNIPPETS.walkthroughDetail}`,
             `批准标记：${FORMAT_SNIPPETS.approved}`,
             `验证标记：${FORMAT_SNIPPETS.verified}`,
+            `审计标记：${FORMAT_SNIPPETS.reviewed}`,
             `impl_plan 规则：${FORMAT_SNIPPETS.implDetail}`,
             '',
             '=== CHG 完成检查（每个 CHG/HOTFIX 最后任务代码写完后立即执行）===',
             `1. 先运行验证并阅读结果；未读取结果前不要派 verify/close-chg`,
-            `2. 通过后派 close-chg complete-open-tasks: true — 收口最后任务、写 VERIFIED、归档索引并写 walkthrough`,
-            `3. 中间任务完成才用 update-status [x]；只记录验证暂不归档才用 update-chg action=verify`,
-            '4. spec.md — 同步技术栈变更（如有）',
+            `2. 验证通过后先做 R 审计：按本 CHG diff 自选 review agent 做对抗审计、路由 findings（P0/P1 开 HOTFIX 或记 won't-fix，P2/P3 派 record-finding）`,
+            `3. 审计跑过后派 close-chg complete-open-tasks: true（含 review-confirmed/review-source/review-findings）— 收口最后任务、折叠 VERIFIED + REVIEWED、归档索引并写 walkthrough`,
+            `4. 中间任务完成才用 update-status [x]；只记录验证/审计暂不归档才用 update-chg action=verify / action=review`,
+            '5. spec.md — 同步技术栈变更（如有）',
             '',
           ];
           process.stdout.write(formatLines.join('\n') + '\n');
