@@ -138,8 +138,9 @@ archived-date: null
 | `<!-- ARCHIVE -->` | 索引文件分隔活跃区/归档区 | `archive-chg` 移动索引行 |
 | `<!-- APPROVED -->` | `changes/<id>.md` 任务清单后 | `update-chg action=approve` 或 `approve-and-start`（均需确认字段） |
 | `<!-- VERIFIED -->` | 紧邻 APPROVED 下一行 | 主路径 `close-chg`；暂不归档时 `update-chg action=verify` |
+| `<!-- REVIEWED -->` | 紧邻 VERIFIED 下一行 | 主路径 `close-chg`；暂不归档时 `update-chg action=review`（均需 `review-confirmed/source/findings`） |
 
-`verified-date` 与 `<!-- VERIFIED -->` 必须同时存在或同时不存在。
+`verified-date` 与 `<!-- VERIFIED -->` 必须同时存在或同时不存在；`reviewed-date` 与 `<!-- REVIEWED -->` 同理，且仅在已 verified 时出现。R 阶段审计是主 session 编排步骤，REVIEWED 只证审计跑过、不裁决质量（见 Skill(paceflow:pace-workflow) R 小节）。
 
 ---
 

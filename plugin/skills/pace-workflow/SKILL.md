@@ -204,7 +204,7 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 
 先运行验证、读取结果，再声称完成。验证遵循 `superpowers:verification-before-completion` 的 IDENTIFY → RUN → READ → VERIFY → CLAIM；无测试框架时用可复现的手动命令或浏览器验证。
 
-验证通过后优先派一次收尾合并操作：
+验证通过**不直接收口**——先完成下面的 **R（审计）** 步骤，再派 close-chg 一并写 VERIFIED + REVIEWED + 归档。R 跑完后的收尾合并操作：
 
 ```text
 artifact_dir: <SessionStart hook 提供的 artifact 目录>
@@ -212,6 +212,9 @@ operation: close-chg
 target: CHG-YYYYMMDD-NN
 verification-confirmed: true
 complete-open-tasks: true
+review-confirmed: true
+review-source: manual | <所选 review agent 名>
+review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink）>
 verify-summary: <测试/手动验证摘要>
 walkthrough-summary: <完成摘要>
 ```
@@ -220,10 +223,33 @@ artifact writer 会同时写：
 - 必要时把当前 CHG 的 `[ ]` / `[/]` 任务收口为 `[x]`，先推 frontmatter `status: completed`，最终归档为 `status: archived`
 - frontmatter `verified-date: YYYY-MM-DDTHH:mm:ss+08:00`
 - `changes/<id>.md` 中紧邻 `<!-- APPROVED -->` 下一行的 `<!-- VERIFIED -->`
-- `## 工作记录` 验证摘要
+- frontmatter `reviewed-date` 与紧邻 `<!-- VERIFIED -->` 下一行的 `<!-- REVIEWED -->`（R 阶段标记，详见下方 R 小节与 Skill(paceflow:artifact-management)）
+- `## 工作记录` 验证摘要、`## 审查记录` findings 处置
 - `task.md` / `implementation_plan.md` 归档索引与 `walkthrough.md` 完成索引
 
-若只记录验证、暂不归档，才派 `update-chg action=verify`。Stop hook 会在 AI 主动停止时阻止 `completed` 但未 verified 的 CHG 结束会话。
+若只记录验证、暂不归档，才派 `update-chg action=verify`。Stop hook 会在 AI 主动停止时阻止 `completed` 但未 verified 的 CHG 结束会话；已 verified 但未 reviewed 时同样拦截，要求先跑 R 审计（见下）。
+
+---
+
+## R (Review)
+
+> R 是与 V 同构的一等流程步骤：CHG 收口前，主 session 对本 CHG diff 做一次**对抗审计**，把"审计这步跑过了"连同验证、归档一起记录。**只强制审计步骤发生 + 记录，从不裁决代码质量。** 审计挖出的 findings 走既有 HOTFIX / record-finding 处置，不卡 close（阻断-on-步骤，不阻断-on-结论）。
+
+**职责分层**：R 是**主 session 的编排活**（派 review subagent、读报告、判断 findings 处置），**不是 artifact-writer 的动作**——artifact-writer 只在收尾时落 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录` 三项证据。完整通用方法论见 [references/review-methodology.md](references/review-methodology.md)。
+
+验证通过后、派 close-chg 之前，按以下五步编排 R：
+
+1. **看本 CHG diff**：先过一遍本次 CHG 的实际改动（改了哪些文件、哪类逻辑），作为选审查棱镜的依据。
+2. **按内容自选 review agent，用方法论 direct**：根据改动内容选合适的审查视角（逻辑/边界改动→路径追踪棱镜；多文件对齐→一致性/实际 diff 棱镜；契约/配置/安全→协议合规棱镜；琐碎小改→主 session 自己瞄一眼 `review-source: manual`），**不固化一套标准 agent**。用 `references/review-methodology.md` 的七条内核 direct 所派 subagent，要求其输出 **P0-P3 分级报告**。
+   > **执行约束（硬性）**：审计 subagent 必须 **inline / foreground 派发**（Task / Agent 工具同步等待），**不可作为 background / detached 任务**。inline 时主 session 阻塞在 tool call 上（mid-turn），审计必然在本轮收尾前返回；若错误派成 background，主 session 可能在审计在途时就 end-turn，撞上 Stop 的"未审计"拦截。
+3. **读 P0-P3 报告**：P0=有具体触发路径的功能错误/数据丢失/流程阻塞；P1=高影响但不直接阻塞；P2=代码质量/文档过时；P3=优化建议。
+4. **路由 findings**（主 session 判断，调既有 writer 操作）：
+   - **P0 / P1** → 开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding`）；
+   - **P2 / P3** → 派 `record-finding` 进 backlog；
+   - **迭代闸**：审计-findings 生出的 HOTFIX **默认不自动重审**（深度=1），防"审计→修→再审"无止境递归。
+5. **派 close-chg**：findings 路由完成后，派上方 V 段的 `close-chg`（含 `review-confirmed: true` / `review-source` / `review-findings`）一把梭折叠 VERIFIED + REVIEWED + 归档；只想记录审计暂不归档时，才派 `update-chg action=review`。
+
+> **阻断语义**：close 前必须"审计这步跑过并记录 findings 处置"（阻断-on-步骤），但绝不要求"P0/P1 修完"才放行 close（不阻断-on-结论）。审计挖出 5 个 P0 全部路由成 won't-fix，照样满足 REVIEWED。
 
 ---
 

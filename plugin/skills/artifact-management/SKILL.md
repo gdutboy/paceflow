@@ -168,7 +168,7 @@ new-status: [/]
 status-reason: <用户要求恢复或当前阻塞已解除>
 ```
 
-验证后收尾归档：
+验证后收尾归档（close-chg 折叠 VERIFIED + REVIEWED + 归档；R 审计是主 session 在派 close-chg 前完成的编排步骤，详见 Skill(paceflow:pace-workflow) R 小节）：
 
 ```text
 artifact_dir: <hook 解析出的 artifact 目录>
@@ -176,6 +176,9 @@ operation: close-chg
 target: CHG-YYYYMMDD-NN
 verification-confirmed: true
 complete-open-tasks: true
+review-confirmed: true
+review-source: manual | <所选 review agent 名>
+review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink）>
 verify-summary: <已运行并读取的验证结果>
 walkthrough-summary: <完成摘要>
 ```
@@ -188,6 +191,18 @@ operation: update-chg
 target: CHG-YYYYMMDD-NN
 action: verify
 verify-summary: <已运行并读取的验证结果>
+```
+
+只记录审计，暂不归档（已 verified 的 CHG 跑完 R 审计、但还不收口时用；对标 `action=verify`）：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: review
+review-confirmed: true
+review-source: manual | <所选 review agent 名>
+review-findings: <P0/P1/P2/P3 计数 + 各自处置 wikilink>
 ```
 
 只归档已验证 CHG：
@@ -232,19 +247,47 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 标记位置
 
-`<!-- APPROVED -->` 与 `<!-- VERIFIED -->` 只允许在 `changes/<id>.md` 内出现：
+`<!-- APPROVED -->`、`<!-- VERIFIED -->` 与 `<!-- REVIEWED -->` 只允许在 `changes/<id>.md` 内出现，三者**三行相邻、自上而下**：
 
 ```markdown
 - [x] T-002 验证任务
 
 <!-- APPROVED -->
 <!-- VERIFIED -->
+<!-- REVIEWED -->
 
 ## 实施详情
 ```
 
 `verified-date` 是机器权威，`<!-- VERIFIED -->` 是人读/hook 信号。两者必须同时存在或同时不存在。
 `<!-- VERIFIED -->` 必须紧邻 `<!-- APPROVED -->` 下一行，中间不留空行。
+
+### R 阶段 REVIEWED 字段格式
+
+与 V 阶段 verify/VERIFIED **完全同构**。R 阶段对抗审计跑过后，由 `close-chg`（主路径）或 `update-chg action=review`（暂不归档）写入。
+
+| 维度 | 内容 |
+|------|------|
+| 机器权威（单源） | frontmatter `reviewed-date: YYYY-MM-DDTHH:mm:ss+08:00` |
+| 人读 / hook 信号 | `<!-- REVIEWED -->`，紧邻 `<!-- VERIFIED -->` 下一行（无空行间隔） |
+| 一致性约束 | 两者同时存在 ↔ 同时不存在；不一致即 `format-violation` |
+| 顺序约束 | 仅在 `<!-- VERIFIED -->` 已存在时出现（先验证再审计）；未 verified 即出现 REVIEWED 即 `format-violation` |
+
+派 `close-chg` 或 `update-chg action=review` 时必填三字段：
+
+- `review-confirmed: true`——主 session 已编排对抗审计并路由 findings 后传入，agent 以此字段为唯一依据折叠 REVIEWED（仿 `verification-confirmed` / `approval-confirmed` gating）。缺失 → `missing-fields`，非 `true` → `format-violation`。
+- `review-source`——`manual`（主 session 自己瞄一眼）或所选 review agent / 棱镜名。
+- `review-findings`——P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink），写入 `## 审查记录` 段（位于 `## 工作记录` 之后）：
+
+```markdown
+## 审查记录
+
+| 日期 | 审计来源 | findings |
+| --- | --- | --- |
+| <YYYY-MM-DD> | <review-source> | <P0/P1/P2/P3 计数 + 各自处置 wikilink> |
+```
+
+> **流程证据语义，非质量裁决**：`<!-- REVIEWED -->` 只证"对抗审计这步跑过并记录了 findings 处置"，与 `<!-- APPROVED -->` 证"批准了"、`<!-- VERIFIED -->` 证"验证跑了"同理，**都不证明对应对象正确**。审计的派发、findings 路由（开 HOTFIX / record-finding）是主 session 编排活（见 Skill(paceflow:pace-workflow) R 小节）；agent 只落 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录` 三项证据，不验证 findings 真伪、不要求"修完"。
 
 ---
 
@@ -392,11 +435,14 @@ operation: close-chg
 target: CHG-YYYYMMDD-NN
 verification-confirmed: true
 complete-open-tasks: true
+review-confirmed: true
+review-source: manual | <所选 review agent 名>
+review-findings: <P0/P1/P2/P3 计数 + 各自处置 wikilink>
 verify-summary: <已运行并阅读的验证结果>
 walkthrough-summary: <完成摘要>
 ```
 
-连续执行的 CHG 由收尾的 `close-chg` 统一收口多个 T-NNN。只要主 session 已运行并读取验证结果，`close-chg complete-open-tasks:true` 就是默认收口方式。
+连续执行的 CHG 由收尾的 `close-chg` 统一收口多个 T-NNN。`close-chg` 折叠 VERIFIED + REVIEWED + 归档；R 审计本身是主 session 在派 close-chg 前编排的步骤（见 Skill(paceflow:pace-workflow) R 小节）。只要主 session 已运行并读取验证结果，`close-chg complete-open-tasks:true` 就是默认收口方式。
 
 ---
 

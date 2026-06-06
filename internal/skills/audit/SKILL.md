@@ -21,6 +21,8 @@ description: >
 
 > 本 skill 的核心价值是**独立发现问题**，不是照 guidebook/action-plan/README 打勾。
 
+> **方法论内核见可发布通用版** [`review-methodology.md`](../../../plugin/skills/pace-workflow/references/review-methodology.md)（独立发现 / 证据优先级 / 报告全部再验证 / 三件武器 / 严重度纪律 / 误报防御七条 / 记录基线）。本内部 skill 不重复方法论本体，只在其上**叠加 PaceFlow 专用靶子**——下面的证据优先级具体路径、审查范围 Glob、五维度并行划分、v6 审计基线。两处共用同一套方法论，避免漂移。
+
 证据优先级：
 
 1. 当前代码与配置：`plugin/hooks/**`、`plugin/agents/**`、`plugin/agent-references/**`、`plugin/skills/**`、`plugin/.claude-plugin/**`、`.claude-plugin/**`
