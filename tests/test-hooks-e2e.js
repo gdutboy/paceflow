@@ -137,9 +137,10 @@ function projectNameForDir(dir) {
   return path.basename(dir).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]', tasks = null, approved = true, verified = false } = {}) {
+function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]', tasks = null, approved = true, verified = false, reviewed = false } = {}) {
   const completedDate = status === 'completed' || status === 'archived' ? `${today()}T12:00:00+08:00` : 'null';
   const verifiedDate = verified ? `${today()}T12:30:00+08:00` : 'null';
+  const reviewedDate = reviewed ? `${today()}T12:45:00+08:00` : 'null';
   const taskLines = tasks || [`- ${task} T-001 测试任务`];
   return [
     '---',
@@ -155,6 +156,7 @@ function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]
     'schema-version: "6.0"',
     `completed-date: ${completedDate}`,
     `verified-date: ${verifiedDate}`,
+    `reviewed-date: ${reviewedDate}`,
     'archived-date: null',
     '---',
     '',
@@ -166,6 +168,7 @@ function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]
     '',
     approved ? '<!-- APPROVED -->' : '',
     verified ? '<!-- VERIFIED -->' : '',
+    reviewed ? '<!-- REVIEWED -->' : '',
     '',
     '## 实施详情',
     '',
@@ -4878,15 +4881,74 @@ test('11. v6 completed 但未 verified → exit 2', () => {
   assert.ok(r.stderr.includes('close-chg'));
 });
 
-test('12. v6 completed + verified 仍活跃 → close-chg 优先阻止', () => {
+test('12. v6 completed + verified + reviewed 仍活跃 → close-chg 优先阻止', () => {
   const dir = makeV6Project('stop-archive', {
     indexMark: '[x]',
-    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true }),
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: true }),
   });
   const r = runHook('stop.js', { cwd: dir });
   assert.strictEqual(r.code, 2);
   assert.ok(r.stderr.includes('close-chg'));
   assert.ok(r.stderr.includes('archive-chg'));
+});
+
+test('RG-2a. v6 completed + verified 但未 reviewed → exit 2 含「未审计」', () => {
+  const dir = makeV6Project('stop-unreviewed', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: false }),
+  });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('未审计'), '应提示未审计');
+  assert.ok(r.stderr.includes('close-chg'));
+});
+
+test('RG-2b. v6 completed + verified + reviewed 仍活跃 → 仍在活跃索引、不含「未审计」', () => {
+  const dir = makeV6Project('stop-reviewed-active', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: true }),
+  });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('仍在活跃索引'), '应提示仍在活跃索引');
+  assert.ok(!r.stderr.includes('未审计'), '已 reviewed 不应再提示未审计');
+});
+
+test('RG-2c. 未 reviewed closing-required 连续阻止 4 次后降级放行并写 degraded', () => {
+  const dir = makeV6Project('stop-unreviewed-downgrade', {
+    indexMark: '[x]',
+    walkToday: false,
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: false }),
+  });
+  let last;
+  for (let i = 0; i < 4; i++) {
+    last = runHook('stop.js', { cwd: dir });
+  }
+  assert.strictEqual(last.code, 0, '第 4 次应降级放行');
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'degraded')), '降级时应写 degraded 标记');
+});
+
+test('RG-2d. 未 reviewed + 非空 background_tasks → 仍 exit 2 含「未审计」且不进 deferred 软提醒', () => {
+  const dir = makeV6Project('stop-unreviewed-background', {
+    indexMark: '[x]',
+    walkToday: false,
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: false }),
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-rg2d',
+      background_tasks: [{
+        id: 'wf_rg2d_001',
+        type: 'workflow',
+        status: 'running',
+        name: 'PACEflow review workflow',
+      }],
+    },
+  });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('未审计'), '应提示未审计');
+  assert.ok(!r.stdout.includes('后台任务仍在运行'), 'closing-required 未审计不应进 background/deferred 软提醒');
 });
 
 test('12a. Stop 跳过其他 fresh session owner 的待归档 CHG', () => {
@@ -5454,6 +5516,50 @@ test('15f0. PostToolUse 将 quoted null verified-date 视为未验证', () => {
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('缺少 verified-date'));
+});
+
+test('RG-3a. PostToolUse verified 未 reviewed → 软催含「未审计」且不催归档', () => {
+  const dir = makeV6Project('post-review-missing', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: false }),
+  });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '## 工作记录',
+        new_string: '## 工作记录',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('未审计'), '应软催未审计');
+  assert.ok(!r.stdout.includes('优先派 close-chg 归档'), '未 reviewed 不应催归档');
+});
+
+test('RG-3b. PostToolUse verified + reviewed → 软催归档', () => {
+  const dir = makeV6Project('post-archive-reminded', {
+    indexMark: '[x]',
+    detail: chgDetail({ status: 'completed', task: '[x]', approved: true, verified: true, reviewed: true }),
+  });
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: fp,
+        old_string: '## 工作记录',
+        new_string: '## 工作记录',
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('优先派 close-chg 归档'), '已审计应催归档');
+  assert.ok(!r.stdout.includes('未审计'), '已 reviewed 不应再催未审计');
 });
 
 test('15f1. artifact-writer 多步收尾中间态不输出状态类 warning', () => {

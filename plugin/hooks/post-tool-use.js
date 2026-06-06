@@ -7,7 +7,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, CODE_EXTS, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, CODE_EXTS, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified, isChangeReviewed } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -193,8 +193,11 @@ paceUtils.withStdinParsed((stdin) => {
         if (status === 'completed' && !isChangeVerified(entry.detail)) {
           warnOnce(`verify-missing-${entry.slug}`, `${entry.id} 已 completed 但缺少 verified-date 或 <!-- VERIFIED -->。请先运行验证并阅读结果；确认通过后派 close-chg complete-open-tasks: true，或只记录验证暂不归档时派 update-chg action=verify。`);
         }
-        if (status === 'completed' && isChangeVerified(entry.detail)) {
-          warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证但仍在活跃索引中，请优先派 close-chg 归档；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
+        if (status === 'completed' && isChangeVerified(entry.detail) && !isChangeReviewed(entry.detail)) {
+          warnOnce(`review-missing-${entry.slug}`, `${entry.id} 已验证但未审计（缺 reviewed-date 或 <!-- REVIEWED -->）。请按本 CHG diff 自选 review agent 做对抗审计、路由 findings，再派 close-chg（含 review-confirmed）写 REVIEWED；只记录审计暂不归档才派 update-chg action=review。`);
+        }
+        if (status === 'completed' && isChangeVerified(entry.detail) && isChangeReviewed(entry.detail)) {
+          warnOnce(`archive-reminded-${entry.slug}`, `${entry.id} 已验证已审计但仍在活跃索引中，请优先派 close-chg 归档；archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`);
         }
         if (tasks.blocked > 0) {
           warnOnce(`blocked-tasks-${entry.slug}`, `${entry.id} 有 ${tasks.blocked} 个暂停/阻塞任务；不计入当前连续执行。恢复前先确认用户意图，必要时派 update-status 将任务重新标为 [/]。`);

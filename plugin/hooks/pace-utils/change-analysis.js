@@ -201,6 +201,7 @@ module.exports = function createChangeAnalysis(ctx) {
     const tasks = detail && !detail.missing ? countDetailTasks(detail.content) : { pending: 0, done: 0, total: 0, inProgress: 0, blocked: 0 };
     const approved = isChangeApproved(detail);
     const verified = isChangeVerified(detail);
+    const reviewed = isChangeReviewed(detail);
     const taskCheckbox = entry && entry.taskCheckbox;
     const implCheckbox = entry && entry.implCheckbox;
     const base = {
@@ -210,6 +211,7 @@ module.exports = function createChangeAnalysis(ctx) {
       tasks,
       approved,
       verified,
+      reviewed,
       taskCheckbox,
       implCheckbox,
       detail,
@@ -287,6 +289,12 @@ module.exports = function createChangeAnalysis(ctx) {
     return Boolean(verifiedDate && verifiedDate !== 'null' && /<!-- VERIFIED -->/.test(detail.content));
   }
 
+  function isChangeReviewed(detail) {
+    if (!detail || detail.missing) return false;
+    const reviewedDate = normalizeFrontmatterStatus(detail.frontmatter['reviewed-date']).toLowerCase();
+    return Boolean(reviewedDate && reviewedDate !== 'null' && /<!-- REVIEWED -->/.test(detail.content));
+  }
+
   function summarizeActiveChanges(cwd) {
     return getActiveChangeEntries(cwd).map(entry => {
       const fm = entry.detail && entry.detail.frontmatter || {};
@@ -325,6 +333,7 @@ module.exports = function createChangeAnalysis(ctx) {
     getActiveChangeEntries,
     isChangeApproved,
     isChangeVerified,
+    isChangeReviewed,
     summarizeActiveChanges,
   };
 };

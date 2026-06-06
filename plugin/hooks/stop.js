@@ -249,9 +249,11 @@ if (paceSignal === 'artifact') {
     if (change.category === 'closing-required') {
       if (!change.verified) {
         addWarning('verify', `${ownerPrefix}${change.id} 已 completed 但未验证。请先运行验证并阅读结果；确认通过后派 artifact-writer close-chg 写入 VERIFIED 并归档。若只记录验证暂不归档，才派 update-chg action=verify。字段格式见 Skill(paceflow:artifact-management)。`);
+      } else if (!change.reviewed) {
+        addWarning('verify', `${ownerPrefix}${change.id} 已验证但未审计。请按本 CHG diff 自选合适的 review agent 做对抗审计，路由 findings（P0/P1 开 HOTFIX 或记 won't-fix，P2/P3 派 record-finding），再派 close-chg（含 review-confirmed/review-source/review-findings）写入 REVIEWED 并归档。若只记录审计暂不归档，才派 update-chg action=review。字段格式见 Skill(paceflow:artifact-management)。`);
       } else {
         requiresWalkthrough = true;
-        addWarning('repair', `${ownerPrefix}${change.id} 已 completed 且 verified，仍在活跃索引中。请派 artifact-writer close-chg（已验证则只做归档收尾）或 archive-chg 归档。字段格式见 Skill(paceflow:artifact-management)。`);
+        addWarning('repair', `${ownerPrefix}${change.id} 已 completed 且 verified、reviewed，仍在活跃索引中。请派 artifact-writer close-chg（已验证已审计则只做归档收尾）或 archive-chg 归档。字段格式见 Skill(paceflow:artifact-management)。`);
       }
     }
   }

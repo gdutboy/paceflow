@@ -1952,7 +1952,7 @@ test('bridge candidate plans: current-native-plan 即使较旧也保持桥接提
 // ============================================================
 console.log('\n--- v6 change parsing/classification ---');
 
-function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progress', checkbox = '/', tasks = ['- [/] T-001 测试任务'], approved = true, verified = false } = {}) {
+function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progress', checkbox = '/', tasks = ['- [/] T-001 测试任务'], approved = true, verified = false, reviewed = false } = {}) {
   const slug = id.toLowerCase();
   const indexLine = `- [${checkbox}] [[${slug}]] 测试变更 #change [tasks:: T-001]\n`;
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
@@ -1972,6 +1972,7 @@ function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progre
     'schema-version: "6.0"',
     'completed-date: null',
     `verified-date: ${verified ? '2026-05-07T12:00:00+08:00' : 'null'}`,
+    `reviewed-date: ${reviewed ? '2026-05-07T13:00:00+08:00' : 'null'}`,
     'archived-date: null',
     '---',
     '',
@@ -1983,6 +1984,7 @@ function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progre
     '',
     approved ? '<!-- APPROVED -->' : '',
     verified ? '<!-- VERIFIED -->' : '',
+    reviewed ? '<!-- REVIEWED -->' : '',
     '',
     '## 实施详情',
     '',
@@ -2017,6 +2019,35 @@ test('isChangeVerified — verified-date 为带引号 null 时不算 verified', 
   const entry = paceUtils.getActiveChangeEntries(dir)[0];
   assert.strictEqual(paceUtils.isChangeVerified(entry.detail), false);
   assert.strictEqual(paceUtils.classifyChange(entry).category, 'closing-required');
+});
+
+test('isChangeReviewed — reviewed-date + REVIEWED 标记同时存在才算 reviewed', () => {
+  const dir = makeTmpDir('v6-reviewed-true');
+  writeV6ChangeFixture(dir, { status: 'completed', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true, reviewed: true });
+  const entry = paceUtils.getActiveChangeEntries(dir)[0];
+  assert.strictEqual(paceUtils.isChangeReviewed(entry.detail), true);
+  assert.strictEqual(paceUtils.classifyChange(entry).reviewed, true);
+});
+test('isChangeReviewed — 缺 <!-- REVIEWED --> 标记不算 reviewed', () => {
+  const dir = makeTmpDir('v6-reviewed-nomarker');
+  writeV6ChangeFixture(dir, { status: 'completed', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true, reviewed: true });
+  const p = path.join(dir, 'changes', 'chg-20260507-01.md');
+  fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(/\n<!-- REVIEWED -->/, ''), 'utf8');
+  assert.strictEqual(paceUtils.isChangeReviewed(paceUtils.getActiveChangeEntries(dir)[0].detail), false);
+});
+test('isChangeReviewed — reviewed-date 带引号 null 不算 reviewed', () => {
+  const dir = makeTmpDir('v6-reviewed-quoted-null');
+  writeV6ChangeFixture(dir, { status: 'completed', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true, reviewed: true });
+  const p = path.join(dir, 'changes', 'chg-20260507-01.md');
+  fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(/^reviewed-date: .+$/m, 'reviewed-date: "null"'), 'utf8');
+  assert.strictEqual(paceUtils.isChangeReviewed(paceUtils.getActiveChangeEntries(dir)[0].detail), false);
+});
+test('classifyChange — completed+verified 未 reviewed 时 reviewed=false', () => {
+  const dir = makeTmpDir('v6-reviewed-false');
+  writeV6ChangeFixture(dir, { status: 'completed', checkbox: 'x', tasks: ['- [x] T-001 测试任务'], verified: true });
+  const cls = paceUtils.classifyChange(paceUtils.getActiveChangeEntries(dir)[0]);
+  assert.strictEqual(cls.reviewed, false);
+  assert.strictEqual(cls.category, 'closing-required');
 });
 
 test('parseFrontmatter — 支持 UTF-8 BOM 前缀', () => {

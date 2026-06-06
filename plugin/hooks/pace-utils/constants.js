@@ -83,6 +83,7 @@ const SESSION_SCOPED_FLAG_PREFIXES = [
   'archive-reminded-',
   'status-mismatch-',
   'verify-missing-',
+  'review-missing-',
   'blocked-tasks-',
   'post-continue-',
 ];
