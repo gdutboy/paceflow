@@ -100,6 +100,8 @@ projects/<project>/
 
 `verified-date` 是机器权威；`<!-- VERIFIED -->` 是人读/hook 信号。两者必须一致。`reviewed-date` 是机器权威、`<!-- REVIEWED -->` 是人读/hook 信号，两者一致；REVIEWED 与 VERIFIED 同构，只证「审计步骤执行+记录」，不裁决代码质量。
 
+> **升级行为注**：升级到含 review gate 的版本后，已存在的「`completed` + verified 但未 reviewed」活跃 CHG 会落进上表新增的「未审计」状态。下次 `stop.js` 触发时会以 warning 提醒补一次审计并派 `update-chg action=review` 或 `close-chg` 写入 REVIEWED。这是 warning 级软门，连阻 3 次后由全局 `stop-block-count` counter 自动降级放行，不会永久阻塞会话。
+
 ---
 
 ## 5. Hook 覆盖

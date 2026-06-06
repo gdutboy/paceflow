@@ -31,7 +31,8 @@ const VALIDATION_KEYS = new Set([
   'impact_in_index_row', 'correction_index_contains',
   'knowledge_link_null', 'knowledge_link_value', 'project_scope_value',
   'title_derived_from_wrong_behavior', 'approved_marker_set',
-  'verified_marker_set', 'completed_date_set', 'verified_date_set',
+  'verified_marker_set', 'reviewed_marker_set',
+  'completed_date_set', 'verified_date_set', 'reviewed_date_set',
   'archived_date_set', 'detail_task_status', 'task_marked',
   'task_md_index_checkbox', 'impl_plan_index_checkbox',
   'task_md_index_below_archive', 'impl_plan_index_below_archive',
@@ -438,6 +439,7 @@ function verify(testCase, targetDir, variables, agentReport) {
   for (const [key, field] of [
     ['completed_date_set', 'completed-date'],
     ['verified_date_set', 'verified-date'],
+    ['reviewed_date_set', 'reviewed-date'],
     ['archived_date_set', 'archived-date'],
   ]) {
     if (expectedValidations[key] !== undefined) {
@@ -458,6 +460,20 @@ function verify(testCase, targetDir, variables, agentReport) {
       name: 'verified_marker_set',
       ok,
       expected: expectedValidations.verified_marker_set,
+      reason: targetDetail ? undefined : 'target detail missing',
+    });
+  }
+
+  if (expectedValidations.reviewed_marker_set !== undefined) {
+    // 与 verified_marker_set 同构：REVIEWED 必须紧跟 VERIFIED 下一行（无空行间隔）。
+    const ok = Boolean(targetDetail) &&
+      (expectedValidations.reviewed_marker_set
+        ? /<!-- VERIFIED -->\r?\n<!-- REVIEWED -->/.test(targetDetail)
+        : !/<!-- REVIEWED -->/.test(targetDetail));
+    validations.push({
+      name: 'reviewed_marker_set',
+      ok,
+      expected: expectedValidations.reviewed_marker_set,
       reason: targetDetail ? undefined : 'target detail missing',
     });
   }

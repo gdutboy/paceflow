@@ -190,7 +190,7 @@ if (eventType === 'compact') {
             const owner = c.ownerDisposition
               ? ` owner=${[c.ownerDisposition, c.ownerWorktree ? `worktree=${c.ownerWorktree}` : '', c.ownerBranch ? `branch=${c.ownerBranch}` : '', c.ownerState ? `state=${c.ownerState}` : ''].filter(Boolean).join(' ')}`
               : '';
-            lines.push(`  ${c.id} status=${c.status}${owner} pending=${c.pending} approved=${c.approved} verified=${c.verified}`);
+            lines.push(`  ${c.id} status=${c.status}${owner} pending=${c.pending} approved=${c.approved} verified=${c.verified} reviewed=${c.reviewed}`);
           });
         }
         if (snap.runtime?.degraded) {
@@ -590,7 +590,7 @@ if (paceSignal === 'artifact') {
   if (activeChangeSummaries.length > 0) {
     process.stdout.write(`=== 活跃 CHG 摘要 ===\n`);
     for (const s of activeChangeSummaries) {
-      process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
+      process.stdout.write(`- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`);
     }
     process.stdout.write(`继续、恢复或收口已有 CHG 前，先 Read 对应 changes/<id>.md，确认任务清单、实施详情和工作记录；本摘要只用于定位，不替代 CHG 详情。\n`);
     process.stdout.write('\n');

@@ -1409,7 +1409,7 @@ paceUtils.withStdinParsed((stdin) => {
 
       const summaries = summarizeActiveChanges(cwd)
         .filter(s => runnableEntries.some(e => e.slug === s.slug))
-        .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} impl=${s.implCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} path=${s.path}`)
+        .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} impl=${s.implCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed} path=${s.path}`)
         .join('\n');
       const additionalContext = hostNonArtifactWriteNote
         ? `当前 v6 活跃变更：\n${summaries}\n\n${hostNonArtifactWriteNote}`

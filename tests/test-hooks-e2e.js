@@ -622,7 +622,7 @@ test('3. compact 恢复显示 activeChanges', () => {
       'pre-compact-state.json': JSON.stringify({
         timestamp: '2026-05-04T10:00:00.000Z',
         artifacts: {},
-        activeChanges: [{ id: 'CHG-20260504-01', status: 'in-progress', pending: 1, approved: true, verified: false }],
+        activeChanges: [{ id: 'CHG-20260504-01', status: 'in-progress', pending: 1, approved: true, verified: false, reviewed: false }],
         runtime: { degraded: false },
       }),
     },

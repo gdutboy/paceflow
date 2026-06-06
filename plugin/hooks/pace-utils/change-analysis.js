@@ -309,6 +309,7 @@ module.exports = function createChangeAnalysis(ctx) {
         category: classified.category,
         approved: isChangeApproved(entry.detail),
         verified: isChangeVerified(entry.detail),
+        reviewed: isChangeReviewed(entry.detail),
         pending: tasks ? tasks.pending : null,
         done: tasks ? tasks.done : null,
         blocked: tasks ? tasks.blocked : null,

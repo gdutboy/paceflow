@@ -2027,6 +2027,8 @@ test('isChangeReviewed — reviewed-date + REVIEWED 标记同时存在才算 rev
   const entry = paceUtils.getActiveChangeEntries(dir)[0];
   assert.strictEqual(paceUtils.isChangeReviewed(entry.detail), true);
   assert.strictEqual(paceUtils.classifyChange(entry).reviewed, true);
+  // SessionStart / pre-compact 摘要行的 reviewed 维度来源：summarizeActiveChanges 必须回传 reviewed 字段
+  assert.strictEqual(paceUtils.summarizeActiveChanges(dir)[0].reviewed, true);
 });
 test('isChangeReviewed — 缺 <!-- REVIEWED --> 标记不算 reviewed', () => {
   const dir = makeTmpDir('v6-reviewed-nomarker');

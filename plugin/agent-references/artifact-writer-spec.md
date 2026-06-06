@@ -129,6 +129,8 @@ schema-version: "6.0"
 
 完整状态机（含 V / R 阶段标记）。frontmatter `status` / `verified-date` / `<!-- VERIFIED -->` / `reviewed-date` / `<!-- REVIEWED -->` / 索引 checkbox 六个维度必须自洽，任一不一致即 `format-violation`。`reviewed-date` 与 `<!-- REVIEWED -->` 必须同时存在或同时不存在（同 verified 的双表示约束），且仅在已 verified 时出现。
 
+下表「Stop 拦"未审计"」是 `stop.js` 的 **warning 级软门**（与 verify 门同款 `addWarning('verify', ...)`，非 `decision: block` 硬阻断）：连阻 3 次后复用全局 `stop-block-count` counter 自动降级 exit 0，不会永久锁会话；teammate 模式一并软化。agent 不做这层判定，只负责按指令写 REVIEWED 三项证据（`reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录`）。
+
 | frontmatter status | verified-date | `<!-- VERIFIED -->` | reviewed-date | `<!-- REVIEWED -->` | 索引 checkbox | 说明 |
 |---|---|---|---|---|---|---|
 | `planned` | null | 缺 | null | 缺 | `[ ]`（活跃区） | 未启动 |

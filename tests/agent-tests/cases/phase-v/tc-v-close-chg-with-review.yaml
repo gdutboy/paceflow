@@ -91,6 +91,8 @@ expected:
     completed_date_set: true
     verified_date_set: true
     verified_marker_set: true                   # <!-- VERIFIED --> 紧跟 <!-- APPROVED -->
+    reviewed_date_set: true                      # frontmatter reviewed-date 写入非 null（机器权威）
+    reviewed_marker_set: true                   # <!-- REVIEWED --> 紧跟 <!-- VERIFIED --> 下一行（人读/hook 信号）
     archived_date_set: true
     detail_task_status:
       T-901: "x"
@@ -99,9 +101,7 @@ expected:
     impl_plan_index_below_archive: true
     walkthrough_row_added: true
     work_record_contains: "验证通过：TC-V3 主 session 已运行并读取验证结果"
-  # 正文 grep 断言（verify-output.js 当前无 reviewed_marker_set/reviewed_date_set 键，需手工跑）：
-  #   rg -n "^reviewed-date: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
-  #   rg -B1 "^<!-- REVIEWED -->" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md  # 应紧跟 <!-- VERIFIED -->
+  # 正文 grep 断言（verify-output.js 无对应键，需手工跑）：
   #   rg -n "^## 审查记录" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
   max_tokens: 70000
   max_duration_ms: 360000
