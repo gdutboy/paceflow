@@ -319,7 +319,7 @@ git commit -m "refactor(review-gate): internal audit 引用共享方法论 refer
 **Files:**
 - Modify: `REFERENCE.md`（§3 操作表、§4 状态机表、§5 Hook 覆盖、§5.1 teammate 档位）
 
-- [ ] **Step 1：改 §4 状态机表**——加 `review-date` / `REVIEWED` 两列，新增"completed + verified 但未 reviewed = 活跃, Stop 拦'未审计'"行（照 spec §3.2 表）。
+- [ ] **Step 1：改 §4 状态机表**——加 `reviewed-date` / `REVIEWED` 两列，新增"completed + verified 但未 reviewed = 活跃, Stop 拦'未审计'"行（照 spec §3.2 表）。
 - [ ] **Step 2：改 §3 操作表**——加 `update-chg action=review` 行；close-chg 描述补 REVIEWED。
 - [ ] **Step 3：改 §5 Hook 覆盖**——stop.js 职责补"verified-未reviewed 拦截"；post-tool-use 补 review-missing 软催。
 - [ ] **Step 4：改 §5.1 teammate 档位**——REVIEWED 门归入 stop.js 现有"teammate 一刀切放行"（确认 spec 与代码一致：stop.js teammate 全门 exit 0）。

@@ -42,7 +42,7 @@ issue #3 来自真实 milestone retro：验证四项（typecheck/test/lint/forma
 
 ### 3.2 状态机扩展
 
-| status | verified-date | VERIFIED | review-date | REVIEWED | 位置 / Stop 行为 |
+| status | verified-date | VERIFIED | reviewed-date | REVIEWED | 位置 / Stop 行为 |
 |---|---|---|---|---|---|
 | completed | null | 缺 | — | — | 活跃, Stop 拦"未验证" |
 | completed | 非null | 有 | null | 缺 | 活跃, Stop 拦"**未审计**" ← **新增状态** |
@@ -67,10 +67,10 @@ issue #3 来自真实 milestone retro：验证四项（typecheck/test/lint/forma
 **编排在 workflow（主 session），落字在 artifact-writer。**
 
 - **审计是编排/推理**：派 subagent、读报告、判断 findings 处置 → 主 session 的活。
-- **artifact-writer 永远只落字**：不跑审计、不做判断、不派 agent。它对 review gate 多出的**唯一**能力 = 写 `REVIEWED` 证据行（+ review-date / review-summary），与现有 `action=verify` 写 VERIFIED 完全同构。
+- **artifact-writer 永远只落字**：不跑审计、不做判断、不派 agent。它对 review gate 多出的**唯一**能力 = 写 `REVIEWED` 证据行（+ reviewed-date / review-summary），与现有 `action=verify` 写 VERIFIED 完全同构。
 
 新增 artifact-writer 能力：
-- `update-chg action=review`：独立写 `<!-- REVIEWED -->` + review-date + review-summary（"记审计但暂不归档"的逃生口，对标 `action=verify`）。
+- `update-chg action=review`：独立写 `<!-- REVIEWED -->` + reviewed-date + review-summary（"记审计但暂不归档"的逃生口，对标 `action=verify`）。
 - `close-chg`：主路径折叠 REVIEWED（要 `review-confirmed`），与它已折叠 VERIFIED 同理。
 
 ---
@@ -98,7 +98,7 @@ issue #3 来自真实 milestone retro：验证四项（typecheck/test/lint/forma
 [收口] artifact-writer close-chg (既有操作, 多记一行):
       收口末任务[x] + status=completed
       + verified-date + <!-- VERIFIED -->
-      + review-date  + <!-- REVIEWED -->   ← 唯一新增, 与 VERIFIED 并列
+      + reviewed-date  + <!-- REVIEWED -->   ← 唯一新增, 与 VERIFIED 并列
       + 归档 task/impl 索引 + 写 walkthrough row
       │
       ▼
@@ -153,7 +153,7 @@ CHG archived ── 干净闭合: 计划执行 + 验证 + 审计 三件事都记
 ## 8. close-chg 关系（三条铁律）
 
 1. **位置**：审计在 close-chg **之前**（workflow 一步），不在 close-chg 内部。close-chg 不跑审计、不开 HOTFIX、不判断。
-2. **职责**：close-chg 比现在**只多落一行 REVIEWED**（+ review-date/summary），与它早就在落的 VERIFIED 并列。
+2. **职责**：close-chg 比现在**只多落一行 REVIEWED**（+ reviewed-date/summary），与它早就在落的 VERIFIED 并列。
 3. **不阻断结论**：findings 已在上一步路由，无论审计挖出什么，close-chg 照常归档。`close = 计划执行完 + 记录`，语义不变。
 
 ---

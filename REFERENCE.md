@@ -76,27 +76,29 @@ projects/<project>/
 | `update-chg action=update-status` | 更新 T-NNN 状态，联动 frontmatter 与根索引 |
 | `update-chg action=append/replace` | 更新实施详情、工作记录、关联调研 |
 | `update-chg action=verify` | V 阶段验证，写 `verified-date` + `<!-- VERIFIED -->` |
+| `update-chg action=review` | R 阶段记录审计：写 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录`，暂不归档（对标 `action=verify`） |
 | `archive-chg` | 归档已 verified CHG/HOTFIX |
-| `close-chg` | 验证确认后合并完成、验证、归档与 walkthrough |
+| `close-chg` | 验证确认后合并完成、折叠 VERIFIED + REVIEWED + 归档与 walkthrough |
 | `record-finding` | 写 `changes/findings/<id>.md` + `findings.md` 摘要索引 |
 | `record-correction` | 写 `changes/corrections/<id>.md` + `corrections.md` 摘要索引 |
 
-主 session 禁止直接写 `APPROVED`、`VERIFIED`、`verified-date`，也禁止在 task/impl 中写内嵌详情。
+主 session 禁止直接写 `APPROVED`、`VERIFIED`、`verified-date`、`REVIEWED`、`reviewed-date`，也禁止在 task/impl 中写内嵌详情。
 
 ---
 
 ## 4. 状态机
 
-| frontmatter status | verified-date | VERIFIED | 索引位置 |
-|--------------------|---------------|----------|----------|
-| `planned` | null | 缺 | 活跃区 `[ ]` |
-| `in-progress` | null | 缺 | 活跃区 `[/]` |
-| `completed` | null | 缺 | 活跃区 `[x]`，Stop 阻止退出 |
-| `completed` | 非 null | 有 | 活跃区 `[x]`，待 `close-chg` / `archive-chg` |
-| `archived` | 非 null | 有 | ARCHIVE 下方 `[x]` |
-| `cancelled` | null | 缺 | ARCHIVE 下方 `[-]` |
+| frontmatter status | verified-date | VERIFIED | reviewed-date | REVIEWED | 索引位置 / Stop |
+|---|---|---|---|---|---|
+| `planned` | null | 缺 | null | 缺 | 活跃区 `[ ]` |
+| `in-progress` | null | 缺 | null | 缺 | 活跃区 `[/]` |
+| `completed` | null | 缺 | null | 缺 | 活跃区 `[x]`，Stop 拦「未验证」 |
+| `completed` | 非 null | 有 | null | 缺 | 活跃区 `[x]`，Stop 拦「**未审计**」（新增状态） |
+| `completed` | 非 null | 有 | 非 null | 有 | 活跃区 `[x]`，待 `close-chg` / `archive-chg` |
+| `archived` | 非 null | 有 | 非 null | 有 | ARCHIVE 下方 `[x]` |
+| `cancelled` | null | 缺 | null | 缺 | ARCHIVE 下方 `[-]` |
 
-`verified-date` 是机器权威；`<!-- VERIFIED -->` 是人读/hook 信号。两者必须一致。
+`verified-date` 是机器权威；`<!-- VERIFIED -->` 是人读/hook 信号。两者必须一致。`reviewed-date` 是机器权威、`<!-- REVIEWED -->` 是人读/hook 信号，两者一致；REVIEWED 与 VERIFIED 同构，只证「审计步骤执行+记录」，不裁决代码质量。
 
 ---
 
@@ -106,10 +108,10 @@ projects/<project>/
 |------|---------|
 | `session-start.js` | 创建/注入索引模板，输出活跃 CHG 摘要 |
 | `pre-tool-use.js` | 写代码、运行 Bash/PowerShell/Monitor 命令或派 artifact-writer 前，检查活跃 CHG、详情文件、APPROVED、可执行状态，并阻止直接写 artifact / `.pace` 控制面 |
-| `post-tool-use.js` | schema/wikilink/直接 C-V 写入/correction knowledge 提醒 |
+| `post-tool-use.js` | schema/wikilink/直接 C-V 写入/correction knowledge 提醒；verified 未 reviewed 时 `review-missing` 软提醒 |
 | `post-tool-use-failure.js` | 写入/验证工具失败后提醒不要误判完成 |
 | `subagent-stop.js` | 观察 `artifact-writer` 报告标题/状态并记录 transcript |
-| `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致 |
+| `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致；阻止「completed+verified 但未 reviewed」（未审计）退出 |
 | `task-list-sync.js` | legacy 兼容 observer；当前插件不注册任务面板 hook，PACE 权威仍是 `changes/<id>.md` |
 | `pre-compact.js` | 快照活跃 CHG、pending、approved、verified 状态 |
 | `stop-failure.js` | API 错误中断日志 |
@@ -124,6 +126,8 @@ Helper 脚本不是 hook 事件，但属于发布运行时入口：
 | `sync-plan.js` | pace-bridge 成功后记录已桥接 plan |
 
 Helper 成功返回 exit code 0；业务校验失败返回 exit code 2 并在 stdout 给出可读修复信息。Hook 脚本自身通常以容错为主，除 PreToolUse/Stop 的明确阻断外，不把内部错误升级为 shell 崩溃。
+
+REVIEWED 门是 `stop.js` 的 Stop hook 门、不是 PreToolUse 门，因此不进 §5.1 的 PreToolUse 档位表。它在 teammate 模式跟随 `stop.js` 现有的「teammate 全门 exit 0」放行，与 verify 门同（未审计提醒与未验证提醒同属一组 warning，teammate 下一并软化）。
 
 ## 5.1 PreToolUse 拒绝档位与 teammate 降级
 
