@@ -1,0 +1,89 @@
+id: TC-V4
+phase: V
+indication: close-chg-requires-review-confirmation
+description: close-chg 折叠 REVIEWED 的门禁——缺 review-confirmed / review-source / review-findings 时 agent 必须拒绝并提示改派 update-chg action=review 或补字段，不归档、不写任何标记。
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: completed
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: {ISO_DATE}T03:00:00+08:00
+        verified-date: {ISO_DATE}T03:30:00+08:00
+        reviewed-date: null
+        archived-date: null
+        ---
+
+        # TC-V4 测试 close-chg review 门禁
+
+        ## 任务清单
+
+        - [x] T-901 已完成任务
+
+        <!-- APPROVED -->
+        <!-- VERIFIED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试 close-chg 缺 review-confirmed 时拒绝。
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+        | {ISO_DATE} | 验证通过：TC-V4 |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [x] [[chg-{date}-01]] TC-V4 测试 close-chg review 门禁 #change [tasks:: T-901]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        - [x] [[chg-{date}-01]] TC-V4 测试 close-chg review 门禁 #change [tasks:: T-901]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: close-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    verification-confirmed: true
+    complete-open-tasks: true
+    verify-summary: "TC-V4 主 session 已运行并读取验证结果"
+    walkthrough-summary: "TC-V4 不应写入——缺 review-confirmed 应被拒绝"
+
+expected:
+  status: FAILED
+  files_created: []
+  files_modified: []
+  failure_reason_pattern: "missing-fields|review-confirmed|review-source|review-findings"
+  fixture_unchanged: true
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true

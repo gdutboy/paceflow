@@ -15,6 +15,9 @@ operation: close-chg
 target: CHG-YYYYMMDD-NN
 verification-confirmed: true
 complete-open-tasks: true
+review-confirmed: true
+review-source: manual | <所选 review agent 名>
+review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>
 verify-summary: <已运行并读取的验证结果>
 walkthrough-summary: <完成摘要>
 ```
@@ -24,20 +27,26 @@ walkthrough-summary: <完成摘要>
 - `target`（必填，CHG-ID）
 - `verification-confirmed`（必填，必须为布尔 `true`）
 - `complete-open-tasks`（必填，必须为布尔 `true`；主 session 已确认验证通过时允许把 `[ ]` / `[/]` 的 T-NNN 收口为 `[x]`）
+- `review-confirmed`（必填，必须为布尔 `true`；主 session 已编排对抗审计并路由 findings 后传入，agent 以此字段为唯一依据折叠 REVIEWED）
+- `review-source`（必填，`manual` 或所选 review agent 名）
+- `review-findings`（必填，P0/P1/P2/P3 计数 + 各自处置 wikilink，写入 `## 审查记录`）
 - `verify-summary`（必填，一行验证结果摘要，写入 `## 工作记录`）
 - `walkthrough-summary`（必填，一行完成摘要，写入 `walkthrough.md`）
 
 ## 语义
 
-`close-chg` 是收尾合并操作，只能在主 session 已经运行并阅读验证结果后调用。它可以一次完成：
+`close-chg` 是收尾合并操作，只能在主 session 已经运行并阅读验证结果、且已编排对抗审计并路由 findings 后调用。它可以一次完成：
 
 1. 必要时把未完成任务收口为 `[x]`
 2. 推 frontmatter `status` 到 `completed`
 3. 写入 `verified-date` + `<!-- VERIFIED -->`
-4. 追加验证工作记录
-5. 归档到 ARCHIVE 下方并写 `walkthrough.md`
+4. 写入 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录`（在 VERIFIED 之后、归档之前）
+5. 追加验证工作记录
+6. 归档到 ARCHIVE 下方并写 `walkthrough.md`
 
-验证是否通过由主 session 判定后经 `verification-confirmed: true` 传入，agent 以此字段为唯一依据。`verification-confirmed` 为布尔 `true` 是写入任何 artifact 的前提；缺失或非 true 时仅报告对应错误码并停止。
+即 close-chg 主路径一把梭：完成 → VERIFIED → REVIEWED → 归档 → walkthrough。
+
+验证是否通过由主 session 判定后经 `verification-confirmed: true` 传入；对抗审计是否跑过由主 session 判定后经 `review-confirmed: true` 传入。两者均为布尔 `true` 是写入任何 artifact 的前提；任一缺失或非 true 时仅报告对应错误码并停止。REVIEWED 只证"审计这步跑过并记录 findings 处置"，不裁决代码质量；findings 的开 HOTFIX / record-finding 路由是主 session 在调用 close-chg 前完成的编排活，close-chg 不跑审计、不开 HOTFIX、不判断，无论审计挖出什么都照常归档（不阻断结论）。
 
 主路径：一个连续 CHG 的代码写完后，主 session 先运行验证并读取结果；验证通过后直接派 `close-chg verification-confirmed: true complete-open-tasks: true`。即使详情中仍有 `[ ]` / `[/]` 的 T-NNN，只要这些任务已经在本轮执行并由验证覆盖，也由 close-chg 统一收口。逐个 `update-status [x]` + `update-chg action=verify` + 归档的拆分路径，仅在用户明确要求暂不归档或需要跨 session 留存进度时使用。
 
@@ -49,9 +58,11 @@ walkthrough-summary: <完成摘要>
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 解析 target → 详情文件路径；文件不存在 → `target-not-found`
 2. 校验必填字段：
-   - 缺 `verification-confirmed` / `complete-open-tasks` / `verify-summary` / `walkthrough-summary` → `missing-fields`
+   - 缺 `verification-confirmed` / `complete-open-tasks` / `review-confirmed` / `review-source` / `review-findings` / `verify-summary` / `walkthrough-summary` → `missing-fields`
    - `verification-confirmed` 非布尔 `true` → `format-violation`
    - `complete-open-tasks` 非布尔 `true` → `format-violation`
+   - `review-confirmed` 非布尔 `true` → `format-violation`
+   - 缺 `review-confirmed` 时拒绝并提示：改派 `update-chg action=review` 单独记录审计，或补齐 `review-confirmed` / `review-source` / `review-findings` 后重派 close-chg（与缺 `verification-confirmed` 同款处理）
 3. Read 详情文件，校验：
    - `<!-- APPROVED -->` 必须存在
    - frontmatter `status` 必须是非 cancelled 的活跃终态前状态（`planned` / `in-progress` / `completed` / `archived`）；`cancelled` 改走 `archive-chg` 取消式归档
@@ -95,6 +106,20 @@ walkthrough-summary: <完成摘要>
   - 不重复写 `verified-date` / `<!-- VERIFIED -->`
   - 不重复追加验证工作记录
 
+### 2.5 写入 R 阶段标记
+
+在写完 V 阶段标记之后、归档之前折叠 REVIEWED（与 §2 写 VERIFIED 同构，详见 `../artifact-writer-spec.md` §7.1）：
+
+- 若尚未 reviewed：
+  - Edit frontmatter：`reviewed-date: <ISO 8601 datetime>`，置于 `verified-date` 与 `archived-date` 之间
+  - Edit 详情正文：在 `<!-- VERIFIED -->` 行之后紧邻插入 `<!-- REVIEWED -->`（不空行间隔）
+  - Edit 详情正文：append/更新 `## 审查记录` 段（写在 `## 工作记录` 之后），写入 `| <YYYY-MM-DD> | <review-source> | <review-findings> |`
+- 若已 reviewed：
+  - 不重复写 `reviewed-date` / `<!-- REVIEWED -->`
+  - 不重复追加审查记录
+
+注：本步只在 `verified-date` + `<!-- VERIFIED -->` 已落（§2 本次刚写或此前已存在）后执行，保证 REVIEWED 紧跟 VERIFIED 下一行；REVIEWED 是流程证据，不裁决 findings。
+
 ### 3. 归档索引
 
 归档规则与 `archive-chg.md` 相同：**移动索引行内容到 ARCHIVE 下方，ARCHIVE 标记位置不变**。
@@ -124,6 +149,9 @@ walkthrough-summary: <完成摘要>
 - 缺必填字段 → `missing-fields`
 - `verification-confirmed` 非 true → `format-violation`
 - `complete-open-tasks` 非 true → `format-violation`
+- 缺 `review-confirmed` / `review-source` / `review-findings` → `missing-fields`（提示改派 `update-chg action=review` 或补字段后重派）
+- `review-confirmed` 非 true → `format-violation`
+- `reviewed-date` 与 `<!-- REVIEWED -->` 不一致（仅一者存在） → `format-violation: review state inconsistent`
 - `<!-- APPROVED -->` 缺失 → `format-violation`
 - 任务存在 `[!]` → `format-violation: blocked tasks`
 - 任务存在 `[ ]` / `[/]` 且 `complete-open-tasks` 不是 true → `format-violation: tasks not done`

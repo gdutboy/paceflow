@@ -64,7 +64,7 @@ test('所有 agent-tests YAML case 可解析并 prepare/teardown', () => {
     }
   }
   walk(casesRoot);
-  assert.strictEqual(count, 29);
+  assert.strictEqual(count, 33);
 });
 
 console.log('\n--- agent-tests verifier ---');

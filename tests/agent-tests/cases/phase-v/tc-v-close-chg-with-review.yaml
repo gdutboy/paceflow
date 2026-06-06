@@ -1,0 +1,112 @@
+id: TC-V3
+phase: V
+indication: close-chg-with-review-contract
+description: close-chg 主路径一把梭折叠 REVIEWED——主 session 已确认验证通过且已编排审计后，一次完成 open task 收口、VERIFIED、REVIEWED、归档和 walkthrough。
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: in-progress
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: null
+        verified-date: null
+        reviewed-date: null
+        archived-date: null
+        ---
+
+        # TC-V3 测试 close-chg with review
+
+        ## 任务清单
+
+        - [x] T-901 已完成任务
+        - [/] T-902 验证前仍在进行的任务
+
+        <!-- APPROVED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试 close-chg 一把梭折叠 VERIFIED + REVIEWED + 归档。
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+        | {ISO_DATE} | T-901 已完成 |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [/] [[chg-{date}-01]] TC-V3 测试 close-chg with review #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+        - [/] [[chg-{date}-01]] TC-V3 测试 close-chg with review #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: close-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    verification-confirmed: true
+    complete-open-tasks: true
+    review-confirmed: true
+    review-source: manual
+    review-findings: "P0:0 P1:0 P2:0 P3:0；本 CHG diff 无遗留 finding"
+    verify-summary: "TC-V3 主 session 已运行并读取验证结果"
+    walkthrough-summary: "TC-V3 close-chg 折叠 REVIEWED 收尾成功"
+
+expected:
+  status: SUCCESS
+  files_modified:
+    - "changes/chg-{date}-01.md"
+    - task.md
+    - implementation_plan.md
+    - walkthrough.md
+  validations:
+    frontmatter_status: archived
+    completed_date_set: true
+    verified_date_set: true
+    verified_marker_set: true                   # <!-- VERIFIED --> 紧跟 <!-- APPROVED -->
+    archived_date_set: true
+    detail_task_status:
+      T-901: "x"
+      T-902: "x"
+    task_md_index_below_archive: true
+    impl_plan_index_below_archive: true
+    walkthrough_row_added: true
+    work_record_contains: "验证通过：TC-V3 主 session 已运行并读取验证结果"
+  # 正文 grep 断言（verify-output.js 当前无 reviewed_marker_set/reviewed_date_set 键，需手工跑）：
+  #   rg -n "^reviewed-date: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  #   rg -B1 "^<!-- REVIEWED -->" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md  # 应紧跟 <!-- VERIFIED -->
+  #   rg -n "^## 审查记录" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  max_tokens: 70000
+  max_duration_ms: 360000
+  max_tool_uses: 24
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true

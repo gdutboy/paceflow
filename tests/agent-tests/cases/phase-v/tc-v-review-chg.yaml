@@ -1,0 +1,102 @@
+id: TC-V1
+phase: V
+indication: smoke-test-update-chg-review
+description: 验证 update-chg action=review happy path：已 verified 的 CHG 写 frontmatter reviewed-date + 紧邻 <!-- VERIFIED --> 下一行插入 <!-- REVIEWED --> + 追加 ## 审查记录（R 阶段双表示标志同步），且不归档（status 仍 completed）
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: completed
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: {ISO_DATE}T03:00:00+08:00
+        verified-date: {ISO_DATE}T03:30:00+08:00
+        reviewed-date: null
+        archived-date: null
+        ---
+
+        # TC-V1 测试 R 阶段审计
+
+        ## 任务清单
+
+        - [x] T-901 完成任务一
+        - [x] T-902 完成任务二
+
+        <!-- APPROVED -->
+        <!-- VERIFIED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试 update-chg action=review happy path
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+        | {ISO_DATE} | 验证通过：TC-V1 |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [x] [[chg-{date}-01]] TC-V1 测试 R 阶段审计 #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        <!-- 格式：- [状态] [[wikilink]] 标题 #change [tasks::] -->
+
+        - [x] [[chg-{date}-01]] TC-V1 测试 R 阶段审计 #change [tasks:: T-901~T-902]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: update-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    action: review
+    review-confirmed: true
+    review-source: manual
+    review-findings: "P0:0 P1:0 P2:1 P3:0；P2 派 record-finding [[finding-{ISO_DATE}-tc-v1-backlog]]"
+
+expected:
+  status: SUCCESS
+  files_modified:
+    - "changes/chg-{date}-01.md"
+  validations:
+    frontmatter_status: completed              # review 不动 status，仍 completed（不归档）
+    completed_date_set: true                    # completed-date 保持原值
+    verified_date_set: true                     # verified-date 保持原值
+    verified_marker_set: true                   # <!-- VERIFIED --> 仍紧跟 <!-- APPROVED -->
+    archived_date_set: false                    # 未归档
+  # 正文 grep 断言（verify-output.js 当前无 reviewed_marker_set/reviewed_date_set 键，需手工跑；与 TC-A8 verify 同款注释先例）：
+  #   rg -n "^reviewed-date: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  #   rg -n "^<!-- REVIEWED -->" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  #   rg -B1 "^<!-- REVIEWED -->" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md  # 应紧跟 <!-- VERIFIED -->
+  #   rg -n "^## 审查记录" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  #   rg -n "record-finding .*tc-v1-backlog" /tmp/test-vault/empty-v6/changes/chg-{date}-01.md
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true

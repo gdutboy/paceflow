@@ -1,0 +1,87 @@
+id: TC-V2
+phase: V
+indication: review-requires-verified-guard
+description: R 阶段 action=review 前置门禁——目标 CHG 未 verified（verified-date=null 且无 <!-- VERIFIED -->）时 agent 必须拒绝并提示先验证再审计，不写任何标记。
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/chg-{date}-01.md"
+      content: |
+        ---
+        chg-id: CHG-{DATE_UPPER}-01
+        status: completed
+        date: {ISO_DATE}
+        type: change
+        parent-tasks: ["[[task]]"]
+        parent-impl: ["[[implementation_plan]]"]
+        related-finding: null
+        aliases: []
+        tags: []
+        schema-version: "6.0"
+        completed-date: {ISO_DATE}T03:00:00+08:00
+        verified-date: null
+        reviewed-date: null
+        archived-date: null
+        ---
+
+        # TC-V2 测试 review 前置门禁
+
+        ## 任务清单
+
+        - [x] T-901 完成任务一
+
+        <!-- APPROVED -->
+
+        ## 实施详情
+
+        **背景（Why）**：测试未验证不得审计的门禁
+
+        ## 工作记录
+
+        | 日期 | 完成内容 |
+        | --- | --- |
+    - path: task.md
+      content: |
+        # 项目任务追踪
+
+        ## 活跃任务
+
+        - [x] [[chg-{date}-01]] TC-V2 测试 review 前置门禁 #change [tasks:: T-901]
+
+        <!-- ARCHIVE -->
+    - path: implementation_plan.md
+      content: |
+        # 实施计划
+
+        ## 变更索引
+
+        - [x] [[chg-{date}-01]] TC-V2 测试 review 前置门禁 #change [tasks:: T-901]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: update-chg
+  fields:
+    target: "CHG-{DATE_UPPER}-01"
+    action: review
+    review-confirmed: true
+    review-source: manual
+    review-findings: "P0:0 P1:0 P2:0 P3:0"
+
+expected:
+  status: FAILED
+  files_created: []
+  files_modified: []
+  failure_reason_pattern: "format-violation|verified|先验证"
+  fixture_unchanged: true
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+  report_title_prefix_allowed: true
+
+teardown:
+  cleanup: true
