@@ -1,4 +1,4 @@
-# PACEflow v6.2.1 参考手册
+# PACEflow v6.3.0 参考手册
 
 > 最后更新：2026-06-07
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify-Review)
@@ -83,6 +83,64 @@ projects/<project>/
 | `record-correction` | 写 `changes/corrections/<id>.md` + `corrections.md` 摘要索引 |
 
 主 session 禁止直接写 `APPROVED`、`VERIFIED`、`verified-date`、`REVIEWED`、`reviewed-date`，也禁止在 task/impl 中写内嵌详情。
+
+## 3.1 batch create CHG（变更集批量创建）
+
+一个完整变更常天然拆成多个可独立验证 / 回滚 / 关闭的闭环 CHG（如 Phase 1-N）。batch create 把这些 CHG 的规划**一次性持久化为 artifact**，不依赖单一 session 存活——避免后续阶段规划只留在 session 上下文、compact 或中断即丢失。采用中间路径：复用现有 CHG artifact，frontmatter 加两个 nullable 字段标记其所属变更集，不引入独立 epic artifact。
+
+**change-set frontmatter（仅 batch 成员非 null）**
+
+| 字段 | 含义 | 单建 CHG | batch 成员 |
+|------|------|----------|-----------|
+| `change-set` | 变更集名（同一批共享） | `null` | 如 `review-gate` |
+| `change-set-seq` | 本 CHG 在集内序号 `i/N` | `null` | 如 `2/4` |
+
+**Step 1 — 批量预留连号**
+
+```bash
+node "<hooks>/reserve-artifact-id.js" --operation create-chg --count N
+```
+
+同锁取 N 个连续编号（counter 一次推进到 `first+N-1`），输出 N 个 `# --- reserved i/N ---` 块。`--count` 严格 `^\d+$`、范围 `1..MAX_RESERVE_COUNT`（=20）、`count>1` 仅允许 `create-chg`（非法值 / correction 批量等 fail-closed）。
+
+**Step 2 — batch create prompt（共享头部 + N 块）**
+
+```text
+artifact_dir: <artifact 目录>
+operation: create-chg
+change-set: <变更集名>
+change-set-total: <N，必须等于下面 CHG 块数>
+--- CHG 1/N ---
+reserved-id: <第 1 个 reserved-id>
+title: <第 1 个闭环 CHG 标题>
+tasks:
+  - T-001: <任务与验收>
+--- CHG 2/N ---
+reserved-id: <第 2 个 reserved-id>
+title: <第 2 个闭环 CHG 标题>
+tasks:
+  - T-001: <任务与验收>
+（重复到第 N 块）
+```
+
+artifact-writer 逐块建 N 个 `changes/<id>.md`（各写 `change-set` + `change-set-seq: i/N`）+ N 行活跃区索引。
+
+**确定性前置校验（`agent-lifecycle-guard.js`）**：派遣前对 batch prompt 做硬校验，任一不符即 **DENY**（不靠 agent 自觉）——
+
+- 缺 `change-set` 头部 / 块数 ≠ `change-set-total`；
+- 某块缺 `reserved-id` / `title` / `tasks`（`blockFieldValue` 同行匹配，防空字段把下一行吞进去）；
+- 块内 `reserved-id` 与实际预留不匹配 / 重复 id。
+
+**索引强制锚点**：新索引行恒插入 `<!-- ARCHIVE -->` **上方**活跃区，绝不插到下方。活跃 CHG 全归档后活跃区为空时尤易踩此错位；`findActiveIndexBelowArchive` 确定性检测，post-tool-use 编辑后告警。
+
+**追踪层**
+
+| Hook | batch 行为 |
+|------|-----------|
+| `session-start.js` | 按 `change-set` 聚合活跃 CHG，注入 `=== change-set 整体进度 ===`（已完成 = N − 未完成成员数） |
+| `stop.js` | 变更集尚有未执行 planned 成员时发**不阻断**软提醒（仅 `warnings.length === 0` 时经 `emitAllowedStopReminders` 发出），提示逐个 `approve-and-start` 续接、勿遗漏后续阶段 |
+
+**执行模型（A2）**：batch create 只一次性落地**规划**；执行仍逐个 `approve-and-start`，不自动开工后续阶段，与单 CHG 生命周期一致。
 
 ---
 
