@@ -258,6 +258,19 @@ if (paceSignal === 'artifact') {
     }
   }
 
+  // change-set 成组软提醒（不阻断）：同 change-set 的未执行（planned/ready/blocked）成员聚合提醒。
+  // 走 softReminders → 仅在 warnings.length===0（本就放行）时由 emitAllowedStopReminders 显示，
+  // 绝不进 warnings[]，故有 in-progress 等阻断项时不显示、也不会把阻断降级为放行。
+  const changeSetPlanned = new Map();
+  for (const change of classifiedEntries) {
+    if (!change.changeSet || !isDeferredCategory(change.category)) continue;
+    if (!changeSetPlanned.has(change.changeSet)) changeSetPlanned.set(change.changeSet, []);
+    changeSetPlanned.get(change.changeSet).push(change.changeSetSeq || change.id);
+  }
+  for (const [name, seqs] of changeSetPlanned) {
+    softReminders.push(`change-set ${name} 还有 ${seqs.length} 个未执行成员（${seqs.join(', ')}）；逐个 approve-and-start 继续，勿遗漏后续阶段`);
+  }
+
   const walkActive = readActive(cwd, 'walkthrough.md');
   if (walkActive !== null && requiresWalkthrough) {
     const today = todayISO();

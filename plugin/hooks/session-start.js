@@ -597,6 +597,26 @@ if (paceSignal === 'artifact') {
     process.stdout.write(`继续、恢复或收口已有 CHG 前，先 Read 对应 changes/<id>.md，确认任务清单、实施详情和工作记录；本摘要只用于定位，不替代 CHG 详情。\n`);
     process.stdout.write('\n');
   }
+
+  // change-set 整体进度：把同一 change-set 的活跃成员聚合，提醒 AI 别遗漏 batch 规划的后续阶段。
+  // N 取自 change-set-seq 分母（如 "2/4"→4），done = N - 活跃成员数（已归档/完成的不在活跃摘要中）。
+  const changeSetGroups = new Map();
+  for (const s of activeChangeSummaries) {
+    if (!s.changeSet || isForeignSummary(s)) continue;
+    if (!changeSetGroups.has(s.changeSet)) changeSetGroups.set(s.changeSet, []);
+    changeSetGroups.get(s.changeSet).push(s);
+  }
+  if (changeSetGroups.size > 0) {
+    process.stdout.write(`=== change-set 整体进度 ===\n`);
+    for (const [name, members] of changeSetGroups) {
+      const totals = members.map(m => { const mm = String(m.changeSetSeq || '').match(/\/(\d+)/); return mm ? Number(mm[1]) : 0; });
+      const n = Math.max(members.length, ...totals);
+      const done = Math.max(0, n - members.length);
+      const seqs = members.map(m => m.changeSetSeq || m.id).join(', ');
+      process.stdout.write(`- change-set ${name}：进度 ${done}/${n}，待执行 ${members.length} 个（${seqs}）\n`);
+    }
+    process.stdout.write(`一个 change-set 是一组规划好的可闭环 CHG；逐个 approve-and-start 执行，勿遗漏后续阶段。\n\n`);
+  }
 }
 
 // v4.8/v6.0.26: 注入 artifact 根目录；local 模式也显式说明，避免把 .pace/ 误当 artifact 目录。

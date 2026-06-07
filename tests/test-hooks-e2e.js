@@ -137,7 +137,7 @@ function projectNameForDir(dir) {
   return path.basename(dir).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]', tasks = null, approved = true, verified = false, reviewed = false } = {}) {
+function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]', tasks = null, approved = true, verified = false, reviewed = false, changeSet = null, changeSetSeq = null } = {}) {
   const completedDate = status === 'completed' || status === 'archived' ? `${today()}T12:00:00+08:00` : 'null';
   const verifiedDate = verified ? `${today()}T12:30:00+08:00` : 'null';
   const reviewedDate = reviewed ? `${today()}T12:45:00+08:00` : 'null';
@@ -148,6 +148,8 @@ function chgDetail({ id = 'CHG-20260504-01', status = 'in-progress', task = '[/]
     `status: ${status}`,
     'date: 2026-05-04',
     'type: change',
+    ...(changeSet !== null ? [`change-set: ${changeSet}`] : []),
+    ...(changeSetSeq !== null ? [`change-set-seq: ${changeSetSeq}`] : []),
     'parent-tasks: ["[[task]]"]',
     'parent-impl: ["[[implementation_plan]]"]',
     'related-finding: null',
@@ -319,6 +321,8 @@ function makeV6ProjectWithChanges(label, changes, opts = {}) {
         tasks: c.tasks || null,
         approved: c.approved || false,
         verified: c.verified || false,
+        changeSet: c.changeSet ?? null,
+        changeSetSeq: c.changeSetSeq ?? null,
       }),
       'utf8'
     );
@@ -374,6 +378,48 @@ test('2. v6 artifact 注入 + 活跃 CHG 摘要', () => {
   assert.ok(r.stdout.includes('CHG-20260504-01'));
   assert.ok(r.stdout.includes('先 Read 对应 changes/<id>.md'));
   assert.ok(r.stdout.includes('本摘要只用于定位，不替代 CHG 详情'));
+});
+
+test('C1. SessionStart 注入 change-set 整体进度', () => {
+  const dir = makeV6ProjectWithChanges('ss-changeset', [
+    { id: 'CHG-20260607-02', status: 'planned', task: '[ ]', changeSet: 'review-gate', changeSetSeq: '2/4' },
+    { id: 'CHG-20260607-03', status: 'planned', task: '[ ]', changeSet: 'review-gate', changeSetSeq: '3/4' },
+    { id: 'CHG-20260607-04', status: 'planned', task: '[ ]', changeSet: 'review-gate', changeSetSeq: '4/4' },
+  ]);
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('change-set') && r.stdout.includes('review-gate'), '应注入 change-set 名');
+  assert.ok(r.stdout.includes('1/4'), '应含进度 done(1)/N(4)（N 取自 change-set-seq 分母，done=N-活跃数）');
+});
+
+test('C1b. 无 change-set 成员 → 不注入 change-set 进度（回归）', () => {
+  const dir = makeV6ProjectWithChanges('ss-no-changeset', [
+    { id: 'CHG-20260607-02', status: 'in-progress', task: '[/]', approved: true },
+  ]);
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('change-set 整体进度'), '无 change-set 成员不应注入该段');
+});
+
+test('STOP-cs1. change-set 有 planned + 无 in-progress → 软提醒 exit 0（不阻断）', () => {
+  const dir = makeV6ProjectWithChanges('stop-cs-planned', [
+    { id: 'CHG-20260607-03', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '3/4' },
+    { id: 'CHG-20260607-04', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '4/4' },
+  ], { walkToday: false });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 0, '无 in-progress 阻断项应放行');
+  assert.ok(r.stderr.includes('change-set') || r.stdout.includes('change-set'), '应有 change-set 软提醒（可见）');
+});
+
+test('STOP-cs2. 有 in-progress CHG → 仍 exit 2（回归，不被 change-set 软提醒降级）', () => {
+  const dir = makeV6ProjectWithChanges('stop-cs-inprogress', [
+    { id: 'CHG-20260607-03', status: 'in-progress', task: '[/]', approved: true, changeSet: 'review-gate', changeSetSeq: '3/4' },
+    { id: 'CHG-20260607-04', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '4/4' },
+  ], { walkToday: false });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2, '有 in-progress 阻断项仍应 exit 2，change-set 软提醒不得降级阻断');
+  // 钉住「软提醒不得泄漏进 warnings」——若 change-set 提醒被误 push 进 warnings，阻断 stderr 会含其文案
+  assert.ok(!r.stderr.includes('未执行成员'), 'change-set 软提醒文案不得出现在阻断 stderr（必须走 softReminders，不进 warnings）');
 });
 
 test('2a. SessionStart CHG 执行上下文按详情 pending T-NNN 提示', () => {
