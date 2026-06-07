@@ -89,6 +89,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 目标 | 操作 |
 |------|------|
 | 创建 CHG/HOTFIX | 派 `artifact-writer`，operation=`create-chg` |
+| 批量创建一个 change-set 的 N 个 CHG | 先 reserve `--count N`，再一次 operation=`create-chg` batch（共享 `change-set` / `change-set-total` + N 个 `--- CHG i/N ---` 块） |
 | 仅批准 C 阶段，暂不开始 | operation=`update-chg`，target=`CHG-...`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
 | 批准并开始首个任务 | operation=`update-chg`，target=`CHG-...`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
 | 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status`，task-id=`T-NNN`；`new-status=[!]` 必须带 `status-reason` / `block-reason` / `pause-reason`；全任务 `[-]` 表示取消 |
@@ -131,6 +132,27 @@ background: <Why>
 scope: <What>
 technical-decision: <How>
 ```
+
+批量创建（batch create CHG，一个 change-set 的 N 个 CHG 一次落地）：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: create-chg
+change-set: <变更集名>
+change-set-total: <N，必须等于块数>
+--- CHG 1/N ---
+reserved-id: <reserve --count N 输出的第 1 个>
+title: <第 1 个 CHG 标题>
+tasks:
+  - T-001: <任务标题与验收>
+--- CHG 2/N ---
+reserved-id: <第 2 个 reserved-id>
+title: <第 2 个 CHG 标题>
+tasks:
+  - T-001: <任务标题与验收>
+```
+
+（每块一个 reserved-id；artifact-writer 逐块建 N 个 CHG 并各写 `change-set` / `change-set-seq: i/N`；hook 对块数 / 字段 / reserved-id 做确定性前置校验。）
 
 仅批准，暂不开始：
 
@@ -319,7 +341,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`。`create-chg --type` 只支持 `change` / `hotfix`；finding/research 沉淀走 `record-finding`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`；批量创建一个 change-set 的 N 个 CHG 用 `--count N` 一次预留 N 个连号（仅 create-chg 支持）。`create-chg --type` 只支持 `change` / `hotfix`；finding/research 沉淀走 `record-finding`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 前原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。先按 helper 命令来源运行 `reserve-artifact-id.js --operation record-correction`，再把 helper 输出的 `reserved-file-prefix` 原样写入 Agent prompt。

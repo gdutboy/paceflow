@@ -104,6 +104,28 @@ technical-decision: <关键设计决策和取舍>
 
 每个任务自包含目标与验收标准，让后续执行者不回读 plan 也能据此执行。若需要生成多个 CHG，标题应体现各自的闭环范围，如“数据结构/迁移”“后端接口”“前端调用”“文档配置”。
 
+**批量创建（batch create CHG，推荐用于一次桥接整个 plan）**：当一个 plan 按闭环边界拆成 N 个 CHG 时，一次预留 N 个连号、一次 batch create，而非逐个执行完一个再建下一个（后者会把后续阶段的规划只留在 session 上下文，compact 或中断即丢失）。先 `reserve --operation create-chg --count N` 取 N 个连号 `reserved-id`，再组织一个 batch create prompt（共享头部 + N 个 `--- CHG i/N ---` 块）：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: create-chg
+change-set: <变更集名（如 plan 主题）>
+change-set-total: <N，必须等于块数>
+--- CHG 1/N ---
+reserved-id: <第 1 个 reserved-id>
+title: <第 1 个闭环 CHG 标题>
+tasks:
+  - T-001: <任务与验收>
+--- CHG 2/N ---
+reserved-id: <第 2 个 reserved-id>
+title: <第 2 个闭环 CHG 标题>
+tasks:
+  - T-001: <任务与验收>
+（每块一个 reserved-id，重复到第 N 块）
+```
+
+artifact-writer 逐块建 N 个 `changes/<id>.md`（各写 `change-set` + `change-set-seq: i/N`）+ N 行活跃区索引。hook（agent-lifecycle-guard）对 batch 做确定性前置校验：缺块 / 某块缺 reserved-id·title·tasks / 块数与 `change-set-total` 不符 / 缺 `change-set` / reserved-id 与预留不匹配，都会在派遣前 DENY。整个 plan 的多阶段规划一次性落为 artifact，不依赖单一 session 存活；执行仍逐个 approve-and-start（见 Step 4，A2 模型不变）。
+
 ### Step 3：派 artifact writer
 
 派 `artifact-writer` 执行 `create-chg`。agent 会创建：
