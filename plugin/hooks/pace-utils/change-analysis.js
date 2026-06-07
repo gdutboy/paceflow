@@ -195,8 +195,16 @@ module.exports = function createChangeAnalysis(ctx) {
     return String(value || '').replace(/^["']|["']$/g, '').trim();
   }
 
+  // 可空 frontmatter 字段（如 change-set / change-set-seq）：去引号后，字面 null/空串归一为 JS null，
+  // 其余返回去引号字符串。与 verified-date/reviewed-date 的 'null' 判定一致，保证向后兼容。
+  function frontmatterNullable(value) {
+    const v = normalizeFrontmatterStatus(value);
+    return v && v.toLowerCase() !== 'null' ? v : null;
+  }
+
   function classifyChange(entry) {
     const detail = entry && entry.detail;
+    const fm = (detail && detail.frontmatter) || {};
     const status = normalizeFrontmatterStatus(detail && detail.frontmatter && detail.frontmatter.status);
     const tasks = detail && !detail.missing ? countDetailTasks(detail.content) : { pending: 0, done: 0, total: 0, inProgress: 0, blocked: 0 };
     const approved = isChangeApproved(detail);
@@ -212,6 +220,8 @@ module.exports = function createChangeAnalysis(ctx) {
       approved,
       verified,
       reviewed,
+      changeSet: frontmatterNullable(fm['change-set']),
+      changeSetSeq: frontmatterNullable(fm['change-set-seq']),
       taskCheckbox,
       implCheckbox,
       detail,
@@ -310,6 +320,8 @@ module.exports = function createChangeAnalysis(ctx) {
         approved: isChangeApproved(entry.detail),
         verified: isChangeVerified(entry.detail),
         reviewed: isChangeReviewed(entry.detail),
+        changeSet: frontmatterNullable(fm['change-set']),
+        changeSetSeq: frontmatterNullable(fm['change-set-seq']),
         pending: tasks ? tasks.pending : null,
         done: tasks ? tasks.done : null,
         blocked: tasks ? tasks.blocked : null,

@@ -639,7 +639,10 @@ module.exports = function createLockUtils(ctx) {
     return max;
   }
 
-  function nextSequenceNumber(cwd, sequenceName, existingMax) {
+  // 在同一序列锁内连续取 N 个编号，保证 batch 预留连号原子、避免并发插号。
+  // count=1 时等价于单条取号；返回 number=首号（向后兼容单数调用方）+ numbers=全部 N 个。
+  function nextSequenceNumbers(cwd, sequenceName, existingMax, count = 1) {
+    const n = Math.max(1, Math.floor(Number(count) || 1));
     const runtime = ctx.getProjectRuntimeDir(cwd);
     const lockPath = path.join(runtime, 'locks', 'sequences', `${safeLockName(sequenceName)}.lock`);
     const counterPath = path.join(runtime, 'sequences', `${safeLockName(sequenceName)}.counter`);
@@ -654,10 +657,12 @@ module.exports = function createLockUtils(ctx) {
     try {
       let current = 0;
       try { current = Number(fs.readFileSync(counterPath, 'utf8').trim()) || 0; } catch(e) {}
-      const next = Math.max(current, existingMax || 0) + 1;
+      const first = Math.max(current, existingMax || 0) + 1;
+      const numbers = [];
+      for (let i = 0; i < n; i++) numbers.push(first + i);
       fs.mkdirSync(path.dirname(counterPath), { recursive: true });
-      fs.writeFileSync(counterPath, `${next}\n`, 'utf8');
-      return { ok: true, number: next, counterPath };
+      fs.writeFileSync(counterPath, `${first + n - 1}\n`, 'utf8');
+      return { ok: true, number: first, numbers, counterPath };
     } finally {
       if (!lock.reentrant) {
         try { fs.unlinkSync(lockPath); } catch(e) {}
@@ -673,39 +678,55 @@ module.exports = function createLockUtils(ctx) {
     return 'CHG';
   }
 
-  function reserveArtifactId(cwd, info = {}) {
+  // 批量预留 N 个唯一编号；count=1 时与单条预留等价。返回 reservations 数组，
+  // 每个元素形如单数 reserveArtifactId 的成功返回（create-chg: {id,fileRel,...}；
+  // record-correction: {id,filePrefix,...}）。N 个编号在同一序列锁内连续取号保证连号。
+  function reserveArtifactIds(cwd, info = {}, count = 1) {
+    const n = Math.max(1, Math.floor(Number(count) || 1));
     const operation = String(info.operation || operationFromAgentPrompt(info.prompt)).toLowerCase();
     const artDir = info.artifactDir || ctx.getArtifactDir(cwd);
     const owner = lockOwnerInfo(info);
-    if (!owner.ownerKey) return { reserved: false, reason: 'missing-owner' };
+    if (!owner.ownerKey) return { reserved: false, reason: 'missing-owner', operation, reservations: [] };
 
     if (operation === 'create-chg') {
       const kind = inferChangeKindFromPrompt(info.prompt);
       const dateCompact = ctx.todayISO().replace(/-/g, '');
       const lower = kind.toLowerCase();
       const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes'), new RegExp(`^${lower}-${dateCompact}-(\\d{2})\\.md$`, 'i'));
-      const seq = nextSequenceNumber(cwd, `${lower}-${dateCompact}`, existingMax);
-      if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock };
-      const nn = String(seq.number).padStart(2, '0');
-      const id = `${kind}-${dateCompact}-${nn}`;
-      const fileRel = `changes/${lower}-${dateCompact}-${nn}.md`;
-      const written = writeArtifactReservation(cwd, owner, { operation, kind, id, fileRel });
-      return { reserved: true, operation, kind, id, fileRel, path: written.path };
+      const seq = nextSequenceNumbers(cwd, `${lower}-${dateCompact}`, existingMax, n);
+      if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock, operation, reservations: [] };
+      const reservations = seq.numbers.map((num) => {
+        const nn = String(num).padStart(2, '0');
+        const id = `${kind}-${dateCompact}-${nn}`;
+        const fileRel = `changes/${lower}-${dateCompact}-${nn}.md`;
+        const written = writeArtifactReservation(cwd, owner, { operation, kind, id, fileRel });
+        return { reserved: true, operation, kind, id, fileRel, path: written.path };
+      });
+      return { reserved: true, operation, reservations };
     }
 
     if (operation === 'record-correction') {
       const date = ctx.todayISO();
       const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes', 'corrections'), new RegExp(`^correction-${date}-(\\d{2})-.+\\.md$`, 'i'));
-      const seq = nextSequenceNumber(cwd, `correction-${date}`, existingMax);
-      if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock };
-      const nn = String(seq.number).padStart(2, '0');
-      const id = `CORRECTION-${date}-${nn}`;
-      const filePrefix = `changes/corrections/correction-${date}-${nn}-`;
-      const written = writeArtifactReservation(cwd, owner, { operation, id, filePrefix });
-      return { reserved: true, operation, id, filePrefix, path: written.path };
+      const seq = nextSequenceNumbers(cwd, `correction-${date}`, existingMax, n);
+      if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock, operation, reservations: [] };
+      const reservations = seq.numbers.map((num) => {
+        const nn = String(num).padStart(2, '0');
+        const id = `CORRECTION-${date}-${nn}`;
+        const filePrefix = `changes/corrections/correction-${date}-${nn}-`;
+        const written = writeArtifactReservation(cwd, owner, { operation, id, filePrefix });
+        return { reserved: true, operation, id, filePrefix, path: written.path };
+      });
+      return { reserved: true, operation, reservations };
     }
 
-    return { reserved: false, reason: 'operation-no-reservation', operation };
+    return { reserved: false, reason: 'operation-no-reservation', operation, reservations: [] };
+  }
+
+  function reserveArtifactId(cwd, info = {}) {
+    const result = reserveArtifactIds(cwd, info, 1);
+    if (!result.reserved) return { reserved: false, reason: result.reason, lock: result.lock, operation: result.operation };
+    return result.reservations[0];
   }
 
   function reservationMatchesArtifactRel(reservation, artifactRel) {
@@ -760,6 +781,7 @@ module.exports = function createLockUtils(ctx) {
     readArtifactIndexTransaction,
     formatArtifactResourceLock,
     reserveArtifactId,
+    reserveArtifactIds,
     readArtifactReservation,
     findArtifactReservationForRel,
     clearArtifactReservation,

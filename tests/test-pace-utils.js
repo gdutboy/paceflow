@@ -1952,7 +1952,7 @@ test('bridge candidate plans: current-native-plan 即使较旧也保持桥接提
 // ============================================================
 console.log('\n--- v6 change parsing/classification ---');
 
-function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progress', checkbox = '/', tasks = ['- [/] T-001 测试任务'], approved = true, verified = false, reviewed = false } = {}) {
+function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progress', checkbox = '/', tasks = ['- [/] T-001 测试任务'], approved = true, verified = false, reviewed = false, changeSet = null, changeSetSeq = null } = {}) {
   const slug = id.toLowerCase();
   const indexLine = `- [${checkbox}] [[${slug}]] 测试变更 #change [tasks:: T-001]\n`;
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
@@ -1964,6 +1964,8 @@ function writeV6ChangeFixture(dir, { id = 'CHG-20260507-01', status = 'in-progre
     `status: ${status}`,
     'date: 2026-05-07',
     'type: change',
+    ...(changeSet !== null ? [`change-set: ${changeSet}`] : []),
+    ...(changeSetSeq !== null ? [`change-set-seq: ${changeSetSeq}`] : []),
     'parent-tasks: ["[[task]]"]',
     'parent-impl: ["[[implementation_plan]]"]',
     'related-finding: null',
@@ -2050,6 +2052,35 @@ test('classifyChange — completed+verified 未 reviewed 时 reviewed=false', ()
   const cls = paceUtils.classifyChange(paceUtils.getActiveChangeEntries(dir)[0]);
   assert.strictEqual(cls.reviewed, false);
   assert.strictEqual(cls.category, 'closing-required');
+});
+
+test('CS-1. classifyChange / summarizeActiveChanges 解析 change-set / change-set-seq', () => {
+  const dir = makeTmpDir('v6-change-set');
+  writeV6ChangeFixture(dir, { changeSet: 'review-gate', changeSetSeq: '2/4' });
+  const e = paceUtils.getActiveChangeEntries(dir).find(x => x.id === 'CHG-20260507-01');
+  const cls = paceUtils.classifyChange(e);
+  assert.strictEqual(cls.changeSet, 'review-gate');
+  assert.strictEqual(cls.changeSetSeq, '2/4');
+  const sum = paceUtils.summarizeActiveChanges(dir)[0];
+  assert.strictEqual(sum.changeSet, 'review-gate');
+  assert.strictEqual(sum.changeSetSeq, '2/4');
+});
+
+test('CS-2. 无 change-set 字段 → changeSet/changeSetSeq null（回归）', () => {
+  const dir = makeTmpDir('v6-no-change-set');
+  writeV6ChangeFixture(dir);
+  const cls = paceUtils.classifyChange(paceUtils.getActiveChangeEntries(dir)[0]);
+  assert.strictEqual(cls.changeSet, null);
+  assert.strictEqual(cls.changeSetSeq, null);
+  assert.strictEqual(paceUtils.summarizeActiveChanges(dir)[0].changeSet, null);
+});
+
+test('CS-3. change-set: null 字面量归一为 JS null（非字符串 "null"）', () => {
+  const dir = makeTmpDir('v6-change-set-literal-null');
+  writeV6ChangeFixture(dir, { changeSet: 'null', changeSetSeq: '"null"' });
+  const cls = paceUtils.classifyChange(paceUtils.getActiveChangeEntries(dir)[0]);
+  assert.strictEqual(cls.changeSet, null, '字面 null 应归一为 JS null');
+  assert.strictEqual(cls.changeSetSeq, null, '带引号 null 也应归一为 JS null');
 });
 
 test('parseFrontmatter — 支持 UTF-8 BOM 前缀', () => {

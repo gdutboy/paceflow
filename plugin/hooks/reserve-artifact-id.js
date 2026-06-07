@@ -9,7 +9,7 @@ const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
-  const args = { operation: '', type: '', cwd: '', sessionId: '', newReservation: false, help: false, unknown: [] };
+  const args = { operation: '', type: '', cwd: '', sessionId: '', newReservation: false, count: null, help: false, unknown: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
@@ -24,6 +24,9 @@ function parseArgs(argv) {
       args.cwd = String(argv[++i] || '');
     } else if (arg === '--session-id') {
       args.sessionId = String(argv[++i] || '');
+    } else if (arg === '--count') {
+      // 用哨兵区分「未传 --count」(null) 与「--count 缺值/取到空」('')，后者也要 fail-closed
+      args.count = i + 1 < argv.length ? String(argv[++i]) : '';
     } else if (arg.startsWith('-')) {
       args.unknown.push(arg);
     } else if (!args.operation && !arg.startsWith('-')) {
@@ -40,7 +43,7 @@ function parseArgs(argv) {
 function usage() {
   return [
     'Usage:',
-    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg [--type hotfix] [--new] [--cwd <project-cwd>]`,
+    `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg [--type hotfix] [--count N] [--new] [--cwd <project-cwd>]`,
     `  node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation record-correction [--new] [--cwd <project-cwd>]`,
     '',
     'Run this from the main session before dispatching paceflow:artifact-writer.',
@@ -119,6 +122,24 @@ function main() {
     fail(args.cwd, 'DENY_INVALID_TYPE', 'create-chg --type 只支持 change / hotfix；finding/research 请使用 artifact-writer record-finding，不通过 create-chg 预留。', { type: args.type });
     return;
   }
+  const MAX_RESERVE_COUNT = 20;
+  let count = 1;
+  if (args.count !== null) {
+    if (!/^\d+$/.test(args.count)) {
+      fail(args.cwd, 'DENY_INVALID_COUNT', `reserve --count 必须是 1..${MAX_RESERVE_COUNT} 的十进制整数（收到：${args.count || '(空)'}）。\n--count 用于一次性批量预留多个连号 CHG（batch create CHG）。\n\n${usage()}`, { count: args.count });
+      return;
+    }
+    const parsed = Number(args.count);
+    if (parsed < 1 || parsed > MAX_RESERVE_COUNT) {
+      fail(args.cwd, 'DENY_INVALID_COUNT', `reserve --count 必须在 1..${MAX_RESERVE_COUNT} 之间（收到：${parsed}）。一次规划过多 CHG 不利于可闭环拆分；如确需更多请分批预留。\n\n${usage()}`, { count: args.count });
+      return;
+    }
+    if (parsed > 1 && args.operation !== 'create-chg') {
+      fail(args.cwd, 'DENY_INVALID_COUNT', `--count >1 仅用于 create-chg 批量预留（batch create CHG）；${args.operation} 不支持批量预留。\n\n${usage()}`, { operation: args.operation, count: parsed });
+      return;
+    }
+    count = parsed;
+  }
   if (!args.sessionId) {
     fail(args.cwd, 'DENY_MISSING_SESSION', '缺少 CLAUDE_CODE_SESSION_ID，无法创建可被后续 artifact-writer Agent 匹配的 session reservation。请在 Claude Code 主 session 的 Bash 工具中运行本 helper。');
     return;
@@ -143,6 +164,33 @@ function main() {
   try { paceUtils.ensureProjectInfra(args.cwd); } catch(e) {}
   try { paceUtils.createTemplates(args.cwd); } catch(e) {
     fail(args.cwd, 'DENY_TEMPLATE_CREATE', `PACE hook 无法在 artifact_dir 创建完整 v6 Artifact 基础结构：${paceUtils.displayDir(artDir)}\n底层错误：${e.message || String(e)}`, { artifact_dir: paceUtils.displayDir(artDir) });
+    return;
+  }
+
+  if (count > 1) {
+    const batch = paceUtils.reserveArtifactIds(args.cwd, {
+      sessionId: args.sessionId,
+      artifactDir: artDir,
+      operation: args.operation,
+      prompt: promptForReservation(args.operation, args.type),
+    }, count);
+    if (!batch.reserved || !batch.reservations.length) {
+      const detail = batch.lock && batch.lock.ok
+        ? paceUtils.formatArtifactResourceLock(batch.lock)
+        : (batch.reason || 'unknown');
+      fail(args.cwd, 'DENY_ID_RESERVATION', `PACE hook 无法为 ${args.operation} 批量预留 ${count} 个唯一编号，已停止以避免并发 ID 冲突。\n原因：${detail}`, { operation: args.operation, count, reason: batch.reason || '' });
+      return;
+    }
+    log(paceUtils.logEntry('ReserveID', 'RESERVE_BATCH', {
+      proj: paceUtils.getProjectName(args.cwd),
+      operation: args.operation,
+      artifact_dir: paceUtils.displayDir(artDir),
+      count,
+      reserved: batch.reservations.map(r => r.id || r.fileRel || r.filePrefix || '').join(','),
+    }));
+    const blocks = batch.reservations.map((r, idx) =>
+      `# --- reserved ${idx + 1}/${count} ---\n${formatReservationBlock(args.cwd, artDir, args.operation, r, false)}`);
+    process.stdout.write(`${blocks.join('\n\n')}\n`);
     return;
   }
 

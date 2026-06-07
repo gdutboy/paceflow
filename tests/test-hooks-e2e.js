@@ -2399,6 +2399,151 @@ test('9hc-helper2b. reserve-artifact-id helper 拒绝 create-chg --type research
   assert.ok(r.stdout.includes('record-finding'));
 });
 
+test('RES-batch1. reserve --count 4 产 4 个连号 reserved-id', () => {
+  const dir = makeV6Project('reserve-count', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '4'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-count' },
+  });
+  assert.strictEqual(r.code, 0);
+  const ids = (r.stdout.match(/reserved-id:\s*(CHG-\d{8}-\d{2})/g) || []).map(s => s.split(/\s+/).pop());
+  assert.strictEqual(ids.length, 4, '应输出 4 个 reserved-id');
+  const nums = ids.map(s => Number(s.match(/-(\d{2})$/)[1]));
+  assert.deepStrictEqual(nums, [nums[0], nums[0] + 1, nums[0] + 2, nums[0] + 3], '应为 4 个连号');
+  assert.ok(r.stdout.includes('# --- reserved 1/4 ---'), '每块应有 reserved i/N 标记');
+  assert.ok(r.stdout.includes('# --- reserved 4/4 ---'));
+});
+
+test('RES-batch1b. reserve --count 3 持久化 3 条可匹配 reservation（供 batch create 匹配）', () => {
+  const dir = makeV6Project('reserve-count-store', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '3'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-count-store' },
+  });
+  assert.strictEqual(r.code, 0);
+  const uniqueIds = [...new Set(r.stdout.match(/CHG-\d{8}-\d{2}/g) || [])];
+  assert.strictEqual(uniqueIds.length, 3);
+  const resDir = path.join(dir, '.pace', 'reservations');
+  const storedIds = new Set(fs.readdirSync(resDir)
+    .filter(f => f.endsWith('.json'))
+    .map(f => { try { return JSON.parse(fs.readFileSync(path.join(resDir, f), 'utf8')).id; } catch (e) { return null; } })
+    .filter(Boolean));
+  for (const id of uniqueIds) {
+    assert.ok(storedIds.has(id), `reservation 应持久化 ${id}`);
+  }
+});
+
+test('RES-batch2. reserve 默认 count=1 行为不变（回归）', () => {
+  const dir = makeV6Project('reserve-default', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-default' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual((r.stdout.match(/reserved-id:/g) || []).length, 1);
+  assert.ok(!r.stdout.includes('# --- reserved'), '单条预留不应带 batch 标记');
+  assert.ok(r.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
+});
+
+test('RES-batch3. reserve --count 0 → fail-closed 非零退出', () => {
+  const dir = makeV6Project('reserve-bad-count-zero', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '0'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-bad-zero' },
+  });
+  assert.notStrictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('--count'), '应说明 --count 约束');
+  assert.ok(!r.stdout.includes('reserved-id:'), 'fail-closed 不应预留');
+});
+
+test('RES-batch4. reserve --count 非整数 → fail-closed', () => {
+  const dir = makeV6Project('reserve-bad-count-nan', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', 'abc'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-bad-nan' },
+  });
+  assert.notStrictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('reserved-id:'));
+});
+
+test('RES-batch5. reserve --count 缺值吞掉后续 flag → fail-closed 不预留（H-01）', () => {
+  const dir = makeV6Project('reserve-bad-count-swallow', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '--new'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-bad-swallow' },
+  });
+  assert.notStrictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('reserved-id:'), '吞 flag 后必须 fail-closed，不能静默预留');
+});
+
+test('RES-batch6. reserve --count N 后下一次预留接在 first+N（counter advance-by-N 不变量护栏）', () => {
+  const dir = makeV6Project('reserve-count-advance', { withIndex: false, detail: false });
+  const batch = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '4'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-advance-batch' },
+  });
+  assert.strictEqual(batch.code, 0);
+  const batchNums = (batch.stdout.match(/CHG-\d{8}-(\d{2})/g) || []).map(s => Number(s.slice(-2)));
+  const maxBatch = Math.max(...batchNums);
+  // 不同 session + --new 强制新预留；此刻磁盘尚无 .md，counter 是唯一防线——
+  // 若 counter 只 advance-by-1 而非 advance-by-N，下一号会落进 batchNums 造成真实重号碰撞。
+  const next = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--new'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-advance-next' },
+  });
+  assert.strictEqual(next.code, 0);
+  const nextNum = Number((next.stdout.match(/CHG-\d{8}-(\d{2})/) || [])[1]);
+  assert.strictEqual(nextNum, maxBatch + 1, 'counter 必须 advance-by-N，下一号接在批量末号+1');
+  assert.ok(!batchNums.includes(nextNum), '下一号不得落在批量已预留集合内（无碰撞）');
+});
+
+test('RES-batch7. reserve --count 末尾缺值 → fail-closed（不静默回落 count=1）', () => {
+  const dir = makeV6Project('reserve-count-empty', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-count-empty' },
+  });
+  assert.notStrictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('reserved-id:'), '缺值必须 fail-closed');
+});
+
+test('RES-batch8. reserve --count 科学计数法/超上限 → fail-closed', () => {
+  const dir = makeV6Project('reserve-count-overmax', { withIndex: false, detail: false });
+  const sci = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '1e3'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-count-sci' },
+  });
+  assert.notStrictEqual(sci.code, 0, '1e3 非纯十进制应拒绝');
+  const over = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '999'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-count-over' },
+  });
+  assert.notStrictEqual(over.code, 0, '超上限应拒绝');
+  assert.ok(!sci.stdout.includes('reserved-id:') && !over.stdout.includes('reserved-id:'));
+});
+
+test('RES-batch9. reserve --count >1 仅限 create-chg（record-correction 批量 fail-closed）', () => {
+  const dir = makeV6Project('reserve-count-correction', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'record-correction', '--count', '3'],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-count-corr' },
+  });
+  assert.notStrictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('reserved-id:'));
+});
+
 test('9hc-helper3. reserve-artifact-id helper 支持 record-correction prefix', () => {
   const dir = makeV6Project('agent-reserve-helper-correction', { withIndex: false, detail: false });
   const helper = runReserveHelper({
