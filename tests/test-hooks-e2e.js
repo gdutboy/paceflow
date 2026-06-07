@@ -389,7 +389,32 @@ test('C1. SessionStart 注入 change-set 整体进度', () => {
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('change-set') && r.stdout.includes('review-gate'), '应注入 change-set 名');
-  assert.ok(r.stdout.includes('1/4'), '应含进度 done(1)/N(4)（N 取自 change-set-seq 分母，done=N-活跃数）');
+  assert.ok(r.stdout.includes('还有 3 个待执行'), 'CS-PROGRESS：应报确切待执行数（3 个活跃成员）');
+  assert.ok(r.stdout.includes('变更集共 4 个'), '分母一致（都是 /4）应附「共 N」');
+  assert.ok(!/进度 \d+\/\d+/.test(r.stdout), 'CS-PROGRESS：不再输出会虚高的「进度 done/n」');
+});
+
+test('C1c. change-set 分母不一致 → 不臆断总数、不虚高（CS-PROGRESS 回归）', () => {
+  const dir = makeV6ProjectWithChanges('ss-cs-mixed', [
+    { id: 'CHG-20260607-02', status: 'planned', task: '[ ]', changeSet: 'mixset', changeSetSeq: '2/4' },
+    { id: 'CHG-20260607-03', status: 'planned', task: '[ ]', changeSet: 'mixset', changeSetSeq: '1/6' },
+  ]);
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('还有 2 个待执行'), '应报 2 个待执行');
+  assert.ok(!r.stdout.includes('变更集共'), '分母不一致（/4 与 /6）不应臆断总数');
+  assert.ok(!/进度 \d+\/\d+/.test(r.stdout) && !r.stdout.includes('4/6'), '不得出现按 max 分母虚高的进度/完成数');
+});
+
+test('C1d. change-set 分母 typo（1/99 单成员）→ 不虚报已完成（CS-PROGRESS 回归）', () => {
+  const dir = makeV6ProjectWithChanges('ss-cs-typo', [
+    { id: 'CHG-20260607-02', status: 'planned', task: '[ ]', changeSet: 'typoset', changeSetSeq: '1/99' },
+  ]);
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('还有 1 个待执行'), '应报 1 个待执行');
+  assert.ok(!r.stdout.includes('97') && !r.stdout.includes('98/99') && !/进度 \d+\/\d+/.test(r.stdout), 'CS-PROGRESS：1/99 不得虚报已完成 97/98');
+  assert.ok(!r.stdout.includes('变更集共'), 'CS-PROGRESS：单成员无法交叉验证分母，不附「共 N」（避免 typo 分母 99 被当真）');
 });
 
 test('C1b. 无 change-set 成员 → 不注入 change-set 进度（回归）', () => {
@@ -420,6 +445,34 @@ test('STOP-cs2. 有 in-progress CHG → 仍 exit 2（回归，不被 change-set 
   assert.strictEqual(r.code, 2, '有 in-progress 阻断项仍应 exit 2，change-set 软提醒不得降级阻断');
   // 钉住「软提醒不得泄漏进 warnings」——若 change-set 提醒被误 push 进 warnings，阻断 stderr 会含其文案
   assert.ok(!r.stderr.includes('未执行成员'), 'change-set 软提醒文案不得出现在阻断 stderr（必须走 softReminders，不进 warnings）');
+});
+
+test('STOP-cs3. change-set 成员全为 foreign owner → 不催当前 session（CS-FOREIGN 回归）', () => {
+  const dir = makeV6ProjectWithChanges('stop-cs-foreign', [
+    { id: 'CHG-20260607-03', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '3/4' },
+    { id: 'CHG-20260607-04', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '4/4' },
+  ], { walkToday: false });
+  // 两个成员都由别的 session 拥有（foreign-fresh）；当前 session 提供 session_id 才会判 foreign（STOP-03）
+  seedChangeOwner(dir, 'CHG-20260607-03', { sessionId: 'sid-other', state: 'active' });
+  seedChangeOwner(dir, 'CHG-20260607-04', { sessionId: 'sid-other', state: 'active' });
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-current' } });
+  assert.strictEqual(r.code, 0, '全 foreign + 无本 session 阻断项 → 放行');
+  assert.ok(!r.stdout.includes('未执行成员') && !r.stderr.includes('未执行成员'),
+    'CS-FOREIGN：foreign-owner 的 change-set 成员不应催当前 session approve-and-start（与 session-start 进度注入对称）');
+});
+
+test('STOP-cs4. change-set 自有成员仍催（CS-FOREIGN 对照：本 session 拥有不跳过）', () => {
+  const dir = makeV6ProjectWithChanges('stop-cs-self', [
+    { id: 'CHG-20260607-03', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '3/4' },
+    { id: 'CHG-20260607-04', status: 'planned', task: '[ ]', approved: false, changeSet: 'review-gate', changeSetSeq: '4/4' },
+  ], { walkToday: false });
+  // 成员由当前 session 拥有 → 不是 foreign → 仍应催（钉住 foreign 跳过没有误伤自有成员）
+  seedChangeOwner(dir, 'CHG-20260607-03', { sessionId: 'sid-current', state: 'active' });
+  seedChangeOwner(dir, 'CHG-20260607-04', { sessionId: 'sid-current', state: 'active' });
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-current' } });
+  assert.strictEqual(r.code, 0, '无阻断项 → 放行');
+  assert.ok(r.stdout.includes('未执行成员') || r.stderr.includes('未执行成员'),
+    '本 session 自有的 change-set 成员仍应催 approve-and-start（foreign 跳过不得误伤自有）');
 });
 
 test('2a. SessionStart CHG 执行上下文按详情 pending T-NNN 提示', () => {

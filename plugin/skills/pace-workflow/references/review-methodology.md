@@ -104,7 +104,8 @@ R 阶段是**主 session 的编排活**（派 subagent、读报告、判断 find
    > **执行约束（硬性）**：审计 subagent 必须 **inline / foreground 派发**（Task / Agent 工具同步等待），**不可作为 background / detached 任务**。理由：inline 派发时主 session 阻塞在 tool call 上（mid-turn），审计必然在本轮收尾之前返回；若错误地派成 background，主 session 可能在审计在途时就 end-turn，撞上 Stop 的"未审计"拦截。
 
 4. **读 P0-P3 报告并路由 findings**（主 session 判断，调既有 writer 操作）：
-   - **P0 / P1** → 开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding`）；
+   - **修前复核（主 session 自核，路由到「修」的前置）**：把 review subagent 的报告当**待评估的建议、不是待执行的命令**。路由任何 finding 去「修」之前，主 session 必须用三件武器（最小复现 / 路径追踪 / 设计意图查证）**独立复核 finding 为真**；复核不下来就不修——降级 / `record-finding` / won't-fix。subagent 的 Phase 2 验证**不替代**这一步（原始发现误报率 50-80%，主 session 是落到「修」前的最后一道复核）。
+   - **P0 / P1** → 复核为真后开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding`）；
    - **P2 / P3** → 派 `record-finding` 进 backlog；
    - **迭代闸**：审计-findings 生出的 HOTFIX **默认不自动重审**（深度=1），防止"审计→修→再审→再修"无止境递归。
 

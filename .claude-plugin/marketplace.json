@@ -1,6 +1,6 @@
 {
   "name": "paceaitian-paceflow",
-  "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify protocol with hooks",
+  "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify-Review protocol with hooks",
   "owner": {
     "name": "paceaitian"
   },
@@ -8,7 +8,7 @@
     {
       "name": "paceflow",
       "source": "./plugin",
-      "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify protocol with hooks",
+      "description": "PACE workflow enforcement system — Plan-Artifact-Check-Execute-Verify-Review protocol with hooks",
       "version": "6.3.0"
     }
   ]

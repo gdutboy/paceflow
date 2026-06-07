@@ -245,7 +245,8 @@ artifact writer 会同时写：
    > **执行约束（硬性）**：审计 subagent 必须 **inline / foreground 派发**（Task / Agent 工具同步等待），**不可作为 background / detached 任务**。inline 时主 session 阻塞在 tool call 上（mid-turn），审计必然在本轮收尾前返回；若错误派成 background，主 session 可能在审计在途时就 end-turn，撞上 Stop 的"未审计"拦截。
 3. **读 P0-P3 报告**：P0=有具体触发路径的功能错误/数据丢失/流程阻塞；P1=高影响但不直接阻塞；P2=代码质量/文档过时；P3=优化建议。
 4. **路由 findings**（主 session 判断，调既有 writer 操作）：
-   - **P0 / P1** → 开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding`）；
+   - **修前复核（路由到「修」的前置）**：review 报告是**待评估建议、非命令**。路由任何 finding 去「修」前，主 session 用三件武器（最小复现 / 路径追踪 / 设计意图查证）**独立复核为真**，复核不下来就不修（降级 / `record-finding` / won't-fix）。subagent 的 Phase 2 不替代这一步。细节见 [references/review-methodology.md](references/review-methodology.md) step 4。
+   - **P0 / P1** → 复核为真后开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding`）；
    - **P2 / P3** → 派 `record-finding` 进 backlog；
    - **迭代闸**：审计-findings 生出的 HOTFIX **默认不自动重审**（深度=1），防"审计→修→再审"无止境递归。
 5. **派 close-chg**：findings 路由完成后，派上方 V 段的 `close-chg`（含 `review-confirmed: true` / `review-source` / `review-findings`）一把梭折叠 VERIFIED + REVIEWED + 归档；只想记录审计暂不归档时，才派 `update-chg action=review`。

@@ -159,9 +159,12 @@ if (paceSignal === 'artifact') {
 
   let completionPending = 0;
   let requiresWalkthrough = false;
+  // CS-FOREIGN: 记录 foreign-owner 成员，供下方 change-set 成组提醒跳过（与本循环 foreign 跳过对称）。
+  const foreignOwnedIds = new Set();
   for (const change of classifiedEntries) {
     const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, stdin.sessionId);
     const isForeignOwner = isForeignOwnerStatus(ownerStatus);
+    if (isForeignOwner) foreignOwnedIds.add(change.id);
     const isProgressState = ['running', 'blocked', 'closing-required'].includes(change.category);
     if (isForeignOwner && (isProgressState || isDeferredCategory(change.category))) {
       log(projectLogEntry('Stop', ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER', {
@@ -264,6 +267,9 @@ if (paceSignal === 'artifact') {
   const changeSetPlanned = new Map();
   for (const change of classifiedEntries) {
     if (!change.changeSet || !isDeferredCategory(change.category)) continue;
+    // CS-FOREIGN: 跳过 foreign-owner 成员，与第一循环 + session-start 进度注入对称——
+    // 不催当前 session 去 approve-and-start 别的 worktree/session 拥有的 change-set 成员。
+    if (foreignOwnedIds.has(change.id)) continue;
     if (!changeSetPlanned.has(change.changeSet)) changeSetPlanned.set(change.changeSet, []);
     changeSetPlanned.get(change.changeSet).push(change.changeSetSeq || change.id);
   }

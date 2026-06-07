@@ -444,7 +444,7 @@ for (const file of ARTIFACT_FILES) {
 
   // T-386: walkthrough 智能截断 — 索引表最近 10 行 + 最近 3 条详情段落
   if (file === 'walkthrough.md') {
-    // 索引表截断：保留表头 + 最近 10 行数据行。close-chg 追加记录，因此按日期/原始行号倒序挑选最近项。
+    // 索引表截断：保留表头 + 最近 10 行数据行。close-chg 把新记录 prepend 到表顶（最新在上、index 小=新），故按 date 降序 + index 升序（a.index-b.index）挑最新项。
     const dataRe = /^\| \d{4}-\d{2}-\d{2} \|/gm;
     const dataRows = [];
     let m;
@@ -487,8 +487,8 @@ for (const file of ARTIFACT_FILES) {
         const date = (header.match(/^## (\d{4}-\d{2}-\d{2})/) || [])[1] || '';
         return { text: output.slice(start, end).trimEnd(), date, index };
       });
-      // 详情段落是 close-chg prepend（最新在最前、index 小=新），date 相等时按 index 升序挑最新；
-      // 与上方索引表 append（index 大=新、tie 用 b.index-a.index）方向相反，故此处 tie-breaker 不同。
+      // 详情段落同样是 close-chg prepend（最新在最前、index 小=新），date 相等时按 index 升序（a.index-b.index）挑最新；
+      // 与上方索引表 tie-breaker 同向（两处都用 a.index-b.index），勿误改为 b.index-a.index（那会保留最旧 N 条）。
       const latest = sections
         .sort((a, b) => b.date.localeCompare(a.date) || a.index - b.index)
         .slice(0, 3);
@@ -609,11 +609,17 @@ if (paceSignal === 'artifact') {
   if (changeSetGroups.size > 0) {
     process.stdout.write(`=== change-set 整体进度 ===\n`);
     for (const [name, members] of changeSetGroups) {
-      const totals = members.map(m => { const mm = String(m.changeSetSeq || '').match(/\/(\d+)/); return mm ? Number(mm[1]) : 0; });
-      const n = Math.max(members.length, ...totals);
-      const done = Math.max(0, n - members.length);
+      // CS-PROGRESS: 只报确切可知的「待执行数」（= 活跃成员数）。不按分母 max 推算「已完成 = N - 活跃数」——
+      // 非活跃成员可能是已归档/已取消/尚未创建，推算 done 会虚高（如分母 typo 1/99 → 误报已完成 97）。
+      // change-set-seq 的 /N 分母一致才附「共 N」；不一致或缺失则不显示分母。
+      const totals = [...new Set(members
+        .map(m => { const mm = String(m.changeSetSeq || '').match(/\/(\d+)/); return mm ? Number(mm[1]) : 0; })
+        .filter(t => t > 0))];
       const seqs = members.map(m => m.changeSetSeq || m.id).join(', ');
-      process.stdout.write(`- change-set ${name}：进度 ${done}/${n}，待执行 ${members.length} 个（${seqs}）\n`);
+      // 仅多成员且分母一致时附「共 N」——多成员同分母才算交叉验证过的可信总数。
+      // 单成员的 totals.length===1 是 vacuous（一个值永远自我一致），分母可能是 typo（1/99），不附以免误导。
+      const totalSuffix = (totals.length === 1 && members.length > 1) ? `，变更集共 ${totals[0]} 个` : '';
+      process.stdout.write(`- change-set ${name}：还有 ${members.length} 个待执行（${seqs}）${totalSuffix}\n`);
     }
     process.stdout.write(`一个 change-set 是一组规划好的可闭环 CHG；逐个 approve-and-start 执行，勿遗漏后续阶段。\n\n`);
   }

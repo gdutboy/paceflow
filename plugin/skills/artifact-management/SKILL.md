@@ -301,7 +301,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 - `review-confirmed: true`——主 session 已编排对抗审计并路由 findings 后传入，agent 以此字段为唯一依据折叠 REVIEWED（仿 `verification-confirmed` / `approval-confirmed` gating）。缺失 → `missing-fields`，非 `true` → `format-violation`。
 - `review-source`——`manual`（主 session 自己瞄一眼）或所选 review agent / 棱镜名。
-- `review-findings`——P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink），写入 `## 审查记录` 段（位于 `## 工作记录` 之后）：
+- `review-findings`——P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink），**并对每条「已修」finding 标注主 session 修前复核方式**（如「X：主 session 读 file:line 确认」，留「复核发生过」纸面证据），写入 `## 审查记录` 段（位于 `## 工作记录` 之后）：
 
 ```markdown
 ## 审查记录
