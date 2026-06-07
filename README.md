@@ -157,6 +157,7 @@ brainstorming（需求探索 + 方案设计）
 - 首次启用可选择将 Artifact 存储到 `projects/<项目名>/` 或本地项目目录，选择写入 `.pace/artifact-root`
 - Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
 - `artifact-writer` 派遣前可用 `hooks/reserve-artifact-id.js` 预留 CHG/CORRECTION 编号；pace-bridge 收尾可用 `hooks/sync-plan.js` 标记 plan 已同步；真实写入时按详情文件或索引资源短暂加锁，多 worktree 只在共享索引写入窗口串行
+- 想看 SessionStart 实际注入给模型什么（新 session / compact 后均可），运行 `hooks/print-session-context.js`（加 `--compact` 看 compact 后注入）；它设 `PACE_PRINT_ONLY` 只读预览、不重置 Stop 计数器也不写 `.pace`
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
 - 兼容 Obsidian Tasks / Dataview 跨项目查询

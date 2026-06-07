@@ -1,0 +1,64 @@
+id: TC-A11
+phase: A
+indication: smoke-test-update-finding-status
+description: 验证 update-finding 把已存在 finding 的 status open→accepted（findings.md 索引 checkbox [ ]→[x] + 详情 frontmatter status 联动）
+
+setup:
+  fixture: empty-v6
+  variables:
+    project_path: /tmp/test-vault/empty-v6
+    date: "{TODAY}"
+  pre_files:
+    - path: "changes/findings/finding-{ISO_DATE}-tc-a11-target.md"
+      content: |
+        ---
+        finding-id: FINDING-{ISO_DATE}-tc-a11-target
+        status: open
+        type: bug-report
+        date: {ISO_DATE}
+        impact: P2
+        summary: TC-A11 目标 finding，验证 update-finding 状态迁移 open 到 accepted
+        related-changes: []
+        merges: []
+        merged-by: null
+        rejection-reason: null
+        schema-version: "6.0"
+        ---
+
+        # TC-A11 目标 finding
+
+        ## 现象
+
+        Phase A 测试 update-finding 的 happy path：把本 finding 从 open 更新为 accepted。
+    - path: findings.md
+      content: |
+        # 调研记录
+
+        ## 摘要索引
+
+        <!-- 格式：- [状态] [[finding-id|title]] — summary [date::] [impact::] -->
+
+        - [ ] [[finding-{ISO_DATE}-tc-a11-target|TC-A11 目标 finding]] — 验证 update-finding 状态迁移 #finding [date:: {ISO_DATE}] [impact:: P2]
+
+        <!-- ARCHIVE -->
+
+input:
+  operation: update-finding
+  fields:
+    target: "FINDING-{ISO_DATE}-tc-a11-target"
+    status: accepted
+
+expected:
+  status: SUCCESS
+  files_modified:
+    - "changes/findings/finding-{ISO_DATE}-tc-a11-target.md"
+    - findings.md
+  validations:
+    finding_status: accepted
+    wikilink_integrity: pass
+  max_tokens: 40000
+  max_duration_ms: 180000
+  max_tool_uses: 12
+
+teardown:
+  cleanup: true

@@ -15,6 +15,10 @@ const cwd = paceUtils.resolveProjectCwd();
 const proj = getProjectName(cwd);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
+// PACE_PRINT_ONLY：print-session-context.js helper 设此 env，让本 hook 只产出注入 stdout、
+// 跳过一切 .pace 运行态写盘（counter 重置 / compact counter 恢复 / ensureProjectInfra / findings-age flag），
+// 使「查看 SessionStart 注入」无副作用。新增任何 .pace 写盘副作用都必须同样用 !PRINT_ONLY 守卫。
+const PRINT_ONLY = !!process.env.PACE_PRINT_ONLY;
 const SESSION_OUTPUT_HARD_LIMIT_BYTES = 50000;
 const SESSION_OUTPUT_BUDGET_BYTES = 46000;
 let sessionOutputBytes = 0;
@@ -140,7 +144,7 @@ if (paceSignal && !rootChoicePending && eventType !== 'compact') {
 }
 
 // v4: PACE 项目才创建/重置运行态 .pace 文件；首次 root 选择前保持 SessionStart 零写入。
-if (paceSignal && !rootChoicePending && eventType !== 'compact') {
+if (!PRINT_ONLY && paceSignal && !rootChoicePending && eventType !== 'compact') {
   try { fs.mkdirSync(PACE_RUNTIME, { recursive: true }); } catch(e) {}
   try { fs.writeFileSync(COUNTER_FILE, '0', 'utf8'); } catch(e) {}
   // W-code-4: 使用 SESSION_SCOPED_FLAGS 常量（与 pace-utils 保持同步）
@@ -174,7 +178,7 @@ if (eventType === 'compact') {
       const snap = JSON.parse(fs.readFileSync(snapFile, 'utf8'));
       if (!snap || typeof snap !== 'object') {
         log(paceUtils.logEntry('SessionStart', 'COMPACT_SNAPSHOT_SKIP', { cwd, reason: 'invalid-snapshot' }));
-        try { fs.unlinkSync(snapFile); } catch(e) {}
+        if (!PRINT_ONLY) { try { fs.unlinkSync(snapFile); } catch(e) {} }
       } else {
         const lines = [`=== Compact 恢复（快照 ${snap.timestamp}）===`];
         if (snap.artifacts?.['task.md']?.inProgress?.length > 0) {
@@ -196,7 +200,7 @@ if (eventType === 'compact') {
         if (snap.runtime?.degraded) {
           lines.push('Stop 检查上次仍有未解决项；本次会话会继续检查。');
         }
-        if (Number.isFinite(Number(snap.runtime?.blockCount)) && Number(snap.runtime.blockCount) > 0) {
+        if (!PRINT_ONLY && Number.isFinite(Number(snap.runtime?.blockCount)) && Number(snap.runtime.blockCount) > 0) {
           try {
             fs.mkdirSync(PACE_RUNTIME, { recursive: true });
             fs.writeFileSync(COUNTER_FILE, String(Number(snap.runtime.blockCount)), 'utf8');
@@ -250,7 +254,7 @@ if (eventType === 'compact') {
           process.stdout.write(`⚠️ compact 前 walkthrough 无今日记录，请在完成任务后更新。${FORMAT_SNIPPETS.walkthroughDetail}\n`);
         }
         // W-11: 独立 try-catch 防止删除失败影响后续逻辑
-        try { fs.unlinkSync(snapFile); } catch(e) {}
+        if (!PRINT_ONLY) { try { fs.unlinkSync(snapFile); } catch(e) {} }
       }
     }
   } catch(e) {}
@@ -269,7 +273,7 @@ if (eventType !== 'compact') {
 }
 
 // T-204: 基础设施幂等确保（junction + .gitignore），不依赖模板是否创建
-if (paceSignal && !rootChoicePending) {
+if (!PRINT_ONLY && paceSignal && !rootChoicePending) {
   try { ensureProjectInfra(cwd); } catch(e) {}
 }
 
@@ -295,7 +299,7 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
     '',
   ].join('\n') + '\n');
 // T-077: 非 false 且非 'artifact'（已有文件不需重复创建）+ 无 task.md → 复用公共函数创建模板
-} else if (paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected && !fs.existsSync(path.join(artDir, 'task.md'))) {
+} else if (!PRINT_ONLY && paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected && !fs.existsSync(path.join(artDir, 'task.md'))) {
   const created = createTemplates(cwd);
   if (created.length > 0) {
     log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', {
@@ -777,7 +781,7 @@ try {
         aged.forEach(f => process.stdout.write(`  (${f.days}天) ${f.title}\n`));
         process.stdout.write('\n');
       }
-      try { fs.writeFileSync(ageFlag, '1', 'utf8'); } catch(e) {}
+      if (!PRINT_ONLY) { try { fs.writeFileSync(ageFlag, '1', 'utf8'); } catch(e) {} }
     }
   }
 } catch(e) {}

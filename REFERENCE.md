@@ -184,6 +184,7 @@ Helper 脚本不是 hook 事件，但属于发布运行时入口：
 | `set-artifact-root.js` | 写入 Project Root runtime 的 artifact-root 选择 |
 | `set-project-root.js` | 将当前 cwd 声明为独立 Project Root |
 | `sync-plan.js` | pace-bridge 成功后记录已桥接 plan |
+| `print-session-context.js` | 查看 SessionStart 实际注入内容（startup / `--compact`；设 `PACE_PRINT_ONLY` 隔离 .pace 写盘，只读预览） |
 
 Helper 成功返回 exit code 0；业务校验失败返回 exit code 2 并在 stdout 给出可读修复信息。Hook 脚本自身通常以容错为主，除 PreToolUse/Stop 的明确阻断外，不把内部错误升级为 shell 崩溃。
 

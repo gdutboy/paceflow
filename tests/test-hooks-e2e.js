@@ -413,8 +413,65 @@ test('C1d. change-set 分母 typo（1/99 单成员）→ 不虚报已完成（CS
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('还有 1 个待执行'), '应报 1 个待执行');
-  assert.ok(!r.stdout.includes('97') && !r.stdout.includes('98/99') && !/进度 \d+\/\d+/.test(r.stdout), 'CS-PROGRESS：1/99 不得虚报已完成 97/98');
+  assert.ok(!/进度 \d+\/\d+/.test(r.stdout), 'CS-PROGRESS：不得出现「进度 done/n」虚报（锚定格式，不用全局 includes(97/98) 避免误匹配注入其他位置的数字 → flaky）');
   assert.ok(!r.stdout.includes('变更集共'), 'CS-PROGRESS：单成员无法交叉验证分母，不附「共 N」（避免 typo 分母 99 被当真）');
+});
+
+// print-session-context.js helper（CHG-20260608-01）：让用户看到 SessionStart 注入，无副作用。
+function runPrintContext(cwd, extraArgs = []) {
+  const helperPath = path.resolve(HOOKS_DIR, 'print-session-context.js');
+  const r = spawnSync('node', [helperPath, ...extraArgs], {
+    cwd, encoding: 'utf8', timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd },
+  });
+  return { code: r.status || 0, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+test('PSC-1. print-session-context 打印 SessionStart 注入（startup）', () => {
+  const dir = makeV6ProjectWithChanges('psc-startup', [
+    { id: 'CHG-20260608-01', status: 'in-progress', task: '[/]', approved: true, changeSet: 'gap-fill', changeSetSeq: '1/2' },
+  ]);
+  const r = runPrintContext(dir);
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('SessionStart 注入预览'), '应有预览头');
+  assert.ok(r.stdout.includes('=== 活跃 CHG 摘要 ===') && r.stdout.includes('CHG-20260608-01'), '应转发 session-start 的活跃 CHG 注入');
+});
+
+test('PSC-2. print-session-context --compact 走 compact 路径（exit 0 + 有预览）', () => {
+  const dir = makeV6ProjectWithChanges('psc-compact', [
+    { id: 'CHG-20260608-01', status: 'in-progress', task: '[/]', approved: true },
+  ]);
+  const r = runPrintContext(dir, ['--compact']);
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('compact') && r.stdout.includes('SessionStart 注入预览'), '应走 compact 预览');
+});
+
+test('PSC-3. print-session-context 无副作用——不重置 stop-block-count（PACE_PRINT_ONLY 隔离）', () => {
+  const dir = makeV6ProjectWithChanges('psc-noeffect', [
+    { id: 'CHG-20260608-01', status: 'in-progress', task: '[/]', approved: true },
+  ]);
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  const counterPath = path.join(dir, '.pace', 'stop-block-count');
+  fs.writeFileSync(counterPath, '2', 'utf8');
+  const r = runPrintContext(dir);
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(fs.readFileSync(counterPath, 'utf8'), '2', 'print-only 不得重置 stop-block-count（裸跑 session-start 会重置为 0）');
+});
+
+test('PSC-4. print-session-context --compact 注入 compact 恢复但不消耗快照（P1 隔离回归）', () => {
+  const dir = makeV6ProjectWithChanges('psc-compact-snap', [
+    { id: 'CHG-20260608-01', status: 'in-progress', task: '[/]', approved: true },
+  ]);
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  const snapPath = path.join(dir, '.pace', 'pre-compact-state.json');
+  fs.writeFileSync(snapPath, JSON.stringify({
+    timestamp: '2026-06-08T00:00:00Z',
+    activeChanges: [{ id: 'CHG-20260608-01', status: 'in-progress', pending: 3, approved: true, verified: false, reviewed: false }],
+  }), 'utf8');
+  const r = runPrintContext(dir, ['--compact']);
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('=== Compact 恢复'), 'compact 路径应真注入 compact 恢复块（判别 compact 分支跑过，非仅 helper 头部含 compact 字样）');
+  assert.ok(fs.existsSync(snapPath), 'P1：print-only --compact 不得消耗 pre-compact-state.json（一次性快照，真实 compact 恢复仍需它）');
 });
 
 test('C1b. 无 change-set 成员 → 不注入 change-set 进度（回归）', () => {

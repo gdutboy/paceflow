@@ -187,10 +187,21 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
     ].join('\n');
   }
 
+  if (op === 'update-finding') {
+    return [
+      ...lines,
+      'operation: update-finding',
+      'target: FINDING-YYYY-MM-DD-slug',
+      'status: open | investigating | accepted | rejected | merged | blocked（可选）',
+      'change-link: [[chg-yyyymmdd-nn]]（可选，标记 finding 已被该变更处置）',
+      'append: <追加到详情正文末尾的 Markdown>（可选）',
+    ].join('\n');
+  }
+
   return [
     ...lines,
-    'operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction',
-    'target: CHG-YYYYMMDD-NN 或 HOTFIX-YYYYMMDD-NN（create-chg / record-finding / record-correction 除外）',
+    'operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction | update-finding',
+    'target: CHG-YYYYMMDD-NN 或 HOTFIX-YYYYMMDD-NN（create-chg / record-finding / record-correction 除外；update-finding 的 target 是 FINDING-id）',
     'action: <operation=update-chg 时必填>',
   ].join('\n');
 }

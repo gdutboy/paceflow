@@ -493,15 +493,17 @@ function verify(testCase, targetDir, variables, agentReport) {
   }
 
   if (expectedValidations.finding_status) {
+    // 优先 files_created 的 finding 详情（record-finding）；update-finding 只 modify 不 create，
+    // 回退到 target 解析出的详情 frontmatter（已在上方加载），否则该校验对 update 场景恒 fail-closed。
     const fp = createdDetailByPrefix('finding-');
-    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : null;
+    const fm = fp ? parseFrontmatter(fs.readFileSync(fp, 'utf8')) : targetFrontmatter;
     const actual = fm && normalizeFrontmatterScalar(fm.status);
     validations.push({
       name: 'finding_status',
       ok: actual === expectedValidations.finding_status,
       actual,
       expected: expectedValidations.finding_status,
-      reason: fp ? undefined : 'finding detail missing',
+      reason: (fp || fm) ? undefined : 'finding detail missing',
     });
   }
 

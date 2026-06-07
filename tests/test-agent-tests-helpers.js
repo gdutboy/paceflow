@@ -64,7 +64,7 @@ test('所有 agent-tests YAML case 可解析并 prepare/teardown', () => {
     }
   }
   walk(casesRoot);
-  assert.strictEqual(count, 33);
+  assert.strictEqual(count, 34); // agent-tests YAML case 总数（新增 case 时同步 +1：本次 +tc-a11-update-finding）
 });
 
 console.log('\n--- agent-tests verifier ---');
