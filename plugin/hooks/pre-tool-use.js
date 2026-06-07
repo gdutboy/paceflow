@@ -78,6 +78,7 @@ const {
   promptDeclaredAction,
   promptUpdateStatusValue,
   explicitReservationFromPrompt,
+  parseBatchBlocks,
   reservationRelForLookup,
   reservationMatchesExplicit,
   promptTemplateForOperation,
@@ -484,6 +485,44 @@ paceUtils.withStdinParsed((stdin) => {
         const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt);
         let reservation = { reserved: false };
         if (operation === 'create-chg' || operation === 'record-correction') {
+          const batchBlocks = operation === 'create-chg'
+            ? parseBatchBlocks(stdin.toolInput.prompt)
+            : { isBatch: false, blocks: [] };
+          if (batchBlocks.isBatch) {
+            // batch create：确定性校验每个块的 reserved-id 都匹配 hook 预留（单条流只验首块，这里补全 N 个）
+            const batchOwner = { sessionId: stdin.sessionId, agentId: stdin.agentId };
+            let badId = '';
+            for (const b of batchBlocks.blocks) {
+              const blockExplicit = { id: String(b.reservedId || '').toUpperCase(), fileRel: '', filePrefix: '' };
+              const lookupRel = reservationRelForLookup(blockExplicit);
+              const found = lookupRel ? paceUtils.findArtifactReservationForRel(cwd, batchOwner, lookupRel) : null;
+              if (!reservationMatchesExplicit(found, blockExplicit)) { badId = blockExplicit.id || '(空)'; break; }
+            }
+            if (badId) {
+              const reason = [
+                `batch create CHG 中 reserved-id ${badId} 没有匹配的 hook 预留（无效或已过期）。`,
+                FORMAT_SNIPPETS.skillRef,
+                `请先在主 session 运行 Bash: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg --count ${batchBlocks.blocks.length}，把输出的每个 reserved-id 原样放进对应 --- CHG i/N --- 块后重派；不要手写或复用旧 session 的 reserved-id。`,
+              ].join('\n');
+              const output = {
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  permissionDecision: "deny",
+                  permissionDecisionReason: reason
+                }
+              };
+              process.stdout.write(JSON.stringify(output));
+              log(projectLogEntry('PreToolUse', 'DENY_AGENT_BATCH_RESERVED_MISMATCH', {
+                proj,
+                agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
+                artifact_dir: displayDir(artDir),
+                reserved: badId,
+                blocks: batchBlocks.blocks.length,
+                dur: Date.now() - t0,
+              }));
+              return;
+            }
+          }
           const explicit = explicitReservationFromPrompt(stdin.toolInput.prompt);
           const hasExplicitReservation = !!(explicit.id || explicit.fileRel || explicit.filePrefix);
           if (!hasExplicitReservation) {

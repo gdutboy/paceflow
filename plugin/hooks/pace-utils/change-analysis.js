@@ -330,6 +330,22 @@ module.exports = function createChangeAnalysis(ctx) {
     });
   }
 
+  // 检测落在 <!-- ARCHIVE --> 下方（归档区）的活跃状态索引行（[ ]/[/]/[!]）。
+  // 归档区应只含终态 [x]/[-]；活跃状态行出现在归档区 = create-chg 把新索引插错区
+  // （见 finding-2026-06-07-create-chg-empty-active-archive-insert）。返回错位的 slug 列表。
+  function findActiveIndexBelowArchive(content) {
+    const text = String(content || '');
+    const marker = text.match(/^<!-- ARCHIVE -->[ \t]*$/m);
+    if (!marker) return [];
+    const below = text.slice(marker.index + marker[0].length);
+    const bad = [];
+    for (const line of below.split(/\r?\n/)) {
+      const m = line.match(/^- \[([ /!])\] \[\[((?:chg|hotfix)-\d{8}-\d{2})\]\]/i);
+      if (m) bad.push(m[2].toLowerCase());
+    }
+    return bad;
+  }
+
   return {
     countByStatus,
     extractOpenKeys,
@@ -348,5 +364,6 @@ module.exports = function createChangeAnalysis(ctx) {
     isChangeVerified,
     isChangeReviewed,
     summarizeActiveChanges,
+    findActiveIndexBelowArchive,
   };
 };

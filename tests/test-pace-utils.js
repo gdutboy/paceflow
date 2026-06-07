@@ -2083,6 +2083,37 @@ test('CS-3. change-set: null 字面量归一为 JS null（非字符串 "null"）
   assert.strictEqual(cls.changeSetSeq, null, '带引号 null 也应归一为 JS null');
 });
 
+test('AIBA-1. findActiveIndexBelowArchive 检出 ARCHIVE 下方的活跃状态索引行', () => {
+  const content = [
+    '# 项目任务追踪', '', '## 活跃任务', '', '<!-- ARCHIVE -->', '',
+    '- [/] [[chg-20260607-02]] 误插的活跃 CHG #change [tasks:: T-001]',
+    '- [x] [[chg-20260607-01]] 正常归档 #change [tasks:: T-001]',
+  ].join('\n');
+  assert.deepStrictEqual(paceUtils.findActiveIndexBelowArchive(content), ['chg-20260607-02']);
+});
+
+test('AIBA-2. 活跃行在 ARCHIVE 上方 + 归档行均终态 → 无误报（回归）', () => {
+  const content = [
+    '## 活跃任务', '', '- [/] [[chg-20260607-02]] 正常活跃 #change', '', '<!-- ARCHIVE -->', '',
+    '- [x] [[chg-20260607-01]] 归档 #change', '- [-] [[chg-20260606-09]] 取消 #change',
+  ].join('\n');
+  assert.deepStrictEqual(paceUtils.findActiveIndexBelowArchive(content), []);
+});
+
+test('AIBA-3. 无 ARCHIVE 标记 → 空数组（不崩）', () => {
+  assert.deepStrictEqual(paceUtils.findActiveIndexBelowArchive('# t\n\n- [/] [[chg-20260607-02]] x'), []);
+});
+
+test('AIBA-4. ARCHIVE 下方多个活跃状态行（[ ]/[/]/[!]）全部检出', () => {
+  const content = [
+    '## 活跃任务', '', '<!-- ARCHIVE -->', '',
+    '- [ ] [[chg-20260607-03]] planned 误插 #change',
+    '- [!] [[hotfix-20260607-01]] blocked 误插 #hotfix',
+    '- [x] [[chg-20260607-01]] 正常归档 #change',
+  ].join('\n');
+  assert.deepStrictEqual(paceUtils.findActiveIndexBelowArchive(content), ['chg-20260607-03', 'hotfix-20260607-01']);
+});
+
 test('parseFrontmatter — 支持 UTF-8 BOM 前缀', () => {
   const content = '\uFEFF---\nchg-id: CHG-20260507-01\nstatus: in-progress\n---\n';
   assert.deepStrictEqual(parseFrontmatter(content), {

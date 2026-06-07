@@ -122,6 +122,7 @@ const {
   isChangeVerified,
   isChangeReviewed,
   summarizeActiveChanges,
+  findActiveIndexBelowArchive,
 } = require('./pace-utils/change-analysis')({
   readActive,
   readFull,
@@ -789,7 +790,7 @@ module.exports = {
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
   normalizeFrontmatterStatus,
   parseFrontmatter, normalizeChangeId, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
-  countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, isChangeReviewed, summarizeActiveChanges,
+  countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, isChangeReviewed, summarizeActiveChanges, findActiveIndexBelowArchive,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, nativePlanMatchesProject, createLogger, logEntry, formatBridgeHint,
   // stdin 解析

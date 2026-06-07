@@ -192,6 +192,16 @@ paceUtils.withStdinParsed((stdin) => {
       warnings.push(`v6 索引不一致：${mismatched.map(e => e.id).join(', ')} 未同时存在于 task.md 和 implementation_plan.md。`);
     }
 
+    if (artifactRel === 'task.md' || artifactRel === 'implementation_plan.md') {
+      try {
+        const indexContent = resolvedFilePath && fs.existsSync(resolvedFilePath) ? fs.readFileSync(resolvedFilePath, 'utf8') : '';
+        const misplaced = paceUtils.findActiveIndexBelowArchive(indexContent);
+        if (misplaced.length > 0) {
+          warnings.push(`${path.basename(filePath)} 检测到活跃状态索引行（[ ]/[/]/[!]）落在 <!-- ARCHIVE --> 下方（归档区）：${misplaced.join(', ')}。活跃 CHG 索引必须在 ARCHIVE 上方，否则代码写入门会判定「无活跃 CHG」。请派 artifact-writer 把这些行移回活跃区（见 finding-2026-06-07-create-chg-empty-active-archive-insert）。`);
+        }
+      } catch(e) {}
+    }
+
     if (!paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
       for (const entry of entries) {
         if (!entry.detail || entry.detail.missing) continue;

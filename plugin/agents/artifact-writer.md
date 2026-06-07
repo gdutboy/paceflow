@@ -160,6 +160,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 ### 1. create-chg
 **必填**：`title` / `tasks`
 **可选**：`type` / `related-finding` / `background` / `scope` / `technical-decision`
+**batch（一次建多个 CHG）**：prompt 含 `change-set` + `change-set-total` + N 个 `--- CHG i/N ---` 块时，逐块独立创建——每块 frontmatter 在 `type` 后写 `change-set` + `change-set-seq: i/N`，每块索引都插在 `<!-- ARCHIVE -->` 之前；全部成功才 SUCCESS，中途失败报告已建哪些 + 失败在第几块、保留未消费 reserved-id。详见 create-chg.md「batch 模式」。
 
 ### 2. update-chg
 

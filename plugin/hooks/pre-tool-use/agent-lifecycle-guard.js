@@ -40,6 +40,26 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
   const id = target || paceUtils.explicitChangeTargetFromAgentPrompt(prompt) || 'CHG-YYYYMMDD-NN';
   const lines = [artifactDirField(artDir)];
 
+  if (op === 'create-chg-batch') {
+    return [
+      ...lines,
+      'operation: create-chg',
+      'change-set: <变更集名>',
+      'change-set-total: <N，必须等于下面 CHG 块数>',
+      '--- CHG 1/N ---',
+      'reserved-id: <reserve --count N 输出的第 1 个>',
+      'title: <第 1 个 CHG 标题（可闭环单元）>',
+      'tasks:',
+      '  - T-001: <任务标题与验收>',
+      '--- CHG 2/N ---',
+      'reserved-id: <第 2 个 reserved-id>',
+      'title: <第 2 个 CHG 标题>',
+      'tasks:',
+      '  - T-001: <任务标题与验收>',
+      '（每块一个 reserved-id，重复到第 N 块；先运行 reserve --operation create-chg --count N 取 N 个连号）',
+    ].join('\n');
+  }
+
   if (op === 'create-chg') {
     return [
       ...lines,
@@ -212,6 +232,38 @@ function explicitReservationFromPrompt(prompt) {
   return { id, fileRel, filePrefix };
 }
 
+// 块内字段取值：只取冒号同一行的非空内容，避免 promptFieldValue 的 \s* 跨行吞下一字段
+//（否则空 `title:` 会把下一行 `tasks:` 误当 title，绕过 batch 块字段校验）。
+function blockFieldValue(body, field) {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = String(body || '').match(new RegExp(`^[ \\t]*${escaped}[ \\t]*[:=][ \\t]*(\\S.*)$`, 'mi'));
+  return m ? m[1].trim() : '';
+}
+
+// 解析 batch create CHG 的 `--- CHG i/N ---` 分块；逐块取 reserved-id / title / 是否含 tasks。
+// 无任何块标记时 isBatch=false（单 CHG / 普通 create-chg 走原路径）。
+function parseBatchBlocks(prompt) {
+  const text = String(prompt || '');
+  const re = /^---[ \t]*CHG[ \t]+(\d+)\/(\d+)[ \t]*---[ \t]*$/gim;
+  const markers = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    markers.push({ start: m.index, end: re.lastIndex, seq: Number(m[1]), markerTotal: Number(m[2]) });
+  }
+  const blocks = markers.map((mk, idx) => {
+    const bodyEnd = idx + 1 < markers.length ? markers[idx + 1].start : text.length;
+    const body = text.slice(mk.end, bodyEnd);
+    return {
+      seq: mk.seq,
+      markerTotal: mk.markerTotal,
+      reservedId: blockFieldValue(body, 'reserved-id').toUpperCase(),
+      title: blockFieldValue(body, 'title'),
+      hasTasks: /(?:^|\n)[ \t]*tasks[ \t]*[:=]/i.test(body) || /(?:^|\n)[ \t]*-[ \t]+T-\d/i.test(body),
+    };
+  });
+  return { isBatch: markers.length > 0, blocks };
+}
+
 function relFromReservedId(id) {
   const m = String(id || '').match(/^(CHG|HOTFIX)-(\d{8})-(\d{2})$/i);
   if (!m) return '';
@@ -355,6 +407,45 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
       promptTemplateForOperation({ prompt, artDir }),
       '执行 approve / approve-and-start / update-status / verify 时，operation 必须为 update-chg，并同时提供 action。'
     ].join('\n');
+  }
+
+  if (operation === 'create-chg') {
+    const batch = parseBatchBlocks(text);
+    const totalRaw = promptFieldValue(text, 'change-set-total');
+    const declaredTotal = /^\d+$/.test(totalRaw) ? Number(totalRaw) : null;
+    const looksBatch = batch.isBatch || (declaredTotal !== null && declaredTotal > 1);
+    if (looksBatch) {
+      const tpl = promptTemplateForOperation({ prompt, artDir, operation: 'create-chg-batch' });
+      const deny = (msg) => [msg, FORMAT_SNIPPETS.skillRef, '请重派同一个 agent，使用 batch create 多块模板：', tpl].join('\n');
+      if (!batch.isBatch) {
+        return deny('batch create CHG（change-set-total>1）必须用 `--- CHG i/N ---` 分隔每个 CHG 块，但 prompt 未检测到任何块。');
+      }
+      if (!promptHasNonEmptyField(text, 'change-set')) {
+        return deny('batch create CHG 缺少 change-set 字段（变更集名）。');
+      }
+      if (declaredTotal === null) {
+        return deny('batch create CHG 缺少 change-set-total（应等于 batch 块数）。');
+      }
+      if (batch.blocks.length !== declaredTotal) {
+        return deny(`batch create CHG 块数（${batch.blocks.length}）与 change-set-total（${declaredTotal}）不一致。`);
+      }
+      const errs = [];
+      const seen = new Set();
+      batch.blocks.forEach((b, idx) => {
+        const where = `第 ${idx + 1} 块（--- CHG ${b.seq}/${b.markerTotal} ---）`;
+        if (b.markerTotal !== declaredTotal) errs.push(`${where} 标记总数 ${b.markerTotal} 与 change-set-total ${declaredTotal} 不符`);
+        if (b.seq !== idx + 1) errs.push(`${where} 序号应为 ${idx + 1}`);
+        if (!b.reservedId) errs.push(`${where} 缺 reserved-id`);
+        else if (seen.has(b.reservedId)) errs.push(`${where} reserved-id 与其他块重复：${b.reservedId}`);
+        else seen.add(b.reservedId);
+        if (!b.title) errs.push(`${where} 缺 title`);
+        if (!b.hasTasks) errs.push(`${where} 缺 tasks`);
+      });
+      if (errs.length > 0) {
+        return [`batch create CHG 块校验失败：`, ...errs.map(e => `- ${e}`), FORMAT_SNIPPETS.skillRef, '请重派同一个 agent，使用 batch create 多块模板：', tpl].join('\n');
+      }
+    }
+    return '';
   }
 
   if (operation === 'update-chg' && !['append', 'replace', 'approve', 'approve-and-start', 'update-status', 'verify', 'review'].includes(action)) {
@@ -505,6 +596,7 @@ module.exports = {
   promptHasTrueField,
   promptDeclaredAction,
   explicitReservationFromPrompt,
+  parseBatchBlocks,
   promptUpdateStatusValue,
   reservationRelForLookup,
   reservationMatchesExplicit,

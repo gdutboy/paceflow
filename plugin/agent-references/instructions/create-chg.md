@@ -111,6 +111,8 @@ technical-decision: <How>
 
 目标输出是：每条 CHG/HOTFIX 索引独占一行，且该行从行首 `- [` 开始，位于说明注释之后、`<!-- ARCHIVE -->` 之前。
 
+**插入锚点永远是 `<!-- ARCHIVE -->` 标记本身（插在它前面），绝不是任何已有索引行。** 即使活跃区当前为空、且 `<!-- ARCHIVE -->` 下方已有归档条目（`[x]` / `[-]`），新索引也必须插到 `<!-- ARCHIVE -->` **之前**的活跃区——绝不能插到第一个归档条目之前（那会落进归档区，导致代码写入门判定「无活跃 CHG」并 hard-deny，见 `finding-2026-06-07-create-chg-empty-active-archive-insert`）。因此 Edit 的 `old_string` 必须把 `<!-- ARCHIVE -->` 这一行包含进来作为锚点，而不是去匹配某条已有索引行。batch 创建多块时同理：每个块的索引都要插在 `<!-- ARCHIVE -->` 之前。
+
 <example>
 Read 到的空活跃区：
 
@@ -152,6 +154,38 @@ new_string:
 刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
 
 若 prompt 包含 `execution-context`，task.md 与 implementation_plan.md 的索引行必须保留其中的 `[worktree:: ...] [branch:: ...]` 字段，方便多 worktree 并发时人读区分。artifact 索引只写 `[worktree:: ...] [branch:: ...]` 这类人读上下文；session id、lock、owner state 等运行态只写 `.pace/`。
+
+## batch 模式（一次创建多个 CHG）
+
+主 session 可一次创建一个变更集（change-set）的 N 个可闭环 CHG（batch create CHG）。触发信号：prompt 含 `change-set` + `change-set-total` 头部字段，且用 `--- CHG i/N ---` 分隔的 N 个块，每块含独立的 `reserved-id` / `title` / `tasks`。
+
+输入格式：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: create-chg
+change-set: <变更集名>
+change-set-total: <N，必须等于块数>
+--- CHG 1/N ---
+reserved-id: <第 1 个 reserved-id（reserve --count N 输出）>
+title: <第 1 个 CHG 标题>
+tasks:
+  - T-001: <任务与验收>
+--- CHG 2/N ---
+reserved-id: <第 2 个 reserved-id>
+title: <第 2 个 CHG 标题>
+tasks:
+  - T-001: <任务与验收>
+（重复到第 N 块）
+```
+
+处理规范：
+
+1. 逐块独立执行单 CHG 创建流程：每块写 `changes/<id>.md`，frontmatter 在 `type` 之后插入 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记）；再写 task.md / implementation_plan.md 各一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
+2. `change-set-total` 只是 prompt 字段，用于校验块数，**不写入 frontmatter**；写入 frontmatter 的是 `change-set` + `change-set-seq`（两者均为 §2.1 可空字段，仅 batch 成员写入）。
+3. 全部块成功才报告 `SUCCESS`；中途某块失败 → 报告已成功建了哪些 CHG、失败在第几块及原因，未消费的 reserved-id 保留，由主 session 修正后重派剩余块（已建好的不重复创建）。
+4. hook（`agent-lifecycle-guard`）已对 batch 做确定性前置校验：缺块 / 某块缺 reserved-id·title·tasks / 块数与 `change-set-total` 不符 / 缺 `change-set` / reserved-id 与 hook 预留不匹配，都会在派遣前 DENY；agent 收到的 batch prompt 已通过结构校验。
+5. 执行模型不变：batch 只是一次性把 N 个 CHG 落为 `planned` artifact，持久化整组规划；批准与执行仍逐个 `approve-and-start`（A2）。
 
 ## 边界
 
