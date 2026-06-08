@@ -33,9 +33,25 @@ const proj = getProjectName(cwd);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const PRINT_ONLY = !!process.env.PACE_PRINT_ONLY;
-// CHG-B：注入预算 46000→128000（1M 上下文下约 4-6% 极端、常态 1-2%）；PACE_SESSION_OUTPUT_BUDGET_BYTES 可覆盖。
-// assembleWithBudget 已做 L3 优先截断（head 永不截）；此全局守卫同阀，退为「任何额外 write 的兜底」，正常不触发。
-const SESSION_OUTPUT_BUDGET_BYTES = Math.max(46000, Number(process.env.PACE_SESSION_OUTPUT_BUDGET_BYTES) || 128000);
+
+// --group 路由：core（默认）运行副作用 + 渲染全部层；artifact 仅渲染 artifact 层（T-006 实现分组渲染）。
+// 向后兼容：无 --group 参数时默认 core，单 hook 行为不变。
+const GROUP_CORE = 'core';
+const GROUP_ARTIFACT = 'artifact';
+function parseGroupArg() {
+  const i = process.argv.indexOf('--group');
+  const v = i >= 0 ? process.argv[i + 1] : '';
+  return v === GROUP_ARTIFACT ? GROUP_ARTIFACT : GROUP_CORE; // 默认 core，向后兼容无 arg
+}
+const GROUP = parseGroupArg();
+
+// 注入预算改用 chars（per-hook 10K chars cap 的核心修复）；PACE_SESSION_OUTPUT_BUDGET_CHARS 可覆盖。
+// assembleWithBudget 已做 L3 优先截断（head 永不截）；此全局字节守卫退为极端兜底，正常不触发。
+const SESSION_OUTPUT_BUDGET_CHARS = Math.max(9500, Number(process.env.PACE_SESSION_OUTPUT_BUDGET_CHARS) || 9500);
+// 全局 stdout 字节守卫阈值：与 SESSION_OUTPUT_BUDGET_CHARS 解耦——assembleWithBudget 已按 chars 做主截断，
+// 本守卫是独立字节兜底，只拦 assembleWithBudget 之外的意外 write。阈值须 > 单 hook 合法上限
+// （9500 chars 全 CJK ≈ 28500 bytes，否则误截合法注入），< 50000（Claude 50KB 持久化边界，e2e 2d 系列据此）。
+const SESSION_OUTPUT_GUARD_BYTES = Number(process.env.PACE_SESSION_OUTPUT_GUARD_BYTES) || 46000;
 let sessionOutputBytes = 0;
 let sessionOutputTruncated = false;
 const realStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -52,8 +68,9 @@ function sliceUtf8ToBytes(str, maxBytes) {
   return str.slice(0, lo);
 }
 
-// 全局字节守卫：注入输出单次 write 经此累计字节、超 SESSION_OUTPUT_BUDGET_BYTES 截断。
-//   重构后注入只有一次 write，但守卫作为第二道防线保留（任何额外 write 仍受约束）。
+// 全局字节守卫：极端兜底，防止任何额外 write 超出字节上限。
+//   阈值用独立的 SESSION_OUTPUT_GUARD_BYTES（默认 46000 bytes），与 assembleWithBudget 的 chars 主预算解耦——
+//   主预算控制已在 assembleWithBudget 完成，此守卫只拦 assembleWithBudget 之外的意外 write。
 function installSessionOutputGuard() {
   process.stdout.write = (chunk, encoding, callback) => {
     const cb = typeof encoding === 'function' ? encoding : callback;
@@ -65,18 +82,18 @@ function installSessionOutputGuard() {
     }
 
     const bytes = Buffer.byteLength(text, 'utf8');
-    if (sessionOutputBytes + bytes <= SESSION_OUTPUT_BUDGET_BYTES) {
+    if (sessionOutputBytes + bytes <= SESSION_OUTPUT_GUARD_BYTES) {
       sessionOutputBytes += bytes;
       return realStdoutWrite(chunk, encoding, callback);
     }
 
-    const remaining = Math.max(0, SESSION_OUTPUT_BUDGET_BYTES - sessionOutputBytes);
+    const remaining = Math.max(0, SESSION_OUTPUT_GUARD_BYTES - sessionOutputBytes);
     const prefix = sliceUtf8ToBytes(text, remaining);
     if (prefix) {
       sessionOutputBytes += Buffer.byteLength(prefix, 'utf8');
       realStdoutWrite(prefix);
     }
-    const notice = `\n\n=== SessionStart 输出截断 ===\n注入内容超过 ${SESSION_OUTPUT_BUDGET_BYTES} bytes 预算，已停止继续输出。L0/L1/L2 已完整注入，省略的是 L3 相关提醒，请按需 Read artifact 文件。\n`;
+    const notice = `\n\n=== SessionStart 输出截断 ===\n注入字节超过 ${SESSION_OUTPUT_GUARD_BYTES} 字节兜底上限，已停止继续输出。主预算已由 assembleWithBudget 按 chars 控制，此为极端兜底，请按需 Read artifact 文件。\n`;
     sessionOutputBytes += Buffer.byteLength(notice, 'utf8');
     realStdoutWrite(notice);
     sessionOutputTruncated = true;
@@ -160,25 +177,28 @@ if (paceSignal) {
 }
 
 // === 运行态副作用：12 写盘点集中，PRINT_ONLY 一处短路（替代散落守卫）===
+//   副作用只在 core group 跑：W1–W11 写盘只应执行一次；artifact group 无副作用（幂等自保 T-006 实现）。
 //   注意：effects 内 W10/W11 会创建 .gitignore / task.md 模板，须在 collectState 读文件前执行
 //   （与重构前 276/282 写盘先于 416 读取循环的顺序一致）。
-if (!PRINT_ONLY) {
+if (GROUP === GROUP_CORE && !PRINT_ONLY) {
   applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artDir, {
     paceUtils, log, PACE_RUNTIME, COUNTER_FILE,
     v5MigrationInfo, artifactRootChoice, proj, compactSnapshot,
+    group: GROUP,
   });
 }
 
 // === 纯读取层：项目状态 → state ===
 const state = collectState(cwd, eventType, paceSignal, artDir, paceUtils, {
   proj, hookInput, rootChoicePending, artifactRootChoice, v5MigrationInfo, ageFlagExistedBefore,
+  group: GROUP,
 });
 // 编排层预生成的注入文本块挂到 state，供 layers 在 golden 原位拼接。
 state.compactSnapshotText = compactSnapshotText;
 state.rootChoicePromptText = rootChoicePromptText;
 
 // === 纯渲染层：state → L0–L3 文本块 ===
-const layers = buildLayers(state, eventType, paceUtils);
+const layers = buildLayers(state, eventType, paceUtils, GROUP);
 
 // === flush layers 渲染期累积的日志（FINDINGS_DETAIL_MATCH_MISS / SKIPPED_REMINDER / 桥接 / owner / blocked）===
 if (Array.isArray(state._logs)) {
@@ -186,7 +206,7 @@ if (Array.isArray(state._logs)) {
 }
 
 // === 预算装配 + 单次输出 ===
-const { text } = assembleWithBudget(layers, { limitBytes: SESSION_OUTPUT_BUDGET_BYTES });
+const { text } = assembleWithBudget(layers, { limitChars: SESSION_OUTPUT_BUDGET_CHARS });
 process.stdout.write(text);
 
 log(paceUtils.projectLogEntry(cwd, 'SessionStart', 'INJECT', {
@@ -196,6 +216,7 @@ log(paceUtils.projectLogEntry(cwd, 'SessionStart', 'INJECT', {
   signal: paceSignal || 'none',
   artifact_dir: paceUtils.displayDir(artDir),
   choice: artifactRootChoice,
+  group: GROUP,
   files: (state._found && state._found.length) ? state._found.join(', ') : '无 Artifact 文件',
   output_bytes: sessionOutputBytes,
   truncated: sessionOutputTruncated ? 'yes' : 'no',
