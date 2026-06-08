@@ -60,8 +60,9 @@ function changeSetSeqNum(seq) {
  *   注：CHG-A 为保 byte 等价，分层只做归类、拼接顺序仍复刻 golden（见 budget.js）。
  */
 function buildLayers(state, eventType, paceUtils, group) {
-  // 渲染分组守卫：未传 group 或传 undefined 时默认 'core'（向后兼容 SL-1~11 无第四参数调用）。
-  const g = group || 'core';
+  // 渲染分组守卫：仅 'artifact' 为 artifact group，其余（含未传/非法值）显式回落 'core'。
+  // 用显式三元而非 `group || 'core'`——否则非法真值（如 'bogus'）会令 isCore/isArtifact 双 false、输出空注入（R 审计发现 D）。
+  const g = group === 'artifact' ? 'artifact' : 'core';
   const isCore = g === 'core';
   const isArtifact = g === 'artifact';
   const ev = eventType || state.eventType;
@@ -126,6 +127,12 @@ function buildLayers(state, eventType, paceUtils, group) {
   if (isArtifact) {
     // === 7. artifact 文件循环（重构前 416-593）===
     for (const block of filesRender.blocks) l1head.push(block);
+
+    // === 10. 格式合规警告（重构前 638-672）===
+    // R 审计发现 A 修正：renderFormatWarnings 依赖 found（artifact 文件）+ implFullForFormat（artifact 读），
+    // 必须与数据同 group。T-003 误放 core 块致 core found 恒空、双 hook 后 artifact 块又不渲染 → 格式警告全 group 丢失。
+    const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
+    if (formatWarn) l1head.push(formatWarn);
   }
   // found（含 post-截断长度）回挂 state，供编排层 INJECT 日志的 files 字段复刻重构前 found.join。
   state._found = filesRender.found;
@@ -146,10 +153,6 @@ function buildLayers(state, eventType, paceUtils, group) {
       l1head.push(renderArtifactDirSection(state));
     }
 
-    // === 10. 格式合规警告（重构前 638-672）===
-    const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
-    if (formatWarn) l1head.push(formatWarn);
-
     // === 11. 跨会话提醒 + 桥接 + 执行上下文（重构前 674-755）===
     const crossSession = renderCrossSessionAndExecution(state, paceUtils);
     for (const block of crossSession) l0.push(block);
@@ -161,12 +164,12 @@ function buildLayers(state, eventType, paceUtils, group) {
     // === 13. 相关讨论（重构前 801-813）===
     const relatedText = renderRelatedNotes(state, ev);
     if (relatedText) l3.push(relatedText);
-  }
 
-  if (isArtifact) {
     // === 14. Findings 过期提醒（重构前 757-787）===
-    // agedFindings 归 artifact group：collectAgedFindings + W12 flag 写（T-006）+ 注入渲染全链路一致。
-    // （T-003 曾误放 core 块，本 task 修正归属）
+    // R 审计发现 B 修正：agedFindings 留 core group。其渲染依赖 W12 flag（findings-age）去重，
+    // 而 W12 flag 当前写在 core 的 applyRuntimeEffects——渲染 group 必须与 flag 写 group 一致，
+    // 否则 core 写 flag → artifact 读到已存在 → 不注入（发现 B2 时序割裂）。CHG-11/T-006 会把
+    // agedFindings 渲染+读取+W12 flag 整体移 artifact，届时三者一致；本 CHG 阶段三者全留 core。
     const agedText = renderAgedFindings(state);
     if (agedText) l3.push(agedText);
   }

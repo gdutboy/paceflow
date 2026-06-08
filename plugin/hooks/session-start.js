@@ -34,8 +34,10 @@ const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const PRINT_ONLY = !!process.env.PACE_PRINT_ONLY;
 
-// --group 路由：core（默认）运行副作用 + 渲染全部层；artifact 仅渲染 artifact 层（T-006 实现分组渲染）。
-// 向后兼容：无 --group 参数时默认 core，单 hook 行为不变。
+// --group 路由：core（默认）运行副作用 + 渲染 core 层（项目骨架/L0/git/相关讨论/agedFindings 过期提醒）；
+// artifact 仅渲染 artifact 层（文件块 + 格式警告）。分组渲染由 M2（buildLayers/collectState 按 group）实现。
+// 向后兼容：无 --group 默认 core；但 hooks.json 注册双 hook（M4/T-008）前单独跑时仅注入 core 骨架，
+// artifact 文件块/格式警告不注入——故整个多 hook 重构须作为一个发布单元，T-008 前不发布中间态。
 const GROUP_CORE = 'core';
 const GROUP_ARTIFACT = 'artifact';
 function parseGroupArg() {

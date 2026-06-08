@@ -76,9 +76,8 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   }
 
   // --- 格式合规检查输入（重构前 638-672 读取部分）---
-  // 仅 artifact 读：格式警告渲染在 core，但 implFullForFormat 依赖 artifact 文件已读（同 isArtifact 路径）。
-  // core 不读（格式警告在 core 块，但 artifact IO 归 artifact group；T-003 注：formatWarnings 在 core 内
-  // 消费 found，core group 时 found 为空，不触发 implFull 读取路径，故此处限制与 layers 逻辑一致）。
+  // 仅 artifact 读：格式警告渲染归 artifact group（R 审计发现 A 修正后），implFullForFormat + found 与渲染同 group。
+  // core 既不读也不再渲染格式警告——根除「渲染在 core 但数据在 artifact」致 found 恒空、警告全 group 丢失的错位。
   let implFullForFormat = null;
   if (isArtifact && paceSignal && artifactFiles.length > 0) {
     implFullForFormat = readFull(cwd, 'implementation_plan.md');
@@ -107,10 +106,11 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
 
   // --- findings 过期判定（重构前 757-787 读取/判定部分，写 flag 留 effects）---
   //   ageFlagExistedBefore 由编排层在 effects（W12 写 flag）之前快照传入。
-  //   设计决策：agedFindings 归 artifact group——findings 过期读取(collectAgedFindings) +
-  //   W12 flag 写（T-006）+ 注入渲染（renderAgedFindings）须在同一 group，避免跨 group 割裂。
-  //   core group：给空默认值，不读 findings 文件。
-  const agedFindings = isArtifact
+  //   R 审计发现 B 修正：agedFindings 留 core group——去重依赖 W12 flag（findings-age），
+  //   而 W12 flag 当前写在 core 的 applyRuntimeEffects。读取(collectAgedFindings)+渲染(renderAgedFindings)
+  //   +flag 写须同 group，否则跨 group 时序割裂致不注入（发现 B2）。CHG-11/T-006 整体移 artifact。
+  //   artifact group：给空默认值，不做 findings 过期判定。
+  const agedFindings = isCore
     ? collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore)
     : { shouldInject: false, aged: [] };
 
