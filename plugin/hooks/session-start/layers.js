@@ -154,17 +154,21 @@ function buildLayers(state, eventType, paceUtils, group) {
     const crossSession = renderCrossSessionAndExecution(state, paceUtils);
     for (const block of crossSession) l0.push(block);
 
-    // === 12. Findings 过期提醒（重构前 757-787）===
-    const agedText = renderAgedFindings(state);
-    if (agedText) l3.push(agedText);
-
-    // === 13. Git 状态（重构前 790-799）===
+    // === 12. Git 状态（重构前 790-799）===
     const gitText = renderGit(state);
     if (gitText) l1.push(gitText);
 
-    // === 14. 相关讨论（重构前 801-813）===
+    // === 13. 相关讨论（重构前 801-813）===
     const relatedText = renderRelatedNotes(state, ev);
     if (relatedText) l3.push(relatedText);
+  }
+
+  if (isArtifact) {
+    // === 14. Findings 过期提醒（重构前 757-787）===
+    // agedFindings 归 artifact group：collectAgedFindings + W12 flag 写（T-006）+ 注入渲染全链路一致。
+    // （T-003 曾误放 core 块，本 task 修正归属）
+    const agedText = renderAgedFindings(state);
+    if (agedText) l3.push(agedText);
   }
 
   return { l1head, l0, l1, l2, l3 };

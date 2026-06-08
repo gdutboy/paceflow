@@ -34,7 +34,14 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   } = paceUtils;
   const { proj, hookInput, rootChoicePending, artifactRootChoice, v5MigrationInfo } = extra;
 
+  // --- group 分流：core 只读项目骨架 IO，artifact 只读文件内容 IO ---
+  // extra.group 由编排层（session-start.js）从 CLI --group 参数解析后传入。
+  const group = (extra && extra.group) || 'core';
+  const isCore = group === 'core';
+  const isArtifact = group === 'artifact';
+
   // --- 项目上下文（重构前 writeProjectContextSection 读取部分，104-117）---
+  // 两个 group 都需要：artifactDir/rootInfo 是 session 基础信息。
   const rootInfo = resolveEffectiveProjectRoot(cwd);
   const contextArtDir = paceSignal ? artDir : getArtifactDir(cwd);
 
@@ -42,56 +49,80 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   const artifactDir = computeArtifactDirInfo(cwd, artDir, paceUtils);
 
   // --- 活跃 CHG 摘要 + owner 富集（重构前 412-414 + enrichSummaryOwner 330-339）---
-  const activeChangeSummaries = paceSignal === 'artifact'
+  // core 读：活跃 CHG 摘要归 core group（L0 渲染、跨会话提醒、执行上下文）。
+  // artifact 也读：artifact 文件循环的 foldForeignOwnedArtifactOutput 需要 activeChangeSummaries
+  //   中的 foreign owner 信息来折叠 task.md/implementation_plan.md 中的 foreign CHG 索引行。
+  //   两个 group 都需要读，但 core 额外渲染摘要文本，artifact 仅用于折叠。
+  const activeChangeSummaries = (paceSignal === 'artifact')
     ? summarizeActiveChanges(cwd).map(summary => enrichSummaryOwner(summary, cwd, hookInput, changeOwnerStatus))
     : [];
 
   // --- artifact 文件 raw 读取（重构前 416-423；截断整形留 layers）---
+  // 仅 artifact 读：artifact 文件块只在 artifact group 注入，core 不读（跳过无用 IO）。
   const taskFp = path.join(artDir, 'task.md');
+  // artifactDirInjected 依赖 task.md 存在性，两个 group 都需判（core 渲染 Artifact 目录 section）。
   const artifactDirInjected = !!(paceSignal && fs.existsSync(taskFp));
   const artifactFiles = [];
   let taskFullCached = null;
-  for (const file of ARTIFACT_FILES) {
-    const fp = path.join(artDir, file);
-    if (!fs.existsSync(fp)) continue;
-    const full = readFull(cwd, file);
-    if (!full) continue;
-    if (file === 'task.md') taskFullCached = full;
-    artifactFiles.push({ file, full });
+  if (isArtifact) {
+    for (const file of ARTIFACT_FILES) {
+      const fp = path.join(artDir, file);
+      if (!fs.existsSync(fp)) continue;
+      const full = readFull(cwd, file);
+      if (!full) continue;
+      if (file === 'task.md') taskFullCached = full;
+      artifactFiles.push({ file, full });
+    }
   }
 
   // --- 格式合规检查输入（重构前 638-672 读取部分）---
+  // 仅 artifact 读：格式警告渲染在 core，但 implFullForFormat 依赖 artifact 文件已读（同 isArtifact 路径）。
+  // core 不读（格式警告在 core 块，但 artifact IO 归 artifact group；T-003 注：formatWarnings 在 core 内
+  // 消费 found，core group 时 found 为空，不触发 implFull 读取路径，故此处限制与 layers 逻辑一致）。
   let implFullForFormat = null;
-  if (paceSignal && artifactFiles.length > 0) {
+  if (isArtifact && paceSignal && artifactFiles.length > 0) {
     implFullForFormat = readFull(cwd, 'implementation_plan.md');
   }
 
   // --- 跨会话提醒用 task.md 全文（重构前 674-678 兜底读取）---
-  if (!taskFullCached && fs.existsSync(taskFp)) {
+  // 仅 core 读（跨会话提醒在 core group，renderCrossSessionAndExecution 消费 taskFullCached）。
+  // artifact group：taskFullCached 已从 ARTIFACT_FILES 循环赋值（若 task.md 在列）。
+  if (isCore && !taskFullCached && fs.existsSync(taskFp)) {
     try { taskFullCached = fs.readFileSync(taskFp, 'utf8'); } catch (e) {}
   }
 
   // --- bridge hint（重构前 696）---
+  // 仅 core 读（Superpowers 桥接提醒在 core group）。
   let bridgeHint = null;
-  if (paceSignal) {
+  if (isCore && paceSignal) {
     try { bridgeHint = formatBridgeHint(cwd, artDir); } catch (e) { bridgeHint = null; }
   }
 
   // --- native plan 路径（重构前 266 / 211-214）---
+  // 仅 core 读（Native Plan 桥接提醒在 core group）。
   let nativePlanPath = null;
-  try { nativePlanPath = getNativePlanPath(cwd); } catch (e) { nativePlanPath = null; }
+  if (isCore) {
+    try { nativePlanPath = getNativePlanPath(cwd); } catch (e) { nativePlanPath = null; }
+  }
 
   // --- findings 过期判定（重构前 757-787 读取/判定部分，写 flag 留 effects）---
-  //   ageFlagExistedBefore 由编排层在 effects（W12 写 flag）之前快照传入：
-  //   重构前注入判定用「写 flag 之前」的 flag 存在性；解耦后 effects 先于 collectState，
-  //   若此处重新 stat 会读到 W12 刚写的 flag → 误判已提醒。故用编排层快照值。
-  const agedFindings = collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore);
+  //   ageFlagExistedBefore 由编排层在 effects（W12 写 flag）之前快照传入。
+  //   设计决策：agedFindings 归 artifact group——findings 过期读取(collectAgedFindings) +
+  //   W12 flag 写（T-006）+ 注入渲染（renderAgedFindings）须在同一 group，避免跨 group 割裂。
+  //   core group：给空默认值，不读 findings 文件。
+  const agedFindings = isArtifact
+    ? collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore)
+    : { shouldInject: false, aged: [] };
 
   // --- git 状态（重构前 790-799）---
-  const git = collectGit(cwd);
+  // 仅 core 读（git 状态块在 core group）。artifact 给 null。
+  const git = isCore ? collectGit(cwd) : null;
 
   // --- 相关讨论（重构前 801-813）---
-  const relatedNotes = collectRelatedNotes(cwd, getProjectName, scanRelatedNotes);
+  // 仅 core 读（相关讨论块在 core group）。artifact 给空数组。
+  const relatedNotes = isCore
+    ? collectRelatedNotes(cwd, getProjectName, scanRelatedNotes)
+    : [];
 
   return {
     cwd,
