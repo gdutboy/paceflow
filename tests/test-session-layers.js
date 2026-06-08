@@ -227,6 +227,40 @@ test('SL-11. change-set 进度按 change-set-seq 升序展示', () => {
   assert.ok(!l0Text.includes('5/5, 4/5, 3/5, 2/5'), 'change-set 进度不应为倒序');
 });
 
+// --- 12. group=core 含工作流入口+L0、不含 findings/corrections ---
+test('SL-12. group=core 含工作流入口+L0、不含 findings/corrections', () => {
+  // makeActiveState 的 artifactFiles 默认为空，补 findings/corrections 字段用于 artifact group 渲染
+  const state = makeActiveState({
+    artifactFiles: [
+      { file: 'findings.md', full: '# 调研记录\n\n## 未解决问题\n\n- [ ] [[finding-x|测试 finding]] — summary [date:: 2026-06-08] [impact:: P1]\n' },
+      { file: 'corrections.md', full: '# Corrections 索引\n\n## 活跃记录\n\n- [[correction-x]] 测试纠正 [date:: 2026-06-08]\n' },
+    ],
+  });
+  const { l1head, l0, l3 } = buildLayers(state, 'startup', paceUtils, 'core');
+  const all = [...l1head, ...l0, ...l3].join('\n');
+  assert.ok(all.includes('=== PACEflow 工作流入口 ==='), 'core 含工作流入口');
+  assert.ok(all.includes('=== 活跃 CHG 摘要 ==='), 'core 含 L0 活跃 CHG 摘要');
+  assert.ok(!all.includes('=== findings.md ==='), 'core 不含 findings.md');
+  assert.ok(!all.includes('=== corrections.md ==='), 'core 不含 corrections.md');
+});
+
+// --- 13. group=artifact 含 findings/corrections、不含工作流入口 ---
+test('SL-13. group=artifact 含 findings/corrections、不含工作流入口', () => {
+  const state = makeActiveState({
+    artifactFiles: [
+      { file: 'findings.md', full: '# 调研记录\n\n## 未解决问题\n\n- [ ] [[finding-x|测试 finding]] — summary [date:: 2026-06-08] [impact:: P1]\n' },
+      { file: 'corrections.md', full: '# Corrections 索引\n\n## 活跃记录\n\n- [[correction-x]] 测试纠正 [date:: 2026-06-08]\n' },
+    ],
+  });
+  const { l1head, l3 } = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const all = [...l1head, ...l3].join('\n');
+  assert.ok(
+    all.includes('=== findings.md ===') || all.includes('=== corrections.md ==='),
+    'artifact 含 findings/corrections'
+  );
+  assert.ok(!all.includes('=== PACEflow 工作流入口 ==='), 'artifact 不含工作流入口');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

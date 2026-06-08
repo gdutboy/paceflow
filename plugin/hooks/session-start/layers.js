@@ -46,6 +46,11 @@ function changeSetSeqNum(seq) {
  * @param {object} state - collectState 产出的纯数据对象。
  * @param {string} eventType - SessionStart 事件类型（'startup' / 'compact' / ...）。
  * @param {object} paceUtils - pace-utils 模块（提供常量/正则/纯工具，依赖注入便于单测）。
+ * @param {string} [group] - 渲染分组：'core'（默认）或 'artifact'。
+ *   - core：项目上下文 / 工作流入口 / compact 快照 / Native Plan / rootChoice / Artifact 目录 /
+ *           活跃 CHG 摘要 / change-set 进度 / 格式合规警告 / 跨会话提醒 / 执行上下文 /
+ *           Findings 过期提醒 / git 状态 / 相关讨论
+ *   - artifact：spec / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md
  * @returns {{ l1head: string[], l0: string[], l1: string[], l2: string[], l3: string[] }}
  *   - l1head: 项目上下文 + 工作流入口 + Artifact 目录 + artifact 文件 + 格式警告（注入顺序最前）
  *   - l0: 活跃 CHG 摘要 / change-set 进度 / 跨会话提醒 / 桥接 / 执行上下文（「我刚才在做」）
@@ -54,12 +59,18 @@ function changeSetSeqNum(seq) {
  *   - l3: findings 过期提醒 / 相关讨论
  *   注：CHG-A 为保 byte 等价，分层只做归类、拼接顺序仍复刻 golden（见 budget.js）。
  */
-function buildLayers(state, eventType, paceUtils) {
+function buildLayers(state, eventType, paceUtils, group) {
+  // 渲染分组守卫：未传 group 或传 undefined 时默认 'core'（向后兼容 SL-1~11 无第四参数调用）。
+  const g = group || 'core';
+  const isCore = g === 'core';
+  const isArtifact = g === 'artifact';
   const ev = eventType || state.eventType;
   // B5 + 倒序对称（HOTFIX-20260608-01）：活跃 CHG 展示顺序规范化——running 优先 → 同档 CHG-ID 升序。
   // summarizeActiveChanges 继承 task.md 活跃区物理顺序（batch create prepend 致创建倒序 08→05），
   // 此处稳定排序修正，使「正在执行的」「下一个该 approve-and-start 的」排最前；惠及下游消费点
   // （活跃 CHG 摘要 / 执行上下文）。change-set 进度另按纯 seq 升序（见 renderChangeSetProgress）。
+  // 浅拷贝 state 替换排序后副本，不 mutate 输入，保持纯函数。
+  // B5 + 倒序对称：活跃 CHG 排序（running 优先 → 同档 CHG-ID 升序）。
   // 浅拷贝 state 替换排序后副本，不 mutate 输入，保持纯函数。
   if (state.activeChangeSummaries && state.activeChangeSummaries.length > 1) {
     state = {
@@ -75,73 +86,86 @@ function buildLayers(state, eventType, paceUtils) {
   const l2 = [];
   const l3 = [];
 
-  // === 1. 项目上下文（重构前 137-139 + writeProjectContextSection 104-119）===
-  const projCtx = renderProjectContext(state, paceUtils);
-  if (projCtx) l1head.push(projCtx);
+  // ── core 块：项目骨架（每次 session 固定需要）──────────────────────────────
+  if (isCore) {
+    // === 1. 项目上下文（重构前 137-139 + writeProjectContextSection 104-119）===
+    const projCtx = renderProjectContext(state, paceUtils);
+    if (projCtx) l1head.push(projCtx);
 
-  // === 2. 工作流入口（重构前 141-144 + writeWorkflowEntrySection 122-134）===
-  //   仅 paceSignal && !rootChoicePending && eventType !== 'compact'（A0 对称留 CHG-C）。
-  const workflowEntry = renderWorkflowEntry(state, ev, paceUtils);
-  if (workflowEntry) l1head.push(workflowEntry);
+    // === 2. 工作流入口（重构前 141-144 + writeWorkflowEntrySection 122-134）===
+    //   仅 paceSignal && !rootChoicePending && eventType !== 'compact'（A0 对称留 CHG-C）。
+    const workflowEntry = renderWorkflowEntry(state, ev, paceUtils);
+    if (workflowEntry) l1head.push(workflowEntry);
 
-  // === 3. compact 快照恢复（重构前 174-261）===
-  //   注：本 CHG 保留快照消费的注入文本；写盘（W7/W8/W9）在 runtime-effects。
-  //   快照恢复的「读快照 + 注入」逻辑因含 .pace 读取，由编排层在 collectState 外单独处理并传入。
-  const compactSnapshotText = state.compactSnapshotText || '';
-  if (compactSnapshotText) l1head.push(compactSnapshotText);
+    // === 3. compact 快照恢复（重构前 174-261）===
+    //   注：本 CHG 保留快照消费的注入文本；写盘（W7/W8/W9）在 runtime-effects。
+    //   快照恢复的「读快照 + 注入」逻辑因含 .pace 读取，由编排层在 collectState 外单独处理并传入。
+    const compactSnapshotText = state.compactSnapshotText || '';
+    if (compactSnapshotText) l1head.push(compactSnapshotText);
 
-  // === 4. Native Plan 桥接提醒（重构前 264-273），仅 eventType !== 'compact' ===
-  const nativePlanReminder = renderNativePlanReminder(state, ev);
-  if (nativePlanReminder) l1head.push(nativePlanReminder);
+    // === 4. Native Plan 桥接提醒（重构前 264-273），仅 eventType !== 'compact' ===
+    const nativePlanReminder = renderNativePlanReminder(state, ev);
+    if (nativePlanReminder) l1head.push(nativePlanReminder);
 
-  // === 5. rootChoicePending 启用提示（重构前 282-300）===
-  const rootChoicePrompt = state.rootChoicePromptText || '';
-  if (rootChoicePrompt) l1head.push(rootChoicePrompt);
+    // === 5. rootChoicePending 启用提示（重构前 282-300）===
+    const rootChoicePrompt = state.rootChoicePromptText || '';
+    if (rootChoicePrompt) l1head.push(rootChoicePrompt);
 
-  // === 6. Artifact 目录（重构前 404-407 writeArtifactDirSection）===
-  //   仅 paceSignal && task.md 存在时在此位置注入。
-  if (state.artifactDirInjected) {
-    l1head.push(renderArtifactDirSection(state));
+    // === 6. Artifact 目录（重构前 404-407 writeArtifactDirSection）===
+    //   仅 paceSignal && task.md 存在时在此位置注入。
+    if (state.artifactDirInjected) {
+      l1head.push(renderArtifactDirSection(state));
+    }
   }
 
-  // === 7. artifact 文件循环（重构前 416-593）===
+  // ── artifact 块：增长性文件（spec / task / impl / walkthrough / findings / corrections）──
+  // renderArtifactFiles 在两个 group 都需要调用，但 push 进 l1head 只在 isArtifact 时执行。
+  // isCore 时 found 为 []（state.artifactFiles 由 collectState 按 group 过滤，见 T-004），
+  // 此处渲染层已保证 core 不注入 artifact 文件块。
   const filesRender = renderArtifactFiles(state, paceUtils);
-  for (const block of filesRender.blocks) l1head.push(block);
+  if (isArtifact) {
+    // === 7. artifact 文件循环（重构前 416-593）===
+    for (const block of filesRender.blocks) l1head.push(block);
+  }
   // found（含 post-截断长度）回挂 state，供编排层 INJECT 日志的 files 字段复刻重构前 found.join。
   state._found = filesRender.found;
 
-  // === 8. 活跃 CHG 摘要 + change-set 进度（重构前 595-629）===
-  if (state.paceSignal === 'artifact') {
-    const activeChgText = renderActiveChangeSummary(state);
-    if (activeChgText) l0.push(activeChgText);
-    const changeSetText = renderChangeSetProgress(state);
-    if (changeSetText) l0.push(changeSetText);
+  if (isCore) {
+    // === 8. 活跃 CHG 摘要 + change-set 进度（重构前 595-629）===
+    if (state.paceSignal === 'artifact') {
+      const activeChgText = renderActiveChangeSummary(state);
+      if (activeChgText) l0.push(activeChgText);
+      const changeSetText = renderChangeSetProgress(state);
+      if (changeSetText) l0.push(changeSetText);
+    }
+
+    // === 9. Artifact 目录兜底（重构前 634-636：found>0 && !artifactDirInjected）===
+    // core group 时 filesRender.found 由 T-004 保证为空（artifact IO 跳过），不触发。
+    // 此处保留逻辑完整性，兼容 collectState 全量读取时 core group 的安全守卫。
+    if (filesRender.found.length > 0 && !state.artifactDirInjected) {
+      l1head.push(renderArtifactDirSection(state));
+    }
+
+    // === 10. 格式合规警告（重构前 638-672）===
+    const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
+    if (formatWarn) l1head.push(formatWarn);
+
+    // === 11. 跨会话提醒 + 桥接 + 执行上下文（重构前 674-755）===
+    const crossSession = renderCrossSessionAndExecution(state, paceUtils);
+    for (const block of crossSession) l0.push(block);
+
+    // === 12. Findings 过期提醒（重构前 757-787）===
+    const agedText = renderAgedFindings(state);
+    if (agedText) l3.push(agedText);
+
+    // === 13. Git 状态（重构前 790-799）===
+    const gitText = renderGit(state);
+    if (gitText) l1.push(gitText);
+
+    // === 14. 相关讨论（重构前 801-813）===
+    const relatedText = renderRelatedNotes(state, ev);
+    if (relatedText) l3.push(relatedText);
   }
-
-  // === 9. Artifact 目录兜底（重构前 634-636：found>0 && !artifactDirInjected）===
-  if (filesRender.found.length > 0 && !state.artifactDirInjected) {
-    l1head.push(renderArtifactDirSection(state));
-  }
-
-  // === 10. 格式合规警告（重构前 638-672）===
-  const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
-  if (formatWarn) l1head.push(formatWarn);
-
-  // === 11. 跨会话提醒 + 桥接 + 执行上下文（重构前 674-755）===
-  const crossSession = renderCrossSessionAndExecution(state, paceUtils);
-  for (const block of crossSession) l0.push(block);
-
-  // === 12. Findings 过期提醒（重构前 757-787）===
-  const agedText = renderAgedFindings(state);
-  if (agedText) l3.push(agedText);
-
-  // === 13. Git 状态（重构前 790-799）===
-  const gitText = renderGit(state);
-  if (gitText) l1.push(gitText);
-
-  // === 14. 相关讨论（重构前 801-813）===
-  const relatedText = renderRelatedNotes(state, ev);
-  if (relatedText) l3.push(relatedText);
 
   return { l1head, l0, l1, l2, l3 };
 }
