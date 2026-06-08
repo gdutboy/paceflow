@@ -33,8 +33,9 @@ const proj = getProjectName(cwd);
 const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const PRINT_ONLY = !!process.env.PACE_PRINT_ONLY;
-const SESSION_OUTPUT_HARD_LIMIT_BYTES = 50000;
-const SESSION_OUTPUT_BUDGET_BYTES = 46000;
+// CHG-B：注入预算 46000→128000（1M 上下文下约 4-6% 极端、常态 1-2%）；PACE_SESSION_OUTPUT_BUDGET_BYTES 可覆盖。
+// assembleWithBudget 已做 L3 优先截断（head 永不截）；此全局守卫同阀，退为「任何额外 write 的兜底」，正常不触发。
+const SESSION_OUTPUT_BUDGET_BYTES = Math.max(46000, Number(process.env.PACE_SESSION_OUTPUT_BUDGET_BYTES) || 128000);
 let sessionOutputBytes = 0;
 let sessionOutputTruncated = false;
 const realStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -75,7 +76,7 @@ function installSessionOutputGuard() {
       sessionOutputBytes += Buffer.byteLength(prefix, 'utf8');
       realStdoutWrite(prefix);
     }
-    const notice = `\n\n=== SessionStart 输出截断 ===\n注入内容超过 ${SESSION_OUTPUT_BUDGET_BYTES} bytes，已停止继续输出。请按需 Read artifact 文件；硬上限 ${SESSION_OUTPUT_HARD_LIMIT_BYTES} bytes。\n`;
+    const notice = `\n\n=== SessionStart 输出截断 ===\n注入内容超过 ${SESSION_OUTPUT_BUDGET_BYTES} bytes 预算，已停止继续输出。L0/L1/L2 已完整注入，省略的是 L3 相关提醒，请按需 Read artifact 文件。\n`;
     sessionOutputBytes += Buffer.byteLength(notice, 'utf8');
     realStdoutWrite(notice);
     sessionOutputTruncated = true;

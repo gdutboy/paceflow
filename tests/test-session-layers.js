@@ -148,6 +148,85 @@ test('SL-7. buildCompactSnapshotText 渲染快照活跃 CHG 与格式速查', ()
   assert.ok(text.includes('findings 状态：3 个开放项'), '应含 findings 开放计数');
 });
 
+// --- 8. CHG-B：assembleWithBudget L3 优先截断——head（l1head/L0/L1/L2）永不截 ---
+test('SL-8. L3 超预算从尾部按条截断 + footer，head 永不截', () => {
+  const big = 'x'.repeat(200000); // 撑爆预算的超大 L3 条目
+  const layers = {
+    l1head: ['=== 项目上下文 ===\nHEAD关键\n'],
+    l0: ['=== 活跃 CHG ===\nL0关键\n'],
+    l1: ['=== git ===\nL1关键\n'],
+    l2: ['=== 工作流入口 ===\nL2关键\n'],
+    l3: ['=== findings ===\nF1保留\n', big],
+  };
+  const { text, truncated } = assembleWithBudget(layers, { limitBytes: 128000 });
+  assert.ok(text.includes('HEAD关键') && text.includes('L0关键') && text.includes('L1关键') && text.includes('L2关键'),
+    'l1head/L0/L1/L2 永不截');
+  assert.ok(text.includes('F1保留'), 'L3 预算内的前置条目保留');
+  assert.ok(!text.includes(big), 'L3 超预算条目被截掉（不进注入）');
+  assert.ok(text.includes('已省略'), 'L3 截断附「已省略 N 条」footer');
+  assert.strictEqual(truncated, true, 'truncated 标记为 true');
+});
+
+// --- 9. CHG-B：L3 全部在预算内 → 全保留、truncated=false、无 footer ---
+test('SL-9. L3 在预算内时全保留、truncated=false、无 footer', () => {
+  const layers = {
+    l1head: ['HEAD\n'], l0: ['L0\n'], l1: ['L1\n'], l2: ['L2\n'],
+    l3: ['F1\n', 'F2\n'],
+  };
+  const { text, truncated } = assembleWithBudget(layers, { limitBytes: 128000 });
+  assert.ok(text.includes('F1') && text.includes('F2'), 'L3 全保留');
+  assert.strictEqual(truncated, false, 'truncated=false');
+  assert.ok(!text.includes('已省略'), '无 footer');
+});
+
+// CHG-B 排序测试共用：构造一个活跃 CHG summary（含 render 所需字段）。
+function mkSummary(id, category, seq) {
+  const running = category === 'running';
+  return {
+    id, category, status: running ? 'in-progress' : 'planned',
+    ownerDisposition: 'current', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active',
+    taskCheckbox: running ? '/' : ' ', implCheckbox: running ? '/' : ' ',
+    pending: 2, approved: running, verified: false, reviewed: false,
+    path: `/tmp/fixture-project/changes/${id.toLowerCase()}.md`,
+    changeSet: 'cs-x', changeSetSeq: seq,
+  };
+}
+
+// --- 10. CHG-B：活跃 CHG 摘要 running 优先 + CHG-ID 升序（B5 + 修 batch create 倒序）---
+test('SL-10. 活跃 CHG 摘要 running 优先 + 同档 CHG-ID 升序', () => {
+  // 模拟 summarizeActiveChanges 继承 task.md 物理倒序 08→07→06→05，其中 06 是 running。
+  const state = makeActiveState({
+    activeChangeSummaries: [
+      mkSummary('CHG-20260608-08', 'backlog', '5/5'),
+      mkSummary('CHG-20260608-07', 'backlog', '4/5'),
+      mkSummary('CHG-20260608-06', 'running', '3/5'),
+      mkSummary('CHG-20260608-05', 'backlog', '2/5'),
+    ],
+  });
+  const l0Text = buildLayers(state, 'startup', paceUtils).l0.join('\n');
+  const pos = id => l0Text.indexOf(id); // CHG-id 仅出现在活跃摘要块（进度块用 seq 不含 id）
+  assert.ok(pos('CHG-20260608-06') < pos('CHG-20260608-05'), 'running CHG-06 应排在 backlog 之前');
+  assert.ok(pos('CHG-20260608-06') < pos('CHG-20260608-08'), 'running CHG-06 应排在所有 backlog 之前');
+  assert.ok(pos('CHG-20260608-05') < pos('CHG-20260608-07'), 'backlog 档内 CHG-ID 升序 05<07（修倒序）');
+  assert.ok(pos('CHG-20260608-07') < pos('CHG-20260608-08'), 'backlog 档内 CHG-ID 升序 07<08');
+});
+
+// --- 11. CHG-B：change-set 进度按纯 seq 升序（与 stop.js 成组提醒对称，不受 running 优先影响）---
+test('SL-11. change-set 进度按 change-set-seq 升序展示', () => {
+  const state = makeActiveState({
+    activeChangeSummaries: [
+      mkSummary('CHG-20260608-08', 'backlog', '5/5'),
+      mkSummary('CHG-20260608-07', 'backlog', '4/5'),
+      mkSummary('CHG-20260608-06', 'running', '3/5'),
+      mkSummary('CHG-20260608-05', 'backlog', '2/5'),
+    ],
+  });
+  const l0Text = buildLayers(state, 'startup', paceUtils).l0.join('\n');
+  assert.ok(l0Text.includes('2/5, 3/5, 4/5, 5/5'),
+    `change-set 进度应按 seq 升序「2/5, 3/5, 4/5, 5/5」（running 优先不污染进度序列），实际 L0：${l0Text}`);
+  assert.ok(!l0Text.includes('5/5, 4/5, 3/5, 2/5'), 'change-set 进度不应为倒序');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

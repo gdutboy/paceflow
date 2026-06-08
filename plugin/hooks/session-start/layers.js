@@ -27,13 +27,26 @@ function sliceUtf8ToBytes(str, maxBytes) {
   return str.slice(0, lo);
 }
 
+// 活跃 CHG 展示排序档位：running（正在执行）最前 → closing-required（待收尾）→ 其余（backlog/ready/blocked）。
+function rankChangeCategory(category) {
+  if (category === 'running') return 0;
+  if (category === 'closing-required') return 1;
+  return 2;
+}
+
+// 从 change-set-seq（"i/N"）提取分子 i 用于排序；无法解析回退 0。
+function changeSetSeqNum(seq) {
+  const m = String(seq || '').match(/^(\d+)\s*\//);
+  return m ? Number(m[1]) : 0;
+}
+
 /**
  * 把 state 渲染成四层注入文本块。纯函数，无副作用。
  *
  * @param {object} state - collectState 产出的纯数据对象。
  * @param {string} eventType - SessionStart 事件类型（'startup' / 'compact' / ...）。
  * @param {object} paceUtils - pace-utils 模块（提供常量/正则/纯工具，依赖注入便于单测）。
- * @returns {{ l0: string[], l1: string[], l2: string[], l3: string[] }}
+ * @returns {{ l1head: string[], l0: string[], l1: string[], l2: string[], l3: string[] }}
  *   - l1head: 项目上下文 + 工作流入口 + Artifact 目录 + artifact 文件 + 格式警告（注入顺序最前）
  *   - l0: 活跃 CHG 摘要 / change-set 进度 / 跨会话提醒 / 桥接 / 执行上下文（「我刚才在做」）
  *   - l1: git 状态
@@ -43,6 +56,19 @@ function sliceUtf8ToBytes(str, maxBytes) {
  */
 function buildLayers(state, eventType, paceUtils) {
   const ev = eventType || state.eventType;
+  // B5 + 倒序对称（HOTFIX-20260608-01）：活跃 CHG 展示顺序规范化——running 优先 → 同档 CHG-ID 升序。
+  // summarizeActiveChanges 继承 task.md 活跃区物理顺序（batch create prepend 致创建倒序 08→05），
+  // 此处稳定排序修正，使「正在执行的」「下一个该 approve-and-start 的」排最前；惠及下游消费点
+  // （活跃 CHG 摘要 / 执行上下文）。change-set 进度另按纯 seq 升序（见 renderChangeSetProgress）。
+  // 浅拷贝 state 替换排序后副本，不 mutate 输入，保持纯函数。
+  if (state.activeChangeSummaries && state.activeChangeSummaries.length > 1) {
+    state = {
+      ...state,
+      activeChangeSummaries: [...state.activeChangeSummaries].sort((a, b) =>
+        rankChangeCategory(a.category) - rankChangeCategory(b.category)
+        || String(a.id).localeCompare(String(b.id))),
+    };
+  }
   const l1head = [];
   const l0 = [];
   const l1 = [];
@@ -479,6 +505,11 @@ function renderChangeSetProgress(state) {
   if (!(changeSetGroups.size > 0)) return '';
   let out = `=== change-set 整体进度 ===\n`;
   for (const [name, members] of changeSetGroups) {
+    // change-set 进度按阶段序列展示（纯 change-set-seq 升序 → 同 stop.js 成组提醒对称），
+    // 不沿用 buildLayers 的 running 优先排序——进度看的是「2/5, 3/5, 4/5, 5/5」阶段顺序。
+    members.sort((a, b) =>
+      changeSetSeqNum(a.changeSetSeq) - changeSetSeqNum(b.changeSetSeq)
+      || String(a.id).localeCompare(String(b.id)));
     const totals = [...new Set(members
       .map(m => { const mm = String(m.changeSetSeq || '').match(/\/(\d+)/); return mm ? Number(mm[1]) : 0; })
       .filter(t => t > 0))];
