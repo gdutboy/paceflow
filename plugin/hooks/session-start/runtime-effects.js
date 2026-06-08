@@ -7,7 +7,8 @@
 // 行为锁定（docs/audits/2026-06-08-session-start-runtime-writes-reference.md）：
 //   逐条保持每个写盘点的触发条件 / 事件模式（startup/compact/both）/ 目标 / 语义不变。
 //   - W1–W6：startup 重置块（paceSignal && !rootChoicePending && eventType !== 'compact'）
-//   - W7–W9：compact 快照消费（W7 删非法快照 / W8 从快照恢复 counter / W9 消费后删快照）
+//   - W7–W9：已退役（M4/T-002）。原 compact 快照消费（删非法快照 / 恢复 counter / 消费后删快照）整体移除；
+//            compact 与 startup 统一走 collectState/buildLayers 实时读 artifact 路径（OQ-1 + A0 对称）。
 //   - W10：ensureProjectInfra（both，paceSignal && !rootChoicePending）
 //   - W11：createTemplates（both 无 eventType 守卫，rootChoicePending else-if）
 //   - W12：findings-age flag（both，paceSignal && 当日首次）
@@ -42,9 +43,9 @@ const path = require('path');
  *     log,                        // 日志函数
  *     PACE_RUNTIME, COUNTER_FILE, // .pace 目录与 counter 文件路径
  *     v5MigrationInfo, artifactRootChoice, proj,
- *     compactSnapshot,            // 编排层预解析的 compact 快照（{ exists, valid, snap }）；
- *                                 //   先于本调用读取，确保 W9 删除前注入文本已生成
  *   }
+ * eventType 入参保留（W1–W6 startup 重置块仍用 eventType !== 'compact' 守卫）；W7–W9 compact
+ *   快照消费已退役（M4/T-002），不再读 deps.compactSnapshot。
  */
 function applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artDir, deps) {
   const { paceUtils, log, PACE_RUNTIME, COUNTER_FILE, v5MigrationInfo, artifactRootChoice } = deps;
@@ -76,26 +77,10 @@ function applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artD
     try { paceUtils.sweepStaleRuntimeOwners(cwd); } catch (e) {}                           // W6
   }
 
-  // === W7–W9：compact 快照消费写盘（重构前 181 / 203-208 / 257）===
-  //   注入文本由编排层先读快照生成（state.compactSnapshotText），此处只做写盘。
-  if (eventType === 'compact') {
-    const snapFile = path.join(PACE_RUNTIME, 'pre-compact-state.json');
-    const cs = deps.compactSnapshot || { exists: false, valid: false, snap: null };
-    if (cs.exists) {
-      if (!cs.valid) {
-        try { fs.unlinkSync(snapFile); } catch (e) {}                                      // W7 删非法快照
-      } else {
-        const snap = cs.snap;
-        if (Number.isFinite(Number(snap.runtime?.blockCount)) && Number(snap.runtime.blockCount) > 0) {
-          try {                                                                            // W8 从快照恢复 counter
-            fs.mkdirSync(PACE_RUNTIME, { recursive: true });
-            fs.writeFileSync(COUNTER_FILE, String(Number(snap.runtime.blockCount)), 'utf8');
-          } catch (e) {}
-        }
-        try { fs.unlinkSync(snapFile); } catch (e) {}                                      // W9 消费后删快照
-      }
-    }
-  }
+  // === W7–W9（已退役，M4/T-002）===
+  //   PreCompact 快照机制（pre-compact-state.json 读/写/消费 + counter 恢复）整体退役：
+  //   collectState/buildLayers 实时读 artifact 已完整覆盖 compact 场景，compact 与 startup
+  //   统一走实时读路径（OQ-1 + A0 对称）。原 W7 删非法快照 / W8 恢复 counter / W9 消费后删快照 全删。
 
   // === W10：ensureProjectInfra（重构前 276-278，both）===
   if (paceSignal && !rootChoicePending) {
@@ -181,22 +166,4 @@ function applyArtifactGroupEffects(cwd, paceSignal, artDir, deps) {
   }
 }
 
-/**
- * 读取并解析 compact 快照（供编排层先于 applyRuntimeEffects 调用，以在 W9 删除前生成注入文本）。
- * @param {string} runtimeDir - .pace 运行态目录。
- * @returns {{ exists: boolean, valid: boolean, snap: object|null }}
- */
-function readCompactSnapshot(runtimeDir) {
-  const snapFile = path.join(runtimeDir, 'pre-compact-state.json');
-  try {
-    if (!fs.existsSync(snapFile)) return { exists: false, valid: false, snap: null };
-    const snap = JSON.parse(fs.readFileSync(snapFile, 'utf8'));
-    if (!snap || typeof snap !== 'object') return { exists: true, valid: false, snap: null };
-    return { exists: true, valid: true, snap };
-  } catch (e) {
-    // 重构前外层 try/catch 吞掉解析异常并整段跳过；这里返回「不存在」语义等价（无注入、无写盘）。
-    return { exists: false, valid: false, snap: null };
-  }
-}
-
-module.exports = { applyRuntimeEffects, readCompactSnapshot, applyArtifactGroupEffects };
+module.exports = { applyRuntimeEffects, applyArtifactGroupEffects };

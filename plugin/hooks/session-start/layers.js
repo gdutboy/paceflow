@@ -122,17 +122,12 @@ function buildLayers(state, eventType, paceUtils, group) {
     if (projCtx) l1head.push(projCtx);
 
     // === 2. 工作流入口（重构前 141-144 + writeWorkflowEntrySection 122-134）===
-    //   仅 paceSignal && !rootChoicePending && eventType !== 'compact'（A0 对称留 CHG-C）。
+    //   A0 对称（M4/T-002）：PreCompact 快照退役后 compact 与 startup 走同一条实时读路径，
+    //   工作流入口去掉 compact 守卫——compact 也注入。仅 paceSignal && !rootChoicePending。
     const workflowEntry = renderWorkflowEntry(state, ev, paceUtils);
     if (workflowEntry) l1head.push(workflowEntry);
 
-    // === 3. compact 快照恢复（重构前 174-261）===
-    //   注：本 CHG 保留快照消费的注入文本；写盘（W7/W8/W9）在 runtime-effects。
-    //   快照恢复的「读快照 + 注入」逻辑因含 .pace 读取，由编排层在 collectState 外单独处理并传入。
-    const compactSnapshotText = state.compactSnapshotText || '';
-    if (compactSnapshotText) l1head.push(compactSnapshotText);
-
-    // === 4. Native Plan 桥接提醒（重构前 264-273），仅 eventType !== 'compact' ===
+    // === 3. Native Plan 桥接提醒（重构前 264-273），仅 eventType !== 'compact' ===
     const nativePlanReminder = renderNativePlanReminder(state, ev);
     if (nativePlanReminder) l1head.push(nativePlanReminder);
 
@@ -246,10 +241,12 @@ function projectContextMode(rootInfo) {
   return '当前 cwd 作为 Project Root';
 }
 
-/** 工作流入口 section（重构前 writeWorkflowEntrySection + 触发条件 141-144）。 */
+/** 工作流入口 section（重构前 writeWorkflowEntrySection + 触发条件 141-144）。
+ *  A0 对称（M4/T-002）：去掉 eventType !== 'compact' 守卫——快照退役后 compact 也实时注入工作流入口。
+ *  eventType 入参保留（签名稳定 + 不破坏调用方），现已不参与触发判定。 */
 function renderWorkflowEntry(state, eventType, paceUtils) {
   const { paceSignal, rootChoicePending, v5MigrationInfo } = state;
-  if (!(paceSignal && !rootChoicePending && eventType !== 'compact')) return '';
+  if (!(paceSignal && !rootChoicePending)) return '';
   const reason = v5MigrationInfo.detected ? 'legacy-v5' : String(paceSignal);
   const lines = [
     '=== PACEflow 工作流入口 ===',
@@ -882,90 +879,10 @@ function renderRelatedNotes(state, eventType) {
   return out;
 }
 
-/**
- * compact 快照恢复注入文本（重构前 182-255）。纯函数：parsed snap + paceSignal → 字符串。
- *   写盘（W8 counter 恢复 / W9 删快照）不在此处，由 runtime-effects.js 负责。
- *
- * @param {object} snap - 已解析的合法 compact 快照对象。
- * @param {string|false} paceSignal - PACE 检测结果（决定是否注入格式速查/完成检查）。
- * @param {string} cwd - 项目工作目录（用于补充 native plan 检测；plan 路径由 state 预读传入）。
- * @param {string|null} nativePlanPath - 编排层预读的 getNativePlanPath(cwd) 结果。
- * @param {object} paceUtils - pace-utils 模块（FORMAT_SNIPPETS）。
- * @returns {string} compact 快照恢复注入文本（含尾部换行），与重构前逐 write 字节一致。
- */
-function buildCompactSnapshotText(snap, paceSignal, cwd, nativePlanPath, paceUtils) {
-  const { FORMAT_SNIPPETS } = paceUtils;
-  let out = '';
-  const lines = [`=== Compact 恢复（快照 ${snap.timestamp}）===`];
-  if (snap.artifacts?.['task.md']?.inProgress?.length > 0) {
-    lines.push('进行中任务:');
-    snap.artifacts['task.md'].inProgress.forEach(t => lines.push(`  ${t}`));
-  }
-  if (snap.artifacts?.['task.md']?.pending > 0) {
-    lines.push(`待办任务: ${snap.artifacts['task.md'].pending} 个`);
-  }
-  if (snap.activeChanges && snap.activeChanges.length > 0) {
-    lines.push('活跃 CHG:');
-    snap.activeChanges.forEach(c => {
-      const owner = c.ownerDisposition
-        ? ` owner=${[c.ownerDisposition, c.ownerWorktree ? `worktree=${c.ownerWorktree}` : '', c.ownerBranch ? `branch=${c.ownerBranch}` : '', c.ownerState ? `state=${c.ownerState}` : ''].filter(Boolean).join(' ')}`
-        : '';
-      lines.push(`  ${c.id} status=${c.status}${owner} pending=${c.pending} approved=${c.approved} verified=${c.verified} reviewed=${c.reviewed}`);
-    });
-  }
-  if (snap.runtime?.degraded) {
-    lines.push('Stop 检查上次仍有未解决项；本次会话会继续检查。');
-  }
-  // native plan 恢复提示（重构前 209-220；plan 路径由编排层预读传入，等价 getNativePlanPath）。
-  const pendingNativePlans = new Set(Array.isArray(snap.nativePlans) ? snap.nativePlans : []);
-  if (nativePlanPath) pendingNativePlans.add(nativePlanPath);
-  if (pendingNativePlans.size > 0) {
-    lines.push('');
-    lines.push('检测到未桥接的原生计划文件：');
-    Array.from(pendingNativePlans).forEach(p => lines.push(`  ${p}`));
-    lines.push('请调用 Skill(paceflow:pace-bridge)，按该 skill 桥接为 v6 CHG 并记录同步标记。');
-  }
-  out += lines.join('\n') + '\n\n';
-  // 格式快速参考 + CHG 完成检查（重构前 222-248）。
-  if (paceSignal) {
-    const formatLines = [
-      '',
-      '=== 格式快速参考 ===',
-      `CHG 索引格式：${FORMAT_SNIPPETS.taskEntry}`,
-      `实施索引格式：${FORMAT_SNIPPETS.implIndex}`,
-      `任务状态：${FORMAT_SNIPPETS.statusHelp}`,
-      `详情位置：changes/<id>.md`,
-      `findings 格式：${FORMAT_SNIPPETS.findingsFormat}`,
-      `walkthrough 索引：${FORMAT_SNIPPETS.walkthroughDetail}`,
-      `批准标记：${FORMAT_SNIPPETS.approved}`,
-      `验证标记：${FORMAT_SNIPPETS.verified}`,
-      `审计标记：${FORMAT_SNIPPETS.reviewed}`,
-      `impl_plan 规则：${FORMAT_SNIPPETS.implDetail}`,
-      '',
-      '=== CHG 完成检查（每个 CHG/HOTFIX 最后任务代码写完后立即执行）===',
-      `1. 先运行验证并阅读结果；未读取结果前不要派 verify/close-chg`,
-      `2. 验证通过后先做 R 审计：按本 CHG diff 自选 review agent 做对抗审计、路由 findings（P0/P1 开 HOTFIX 或记 won't-fix，P2/P3 派 record-finding）`,
-      `3. 审计跑过后派 close-chg complete-open-tasks: true（含 review-confirmed/review-source/review-findings）— 收口最后任务、折叠 VERIFIED + REVIEWED、归档索引并写 walkthrough`,
-      `4. 中间任务完成才用 update-status [x]；只记录验证/审计暂不归档才用 update-chg action=verify / action=review`,
-      '5. spec.md — 同步技术栈变更（如有）',
-      '',
-    ];
-    out += formatLines.join('\n') + '\n';
-  }
-  // snapshot.findings / walkthrough（重构前 249-255）。
-  if (snap.findings) {
-    out += `findings 状态：${snap.findings.openCount} 个开放项\n`;
-  }
-  if (snap.walkthrough && !snap.walkthrough.hasTodayEntry) {
-    out += `⚠️ compact 前 walkthrough 无今日记录，请在完成任务后更新。${FORMAT_SNIPPETS.walkthroughDetail}\n`;
-  }
-  return out;
-}
-
 // --- 日志累积助手：layers 是纯函数，把要写的日志推进 state._logs，由编排层统一 flush ---
 function pushLog(state, entry) {
   state._logs = state._logs || [];
   state._logs.push(entry);
 }
 
-module.exports = { buildLayers, buildCompactSnapshotText, sliceUtf8ToBytes, ownerDisplay, isForeignSummary };
+module.exports = { buildLayers, sliceUtf8ToBytes, ownerDisplay, isForeignSummary };

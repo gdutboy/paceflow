@@ -1,4 +1,7 @@
-// PreCompact hook：compact 前收集 artifact 状态快照，供 session-start.js compact 恢复使用
+// PreCompact hook：compact 前的 native plan 兜底检测。
+//   M4/T-002 起，原「写 artifact 状态快照供 session-start compact 恢复」机制已退役——
+//   SessionStart 三段式重构后 collectState/buildLayers 实时读 artifact 已完整覆盖 compact 场景（OQ-1 + A0 对称）。
+//   本 hook 现仅把最近匹配当前项目的原生计划路径落到 .pace/current-native-plan，供桥接提醒消费。
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -6,7 +9,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, readActive, countByStatus, getProjectName, summarizeActiveChanges } = paceUtils;
+// M4/T-002 快照退役后，仅 native plan 兜底检测与 PACE 守卫所需的少量工具；原快照构造依赖
+//   （ts/todayISO/readActive/countByStatus/summarizeActiveChanges）已随 snapshot 删除一并移除。
+const { isPaceProject, getProjectName } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -35,69 +40,16 @@ try {
     process.exit(0);
   }
 
-  const snapshot = { timestamp: new Date().toISOString(), artifacts: {} };
-
-  if (paceSignal === 'artifact') {
-    snapshot.activeChanges = summarizeActiveChanges(cwd).map(change => {
-      const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, hookInput.sessionId);
-      return {
-        ...change,
-        ownerDisposition: ownerStatus.disposition,
-        ownerWorktree: ownerStatus.owner && ownerStatus.owner.worktree || '',
-        ownerBranch: ownerStatus.owner && ownerStatus.owner.branch || '',
-        ownerState: ownerStatus.owner && ownerStatus.owner.state || '',
-      };
-    });
-  }
-
-  // 收集 task.md 状态
-  const taskActive = readActive(cwd, 'task.md');
-  if (taskActive) {
-    const { pending, done } = countByStatus(taskActive, { topLevelOnly: true });
-    // P3-4: 只需要进行中任务的文本列表（供 compact 恢复显示），保留 match
-    const inProgress = (taskActive.match(/^- \[\/\] .+$/gm) || []);
-    snapshot.artifacts['task.md'] = { pending, done, inProgress };
-  }
-
-  // 收集 implementation_plan.md 状态
-  const planActive = readActive(cwd, 'implementation_plan.md');
-  if (planActive) {
-    snapshot.artifacts['implementation_plan.md'] = {
-      hasInProgress: /^- \[\/\]/m.test(planActive)
-    };
-  }
-
-  // I-5: 收集运行时状态（含 blockCount 供 compact 恢复判断降级进度）
-  const blockCountFile = path.join(PACE_RUNTIME, 'stop-block-count');
-  let blockCount = 0;
-  try { blockCount = parseInt(fs.readFileSync(blockCountFile, 'utf8').trim(), 10) || 0; } catch(e) {}
-  snapshot.runtime = {
-    degraded: fs.existsSync(path.join(PACE_RUNTIME, 'degraded')),
-    legacyTaskPanelUsed: fs.existsSync(path.join(PACE_RUNTIME, 'task-list-used')) || fs.existsSync(path.join(PACE_RUNTIME, 'todowrite-used')),
-    blockCount
-  };
-
-  // v5.0.2: 快照扩展 findings + walkthrough 状态
-  try {
-    const findingsActive = readActive(cwd, 'findings.md');
-    if (findingsActive) {
-      const openCount = (findingsActive.match(/^- \[ \] /gm) || []).length;
-      snapshot.findings = { openCount };
-    }
-  } catch(e) {}
-  try {
-    const walkActive = readActive(cwd, 'walkthrough.md');
-    if (walkActive) {
-      const today = todayISO();
-      // T-425: 正则匹配对齐 stop.js 精确度，避免 includes() 子串误匹配
-      const hasTodayEntry = new RegExp('^\\|\\s*' + today + '\\s*\\|', 'm').test(walkActive);
-      snapshot.walkthrough = { hasTodayEntry };
-    }
-  } catch(e) {}
+  // M4/T-002：PreCompact 快照机制（pre-compact-state.json）已退役。
+  //   原先在此构造含 timestamp/artifacts/activeChanges/runtime.blockCount/findings/walkthrough 的快照、
+  //   写入 .pace/pre-compact-state.json 供 SessionStart compact 恢复。三段式重构后 collectState/buildLayers
+  //   实时读 artifact 已完整覆盖 compact 场景（OQ-1），快照成冗余旧路径。compact 与 startup 统一走实时读
+  //   （A0 对称）。本 hook 退役后只剩下方 native plan 兜底检测——把最近的原生计划路径落到 .pace/current-native-plan，
+  //   供 SessionStart 桥接提醒消费（native plan 与快照无关，保留）。
 
   // v5.0.1: 捕获 native plan 文件路径（AI 未主动记录时的兜底）
   // I-5: HOME/USERPROFILE 都不存在时跳过检测
-  // I-15: native plan 最大年龄 1 小时（超过视为过期，不纳入快照）
+  // I-15: native plan 最大年龄 1 小时（超过视为过期，不予记录）
   const NATIVE_PLAN_MAX_AGE_MS = 60 * 60 * 1000;
   const HOME = process.env.HOME || process.env.USERPROFILE;
   if (HOME) {
@@ -129,8 +81,8 @@ try {
 
         const recentPlans = allRecentPlans.filter(plan => paceUtils.nativePlanMatchesProject(plan.path, cwd));
         if (recentPlans.length > 0) {
-          snapshot.nativePlans = recentPlans.map(e => e.path);
           // T-326: 自动写入最近的 native plan 路径到 .pace/current-native-plan；不覆盖 AI 主动记录的路径。
+          //   M4/T-002 快照退役后，current-native-plan 是 native plan 的唯一持久化出口（SessionStart 桥接提醒据此消费）。
           try {
             fs.mkdirSync(PACE_RUNTIME, { recursive: true });
             if (!fs.existsSync(currentPlanFile)) fs.writeFileSync(currentPlanFile, recentPlans[0].path, 'utf8');
@@ -145,11 +97,9 @@ try {
     } catch(e) {}
   }
 
-  // 写入快照文件
-  fs.mkdirSync(PACE_RUNTIME, { recursive: true });
-  fs.writeFileSync(path.join(PACE_RUNTIME, 'pre-compact-state.json'), JSON.stringify(snapshot, null, 2), 'utf8');
-
-  log(projectLogEntry('PreCompact', 'SNAPSHOT', { proj, tasks: taskActive ? 'yes' : 'no', plan: planActive ? 'yes' : 'no' }));
+  // M4/T-002：快照写入已退役（不再写 .pace/pre-compact-state.json）。
+  //   PreCompact 现仅做 native plan 兜底检测（上方落 current-native-plan），故日志改记 NATIVE_PLAN_CHECK。
+  log(projectLogEntry('PreCompact', 'NATIVE_PLAN_CHECK', { proj }));
 } catch(e) {
   try { log(projectLogEntry('PreCompact', 'ERROR', { proj, error: e.message })); } catch(e2) {}
 }

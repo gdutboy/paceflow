@@ -21,9 +21,9 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 }
 const { PACE_VERSION, isPaceProject, getArtifactDir, getProjectName, artifactRootChoiceNeeded } = paceUtils;
 const { collectState } = require('./session-start/collect-state');
-const { buildLayers, buildCompactSnapshotText } = require('./session-start/layers');
+const { buildLayers } = require('./session-start/layers');
 const { assembleWithBudget } = require('./session-start/budget');
-const { applyRuntimeEffects, readCompactSnapshot, applyArtifactGroupEffects } = require('./session-start/runtime-effects');
+const { applyRuntimeEffects, applyArtifactGroupEffects } = require('./session-start/runtime-effects');
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -131,22 +131,10 @@ if (rootConfigError) {
 const rootChoicePending = paceSignal && paceSignal !== 'artifact' && artifactRootChoiceNeeded(cwd);
 const artifactRootChoice = paceUtils.readArtifactRootChoice(cwd) || 'auto';
 
-// === compact 快照预读（先于运行态副作用，确保 W9 删除前注入文本已生成）===
-//   重构前 compact 注入文本与 W7/W8/W9 写盘缠在同一 if（174-258）。解耦后：编排层先读快照并
-//   生成注入文本，再把已解析快照交给 applyRuntimeEffects 做写盘，避免「先删后读」丢失注入。
-let compactSnapshotText = '';
-let compactSnapshot = { exists: false, valid: false, snap: null };
-if (eventType === 'compact') {
-  compactSnapshot = readCompactSnapshot(PACE_RUNTIME);
-  if (compactSnapshot.exists && !compactSnapshot.valid) {
-    // 重构前 180：非法快照 → COMPACT_SNAPSHOT_SKIP 日志（PRINT_ONLY 也记；unlink 由 effects 守卫）。
-    log(paceUtils.logEntry('SessionStart', 'COMPACT_SNAPSHOT_SKIP', { cwd, reason: 'invalid-snapshot' }));
-  } else if (compactSnapshot.valid) {
-    let snapNativePlan = null;
-    try { snapNativePlan = paceUtils.getNativePlanPath(cwd); } catch(e) {}
-    compactSnapshotText = buildCompactSnapshotText(compactSnapshot.snap, paceSignal, cwd, snapNativePlan, paceUtils);
-  }
-}
+// === compact 快照预读已退役（M4/T-002）===
+//   PreCompact 快照机制整体移除：compact 不再读 pre-compact-state.json、不再单独生成「Compact 恢复」
+//   注入文本。collectState/buildLayers 实时读 artifact 已完整覆盖 compact 场景，compact 与 startup
+//   走同一条实时读路径（OQ-1 + A0 对称）。eventType 仍透传给 W1–W6 startup 重置守卫与 native plan 提醒守卫。
 
 // === rootChoicePending 启用提示文本（重构前 282-300）===
 //   该分支无写盘（只注入 + log）；注入文本在此生成、注入位置由 layers 复刻 golden。
@@ -190,7 +178,7 @@ if (GROUP === GROUP_ARTIFACT && paceSignal) {
 if (GROUP === GROUP_CORE && !PRINT_ONLY) {
   applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artDir, {
     paceUtils, log, PACE_RUNTIME, COUNTER_FILE,
-    v5MigrationInfo, artifactRootChoice, proj, compactSnapshot,
+    v5MigrationInfo, artifactRootChoice, proj,
     group: GROUP,
   });
 }
@@ -211,7 +199,6 @@ const state = collectState(cwd, eventType, paceSignal, artDir, paceUtils, {
   group: GROUP,
 });
 // 编排层预生成的注入文本块挂到 state，供 layers 在 golden 原位拼接。
-state.compactSnapshotText = compactSnapshotText;
 state.rootChoicePromptText = rootChoicePromptText;
 
 // === 纯渲染层：state → L0–L3 文本块 ===
