@@ -156,6 +156,11 @@ if (paceSignal === 'artifact') {
   }
 
   const classifiedEntries = getActiveChangeEntries(cwd).map(e => classifyChange(e));
+  // batch create 把每个新 CHG 索引行 prepend 到活跃区顶部，getActiveChangeEntries 因而返回创建倒序（如 08→05）。
+  // 待执行/提醒列表应按执行顺序展示，故按 CHG-ID 升序做一次稳定排序：reserve --count N 取连号，
+  // 故 id 升序 ⟺ change-set-seq 分子升序，一处 sort 同时修好 deferred 单条与 change-set 成组两个提醒消费点。
+  // sort 只重排展示顺序、不改集合；Stop 的 warnings/deny/pass 与 completionPending/foreignOwnedIds 累加均与顺序无关，行为等价。
+  classifiedEntries.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
   let completionPending = 0;
   let requiresWalkthrough = false;

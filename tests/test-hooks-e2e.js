@@ -532,6 +532,28 @@ test('STOP-cs4. change-set 自有成员仍催（CS-FOREIGN 对照：本 session 
     '本 session 自有的 change-set 成员仍应催 approve-and-start（foreign 跳过不得误伤自有）');
 });
 
+test('STOP-cs5. deferred + change-set 提醒按 CHG-ID/seq 升序展示（batch create prepend 倒序修复）', () => {
+  // batch create 把每个新 CHG 索引行 prepend 到活跃区顶部，物理顺序成创建倒序（08→05）。
+  // 这里用倒序数组模拟该物理顺序，钉住 Stop 软提醒输出为正序——下一个该 approve-and-start 的成员排最前。
+  const dir = makeV6ProjectWithChanges('stop-cs-order', [
+    { id: 'CHG-20260608-08', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false, changeSet: 'layered-inject', changeSetSeq: '5/5' },
+    { id: 'CHG-20260608-07', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false, changeSet: 'layered-inject', changeSetSeq: '4/5' },
+    { id: 'CHG-20260608-06', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false, changeSet: 'layered-inject', changeSetSeq: '3/5' },
+    { id: 'CHG-20260608-05', indexMark: '[ ]', status: 'planned', task: '[ ]', approved: false, changeSet: 'layered-inject', changeSetSeq: '2/5' },
+  ], { walkToday: false });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 0, '无 in-progress 阻断项应放行');
+  const msg = JSON.parse(r.stdout).systemMessage;
+  // 1) deferred 单条：CHG-05（下一个该做）必须排在 CHG-08（最后阶段）之前
+  const i05 = msg.indexOf('CHG-20260608-05 backlog');
+  const i08 = msg.indexOf('CHG-20260608-08 backlog');
+  assert.ok(i05 > -1 && i08 > -1, 'deferred 单条应同时列出 CHG-05 与 CHG-08');
+  assert.ok(i05 < i08, `deferred 提醒应按 CHG-ID 升序（CHG-05 在 CHG-08 前），实际 i05=${i05} i08=${i08}`);
+  // 2) change-set 成组 seqs 升序（与 id 升序一致，因 batch create 连号）
+  assert.ok(msg.includes('2/5, 3/5, 4/5, 5/5'), `change-set seqs 应升序「2/5, 3/5, 4/5, 5/5」，实际 systemMessage：${msg}`);
+  assert.ok(!msg.includes('5/5, 4/5, 3/5, 2/5'), 'change-set seqs 不应为倒序');
+});
+
 test('2a. SessionStart CHG 执行上下文按详情 pending T-NNN 提示', () => {
   const dir = makeV6Project('ss-v6-detail-pending', {
     indexMark: '[/]',
