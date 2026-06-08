@@ -296,9 +296,19 @@ function renderArtifactFiles(state, paceUtils) {
   for (const { file, full } of state.artifactFiles) {
     let block = `=== ${file} ===\n`;
     const archiveMatch = full.match(ARCHIVE_PATTERN);
+    // M3 T-002：findings 缺 ARCHIVE 时不走通用「字节截断 + 缺失警告」兜底（那是 mid-line 字节切，
+    //   且 20000 字节远超 9500 chars 注入预算 → 整条被 packL3 omit、警告 footer 不可达）。改为：
+    //   先走 findings 类内 impact 优先截断（P0/P1 全 + P2/P3 最近 5）把开放区缩小到极小，再补「缺失警告」footer，
+    //   缩小后的块存活 packL3、警告 footer 可达。其余 ARCHIVE_REQUIRED 文件仍走通用字节兜底（保持原行为）。
+    const findingsArchiveMissing = file === 'findings.md' && !archiveMatch
+      && ARCHIVE_REQUIRED_FILES.includes(file)
+      && Buffer.byteLength(full, 'utf8') > ARCHIVE_MISSING_INJECT_LIMIT;
     let output;
     if (archiveMatch) {
       output = full.slice(0, archiveMatch.index);
+    } else if (findingsArchiveMissing) {
+      // findings 缺 ARCHIVE：交由 findings 类内截断处理，原文整体进截断（不预先字节切）。
+      output = full;
     } else if (ARCHIVE_REQUIRED_FILES.includes(file) && Buffer.byteLength(full, 'utf8') > ARCHIVE_MISSING_INJECT_LIMIT) {
       // 层2：应有 ARCHIVE 的双区文件缺标记且超限 → 截断兜底，防全文灌爆 context。
       const archiveFooter = `\n\n（⚠️ ${file} 缺少 <!-- ARCHIVE --> 标记，已截断注入以防全文灌爆 context；请派 artifact-writer 修复双区结构）\n`;
@@ -308,28 +318,33 @@ function renderArtifactFiles(state, paceUtils) {
       output = full;
     }
 
-    // spec.md 截断（重构前 440-447）。
+    // spec.md 截断（重构前 440-447 + M3 T-002 类内摘要：保留概述/技术栈，砍目录/依赖）。
     if (file === 'spec.md') {
-      const depsMatch = output.match(/^## 依赖列表/m);
-      if (depsMatch) {
-        output = output.slice(0, depsMatch.index)
-          + '\n\n（已省略依赖列表，需要时 Read spec.md）\n';
-      }
+      output = truncateSpec(output);
     }
 
-    // walkthrough.md 智能截断（重构前 449-503）。
+    // walkthrough.md 智能截断（重构前 449-503；M3 T-002 表格最近 3 行）。
     if (file === 'walkthrough.md') {
       output = truncateWalkthrough(output);
     }
 
-    // findings.md 智能截断（重构前 505-557）。
+    // findings.md 智能截断（重构前 505-557 + M3 T-002 impact 优先类内截断）。
     if (file === 'findings.md') {
       output = truncateFindings(output, state, paceUtils);
+      // findings 缺 ARCHIVE：类内截断缩小后补「缺失警告」footer（缩小后块存活 packL3、footer 可达）。
+      if (findingsArchiveMissing) {
+        output += `\n\n（⚠️ ${file} 缺少 <!-- ARCHIVE --> 标记，已按 impact 优先类内截断注入以防全文灌爆 context；请派 artifact-writer 修复双区结构）\n`;
+      }
     }
 
     // implementation_plan.md 智能截断（重构前 559-586）。
     if (file === 'implementation_plan.md') {
       output = truncateImplPlan(output);
+    }
+
+    // corrections.md 类内截断（M3 T-002）：活跃区纠正记录最近 6 条 + 长尾指针。
+    if (file === 'corrections.md') {
+      output = truncateCorrections(output);
     }
 
     output = foldForeignOwnedArtifactOutput(file, output, state.activeChangeSummaries);
@@ -343,9 +358,10 @@ function renderArtifactFiles(state, paceUtils) {
   return { blocks, found };
 }
 
-/** walkthrough 索引表截断：保留最近 10 行 + 删除 v6 永不触发的详情段落处理（重构前 449-503）。 */
+/** walkthrough 索引表截断：保留最近 3 行 + 删除 v6 永不触发的详情段落处理（重构前 449-503；M3 T-002 10→3）。 */
 function truncateWalkthrough(output) {
-  // 索引表截断：保留表头 + 最近 10 行数据行。
+  // 索引表截断：保留表头 + 最近 3 行数据行（M3 T-002：从 10 收紧到 3，控制 walkthrough 块体积）。
+  const WALK_KEEP = 3;
   const dataRe = /^\| \d{4}-\d{2}-\d{2} \|/gm;
   const dataRows = [];
   let m;
@@ -356,12 +372,12 @@ function truncateWalkthrough(output) {
     const date = (line.match(/^\| (\d{4}-\d{2}-\d{2}) \|/) || [])[1] || '';
     dataRows.push({ lineStart, lineEnd, line, date, index: dataRows.length });
   }
-  if (dataRows.length > 10) {
-    const omitted = dataRows.length - 10;
+  if (dataRows.length > WALK_KEEP) {
+    const omitted = dataRows.length - WALK_KEEP;
     const keep = new Set(dataRows
       .slice()
       .sort((a, b) => b.date.localeCompare(a.date) || a.index - b.index)
-      .slice(0, 10)
+      .slice(0, WALK_KEEP)
       .map(row => row.index));
     const firstRowStart = dataRows[0].lineStart;
     const last = dataRows[dataRows.length - 1];
@@ -450,7 +466,56 @@ function truncateFindings(output, state, paceUtils) {
       output = ci ? output.slice(0, ci.index) + hint + output.slice(ci.index) : output + '\n' + hint;
     }
   }
+  // M3 T-002：impact 优先类内截断——开放 [ ] 索引行 P0/P1 全保留、P2/P3 仅最近 5 条 + 长尾指针。
+  //   防超大开放区（如 2d2/2d3 的 400/900 条 P3 filler）整块 > 注入预算被 packL3 omit。
+  output = truncateFindingsByImpact(output);
   return output;
+}
+
+/**
+ * findings impact 优先类内截断（M3 T-002 / design §3.6）：
+ *   开放 [ ] 索引行按 impact 分档——P0/P1 全保留，P2/P3 仅保留最近 5 条（按 date 降序），
+ *   被省略的 P2/P3 以「（另有 M 条 P2/P3 finding，详见 findings.md）」长尾指针替代。
+ *   只动 `## 未解决问题` 下的开放索引行；P0/P1 与详情段落不受影响。无超量时原样返回。
+ * @param {string} output - 已跳过 [x]/[-] 的 findings 文本
+ * @returns {string} impact 截断后的文本
+ */
+function truncateFindingsByImpact(output) {
+  const lines = output.split('\n');
+  // 收集开放索引行（`- [ ] ...`）及其 impact 与 date；只处理「## 未解决问题」段内的索引。
+  const openIdx = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (!/^- \[ \] /.test(l)) continue;
+    const impactM = l.match(/\[impact::\s*(P[0-3])\]/i);
+    const impact = impactM ? impactM[1].toUpperCase() : 'P3'; // 无 impact 视作低优先 P3，优先被截
+    const dateM = l.match(/\[date::\s*(\d{4}-\d{2}-\d{2})\]/);
+    openIdx.push({ i, impact, date: dateM ? dateM[1] : '', text: l });
+  }
+  const lowItems = openIdx.filter(o => o.impact === 'P2' || o.impact === 'P3');
+  if (lowItems.length <= 5) return output; // P2/P3 不超量，无需截断
+  // 保留最近 5 条 P2/P3（date 降序，同 date 保持原序），其余行号标记删除。
+  const keepLow = new Set(lowItems
+    .map((o, k) => ({ o, k }))
+    .sort((a, b) => b.o.date.localeCompare(a.o.date) || a.k - b.k)
+    .slice(0, 5)
+    .map(({ o }) => o.i));
+  const dropLines = new Set(lowItems.filter(o => !keepLow.has(o.i)).map(o => o.i));
+  const omitted = dropLines.size;
+  const out = [];
+  let pointerInserted = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (dropLines.has(i)) {
+      // 在首个被删行位置插入一次长尾指针，保持文档其余结构。
+      if (!pointerInserted) {
+        out.push(`（另有 ${omitted} 条 P2/P3 finding，详见 findings.md）`);
+        pointerInserted = true;
+      }
+      continue;
+    }
+    out.push(lines[i]);
+  }
+  return out.join('\n');
 }
 
 /** impl_plan 智能截断（重构前 559-586）：只注入 [/]/[ ] 索引+详情，跳过 [x]/[-]。 */
@@ -481,6 +546,81 @@ function truncateImplPlan(output) {
     output = output.replace(/(^## 变更索引)/m, `（已省略 ${skipIds.size} 条已完成变更）\n\n$1`);
   }
   return output;
+}
+
+/**
+ * corrections 类内截断（M3 T-002 / design §3.6）：
+ *   活跃区纠正记录行（`- [[correction-...]]`）按 date 降序保留最近 6 条，
+ *   被省略的以「（另有 M 条更早纠正记录，避免重犯请 Read corrections.md）」长尾指针替代。
+ *   纠正记录是「避免重犯」高价值提醒，超量时保留最新而非整块被 packL3 omit。无超量原样返回。
+ * @param {string} output - corrections.md 活跃区文本
+ * @returns {string} 截断后的文本
+ */
+function truncateCorrections(output) {
+  const lines = output.split('\n');
+  const recs = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^- \[\[correction-/i.test(lines[i])) continue;
+    const dateM = lines[i].match(/\[date::\s*(\d{4}-\d{2}-\d{2})\]/)
+      || lines[i].match(/correction-(\d{4}-\d{2}-\d{2})/i);
+    recs.push({ i, date: dateM ? dateM[1] : '', text: lines[i] });
+  }
+  if (recs.length <= 6) return output; // 不超量，无需截断
+  const keep = new Set(recs
+    .map((r, k) => ({ r, k }))
+    .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.k - b.k)
+    .slice(0, 6)
+    .map(({ r }) => r.i));
+  const dropLines = new Set(recs.filter(r => !keep.has(r.i)).map(r => r.i));
+  const omitted = dropLines.size;
+  const out = [];
+  let pointerInserted = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (dropLines.has(i)) {
+      if (!pointerInserted) {
+        out.push(`（另有 ${omitted} 条更早纠正记录，避免重犯请 Read corrections.md）`);
+        pointerInserted = true;
+      }
+      continue;
+    }
+    out.push(lines[i]);
+  }
+  return out.join('\n');
+}
+
+// spec 类内摘要要砍掉的低频可随时 Read 的段落（标题精确匹配）：目录、依赖列表。
+//   保留「项目概述 / 技术栈 / 禁止事项」等高价值约束段——禁止事项是 AI 不可违反的约束，必须保住（e2e 2h）。
+const SPEC_OMIT_SECTIONS = ['目录', '依赖列表'];
+/**
+ * spec 类内摘要（M3 T-002 / design §3.6）：
+ *   砍掉「## 目录」「## 依赖列表」这类可随时 Read 的低频段落（标题到下一个同级 ## 或 ARCHIVE/文末），
+ *   保留「项目概述 / 技术栈 / 禁止事项」等高价值约束段，附「（已省略 spec 目录/依赖列表，需要时 Read spec.md）」指针。
+ *   只删命中段，不动其余结构；无命中段时原样返回。
+ * @param {string} output - spec.md 文本
+ * @returns {string} 摘要后的文本
+ */
+function truncateSpec(output) {
+  // 收集全文所有 ## 标题位置（含名称），用于界定每段范围。
+  const heads = [];
+  const hRe = /^## (.+?)\s*$/gm;
+  let hm;
+  while ((hm = hRe.exec(output)) !== null) heads.push({ start: hm.index, name: hm[1].trim() });
+  if (heads.length === 0) return output;
+  // 命中要省略的段（标题在 SPEC_OMIT_SECTIONS 中），范围为本标题到下一个 ## 起点（或文末）。
+  const dropRanges = [];
+  for (let i = 0; i < heads.length; i++) {
+    if (!SPEC_OMIT_SECTIONS.includes(heads[i].name)) continue;
+    const end = i + 1 < heads.length ? heads[i + 1].start : output.length;
+    dropRanges.push([heads[i].start, end]);
+  }
+  if (dropRanges.length === 0) return output;
+  // 从后往前删除命中段，避免前面删改影响后面 range 下标。
+  let result = output;
+  for (let k = dropRanges.length - 1; k >= 0; k--) {
+    const [s, e] = dropRanges[k];
+    result = result.slice(0, s) + result.slice(e);
+  }
+  return result.trimEnd() + '\n\n（已省略 spec 目录/依赖列表，需要时 Read spec.md）\n';
 }
 
 // --- foreign owner 折叠（重构前 349-401）---

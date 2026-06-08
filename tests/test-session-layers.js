@@ -276,6 +276,35 @@ test('SL-14a. artifact group 满载文件块移 l3 后被全局兜底截到 <950
   assert.ok(text.length <= 9500 + 200, `artifact 满载应被全局兜底截到 ≤9500(+footer)，实际 ${text.length}`);
 });
 
+// --- 14b. M3 T-002：artifact 满载经「类内截断」缩小后存活 packL3（非整条 omit）+ 含长尾指针 ---
+// T-001 移 l3 后，超大块 > remain 会被 packL3 整条 omit、连带后续块也 omit。
+// T-002 加类内截断把 corrections（最近 6）/findings（P0P1全+P2P3 最近 5）缩小，使其存活 packL3，
+// 内容缩小后随块注入（含「另有 N 条…」长尾指针），而非整条 omit。
+test('SL-14b. artifact 满载类内截断后优雅 + 含长尾指针（非整条 omit）', () => {
+  const corr = Array.from({length: 20}, (_, i) => `- [[correction-2026-06-${String(i+1).padStart(2,'0')}-01-x]] 纠正记录 ${i} 较长占位字符串测试内容`).join('\n');
+  const finds = Array.from({length: 10}, (_, i) => `- [ ] [[finding-x${i}|finding ${i}]] — summary 较长占位 [date:: 2026-06-08] [impact:: ${i<2?'P1':'P3'}]`).join('\n');
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'corrections.md', full: `# Corrections\n\n## 活跃记录\n\n${corr}\n` },
+    { file: 'findings.md', full: `# 调研记录\n\n## 未解决问题\n\n${finds}\n` },
+  ]});
+  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const { text } = assembleWithBudget(layers, { limitChars: 9500 });
+  assert.ok(text.length <= 9500 + 200, `≤9500(+footer)，实际 ${text.length}`);
+  // 类内截断让块缩小后存活（非整条 omit）——corrections/findings 内容都在
+  assert.ok(text.includes('避免重犯请 Read corrections.md') || text.includes('另有'), '含类内截断长尾指针');
+});
+
+// --- 15. findings 仅 active [ ] 注入，[-] won't-fix 排除（impact 优先类内截断保持 active 过滤）---
+test('SL-15. findings 仅 active [ ] 注入，[-] won-t-fix 排除', () => {
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'findings.md', full: '# 调研记录\n\n## 未解决问题\n\n- [ ] [[f-active|active P1]] — x [date:: 2026-06-08] [impact:: P1]\n- [-] [[f-wontfix|已决定不修]] — y [date:: 2026-06-08] [impact:: P3]\n' },
+  ]});
+  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const all = [...layers.l1head, ...layers.l3].join('\n');
+  assert.ok(all.includes('active P1'), 'active [ ] 注入');
+  assert.ok(!all.includes('已决定不修'), '[-] won\'t-fix 不注入');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
