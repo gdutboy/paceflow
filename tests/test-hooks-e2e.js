@@ -6948,7 +6948,7 @@ test('22c. hooks.json 使用 exec-form args 避免 shell quoting', () => {
         assert.strictEqual(hook.type, 'command', `${eventName} hook type`);
         assert.strictEqual(hook.command, 'node', `${eventName} 应使用 command=node`);
         assert.ok(Array.isArray(hook.args), `${eventName} 应使用 args 数组`);
-        assert.strictEqual(hook.args.length, 1, `${eventName} args 只应包含脚本路径`);
+        assert.ok(hook.args.length >= 1, `${eventName} args 至少包含脚本路径`);
         assert.ok(hook.args[0].startsWith('${CLAUDE_PLUGIN_ROOT}/hooks/'), `${eventName} args 应使用 CLAUDE_PLUGIN_ROOT 占位`);
         assert.ok(hook.args[0].endsWith('.js'), `${eventName} args 应指向 .js hook`);
       }
@@ -7037,6 +7037,14 @@ test('23b. SubagentStop 允许全局时间戳前缀但记录为日志 warning', 
   });
   assert.strictEqual(r.code, 0);
   assert.strictEqual(r.stdout, '');
+});
+
+test('MH-6. hooks.json SessionStart 注册 core + artifact 两个 command', () => {
+  const hj = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin', 'hooks', 'hooks.json'), 'utf8'));
+  const ss = hj.hooks.SessionStart;
+  const cmds = ss.flatMap(block => block.hooks).map(h => (h.args || []).join(' '));
+  assert.ok(cmds.some(c => c.includes('--group core')), '有 core command');
+  assert.ok(cmds.some(c => c.includes('--group artifact')), '有 artifact command');
 });
 
 cleanupAll();

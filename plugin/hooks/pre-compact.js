@@ -23,7 +23,7 @@ const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 
 try {
   const t0 = Date.now();
-  const hookInput = paceUtils.parseStdinSync();
+  paceUtils.parseStdinSync();
   const paceSignal = isPaceProject(cwd);
   if (!paceSignal) {
     log(projectLogEntry('PreCompact', 'SKIP', { proj, reason: 'non-pace' }));
