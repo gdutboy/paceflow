@@ -1,6 +1,6 @@
 # SessionStart 多 hook 拆分注入 — 设计文档
 
-> **状态**：设计（pre-implementation，2026-06-08）。尚未实现，勿当现行行为。
+> **状态**：设计（部分实现，2026-06-08）。M1+M2（CHG-20260608-09）已实现并经 R 审计修正；M3-M5 待实现。**本文档含 R 审计补充的 4 条动态约束原则**（依赖 / 耦合 / 层次 / 发布），标「R 审计补」处为原 design 盲点的修正，关联 `changes/findings/finding-2026-06-08-multi-hook-cross-chg-constraints.md`。
 > **取代**：`docs/superpowers/specs/2026-06-08-sessionstart-layered-injection-design.md`（128K 单 hook 高预算方向**作废**——基于错误前提）。
 > **关联**：
 > - 根因 finding：`changes/findings/finding-2026-06-08-session-start-per-hook-10k-cap-context-broken.md`
@@ -68,11 +68,20 @@ core hook（有界骨架，稳 <10K）:
   项目上下文 + 工作流入口 + Artifact 目录
   + L0「我在做什么」（活跃 CHG 摘要 running 优先 top-N + change-set 进度 + 暂停 + 执行上下文）
   + git + 相关讨论（含 wiki article，见 §3.7）
+  + findings 过期提醒 + W12 flag（耦合三元组，见 §3.4——CHG-09 阶段留 core，CHG-11 整体移 artifact）
 artifact hook（增长块，截断 <10K）:
-  findings（仅 active 待修，见 §4）+ corrections + walkthrough 摘要 + spec 摘要
-  + W12 findings-age flag（见 §3.4）
+  findings.md 文件块（仅 active 待修，见 §4）+ corrections + walkthrough 摘要 + spec 摘要
+  + 格式合规警告（依赖 artifact 文件，见下「依赖原则」）
 ```
-精确块→group 映射清单留 plan；原则：core = 有界 + 上下文恢复骨架，artifact = 增长块 + 可截断。
+
+**依赖原则（R 审计补，原 design 盲点）**：section 分两类，归属逻辑不同——
+- **主内容块**（findings.md / corrections / walkthrough / spec / git / 活跃 CHG）：按「有界 vs 增长」直接归类。
+- **衍生 section**（依赖别处数据才能渲染）：**必须跟随它依赖的数据所在 group**，不能独立分类——
+  - 格式合规警告 `renderFormatWarnings` 依赖 artifact 文件全文（implFullForFormat/found）→ 归 **artifact**。
+  - findings 过期提醒 `renderAgedFindings` 依赖 W12 flag 去重状态 → 归 **W12 所在 group**（§3.4 耦合三元组）。
+  - Artifact 目录兜底（found>0）与 core 的 Artifact 目录 section 重复，多 hook 下退为死代码（core 已注入），不在 artifact 重复。
+
+> **原 design 的错**：§3.3 原把归属细节「留 plan 列清单」，但衍生 section 的归属是非平凡判断（依赖什么数据决定归哪 group），plan/实现接不住就瞎猜——R 审计发现 A（格式警告误放 core 致全 group 丢失）正是这么来的。**design 必须给原则，不是留清单。**
 
 ### 3.4 副作用归属（逐条对照 golden reference 12 写盘点）
 
@@ -80,9 +89,18 @@ artifact hook（增长块，截断 <10K）:
 |---|---|---|
 | W1 mkdir / W2 counter reset / W3-6 清 flag·stale / W10 ensureProjectInfra / W11 createTemplates | **core** | 基础设施/清理/Stop gate，与注入内容无关，幂等 |
 | W7-W9 compact 快照消费 | **退役** | OQ-1 决议废弃，compact 改实时读 |
-| **W12 findings-age flag** | **artifact（非 core）** | 与 findings 过期提醒注入是 `ageFlagExistedBefore` **耦合的一对**——core 若写 flag，artifact hook 会误判"今日已提醒"漏注入。findings 注入在 artifact，故 W12 也在 artifact |
+| **W12 findings-age flag** | **core（CHG-09）→ artifact（CHG-11）** | 与 findings 过期提醒（agedFindings）是 `ageFlagExistedBefore` **耦合三元组**（见下）——写 flag / 读取 / 渲染须同 group 同里程碑移动。最终态归 artifact，但当前（M2/CHG-09）三者全留 core，CHG-11/M4 一起移 |
 
-> **W12 是对照 reference 抓到的真 bug**：简单"副作用全归 core"会让 findings 过期提醒漏注入。
+> **W12 不是孤立副作用，也别与「findings.md 文件块」混淆**：它耦合的是 findings **过期提醒**（agedFindings，基于 date 判过期），不是 findings.md 文件块（后者归 artifact 无 flag 耦合）。原 design 表格曾把 W12 单独归 artifact、却把 agedFindings 渲染留 core，正是 R 审计发现 B2 的割裂源。修正见下「耦合三元组」。
+
+**耦合三元组（R 审计 B2 补）**：W12 flag 不是孤立副作用，它和 findings 过期提醒构成**状态耦合三元组**，三者必须同 group 且同里程碑整体移动：
+1. **W12 flag 写**（runtime-effects：applyRuntimeEffects → 或 applyArtifactGroupEffects）
+2. **agedFindings 读取**（collect-state：collectAgedFindings，用 ageFlagExistedBefore 去重）
+3. **agedFindings 渲染**（layers：renderAgedFindings）
+
+拆散即时序割裂——一 group 写 flag → 另一 group 读到「今日已提醒」→ 漏注入。
+- **CHG-09（M2）现状**：三者全留 **core**。R 审计发现 T-004 曾误把读取+渲染移 artifact 但 flag 留 core（发现 B2），已撤回 core。
+- **CHG-11（M4）目标**：三者**一起**移 artifact（W12 flag 写进 applyArtifactGroupEffects + collectAgedFindings 归 isArtifact + renderAgedFindings 归 artifact 块），在同一个 CHG 完成，不可分到两个 M。
 
 ### 3.5 执行顺序——健壮设计，不赌顺序
 
@@ -103,6 +121,12 @@ artifact hook 按「**优先级全文 + 长尾计数指针**」截断：
 | **spec** | 技术栈摘要（砍目录/依赖清单）| `完整规格见 spec.md` |
 
 **两层截断**：① 类内截断（上表）② 全局兜底——artifact hook `assembleWithBudget(limitChars: 9500)` 按优先级排列（corrections → findings P0P1 → findings P2P3 → walkthrough → spec），正常类内截后 <9.5K 不触发；极端才跨类从尾部截 + 全局指针（复用旧 CHG-05 的 L3 优先截断逻辑）。
+
+**层次约束（R 审计发现 1 补，关键）**：全局兜底（assembleWithBudget）**只截 l3 层**，head（l1head/l0/l1/l2）永不截。所以全局兜底要对 artifact 生效，**artifact 文件块必须放可截层（l3），不能放 l1head**。
+- **原 design 盲点**：§3.6 假设全局兜底能兜住 artifact，但没说 artifact 文件块的层归属。CHG-09（M2）实现把 artifact 文件块放进了 l1head（永不截）→ 全局兜底对 artifact **完全失效**（实测注入 12000 chars spec 不被截、truncated=false）。当前仅靠真实内容 9852 chars 擦边（距 10K cap 余量 148）。
+- **CHG-10/M3 设计要求（二选一，推荐 a）**：
+  - **(a) 把 artifact 文件块从 l1head 移到 l3**（可截层），让两层截断都生效——artifact 文件按优先级进 l3，全局兜底从尾部截。与 design 原意一致。
+  - (b) 接受 artifact 文件块在 head 不可截，则**类内截断是唯一保证**，必须确保所有 artifact 文件类内截断后总和 <9500 chars，不能依赖全局兜底。
 
 **指针措辞原则**：长尾指针只赌低优先内容（最近/最严重的已全文 aware）；corrections 长尾给明确动机（"避免重犯"）；不写空泛"按需查看"。
 
@@ -132,8 +156,8 @@ findings 注入应只取「**active 待修**」，排除「已决定不修的记
 
 | 验证 | 方法 |
 |---|---|
-| 各 group <9500 chars | 单测：`buildLayers(group)` 输出 chars 测量，用**满载 fixture**（多 CHG/finding/correction）|
-| 副作用归属 | e2e：core 跑 W1-W11，artifact 只跑 W12（+ 幂等 W10/W11 自保）|
+| 各 group <9500 chars（M3 后达成）| 单测：`buildLayers(group)` 输出 chars 测量，用**满载 fixture**；注意 artifact 文件块在 l1head 时全局兜底失效（§3.6），M3 移 l3 + 类内截断后才稳 <9500 |
+| 副作用归属 | e2e：core 跑 W1-W11 + 幂等自保；W12+agedFindings 三元组**当前在 core（CHG-09）**，M4/CHG-11 整体移 artifact 后才由 artifact 跑 W12 |
 | 截断策略 | 单测：corrections N=6、findings P0/P1 必达 + `[-]` 排除、长尾指针出现 |
 | 内容无丢失 | core+artifact 总覆盖 = 原注入内容（去重后）|
 | **真实不再 persist（终极判据）** | reload 后实测 startup/compact，各 hook <10K、`<persisted-output>` 不再出现——唯一不能用单测代替的验证 |
@@ -141,27 +165,34 @@ findings 注入应只取「**active 待修**」，排除「已决定不修的记
 ## 6. 实现分期
 
 **主线**（SessionStart 多 hook 拆分，新 change-set）：
-| 阶段 | 内容 | 依赖 |
-|---|---|---|
-| **M1** | session-start.js group 路由 + collectState/buildLayers/assembleWithBudget 加 group 维度（chars 单位）；默认 group=core 行为可控 | CHG-A |
-| **M2** | core/artifact 内容分配 + 块→group 映射（去重）+ L0 running 优先排序/倒序对称（复用旧 CHG-05 代码）| M1 |
-| **M3** | artifact 截断策略（corrections/findings/walkthrough/spec 类内 + 全局兜底，复用旧 CHG-05 L3 优先截断）| M2 |
-| **M4** | hooks.json 注册 2 hook + W12 归 artifact + 执行顺序健壮（artifact 自保 W10/W11）+ 快照退役（OQ-1）| M2 |
-| **M5** | wiki article 注入 core 相关讨论（vault-gated）| M2 |
+| 阶段 | 内容 | 依赖 | 状态 |
+|---|---|---|---|
+| **M1** | session-start.js group 路由 + collectState/buildLayers/assembleWithBudget 加 group 维度（chars 单位）；guard(bytes)/budget(chars) 解耦；默认 group=core | CHG-A | ✅ CHG-09 |
+| **M2** | core/artifact 内容分配 + 块→group 映射（**依赖原则 §3.3**，含格式警告归 artifact、agedFindings 三元组留 core）+ L0 running 优先排序/倒序对称 + 现有 e2e group 迁移 | M1 | ✅ CHG-09（R 审计修正） |
+| **M3** | artifact 截断策略（**先按 §3.6 层次约束把 artifact 文件块移 l3**，再类内 + 全局兜底）| M2 | CHG-10 |
+| **M4** | hooks.json 注册 2 hook + **W12+agedFindings 耦合三元组整体移 artifact（§3.4）** + 执行顺序健壮（artifact 自保 W10/W11）+ 快照退役（OQ-1）| M2、M3 | CHG-11 |
+| **M5** | wiki article 注入 core 相关讨论（vault-gated）| M2 | CHG-12 |
+
+**发布单元原则（R 审计约束 3 补，关键）**：内容归 artifact（M2/M3）与 hooks.json 注册双 hook（M4）拆在不同里程碑，但 plugin cache 从 git remote 拉取——M4 前任何 push+reload，artifact 内容（文件块/格式警告）在单 hook（默认 core）下**静默丢失**。**整个重构 M1-M5 必须作为一个发布单元**：M4 注册双 hook + reload 实测各 hook <10K chars 后才 push；M1-M3 期间不发布中间态（CHG-09~CHG-11 commit 留本地）。
 
 **关联**（独立 change）：finding `[-]` 语义 + review gate 路由 + 迁移现有 deferred finding。
 
-> 旧 CHG-05 的 L3 优先截断（→ M3 全局兜底）+ running 优先排序 + 倒序对称修复（→ M2 L0）代码在工作树可复用；128K BUDGET + 删 HARD_LIMIT 作废，需回退。
+> 旧 CHG-05 的 L3 优先截断（→ M3 全局兜底）+ running 优先排序 + 倒序对称修复（→ M2 L0）代码已在 CHG-09 复用；128K BUDGET + 删 HARD_LIMIT 已回退。
 
 ## 7. 已决议
 
 - **拆分维度 = 有界 vs 增长**（非 L0–L3）——实测增长块会自涨爆 10K。
 - **固定 2 hook + 内部截断**——hooks.json 静态，运行时不能加 hook。
-- **W12 归 artifact**——与 findings 过期注入 `ageFlagExistedBefore` 耦合（reference 对照抓到）。
 - **执行顺序健壮设计**——artifact 跑幂等 W10/W11 自保，不赌顺序。
 - **finding `[-]` = won't-fix/deferred/accepted**（最小改动；注入层零改动）。
 - **wiki 归 core 相关讨论**（vault-gated）。
 - **快照退役（OQ-1）**——继承旧 design，compact 实时读。
+
+**R 审计补的 4 条动态约束原则**（原 design 把多 hook 拆分当静态分类问题，漏了这些动态维度——CHG-09 R 审计暴露并修正）：
+- **依赖约束（§3.3）**——衍生 section（格式警告/agedFindings）跟随其数据所在 group，不独立分类。design 给原则、不留 plan 列清单。
+- **耦合约束（§3.4）**——W12 flag 写 + agedFindings 读 + agedFindings 渲染是状态耦合三元组，同 group 同里程碑整体移；当前留 core，CHG-11 一起移 artifact。
+- **层次约束（§3.6）**——全局兜底只截 l3，artifact 文件块必须进可截层（l3）兜底才生效；CHG-10 先移 l3。
+- **发布约束（§6）**——M1-M5 是一个发布单元，M4 注册双 hook 前不 push 中间态。
 
 ## 8. 安全说明
 
