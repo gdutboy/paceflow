@@ -261,6 +261,21 @@ test('SL-13. group=artifact 含 findings/corrections、不含工作流入口', (
   assert.ok(!all.includes('=== PACEflow 工作流入口 ==='), 'artifact 不含工作流入口');
 });
 
+// --- 14a. M3：artifact 文件块移 l3（可截层）后受全局 chars 兜底约束 ---
+// CHG-09 R 审计发现 1：artifact 文件块原 push 进 l1head（head 永不截），全局 budget 对 artifact 主体失效。
+// 移 l3 后，满载 artifact group 经 assembleWithBudget(9500) 兜底，整体应被截到 ≤9500(+footer)。
+test('SL-14a. artifact group 满载文件块移 l3 后被全局兜底截到 <9500', () => {
+  const bigCorr = '# Corrections\n\n## 活跃记录\n\n' + Array.from({length: 30}, (_, i) => `- [[correction-2026-06-${String(i+1).padStart(2,'0')}-01-x]] 纠正记录占位较长文本测试字符串内容 ${i}`).join('\n') + '\n';
+  const bigSpec = '# 规格\n\n' + 'x'.repeat(12000) + '\n';
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'corrections.md', full: bigCorr },
+    { file: 'spec.md', full: bigSpec },
+  ]});
+  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const { text } = assembleWithBudget(layers, { limitChars: 9500 });
+  assert.ok(text.length <= 9500 + 200, `artifact 满载应被全局兜底截到 ≤9500(+footer)，实际 ${text.length}`);
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

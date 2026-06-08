@@ -40,6 +40,34 @@ function changeSetSeqNum(seq) {
   return m ? Number(m[1]) : 0;
 }
 
+// M3 §3.6：artifact 文件块在 l3（可截层）的注入优先级——packL3 从尾部按条 omit，
+// 故最高优先级排最前（最不易被截）、最低优先级排最后（最先 omit）。
+//   task.md / implementation_plan.md（定位信息，CHG/任务索引，最该保住）
+//   → corrections（纠正记录）→ findings（调研记录）→ walkthrough（工作记录）
+//   → spec（最稳定、可随时 Read，最先 omit）。
+// 未在表中的文件名回退到末尾（与 spec 同档之后），保证排序稳定不报错。
+const ARTIFACT_BLOCK_PRIORITY = [
+  'task.md',
+  'implementation_plan.md',
+  'corrections.md',
+  'findings.md',
+  'walkthrough.md',
+  'spec.md',
+];
+function artifactBlockPriorityRank(file) {
+  const i = ARTIFACT_BLOCK_PRIORITY.indexOf(file);
+  return i === -1 ? ARTIFACT_BLOCK_PRIORITY.length : i;
+}
+// 稳定排序：按优先级 rank 升序；同 rank 保持输入相对顺序（用原始 index 作 tie-breaker）。
+function sortArtifactBlocksByPriority(items) {
+  return items
+    .map((it, index) => ({ it, index }))
+    .sort((a, b) =>
+      artifactBlockPriorityRank(a.it.file) - artifactBlockPriorityRank(b.it.file)
+      || a.index - b.index)
+    .map(({ it }) => it);
+}
+
 /**
  * 把 state 渲染成四层注入文本块。纯函数，无副作用。
  *
@@ -52,12 +80,12 @@ function changeSetSeqNum(seq) {
  *           Findings 过期提醒 / git 状态 / 相关讨论
  *   - artifact：spec / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md
  * @returns {{ l1head: string[], l0: string[], l1: string[], l2: string[], l3: string[] }}
- *   - l1head: 项目上下文 + 工作流入口 + Artifact 目录 + artifact 文件 + 格式警告（注入顺序最前）
+ *   - l1head: 项目上下文 + 工作流入口 + Artifact 目录 + 格式警告（注入顺序最前，head 永不截）
  *   - l0: 活跃 CHG 摘要 / change-set 进度 / 跨会话提醒 / 桥接 / 执行上下文（「我刚才在做」）
  *   - l1: git 状态
  *   - l2: （CHG-A 占位，工作流入口本 CHG 仍在 l1head 复刻原位）
- *   - l3: findings 过期提醒 / 相关讨论
- *   注：CHG-A 为保 byte 等价，分层只做归类、拼接顺序仍复刻 golden（见 budget.js）。
+ *   - l3: artifact 文件块（M3 按 §3.6 优先级排序）/ findings 过期提醒 / 相关讨论（唯一可截层）
+ *   注：M3（CHG-10）把 artifact 文件块从 l1head 移到 l3，让全局 chars 兜底（budget.js）对 artifact 主体生效。
  */
 function buildLayers(state, eventType, paceUtils, group) {
   // 渲染分组守卫：仅 'artifact' 为 artifact group，其余（含未传/非法值）显式回落 'core'。
@@ -120,17 +148,23 @@ function buildLayers(state, eventType, paceUtils, group) {
   }
 
   // ── artifact 块：增长性文件（spec / task / impl / walkthrough / findings / corrections）──
-  // renderArtifactFiles 在两个 group 都需要调用，但 push 进 l1head 只在 isArtifact 时执行。
+  // renderArtifactFiles 在两个 group 都需要调用，但 push 文件块只在 isArtifact 时执行。
   // isCore 时 found 为 []（state.artifactFiles 由 collectState 按 group 过滤，见 T-004），
   // 此处渲染层已保证 core 不注入 artifact 文件块。
   const filesRender = renderArtifactFiles(state, paceUtils);
   if (isArtifact) {
     // === 7. artifact 文件循环（重构前 416-593）===
-    for (const block of filesRender.blocks) l1head.push(block);
+    // M3（CHG-10/T-001）：文件块从 l1head（head 永不截）移到 l3（可截层），让全局 chars
+    //   兜底（assembleWithBudget）对 artifact 主体生效——CHG-09 R 审计发现 1：原在 l1head 时
+    //   12000 chars 的 spec 完全不被截，全局 budget 对 artifact group 失效。
+    //   按 §3.6 优先级排序（task/impl 定位信息排最前最不易被截 → spec 排最后最先 omit）。
+    const ordered = sortArtifactBlocksByPriority(filesRender.blocks);
+    for (const { block } of ordered) l3.push(block);
 
     // === 10. 格式合规警告（重构前 638-672）===
     // R 审计发现 A 修正：renderFormatWarnings 依赖 found（artifact 文件）+ implFullForFormat（artifact 读），
     // 必须与数据同 group。T-003 误放 core 块致 core found 恒空、双 hook 后 artifact 块又不渲染 → 格式警告全 group 丢失。
+    // 格式警告是重要提醒（不该被截），CHG-09 已留 l1head（head 永不截），本 CHG 不动。
     const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
     if (formatWarn) l1head.push(formatWarn);
   }
@@ -249,7 +283,9 @@ function renderArtifactDirSection(state) {
 
 /**
  * artifact 文件循环（重构前 416-593）：逐文件输出 `=== file ===` + 截断整形后内容。
- * @returns {{ blocks: string[], found: string[] }} blocks 是各文件的输出块；found 是 `file(len)` 列表。
+ * @returns {{ blocks: Array<{ file: string, block: string }>, found: string[] }}
+ *   blocks 是各文件的输出块（带文件名，供 buildLayers 按 §3.6 优先级排序后 push l3）；
+ *   found 是 `file(len)` 列表，保持 state.artifactFiles 输入顺序（供 INJECT 日志复刻）。
  */
 function renderArtifactFiles(state, paceUtils) {
   const {
@@ -300,7 +336,8 @@ function renderArtifactFiles(state, paceUtils) {
     if (archiveMatch) output += ARCHIVE_MARKER + '\n';
     block += output;
     block += '\n\n';
-    blocks.push(block);
+    // 带文件名回传，供 buildLayers 按 §3.6 优先级排序后 push l3。
+    blocks.push({ file, block });
     found.push(`${file}(${output.length})`);
   }
   return { blocks, found };
