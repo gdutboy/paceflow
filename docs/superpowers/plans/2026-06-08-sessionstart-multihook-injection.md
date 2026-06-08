@@ -8,6 +8,12 @@
 
 **Tech Stack:** Node.js CommonJS（plugin/hooks），自定义 test runner（tests/test-utils.js），node:assert。验证：`node tests/test-session-layers.js`、`node tests/test-hooks-e2e.js`、`node tests/test-pace-utils.js`。
 
+> **⚠️ 发布单元约束（CHG-09 R 审计发现）**：内容归 artifact group（M1-M2）与 hooks.json 双 hook 注册（M4/T-008）在不同里程碑，但 artifact 内容（文件块/格式警告）在单 hook（默认 core）下会静默丢失。plugin cache 从 git remote 拉取——**整个重构（M1-M5）必须作为一个发布单元**：T-008 双 hook 注册 + 实测各 hook <10K chars 后才 push，中间里程碑不发布中间态。
+>
+> **⚠️ M3 截断设计校正（CHG-09 R 审计发现 1）**：artifact 文件块在 l1head，而 assembleWithBudget 的 head 永不截——9500 budget 对 artifact group **完全失效**（实测 12000 chars spec 不被截）。M3 的 per-file 类内截断是 artifact <10K 的**唯一保证**，不能依赖全局 budget 兜底；务必确保所有 artifact 文件截断后总和 <9500。
+>
+> **⚠️ M4 W12 归属（CHG-09 R 审计发现 B2）**：M4 把 W12 flag 写移 artifact 时，必须同步把 agedFindings 渲染（layers.js section 14）+ 读取（collect-state.js）一起移 artifact——flag 写/数据读/渲染三者必须同 group，否则跨 group 时序割裂致过期提醒永不注入。
+
 ---
 
 ## 背景与复用
@@ -128,7 +134,7 @@ function parseGroupArg() {
 const GROUP = parseGroupArg();
 const SESSION_OUTPUT_BUDGET_CHARS = Math.max(9500, Number(process.env.PACE_SESSION_OUTPUT_BUDGET_CHARS) || 9500);
 ```
-删除旧的 `SESSION_OUTPUT_HARD_LIMIT_BYTES`（已在旧 CHG-05 删）+ `SESSION_OUTPUT_BUDGET_BYTES`。`installSessionOutputGuard` 内 `SESSION_OUTPUT_BUDGET_BYTES` → `SESSION_OUTPUT_BUDGET_CHARS`，字节计量 `Buffer.byteLength` 保留（guard 是 stdout 字节兜底，但阈值用 chars 数值；guard 仅极端兜底，char/byte 近似可接受——加注释说明）。
+删除旧的 `SESSION_OUTPUT_HARD_LIMIT_BYTES`（已在旧 CHG-05 删）+ `SESSION_OUTPUT_BUDGET_BYTES`。**`installSessionOutputGuard` 的字节阈值不与 chars 主预算共用**——新增独立常量 `SESSION_OUTPUT_GUARD_BYTES = Number(process.env.PACE_SESSION_OUTPUT_GUARD_BYTES) || 46000`，guard 内引用从 `SESSION_OUTPUT_BUDGET_BYTES` 改为 `SESSION_OUTPUT_GUARD_BYTES`，字节计量 `Buffer.byteLength` 保留。**关键纠错（T-002 执行中发现，原 plan 此处有误）**：guard 是 bytes 兜底、assembleWithBudget 是 chars 主截断，二者是独立机制——若共用 9500，guard 会按字节误截合法 CJK 注入（9500 chars 全 CJK≈28500 bytes），复活 2d3 ARCH-01（层2 footer 不可达）。阈值须 >28500（单 hook 合法上限）、<50000（旧 e2e 2d 系列的 50KB 持久化边界），46000 满足。notice 文案同步改字节语义，但保留「SessionStart 输出截断」「请按需 Read artifact 文件」两短语供 2d 断言。
 
 - [ ] **Step 2: 副作用只 core + 传 group**
 
@@ -272,8 +278,9 @@ Expected: FAIL（runHook 不传 args，或 collectState 全量读 + buildLayers 
 ```js
 const group = (extra && extra.group) || 'core';
 const isCore = group === 'core', isArtifact = group === 'artifact';
-// 活跃 CHG 摘要：两个 group 都要（core 渲染 L0，artifact 不渲染但 W12 判定无关）→ 仅 isCore 读
-const activeChangeSummaries = (isCore && paceSignal === 'artifact')
+// 活跃 CHG 摘要：两个 group 都读——core 渲染 L0；artifact 的 foldForeignOwnedArtifactOutput
+//   折叠 foreign owner 详情也需要它（实现中发现，原 plan「仅 isCore 读」不完整）。
+const activeChangeSummaries = (paceSignal === 'artifact')
   ? summarizeActiveChanges(cwd).map(s => enrichSummaryOwner(s, cwd, hookInput, changeOwnerStatus)) : [];
 // artifact 文件 raw：仅 isArtifact 读
 // git：仅 isCore
@@ -284,6 +291,20 @@ const relatedNotes = isCore ? collectRelatedNotes(cwd, getProjectName, scanRelat
 const agedFindings = isArtifact ? collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore) : { shouldInject: false, aged: [] };
 ```
 （L0 排序逻辑在 buildLayers，工作树已有，归 core 自然生效——无需改。）
+
+- [ ] **Step 3.5: 迁移现有 9 个 e2e 到 group-aware（T-003 buildLayers 分组的连带，原 plan 缺口）**
+
+T-003 让 core 不再渲染 artifact 文件，以下现有 e2e（测 artifact 文件注入/截断）失败——**全部是预期变化（已复核无真 bug）**，按下表迁移（runHook 加 `args: ['--group', 'artifact']`，或拆 core+artifact 断言为两个 test）：
+
+| e2e | 断言内容 | 迁移方式 |
+|---|---|---|
+| `2` | task.md/corrections.md 文件块 + 活跃 CHG 摘要 + artifact_dir 路由 | 拆：默认 core 验活跃 CHG 摘要+路由；新增 `2-art`（`--group artifact`）验 `=== task.md ===`/`=== corrections.md ===` |
+| `2d`/`2d2`/`2d3` | findings 超大截断 / ARCHIVE 缺失层2截断 | runHook 加 `--group artifact` |
+| `2e`/`2e2`/`2e3` | walkthrough 截断 | runHook 加 `--group artifact` |
+| `2f` | 跨会话提醒（core）+ foreign 折叠提示（附在 artifact 文件 output） | 拆：默认 core 验跨会话+「不计入执行」断言；新增 `2f-art`（`--group artifact`）验「已折叠 N 个」 |
+| `2h` | spec.md 截断 | runHook 加 `--group artifact` |
+
+迁移后这些 e2e 测 artifact group 的注入/截断——现有截断逻辑跟 `renderArtifactFiles` 走，本 task 即生效（T-005 类内截断细化后仍兼容）。
 
 - [ ] **Step 4: 跑绿 + 全量回归**
 
