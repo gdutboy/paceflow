@@ -841,8 +841,9 @@ test('2i. SessionStart findings 过期提醒正确解析 wikilink display 标题
     '<!-- ARCHIVE -->',
     '',
   ].join('\n'), 'utf8');
-  // agedFindings 归 core group（R 审计发现 B：与 W12 flag 同 group），默认（无 --group=core）即注入过期提醒。
-  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  // agedFindings 三元组（W12 flag 写 + collectAgedFindings 读 + renderAgedFindings 渲染）整体归 artifact group
+  //   （CHG-11/T-001：与 W12 flag 同 group 才时序自洽）。过期提醒只在 --group artifact 注入。
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('Findings 过期提醒'));
   assert.ok(r.stdout.includes('登录优化'));
@@ -882,18 +883,42 @@ test('MH-fmt. 格式合规警告在 artifact group 注入、core group 不注入
   assert.ok(art.stdout.includes('=== 格式合规警告 ==='), 'artifact group 注入格式警告（发现 A 修复后）');
 });
 
-test('MH-aged. findings 过期提醒在 core group 注入、artifact group 不注入（R 审计发现 B 回归守卫）', () => {
-  // agedFindings 留 core group（与 W12 flag 同 group）：core 注入过期提醒、artifact 不注入。
-  // 守卫「agedFindings 误移 artifact 致单 hook（core）生产丢失过期提醒」回归（发现 B）。
+test('MH-aged. findings 过期提醒在 artifact group 注入、core group 不注入（三元组同 group 回归守卫）', () => {
+  // agedFindings 三元组（W12 flag 写 + 读 + 渲染）整体归 artifact group（CHG-11/T-001）：artifact 注入、core 不注入。
+  // 守卫「三元组拆 group 致时序割裂（core 写 flag → artifact 读到已存在 → 永不注入）」回归（原发现 B2）。
   const dir = makeV6Project('ss-aged-group', { withIndex: false, detail: false });
   fs.writeFileSync(path.join(dir, 'findings.md'),
     '# 调研记录\n\n## 摘要索引\n\n- [ ] [[finding-2000-01-01-x|过期项]] — 结论 [date:: 2000-01-01] [impact:: P1]\n\n<!-- ARCHIVE -->\n', 'utf8');
-  const core = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'core'] });
   const art = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
+  // core 与 artifact 用各自独立 fixture，避免 artifact 先跑写 flag 污染 core 判定（实际生产双 hook 各跑各项目态）。
+  const dir2 = makeV6Project('ss-aged-group-core', { withIndex: false, detail: false });
+  fs.writeFileSync(path.join(dir2, 'findings.md'),
+    '# 调研记录\n\n## 摘要索引\n\n- [ ] [[finding-2000-01-01-x|过期项]] — 结论 [date:: 2000-01-01] [impact:: P1]\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const core = runHook('session-start.js', { cwd: dir2, stdin: { type: 'startup' }, args: ['--group', 'core'] });
   assert.strictEqual(core.code, 0);
   assert.strictEqual(art.code, 0);
-  assert.ok(core.stdout.includes('Findings 过期提醒'), 'core group 注入过期提醒（agedFindings 留 core）');
-  assert.ok(!art.stdout.includes('Findings 过期提醒'), 'artifact group 不注入过期提醒');
+  assert.ok(art.stdout.includes('Findings 过期提醒'), 'artifact group 注入过期提醒（agedFindings 三元组归 artifact）');
+  assert.ok(!core.stdout.includes('Findings 过期提醒'), 'core group 不注入过期提醒（三元组已移 artifact）');
+});
+
+test('MH-3. --group core 不写 findings-age flag（W12 归 artifact）', () => {
+  // W12 写 flag 随三元组移 artifact：core 即便 findings.md 有活跃内容也不写 flag。
+  const dir = makeV6Project('mh-w12-core', { withIndex: false, detail: false });
+  fs.writeFileSync(path.join(dir, 'findings.md'),
+    '# 调研记录\n\n## 摘要索引\n\n- [ ] [[finding-2000-01-01-x|过期项]] — 结论 [date:: 2000-01-01] [impact:: P1]\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const flag = path.join(dir, '.pace', `findings-age-${today()}`);
+  runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'core'] });
+  assert.ok(!fs.existsSync(flag), 'core 不写 W12 flag');
+});
+
+test('MH-4. --group artifact 写 findings-age flag', () => {
+  // W12 写 flag 归 artifact：artifact group 在 findings.md 有活跃内容时写当日去重 flag。
+  const dir = makeV6Project('mh-w12-art', { withIndex: false, detail: false });
+  fs.writeFileSync(path.join(dir, 'findings.md'),
+    '# 调研记录\n\n## 摘要索引\n\n- [ ] [[finding-2000-01-01-x|过期项]] — 结论 [date:: 2000-01-01] [impact:: P1]\n\n<!-- ARCHIVE -->\n', 'utf8');
+  const flag = path.join(dir, '.pace', `findings-age-${today()}`);
+  runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
+  assert.ok(fs.existsSync(flag), 'artifact 写 W12 flag');
 });
 
 test('3. compact 恢复显示 activeChanges', () => {

@@ -12,6 +12,14 @@
 //   - W11：createTemplates（both 无 eventType 守卫，rootChoicePending else-if）
 //   - W12：findings-age flag（both，paceSignal && 当日首次）
 //
+// group 分流（CHG-20260608-11/T-001）：W12（findings-age flag 写）随 findings 过期提醒三元组
+//   （①W12 flag 写 ②collectAgedFindings 读 ③renderAgedFindings 渲染）整体归 artifact group，
+//   移出 core 的 applyRuntimeEffects、改由 applyArtifactGroupEffects 执行——三者必须同 group，
+//   否则 core 写 flag、artifact 随后读到「已存在」→ 判「今日已提醒」→ 永不注入（时序割裂）。
+//   W10/W11 在两个 group 都跑（applyArtifactGroupEffects 幂等再跑做自保：若 artifact hook 先于 core，
+//   artifact 读文件前 task.md 模板已由自己建好；ensureProjectInfra/createTemplates 本身幂等，task.md
+//   已存在则跳过，重复调用安全）。applyRuntimeEffects 现含 W1–W11（W12 已迁出）。
+//
 // PRINT_ONLY 不应到达本模块：编排层只在 !PRINT_ONLY 时调用 applyRuntimeEffects。
 //   为防御散落写盘回归，本模块仍不读 PRINT_ONLY——靠单一调用点短路。
 'use strict';
@@ -20,7 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * 执行 SessionStart 的全部运行态写盘副作用（W1–W12）。仅在非 PRINT_ONLY 时由编排层调用。
+ * 执行 SessionStart core group 的运行态写盘副作用（W1–W11）。仅在非 PRINT_ONLY 时由编排层调用。
+ *   W12（findings-age flag）已随 findings 过期提醒三元组迁出至 applyArtifactGroupEffects（artifact group）。
  *
  * @param {string} cwd - 项目工作目录。
  * @param {string} eventType - SessionStart 事件类型。
@@ -40,7 +49,7 @@ const path = require('path');
 function applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artDir, deps) {
   const { paceUtils, log, PACE_RUNTIME, COUNTER_FILE, v5MigrationInfo, artifactRootChoice } = deps;
   const { SESSION_SCOPED_FLAGS, SESSION_SCOPED_FLAG_PREFIXES, todayISO, ensureProjectInfra,
-    createTemplates, readActive, getProjectRuntimeDir } = paceUtils;
+    createTemplates } = paceUtils; // readActive/getProjectRuntimeDir 随 W12 迁出，已移至 applyArtifactGroupEffects
 
   // === W1–W6：startup 重置块（重构前 147-171）===
   if (paceSignal && !rootChoicePending && eventType !== 'compact') {
@@ -109,8 +118,55 @@ function applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artD
       }));
     }
   }
+}
+
+/**
+ * 执行 SessionStart artifact group 的运行态写盘副作用（W10 + W11 + W12）。仅在非 PRINT_ONLY 时由编排层调用。
+ *   W10/W11 与 core 的 applyRuntimeEffects 重复执行（幂等自保）：保证 artifact hook 即便先于 core 执行，
+ *   读 artifact 文件前 task.md/基础设施已就绪。W12（findings-age flag）随 findings 过期提醒三元组归此 group，
+ *   与 collectAgedFindings 读 / renderAgedFindings 渲染同 group，杜绝跨 group 写读时序割裂致永不注入。
+ *
+ * @param {string} cwd - 项目工作目录。
+ * @param {string|false} paceSignal - PACE 检测结果。
+ * @param {string} artDir - artifact 根目录。
+ * @param {object} deps - 依赖与编排层已算好的派生值：
+ *   {
+ *     paceUtils,                  // pace-utils 模块
+ *     log,                        // 日志函数
+ *     rootChoicePending,          // 首次 artifact-root 选择待定态（W10/W11 守卫）
+ *     v5MigrationInfo,            // v5 迁移信息（W11 守卫）
+ *     artifactRootChoice, proj,   // CREATE_TEMPLATES 日志字段
+ *   }
+ */
+function applyArtifactGroupEffects(cwd, paceSignal, artDir, deps) {
+  const { paceUtils, log, rootChoicePending, v5MigrationInfo, artifactRootChoice } = deps;
+  const { todayISO, ensureProjectInfra, createTemplates, readActive, getProjectRuntimeDir } = paceUtils;
+
+  // === W10：ensureProjectInfra（与 core 重复，幂等）===
+  if (paceSignal && !rootChoicePending) {
+    try { ensureProjectInfra(cwd); } catch (e) {}
+  }
+
+  // === W11：createTemplates（与 core 重复，幂等；task.md 已存在则不重建）===
+  //   守卫与 core 的 applyRuntimeEffects 一字不差：rootChoicePending/v5MigrationInfo/task.md 存在性。
+  if (!(rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md')))
+      && paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected
+      && !fs.existsSync(path.join(artDir, 'task.md'))) {
+    const created = createTemplates(cwd);
+    if (created.length > 0) {
+      log(paceUtils.logEntry('SessionStart', 'CREATE_TEMPLATES', {
+        cwd,
+        signal: paceSignal,
+        artifact_dir: paceUtils.displayDir(artDir),
+        choice: artifactRootChoice,
+        files: created.join(', '),
+      }));
+    }
+  }
 
   // === W12：findings-age flag（重构前 784，both，当日首次）===
+  //   随 findings 过期提醒三元组归 artifact group：写 flag 必须与 collectAgedFindings 读、
+  //   renderAgedFindings 渲染同 group，否则 core 写 flag → artifact 读到已存在 → 永不注入。
   if (paceSignal) {
     try {
       const findingsActive = readActive(cwd, 'findings.md');
@@ -143,4 +199,4 @@ function readCompactSnapshot(runtimeDir) {
   }
 }
 
-module.exports = { applyRuntimeEffects, readCompactSnapshot };
+module.exports = { applyRuntimeEffects, readCompactSnapshot, applyArtifactGroupEffects };

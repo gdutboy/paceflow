@@ -23,7 +23,7 @@ const { PACE_VERSION, isPaceProject, getArtifactDir, getProjectName, artifactRoo
 const { collectState } = require('./session-start/collect-state');
 const { buildLayers, buildCompactSnapshotText } = require('./session-start/layers');
 const { assembleWithBudget } = require('./session-start/budget');
-const { applyRuntimeEffects, readCompactSnapshot } = require('./session-start/runtime-effects');
+const { applyRuntimeEffects, readCompactSnapshot, applyArtifactGroupEffects } = require('./session-start/runtime-effects');
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -34,8 +34,10 @@ const PACE_RUNTIME = paceUtils.getProjectRuntimeDir(cwd);
 const COUNTER_FILE = path.join(PACE_RUNTIME, 'stop-block-count');
 const PRINT_ONLY = !!process.env.PACE_PRINT_ONLY;
 
-// --group 路由：core（默认）运行副作用 + 渲染 core 层（项目骨架/L0/git/相关讨论/agedFindings 过期提醒）；
-// artifact 仅渲染 artifact 层（文件块 + 格式警告）。分组渲染由 M2（buildLayers/collectState 按 group）实现。
+// --group 路由：core（默认）运行副作用 + 渲染 core 层（项目骨架/L0/git/相关讨论）；
+// artifact 渲染 artifact 层（文件块 + 格式警告 + findings 过期提醒）并跑 artifact group 副作用（W10/W11 幂等自保 + W12 写 flag）。
+// findings 过期提醒三元组（W12 flag 写 + collectAgedFindings 读 + renderAgedFindings 渲染）整体归 artifact（CHG-11/T-001）。
+// 分组渲染由 M2（buildLayers/collectState 按 group）实现。
 // 向后兼容：无 --group 默认 core；但 hooks.json 注册双 hook（M4/T-008）前单独跑时仅注入 core 骨架，
 // artifact 文件块/格式警告不注入——故整个多 hook 重构须作为一个发布单元，T-008 前不发布中间态。
 const GROUP_CORE = 'core';
@@ -173,13 +175,16 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
 // findings-age flag 存在性快照（必须在 effects 的 W12 写 flag 之前取）：
 //   重构前注入判定与 W12 写 flag 在同一 if (!fs.existsSync(ageFlag)) 块内、用写之前的状态；
 //   解耦后 effects 先于 collectState，故在此先快照，传给 collectState 判定注入。
+//   CHG-11/T-001：findings 过期三元组归 artifact group——仅 artifact 需要此快照（collectAgedFindings 读已移 artifact），
+//   且必须在 applyArtifactGroupEffects 的 W12 写 flag 之前取，否则读到自己刚写的 flag → 判「今日已提醒」→ 不注入。
 let ageFlagExistedBefore = false;
-if (paceSignal) {
+if (GROUP === GROUP_ARTIFACT && paceSignal) {
   try { ageFlagExistedBefore = fs.existsSync(path.join(PACE_RUNTIME, `findings-age-${paceUtils.todayISO()}`)); } catch(e) {}
 }
 
-// === 运行态副作用：12 写盘点集中，PRINT_ONLY 一处短路（替代散落守卫）===
-//   副作用只在 core group 跑：W1–W11 写盘只应执行一次；artifact group 无副作用（幂等自保 T-006 实现）。
+// === 运行态副作用：core group 写盘点集中（W1–W11），PRINT_ONLY 一处短路（替代散落守卫）===
+//   core group 跑 W1–W11（startup 重置 / compact 快照消费 / 基础设施 / 模板）；W12 已随 findings 过期
+//   三元组迁出至 artifact 的 applyArtifactGroupEffects（CHG-11/T-001）。
 //   注意：effects 内 W10/W11 会创建 .gitignore / task.md 模板，须在 collectState 读文件前执行
 //   （与重构前 276/282 写盘先于 416 读取循环的顺序一致）。
 if (GROUP === GROUP_CORE && !PRINT_ONLY) {
@@ -187,6 +192,16 @@ if (GROUP === GROUP_CORE && !PRINT_ONLY) {
     paceUtils, log, PACE_RUNTIME, COUNTER_FILE,
     v5MigrationInfo, artifactRootChoice, proj, compactSnapshot,
     group: GROUP,
+  });
+}
+
+// === artifact group 副作用：W10/W11 幂等自保 + W12 写 findings-age flag（CHG-11/T-001）===
+//   W10/W11 与 core 重复执行（幂等）：保证 artifact hook 即便先于 core 跑，下方 collectState 读 artifact
+//   文件前 task.md 模板/基础设施已就绪。W12 写 flag 必须晚于上方 ageFlagExistedBefore 快照、早于
+//   collectState（collectAgedFindings 据 ageFlagExistedBefore 判注入），故此调用置于两者之间。
+if (GROUP === GROUP_ARTIFACT && !PRINT_ONLY) {
+  applyArtifactGroupEffects(cwd, paceSignal, artDir, {
+    paceUtils, log, rootChoicePending, v5MigrationInfo, artifactRootChoice, proj,
   });
 }
 

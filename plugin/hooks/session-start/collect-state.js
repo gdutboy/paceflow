@@ -106,11 +106,11 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
 
   // --- findings 过期判定（重构前 757-787 读取/判定部分，写 flag 留 effects）---
   //   ageFlagExistedBefore 由编排层在 effects（W12 写 flag）之前快照传入。
-  //   R 审计发现 B 修正：agedFindings 留 core group——去重依赖 W12 flag（findings-age），
-  //   而 W12 flag 当前写在 core 的 applyRuntimeEffects。读取(collectAgedFindings)+渲染(renderAgedFindings)
-  //   +flag 写须同 group，否则跨 group 时序割裂致不注入（发现 B2）。CHG-11/T-006 整体移 artifact。
-  //   artifact group：给空默认值，不做 findings 过期判定。
-  const agedFindings = isCore
+  //   CHG-11/T-001：findings 过期提醒三元组（①W12 flag 写 ②collectAgedFindings 读 ③renderAgedFindings 渲染）
+  //   整体归 artifact group。三者同 group 时序自洽——artifact hook 先取 ageFlagExistedBefore 快照、判定注入、
+  //   再由 applyArtifactGroupEffects 写 W12 flag，本次必注入、当日后续去重。不再「留 core」（杜绝原发现 B2 的
+  //   跨 group 写读割裂：core 写 flag → artifact 读到已存在 → 永不注入）。core group 给空默认值，不做 findings 过期判定。
+  const agedFindings = isArtifact
     ? collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore)
     : { shouldInject: false, aged: [] };
 

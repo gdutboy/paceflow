@@ -167,6 +167,14 @@ function buildLayers(state, eventType, paceUtils, group) {
     // 格式警告是重要提醒（不该被截），CHG-09 已留 l1head（head 永不截），本 CHG 不动。
     const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
     if (formatWarn) l1head.push(formatWarn);
+
+    // === 14. Findings 过期提醒（重构前 757-787）===
+    // CHG-11/T-001：findings 过期提醒三元组（W12 flag 写 + collectAgedFindings 读 + renderAgedFindings 渲染）
+    // 整体归 artifact group。三者同 group 后时序自洽——artifact hook 先快照 flag 存在性、collectAgedFindings 据此判注入、
+    // applyArtifactGroupEffects 再写 W12 flag，本次注入、当日去重。杜绝原发现 B2 的跨 group 写读割裂（core 写 flag →
+    // artifact 读到已存在 → 永不注入）。agedText 仍 push l3（可截层；过期提醒非关键阻断信息）。
+    const agedText = renderAgedFindings(state);
+    if (agedText) l3.push(agedText);
   }
   // found（含 post-截断长度）回挂 state，供编排层 INJECT 日志的 files 字段复刻重构前 found.join。
   state._found = filesRender.found;
@@ -198,14 +206,6 @@ function buildLayers(state, eventType, paceUtils, group) {
     // === 13. 相关讨论（重构前 801-813）===
     const relatedText = renderRelatedNotes(state, ev);
     if (relatedText) l3.push(relatedText);
-
-    // === 14. Findings 过期提醒（重构前 757-787）===
-    // R 审计发现 B 修正：agedFindings 留 core group。其渲染依赖 W12 flag（findings-age）去重，
-    // 而 W12 flag 当前写在 core 的 applyRuntimeEffects——渲染 group 必须与 flag 写 group 一致，
-    // 否则 core 写 flag → artifact 读到已存在 → 不注入（发现 B2 时序割裂）。CHG-11/T-006 会把
-    // agedFindings 渲染+读取+W12 flag 整体移 artifact，届时三者一致；本 CHG 阶段三者全留 core。
-    const agedText = renderAgedFindings(state);
-    if (agedText) l3.push(agedText);
   }
 
   return { l1head, l0, l1, l2, l3 };
