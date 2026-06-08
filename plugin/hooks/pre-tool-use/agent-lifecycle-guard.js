@@ -293,7 +293,13 @@ function reservationMatchesExplicit(reservation, explicit) {
   if (!reservation) return false;
   if (explicit.id && reservation.id !== explicit.id) return false;
   if (explicit.fileRel && reservation.fileRel !== explicit.fileRel) return false;
-  if (explicit.filePrefix && reservation.filePrefix !== explicit.filePrefix) return false;
+  // filePrefix 前缀匹配（startsWith）作防御容错。设计正道：caller 原样保留 reserve 输出的
+  //   `<slug>.md` 占位（line 242 去掉 → 前缀），slug 由 artifact-writer 按 title 生成（record-correction.md Step 4）。
+  // 但 caller 若误把 <slug> 替换成具体值（如工作流指引未注入时凭直觉填），explicit 成完整文件名——
+  //   startsWith 让它仍匹配预留前缀（agent 照样用自己生成的 slug 写文件，caller 的值被忽略，无害），
+  //   避免把这种误填打成 deny（HOTFIX-20260609-01：=== 会因「完整名 ≠ 前缀」永不匹配）。
+  // create-chg 用 fileRel（完整名）走上面 === 分支，不受影响。
+  if (explicit.filePrefix && (!reservation.filePrefix || !String(explicit.filePrefix).startsWith(reservation.filePrefix))) return false;
   return true;
 }
 
@@ -332,9 +338,9 @@ function reservationRequiredReason(operation, artDir, reservation, cwd = process
 
 function reservationExplicitMissingReason(operation, explicit) {
   return [
-    `artifact-writer prompt 中的预留字段无效或已过期，当前没有匹配的 hook reservation：${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}。`,
+    `artifact-writer prompt 的预留字段未匹配到 hook reservation：${explicit.id || explicit.fileRel || explicit.filePrefix || 'reserved fields'}。可能原因：(1) reservation 已过期（超 TTL）或已被消费；(2) reserved-id / reserved-file(-prefix) 与预留值不符。`,
     FORMAT_SNIPPETS.skillRef,
-    `请先在主 session 运行 Bash: node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation ${operation}，然后把新的 reserved-id / reserved-file 原样复制进 prompt 后重派。`,
+    `排查：先核对 reserved-id 与最近一次 reserve 输出是否完全一致；reserved-file-prefix 应**原样保留** reserve 输出（含末尾 \`<slug>.md\` 占位——slug 由 artifact-writer 按 title 生成，caller 不要替换它）。只要前缀部分（到 \`<slug>\` 前）与预留一致即匹配。确认字段无误仍失败，再重新 reserve：Bash node "${RESERVE_ARTIFACT_ID_SCRIPT}" --operation ${operation}。`,
     '不要手写或复用旧 session 的 reserved-id。'
   ].join('\n');
 }

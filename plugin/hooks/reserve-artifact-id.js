@@ -92,7 +92,10 @@ function formatReservationBlock(cwd, artDir, operation, reservation, reused) {
   if (operation === 'create-chg') lines.push(`execution-context: ${context.text}`);
   if (reservation.id) lines.push(`reserved-id: ${reservation.id}`);
   if (reservation.fileRel) lines.push(`reserved-file: ${reservation.fileRel}`);
-  if (reservation.filePrefix) lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
+  if (reservation.filePrefix) {
+    lines.push(`reserved-file-prefix: ${reservation.filePrefix}<slug>.md`);
+    lines.push('（reserved-file-prefix 原样保留末尾 `<slug>.md` 占位——slug 由 artifact-writer 按 title 生成，caller 不要替换它）');
+  }
   lines.push('把以上字段原样放到 paceflow:artifact-writer prompt 顶部；不要让 agent 扫描索引分配编号。');
   if (reused) lines.push('已复用当前 session 尚未消费的 reservation；如确实要再创建一个新编号，请重新运行本 helper 并加 --new。');
   return lines.join('\n');

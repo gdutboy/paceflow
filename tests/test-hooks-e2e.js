@@ -2824,6 +2824,20 @@ test('RES-batch9. reserve --count >1 仅限 create-chg（record-correction 批�
   assert.ok(!r.stdout.includes('reserved-id:'));
 });
 
+test('RES-correction-slug. record-correction caller 替换 <slug> 后 reserved-file-prefix 仍匹配预留前缀（HOTFIX-20260609-01）', () => {
+  const { explicitReservationFromPrompt, reservationMatchesExplicit } = require(path.join(__dirname, '..', 'plugin', 'hooks', 'pre-tool-use', 'agent-lifecycle-guard'));
+  const reservation = { filePrefix: 'changes/corrections/correction-2026-06-08-03-' };
+  // caller 按 reserve 提示把 <slug> 替换成真实 slug（合理行为——prompt 要给 agent 真实文件名）
+  const promptReplaced = 'operation: record-correction\nreserved-file-prefix: changes/corrections/correction-2026-06-08-03-subagent-judgment-opus.md\n';
+  assert.ok(reservationMatchesExplicit(reservation, explicitReservationFromPrompt(promptReplaced)), 'caller 替换 slug 后完整名应匹配预留前缀');
+  // caller 原样保留 <slug>.md（parseExplicit 去掉后 = 前缀）也应匹配
+  const promptLiteral = 'operation: record-correction\nreserved-file-prefix: changes/corrections/correction-2026-06-08-03-<slug>.md\n';
+  assert.ok(reservationMatchesExplicit(reservation, explicitReservationFromPrompt(promptLiteral)), '原样 <slug>.md 也应匹配');
+  // 验反向（widen-matcher-verify-reverse）：不同 correction 前缀不互相匹配，no over-match
+  const promptOther = 'operation: record-correction\nreserved-file-prefix: changes/corrections/correction-2026-06-08-04-other-fix.md\n';
+  assert.ok(!reservationMatchesExplicit(reservation, explicitReservationFromPrompt(promptOther)), '不同 correction（-04-）不应匹配 -03- 前缀');
+});
+
 // batch create CHG（CHG-B）：agent-lifecycle-guard 确定性校验 + pre-tool-use reserved-id 集合匹配
 function batchCreatePrompt(dir, changeSet, blocks, { total } = {}) {
   const header = [
@@ -3293,7 +3307,7 @@ test('9hc-mismatch. create-chg 显式 reserved-id 与 hook reservation 不匹配
   });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('"deny"'));
-  assert.ok(r.stdout.includes('没有匹配的 hook reservation'));
+  assert.ok(r.stdout.includes('未匹配到 hook reservation'));
   assert.ok(r.stdout.includes('不要手写或复用旧 session 的 reserved-id'));
 });
 

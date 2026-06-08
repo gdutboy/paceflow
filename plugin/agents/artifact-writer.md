@@ -341,7 +341,7 @@ body: <完整 Markdown 正文>
 artifact_dir: <hook 解析出的 artifact 目录>
 operation: record-correction
 reserved-id: <reserve helper 输出>
-reserved-file-prefix: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出（原样含 <slug>.md 占位，不替换 slug——slug 由 artifact-writer 按 title 生成）>
 trigger-quote: <用户纠正原话>
 wrong-behavior: <错误行为，至少 20 字符>
 correct-behavior: <正确行为，至少 20 字符>
