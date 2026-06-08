@@ -110,7 +110,7 @@ test('SL-3. 工作流入口注入 pace-workflow skill 引导', () => {
 test('SL-4. assembleWithBudget 装配后含活跃 CHG 与 pace-workflow', () => {
   const state = makeActiveState();
   const layers = buildLayers(state, 'startup', paceUtils);
-  const { text } = assembleWithBudget(layers, { limitBytes: 46000 });
+  const { text } = assembleWithBudget(layers, { limitChars: 46000 });
   assert.ok(text.includes('活跃 CHG'), '装配输出应含活跃 CHG');
   assert.ok(text.includes('pace-workflow'), '装配输出应含 pace-workflow skill 入口');
 });
@@ -150,7 +150,7 @@ test('SL-7. buildCompactSnapshotText 渲染快照活跃 CHG 与格式速查', ()
 
 // --- 8. CHG-B：assembleWithBudget L3 优先截断——head（l1head/L0/L1/L2）永不截 ---
 test('SL-8. L3 超预算从尾部按条截断 + footer，head 永不截', () => {
-  const big = 'x'.repeat(200000); // 撑爆预算的超大 L3 条目
+  const big = 'x'.repeat(20000); // 撑爆 9500 chars 预算的超大 L3 条目
   const layers = {
     l1head: ['=== 项目上下文 ===\nHEAD关键\n'],
     l0: ['=== 活跃 CHG ===\nL0关键\n'],
@@ -158,7 +158,7 @@ test('SL-8. L3 超预算从尾部按条截断 + footer，head 永不截', () => 
     l2: ['=== 工作流入口 ===\nL2关键\n'],
     l3: ['=== findings ===\nF1保留\n', big],
   };
-  const { text, truncated } = assembleWithBudget(layers, { limitBytes: 128000 });
+  const { text, truncated } = assembleWithBudget(layers, { limitChars: 9500 });
   assert.ok(text.includes('HEAD关键') && text.includes('L0关键') && text.includes('L1关键') && text.includes('L2关键'),
     'l1head/L0/L1/L2 永不截');
   assert.ok(text.includes('F1保留'), 'L3 预算内的前置条目保留');
@@ -173,7 +173,7 @@ test('SL-9. L3 在预算内时全保留、truncated=false、无 footer', () => {
     l1head: ['HEAD\n'], l0: ['L0\n'], l1: ['L1\n'], l2: ['L2\n'],
     l3: ['F1\n', 'F2\n'],
   };
-  const { text, truncated } = assembleWithBudget(layers, { limitBytes: 128000 });
+  const { text, truncated } = assembleWithBudget(layers, { limitChars: 9500 });
   assert.ok(text.includes('F1') && text.includes('F2'), 'L3 全保留');
   assert.strictEqual(truncated, false, 'truncated=false');
   assert.ok(!text.includes('已省略'), '无 footer');
