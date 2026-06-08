@@ -4,7 +4,7 @@
 
 **Goal:** 把 SessionStart 单 hook 注入（13433 chars，超 Claude Code per-hook 10K cap 被 persist）拆成 2 个 hook（core + artifact）各 <10K chars，各自独立注入、零 persist、零内容损失。
 
-**Architecture:** 复用 CHG-A 三段式（collectState/buildLayers/assembleWithBudget），加一个 `group` 维度——`session-start.js --group core|artifact` 路由：core 装有界骨架（工作流入口/L0/项目上下文/git/相关讨论），artifact 装增长块（findings/corrections/walkthrough/spec，带截断）。副作用 W1-W11 归 core、W12 归 artifact、artifact 幂等自保 W10/W11。
+**Architecture:** 复用 CHG-A 三段式（collectState/buildLayers/assembleWithBudget），加一个 `group` 维度——`session-start.js --group core|artifact` 路由：core 装有界骨架（工作流入口/L0/项目上下文/git/相关讨论），artifact 装增长块（findings/corrections/walkthrough/spec，带截断）。副作用 W1-W11 归 core、artifact 幂等自保 W10/W11；W12+agedFindings 耦合三元组当前留 core（CHG-09 R 审计修正），M4 整体移 artifact（design §3.4）。
 
 **Tech Stack:** Node.js CommonJS（plugin/hooks），自定义 test runner（tests/test-utils.js），node:assert。验证：`node tests/test-session-layers.js`、`node tests/test-hooks-e2e.js`、`node tests/test-pace-utils.js`。
 
@@ -287,8 +287,8 @@ const activeChangeSummaries = (paceSignal === 'artifact')
 const git = isCore ? collectGit(cwd) : null;
 // relatedNotes：仅 isCore
 const relatedNotes = isCore ? collectRelatedNotes(cwd, getProjectName, scanRelatedNotes) : [];
-// agedFindings：仅 isArtifact（W12 + findings 过期注入耦合，归 artifact）
-const agedFindings = isArtifact ? collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore) : { shouldInject: false, aged: [] };
+// agedFindings：仅 isCore（CHG-09 R 审计修正——与 W12 flag 同 group；原「仅 isArtifact」会致单 hook 丢失过期提醒，M4 与 W12 三元组一起移 artifact）
+const agedFindings = isCore ? collectAgedFindings(cwd, paceSignal, paceUtils, extra.ageFlagExistedBefore) : { shouldInject: false, aged: [] };
 ```
 （L0 排序逻辑在 buildLayers，工作树已有，归 core 自然生效——无需改。）
 
@@ -358,15 +358,19 @@ test('SL-15. findings 仅 active [ ] 注入，[-] won-t-fix 排除', () => {
 Run: `node tests/test-session-layers.js 2>&1 | grep -E "SL-14|SL-15|FAIL"`
 Expected: SL-14 FAIL（无类内截断，满载超 9500）；SL-15 取决于现有 findings render 是否已滤 `[-]`——若已滤则 PASS（现有逻辑跳过 `[x]/[-]`），断言现状。
 
-- [ ] **Step 3: 加类内截断**
+- [ ] **Step 3a: 把 artifact 文件块从 l1head 移到 l3（design §3.6 层次约束，关键）**
 
-`layers.js` 渲染 artifact 文件块时（findings/corrections/walkthrough），加截断（design §3.6）：
-- **corrections**：解析活跃区 `- [[correction-...]]` 行，取最近 6 条（按 date 降序），超出追加 `\n（另有 ${M} 条更早纠正记录，避免重犯请 Read corrections.md）\n`。
-- **findings**：现有逻辑已只渲染活跃区 `[ ]`（跳过 `[x]/[-]`，SL-15 据此 PASS）。加 impact 优先——P0/P1 全保留 + P2/P3 最近 5，超出 `\n（另有 ${M} 条 P2/P3 finding，详见 findings.md）\n`。
-- **walkthrough**：表格只保留最近 3 行 + `\n（另有 ${N} 条完成历史，详见 walkthrough.md）\n`（现有 walkthrough 截断逻辑保留 10 条 → 改 3）。
-- **spec**：保留「项目概述 + 技术栈」段，砍目录/依赖（现有 spec 截断逻辑已部分做，确认 <~400 chars）。
+CHG-09 R 审计发现 1：artifact 文件块在 l1head（head 永不截），全局 `assembleWithBudget(9500)` 兜底对它**完全失效**。`buildLayers` 的 artifact 块把文件块 push 从 `l1head` 改 **`l3`**（可截层），并按优先级排序（**corrections → findings → walkthrough → spec**），让 `packL3` 从尾部截（spec 最先被 omit）。格式警告（CHG-09 加的）仍留 l1head（重要提醒，不该被截）。
 
-每个写成 layers.js 内的小函数（`truncateCorrections(content, 6)` 等），返回截断后文本 + 长尾计数。全局 `assembleWithBudget(9500)` 兜底（Task 1 已 chars 化）。
+- [ ] **Step 3b: 加类内截断（双保险）**
+
+`layers.js` 渲染 artifact 文件块时加类内截断（design §3.6）：
+- **corrections**：取最近 6 条（按 date 降序）+ `\n（另有 ${M} 条更早纠正记录，避免重犯请 Read corrections.md）\n`。
+- **findings**：现有已只渲染 `[ ]`（SL-15）。加 impact 优先——P0/P1 全 + P2/P3 最近 5 + `\n（另有 ${M} 条 P2/P3 finding，详见 findings.md）\n`。
+- **walkthrough**：最近 3 行 + 长尾指针（现有 10 → 3）。
+- **spec**：保留「项目概述 + 技术栈」，砍目录/依赖。
+
+每个写成 layers.js 小函数（`truncateCorrections(content, 6)` 等）返回截断文本 + 长尾计数。**两层保险**：类内截断（每文件 <上限）+ 全局 `assembleWithBudget(9500)` 截 l3（Step 3a 移 l3 后才生效）。SL-14 满载 `text.length<=9500` 靠两层共同达成。
 
 - [ ] **Step 4: 跑绿 + 回归**
 
@@ -383,11 +387,13 @@ git commit -m "feat(session-start): M3 artifact 增长块类内截断（correcti
 
 ## M4 — hooks.json 注册 + W12 归 artifact + 顺序健壮 + 快照退役
 
-### Task 6: W12 移到 artifact + artifact 幂等自保 W10/W11
+### Task 6: W12+agedFindings 耦合三元组整体移 artifact + 幂等自保 W10/W11
 
 **Files:**
-- Modify: `plugin/hooks/session-start/runtime-effects.js`（W12 findings-age flag）、`plugin/hooks/session-start.js`（group 守卫）
-- Test: `tests/test-hooks-e2e.js`
+- Modify: `plugin/hooks/session-start/runtime-effects.js`（W12 flag 写移 applyArtifactGroupEffects）、`plugin/hooks/session-start/collect-state.js`（agedFindings 读 isCore→isArtifact）、`plugin/hooks/session-start/layers.js`（renderAgedFindings core 块→artifact 块）、`plugin/hooks/session-start.js`（group 守卫 + ageFlagExistedBefore 快照改 artifact）
+- Test: `tests/test-hooks-e2e.js`（MH-3/4 W12 flag + 撤销 CHG-09 的 MH-aged：改为 core 不注入→artifact 注入）
+
+> **design §3.4 耦合三元组**：W12 flag 写 + agedFindings 读（collectAgedFindings）+ agedFindings 渲染（renderAgedFindings）三者**必须一起**移 artifact。CHG-09 R 审计为避免 B2 时序割裂把三者撤回 core，本 task 整体移——只移 W12 不移 agedFindings 渲染/读取 = 割裂复发。
 
 - [ ] **Step 1: 失败测试——core 不写 W12 flag、artifact 写 W12**
 
@@ -411,15 +417,17 @@ test('MH-4. --group artifact 写 findings-age flag', () => {
 Run: `node tests/test-hooks-e2e.js 2>&1 | grep -E "MH-3|MH-4|FAIL"`
 Expected: FAIL（W12 当前在 applyRuntimeEffects/core；core 写了 flag → MH-3 FAIL；artifact 不跑 effects → MH-4 FAIL）。
 
-- [ ] **Step 3: W12 移出 applyRuntimeEffects、artifact 自跑 W12 + 幂等 W10/W11**
+- [ ] **Step 3: 三元组整体移 artifact——W12 flag 写 + agedFindings 读 + agedFindings 渲染**
 
-`runtime-effects.js`：把 W12（findings-age flag 写）从 `applyRuntimeEffects` 主体移到独立导出 `applyArtifactGroupEffects(cwd, paceSignal, artDir, { paceUtils, ... })`，内含 W12 + 幂等 W10/W11（ensureProjectInfra/createTemplates 自保）。`applyRuntimeEffects` 保留 W1-W11（core）。
+**① W12 flag 写**——`runtime-effects.js`：把 W12（findings-age flag 写）从 `applyRuntimeEffects` 移到独立导出 `applyArtifactGroupEffects(cwd, paceSignal, artDir, { paceUtils, ... })`，内含 W12 + 幂等 W10/W11（ensureProjectInfra/createTemplates 自保）。`applyRuntimeEffects` 保留 W1-W11（core）。
+**② agedFindings 读**——`collect-state.js`：`collectAgedFindings` 守卫从 `isCore` 改回 `isArtifact`（撤销 CHG-09 R 审计的回退）。
+**③ agedFindings 渲染**——`layers.js`：`renderAgedFindings`（section 14）从 core 块移回 artifact 块。
 `session-start.js`：
 ```js
 if (GROUP === GROUP_CORE && !PRINT_ONLY) applyRuntimeEffects(... group: GROUP);
 if (GROUP === GROUP_ARTIFACT && !PRINT_ONLY) applyArtifactGroupEffects(cwd, paceSignal, artDir, { paceUtils, log, PACE_RUNTIME });
 ```
-`ageFlagExistedBefore` 快照：仅 artifact group 需要（collectState Task 4 已让 agedFindings 仅 artifact）；core 不读 agedFindings，不需快照。
+`ageFlagExistedBefore` 快照移回 artifact group——三者同 group 后，artifact hook 自己写 flag 前快照、自己读 agedFindings 判定，时序自洽。**同步撤销 CHG-09 的 MH-aged 测试**：改回 artifact 注入过期提醒 + core 不注入。
 
 - [ ] **Step 4: 跑绿 + 回归（含 e2e findings-age 既有测试）**
 
