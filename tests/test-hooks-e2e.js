@@ -2708,6 +2708,24 @@ test('T-2-slug. reserve create-chg 输出 reserved-file-prefix 含 <slug> 占位
   assert.doesNotMatch(r.stdout, /reserved-file: changes\/chg-\d{8}-\d{2}\.md/, '不应再输出精确 reserved-file');
 });
 
+test('T-4-slug. 旧无 slug CHG 文件仍被 readChangeDetail 找到（兼容不退化）', () => {
+  const dir = makeTmpDir('t4-compat');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  // 旧无 slug 文件名 chg-id.md（slug 机制前创建）须被精确分支命中，不因 glob 改动退化。
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-01.md'), '---\nid: CHG-20260101-01\nstatus: completed\n---\n# 旧 CHG\n');
+  const pu = require('../plugin/hooks/pace-utils');
+  const detail = pu.readChangeDetail(dir, 'CHG-20260101-01');
+  assert.ok(detail && !detail.missing, '旧无 slug CHG 应被 readChangeDetail 找到');
+  assert.match(detail.content, /旧 CHG/);
+  // 新带 slug 文件名 chg-id-slug.md 也应被 readChangeDetail 找到（glob 分支）。
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-02-some-feature.md'), '---\nid: CHG-20260101-02\nstatus: planned\n---\n# 新带 slug CHG\n');
+  const slugDetail = pu.readChangeDetail(dir, 'CHG-20260101-02');
+  assert.ok(slugDetail && !slugDetail.missing, '新带 slug CHG 应被 readChangeDetail 找到');
+  assert.match(slugDetail.content, /新带 slug CHG/);
+});
+
 test('9hc-helper2b. reserve-artifact-id helper 拒绝 create-chg --type research', () => {
   const dir = makeV6Project('agent-reserve-helper-research-type', { withIndex: false, detail: false });
   const r = runReserveHelper({
