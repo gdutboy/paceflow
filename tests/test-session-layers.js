@@ -681,6 +681,19 @@ test('SL-39. Artifact 目录段删重复「路径:」但保留 artifact mode（E
   assert.ok(artDirSection.includes('plan 同步 helper'), 'Artifact 目录段保留 plan 同步 helper');
 });
 
+// --- 40. C2：活跃 CHG 摘要 status 字段去引号（normalizeFrontmatterStatus 归一）---
+test('SL-40. 活跃 CHG 摘要 status 渲染去引号（C2 cosmetic 归一）', () => {
+  const state = makeActiveState({ activeChangeSummaries: [{
+    id: 'CHG-20260610-01', category: 'running', status: '"in-progress"',
+    ownerDisposition: 'current', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active',
+    taskCheckbox: '/', implCheckbox: '/', pending: 1, approved: true, verified: false, reviewed: false,
+    path: '/tmp/fixture-project/changes/chg-20260610-01.md', changeSet: '', changeSetSeq: '',
+  }]});
+  const l0 = buildLayers(state, 'startup', paceUtils, 'core').l0.join('\n');
+  assert.ok(l0.includes('status=in-progress'), 'status 去引号渲染为 in-progress');
+  assert.ok(!l0.includes('status="in-progress"'), '不再渲染原始引号');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

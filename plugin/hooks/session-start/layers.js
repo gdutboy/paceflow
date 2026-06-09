@@ -180,7 +180,7 @@ function buildLayers(state, eventType, paceUtils, group) {
   if (isCore) {
     // === 8. 活跃 CHG 摘要 + change-set 进度（重构前 595-629）===
     if (state.paceSignal === 'artifact') {
-      const activeChgText = renderActiveChangeSummary(state);
+      const activeChgText = renderActiveChangeSummary(state, paceUtils);
       if (activeChgText) l0.push(activeChgText);
       const changeSetText = renderChangeSetProgress(state);
       if (changeSetText) l0.push(changeSetText);
@@ -720,14 +720,16 @@ function ownerDisplay(summary) {
 //   自带跨 CHG 累计护栏，防多个 in-progress CHG（含忘 close 的累积）线性撑破 9500/10000。
 const TASK_INJECTION_TOTAL_MAX = 3000;
 
-function renderActiveChangeSummary(state) {
+function renderActiveChangeSummary(state, paceUtils) {
   const summaries = state.activeChangeSummaries;
   if (!(summaries.length > 0)) return '';
   let out = `=== 活跃 CHG 摘要 ===\n`;
   let taskBudgetUsed = 0;            // 跨 CHG 任务本体累计 chars（P2 总量护栏）
   let taskBudgetPointerShown = false;
   for (const s of summaries) {
-    out += `- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`;
+    // C2：status 也过 normalizeFrontmatterStatus 去引号归一（与 category 同源；带引号 frontmatter 否则渲染 status="in-progress"）。
+    const statusText = paceUtils.normalizeFrontmatterStatus(s.status);
+    out += `- ${s.id} category=${s.category} status=${statusText} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`;
     // 任务清单本体展开（CHG-20260609-03 T-001）：collectState 已按相关度把任务行加工成
     //   s.tasks = { items, omitted, mode }（in-progress 完整行含 [状态]，planned 只 T-NNN 标题）。
     //   渲染层做缩进展开 + 跨 CHG 总量护栏；单 CHG 内展开上限/planned 降级已在 collectState 落定。
