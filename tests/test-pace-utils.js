@@ -1703,6 +1703,30 @@ test('scanRelatedNotes: status=archived 被过滤', () => {
   }
 });
 
+test('scanRelatedNotes: knowledge/thoughts 递归覆盖嵌套子目录（CHG-09 §E T-004）', () => {
+  const uniqueProject = 'pace-scan-nested-' + Date.now();
+  const subDir = path.join(paceUtils.VAULT_PATH, 'knowledge', `sub-${uniqueProject}`);
+  fs.mkdirSync(subDir, { recursive: true });
+  const noteFile = path.join(subDir, `_nested-${uniqueProject}.md`);
+  fs.writeFileSync(noteFile, [
+    '---',
+    'status: concluded',
+    `projects: [${uniqueProject}]`,
+    'summary: "嵌套子目录笔记"',
+    '---',
+    '# Nested',
+  ].join('\n'));
+
+  try {
+    const results = paceUtils.scanRelatedNotes(uniqueProject);
+    const found = results.find(r => r.title === `_nested-${uniqueProject}`);
+    assert.ok(found, '子目录 knowledge 笔记应被递归扫描（原仅顶层 readdir 会漏）');
+    assert.strictEqual(found.kind, 'knowledge', '子目录笔记 kind 仍按所在 knowledge 目录');
+  } finally {
+    try { fs.rmSync(subDir, { recursive: true, force: true }); } catch(e) {}
+  }
+});
+
 test('scanRelatedNotes: VAULT_PATH 空值 → 空数组不报错', () => {
   // W-1 防御：直接调用不可能触发（VAULT_PATH 是 const），
   // 但验证函数对完全不存在的项目名也不报错

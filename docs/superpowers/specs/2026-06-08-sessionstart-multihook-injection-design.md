@@ -70,7 +70,7 @@ core hook（有界骨架，稳 <10K）:
   + git + 相关讨论（含 wiki article，见 §3.7）
   + findings 过期提醒 + W12 flag（耦合三元组，见 §3.4——CHG-09 阶段留 core，CHG-11 整体移 artifact）
 artifact hook（增长块，截断 <10K）:
-  findings.md 文件块（仅 active 待修，见 §4）+ corrections + walkthrough 摘要 + spec 摘要
+  task.md + implementation_plan.md（CHG 索引）+ findings.md 文件块（仅 active 待修，见 §4）+ corrections + walkthrough 摘要 + spec 摘要
   + 格式合规警告（依赖 artifact 文件，见下「依赖原则」）
 ```
 

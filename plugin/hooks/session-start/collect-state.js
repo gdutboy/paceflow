@@ -29,7 +29,6 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   const {
     ARTIFACT_FILES, readFull, summarizeActiveChanges, changeOwnerStatus,
     getNativePlanPath, formatBridgeHint, scanRelatedNotes, getProjectName,
-    FORMAT_SNIPPETS,
     resolveEffectiveProjectRoot, getArtifactDir,
   } = paceUtils;
   const { proj, hookInput, rootChoicePending, artifactRootChoice, v5MigrationInfo } = extra;
@@ -167,8 +166,6 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     git,
     // 相关讨论
     relatedNotes,
-    // L2 格式速查
-    formatReference: FORMAT_SNIPPETS,
   };
 }
 

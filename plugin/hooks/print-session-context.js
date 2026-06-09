@@ -53,6 +53,7 @@ const groups = (args.group === 'core' || args.group === 'artifact') ? [args.grou
 process.stdout.write(`=== SessionStart 注入预览（${eventType}，无副作用）===\n`);
 process.stdout.write(`项目：${targetCwd}\n`);
 process.stdout.write(`（${args.compact ? 'compact 之后' : '新 session 启动'}时各 hook 注入给模型的内容；PACE_PRINT_ONLY 已隔离 .pace 写盘）\n`);
+process.stdout.write(`（注：本预览跑 repo 工作区代码，helper 路径指向 repo；实际 SessionStart hook 跑 plugin cache 版、helper 路径指向 cache——代码一致时仅路径前缀不同）\n`);
 
 let failed = false;
 for (const group of groups) {
@@ -79,9 +80,13 @@ for (const group of groups) {
   if (res.stderr && res.stderr.trim()) {
     process.stdout.write(`\n─── session-start.js --group ${group} stderr ───\n` + res.stderr);
   }
-  // 字符数核对（双 hook 各 <9500 chars 预算；超 10K 会被 Claude persist 成 2KB preview，上下文恢复残废）。
-  const chars = (res.stdout || '').length;
-  process.stdout.write(`\n[${group} hook 注入 ${chars} chars${chars >= 9500 ? ' ⚠️ 接近/超 9500 预算上限' : ''}]\n`);
+  // 字符数核对（双 hook 各 <9500 chars 预算；超 10K chars 被 Claude persist 成 2KB preview，上下文恢复残废）。
+  //   同时报 bytes：cap 单位是 chars 不是 bytes（finding claude-hook-output-10k-char-cap），但中文 UTF-8 占 3 bytes/char，
+  //   双单位并列避免按 bytes 误读预算（artifact 段常 ~7K chars / ~9K+ bytes，单看 bytes 会虚惊）。
+  const outStr = res.stdout || '';
+  const chars = outStr.length;
+  const bytes = Buffer.byteLength(outStr, 'utf8');
+  process.stdout.write(`\n[${group} hook 注入 ${chars} chars / ${bytes} bytes${chars >= 9500 ? ' ⚠️ 接近/超 9500 chars 预算上限' : ''}]\n`);
 }
 process.stdout.write(sep + '\n');
 process.exit(failed ? 1 : 0);

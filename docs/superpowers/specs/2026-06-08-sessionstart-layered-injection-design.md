@@ -47,7 +47,8 @@ session-start.js:
 |---|---|---|---|
 | **L0** | 我刚才在做 + 接下来 | 活跃 CHG 摘要（running 优先 B5）+ change-set 进度 + 进行中任务 + CHG 执行上下文 + **未桥接 plan 提醒（解除 `!hasActive` 门控、精简一行、fresh 过滤）** + **最近 10 条 walkthrough（单条完整不截）**；compact 直接实时读（**快照废弃**，见 §8 OQ-1） | **确定性永不截** |
 | **L1** | 项目是什么 | 项目上下文（CWD/root/mode）+ spec 摘要 + **git（增强 A2：脏文件 + ahead/behind）** | 永不截 |
-| **L2** | 怎么正确操作 paceflow | **工作流入口（skill 引导 + reserve helper 约束）+ 格式速查 + CHG 完成检查 + helper（集中去重 A4）** —— **A0：startup + compact 都注入** | 永不截 |
+| **L2** | 怎么正确操作 paceflow | **工作流入口（skill 引导 + reserve helper 约束）+ helper（集中去重 A4）** —— **A0：startup + compact 都注入** | 永不截 |
+<!-- 历史修正（CHG-20260609-09 §E）：本行原含「格式速查 + CHG 完成检查」，二者于 M4/CHG-20260608-11 退役 PreCompact 快照时一并从 layers.js 移除，改由 CLAUDE.md G-9（完成检查）+ artifact-management skill（格式速查）覆盖；当前 L2 实际仅注入工作流入口 + helper。本 design 为 historical；L2 运行时行为以 layers.js 源码为准，设计背景见 multihook-injection design（部分实现）。 -->
 | **L3** | 相关经验与提醒 | 未解决 findings + corrections + **相关讨论（A1 全修 + WIKI-1 wiki article 优先注入，vault-gated 降级，见 §8 OQ-3）** + bridge/native-plan/blocked/foreign 提醒 | **预算紧张先砍**（附「已省略 N，Read X」）|
 
 ## 4. 预算策略

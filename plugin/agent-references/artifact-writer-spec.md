@@ -415,12 +415,13 @@ datetime 格式强制：`YYYY-MM-DDTHH:mm:ss+08:00`（含日期 + 时间 + 时�
 | record-finding | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/record-finding.md` |
 | record-correction | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/record-correction.md` |
 | update-finding | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/update-finding.md` |
+| update-index | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/update-index.md` |
 
 **为什么独立**：
 - 单条指令规范 ~50-80 行，agent 仅 Read 当前任务所需的那条（vs 整段的 174 行）
 - prompt cache 粒度更细：指令规范变更不影响其他指令的 cache
 - 单指令测试更聚焦
-- 6 个文件平均 ~2KB，单次 Read 仅 ~600 tokens
+- 8 个文件平均 ~2KB，单次 Read 仅 ~600 tokens
 
 **何时 Read 哪个**：
 - 解析主 session 指令后 → 识别指令类型 → Read 对应 ${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/*.md

@@ -100,6 +100,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 最后任务验证审计后完成并归档 | operation=`close-chg`，target=`CHG-...`，需要 `verification-confirmed: true` + `complete-open-tasks: true` + `review-confirmed: true`（附 review-source / review-findings） |
 | 记录 finding | operation=`record-finding` |
 | 记录 correction | 先运行 reserve helper `--operation record-correction`，再派 operation=`record-correction` 并带 `reserved-file-prefix` |
+| 重排索引（findings.md/corrections.md 活跃区改日期降序新→旧） | operation=`update-index`，target=`findings.md`/`corrections.md`，action=`reorder` |
 
 `action=approve` 只完成 C 阶段，CHG 仍是 ready/deferred，不能据此写项目文件；只有 `approve-and-start` 或将任务恢复为 `[/]` 后才进入 E 阶段。`[!]` 表示 blocked/deferred：允许 Stop，但 Stop 会显示人可见提醒，恢复前不能继续写项目文件。
 

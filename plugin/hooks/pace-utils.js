@@ -846,15 +846,26 @@ function scanRelatedNotes(projectName) {
 
   // --- knowledge / thoughts 层：按所在目录拆 kind（CHG-04），projects 匹配；basename 已进 wiki 则去重 ---
   //   knowledge=已沉淀原始记录、thoughts=未成熟/未实现想法，渲染层据 kind 分两段各给名额。
+  // 递归收集 <dir>/**/*.md（与 wiki 层 walk 对称，覆盖嵌套子目录——CHG-09 §E T-004，原仅顶层 readdir）。
+  const walkMd = (root) => {
+    let out = [];
+    let entries;
+    try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch(e) { return out; }
+    for (const ent of entries) {
+      const full = path.join(root, ent.name);
+      if (ent.isDirectory()) out = out.concat(walkMd(full));
+      else if (ent.isFile() && ent.name.endsWith('.md')) out.push(full);
+    }
+    return out;
+  };
   for (const dir of ['knowledge', 'thoughts']) {
     const dirPath = path.join(VAULT_PATH, dir);
     const sink = dir === 'knowledge' ? knowledgeNotes : thoughtsNotes;
     try {
       if (!fs.existsSync(dirPath)) continue;
-      const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.md'));
-      for (const file of files) {
+      for (const filePath of walkMd(dirPath)) {
         try {
-          const content = fs.readFileSync(path.join(dirPath, file), 'utf8');
+          const content = fs.readFileSync(filePath, 'utf8');
           // I-7: 处理 BOM（UTF-8 BOM \uFEFF 可能出现在文件开头）
           const fmMatch = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---/);
           if (!fmMatch) continue;
@@ -866,7 +877,7 @@ function scanRelatedNotes(projectName) {
           if (!projects.includes(projLower)) continue;
           // basename 去重：只对 knowledge——已提炼进 wiki 的 knowledge 不重复（wiki 从 knowledge ingest）。
           //   thoughts 是未成熟想法、不进 wiki，即使巧合同名也保留（独立段价值在思考过程而非结论）。
-          const basename = file.replace(/\.md$/, '');
+          const basename = path.basename(filePath).replace(/\.md$/, '');
           if (dir === 'knowledge' && wikiBasenames.has(basename)) continue;
           // 解析 status（archived 不注入）
           const status = statusOf(fm);

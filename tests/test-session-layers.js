@@ -71,7 +71,6 @@ function makeActiveState(overrides = {}) {
     agedFindings: { shouldInject: false, aged: [] },
     git: null,
     relatedNotes: [],
-    formatReference: paceUtils.FORMAT_SNIPPETS,
     rootChoicePromptText: '',
   };
   return Object.assign(base, overrides);
