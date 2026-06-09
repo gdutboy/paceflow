@@ -2860,6 +2860,51 @@ test('v5 migration script 使用共享 artifact 常量', () => {
 });
 
 // ============================================================
+// detailPathForId (slug glob) —— CHG-slug T-1
+// ============================================================
+console.log('\n--- detailPathForId (slug glob) ---');
+
+test('detailPathForId：旧无 slug 文件 chg-id.md 命中', () => {
+  const dir = makeTmpDir('dp-old');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-01.md'), '# old');
+  assert.strictEqual(detailPathForId(dir, 'CHG-20260101-01'), path.join(dir, 'changes', 'chg-20260101-01.md'));
+});
+
+test('detailPathForId：新带 slug 文件 chg-id-slug.md 命中', () => {
+  const dir = makeTmpDir('dp-slug');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-02-some-feature.md'), '# new');
+  assert.strictEqual(detailPathForId(dir, 'CHG-20260101-02'), path.join(dir, 'changes', 'chg-20260101-02-some-feature.md'));
+});
+
+test('detailPathForId：精确优先于 glob（同时存在取精确无 slug）', () => {
+  const dir = makeTmpDir('dp-both');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-03.md'), '# exact');
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260101-03-x.md'), '# slug');
+  assert.strictEqual(detailPathForId(dir, 'CHG-20260101-03'), path.join(dir, 'changes', 'chg-20260101-03.md'));
+});
+
+test('detailPathForId：HOTFIX 带 slug 命中', () => {
+  const dir = makeTmpDir('dp-hotfix');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'hotfix-20260101-01-urgent-fix.md'), '# hf');
+  assert.strictEqual(detailPathForId(dir, 'HOTFIX-20260101-01'), path.join(dir, 'changes', 'hotfix-20260101-01-urgent-fix.md'));
+});
+
+test('detailPathForId：文件不存在回退精确路径（fail-safe）', () => {
+  const dir = makeTmpDir('dp-missing');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  assert.strictEqual(detailPathForId(dir, 'CHG-20260101-04'), path.join(dir, 'changes', 'chg-20260101-04.md'));
+});
+
+test('detailPathForId：非法 id 返回 null', () => {
+  const dir = makeTmpDir('dp-bad');
+  assert.strictEqual(detailPathForId(dir, 'not-an-id'), null);
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 t.cleanup();
