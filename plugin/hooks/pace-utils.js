@@ -775,7 +775,7 @@ function scanRelatedNotes(projectName) {
   if (!VAULT_PATH) return [];
   const projLower = projectName.toLowerCase();
   const wikiArticles = [];
-  const wikiBasenames = new Set(); // 记录 wiki article 的 basename（去 .md），供 raw 层去重
+  const wikiBasenames = new Set(); // 记录 wiki article 的 basename（去 .md），供 knowledge 层去重（thoughts 不去重）
   const knowledgeNotes = []; // kind:'knowledge'——已沉淀但未提炼进 wiki 的原始记录
   const thoughtsNotes = []; // kind:'thoughts'——未成熟/未实现想法
 

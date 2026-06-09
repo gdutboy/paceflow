@@ -936,9 +936,9 @@ function renderGit(state) {
   return `=== Git 状态 ===\n分支: ${state.git.branch}\n最近提交: ${state.git.lastCommit}\n\n`;
 }
 
-/** 相关讨论 section（重构前 801-813），startup 5 条 / compact 3 条。
- *  scanRelatedNotes 返回 wiki article（kind='wiki'）在前 + raw（kind='raw'）在后，
- *  截断后自然优先保留高信噪比提炼。wiki 用 [wiki] 前缀，raw 保留 [status] 前缀。 */
+/** 相关讨论 section（CHG-04 重构为两段）：段1「相关知识 (wiki + knowledge)」wiki 提炼 + knowledge raw
+ *  各保证名额（wikiMax/knowledgeMax 分别 slice，wiki 不挤光 knowledge）；段2「未成熟想法 (thoughts)」独立段。
+ *  scanRelatedNotes 返回三类 kind（wiki/knowledge/thoughts）扁平数组，本函数按 kind 分组 + 各自名额。startup 名额比 compact 大。 */
 function renderRelatedNotes(state, eventType) {
   const notes = state.relatedNotes;
   if (!(notes && notes.length > 0)) return '';
