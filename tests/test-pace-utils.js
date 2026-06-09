@@ -1710,6 +1710,59 @@ test('scanRelatedNotes: VAULT_PATH 空值 → 空数组不报错', () => {
   assert.ok(Array.isArray(results), '应返回数组');
 });
 
+// ------------------------------------------------------------
+// M5: wiki article 注入（CHG-20260608-12 T-001）
+// 在真实 VAULT_PATH 建唯一命名临时文件，用完 unlink（同既有策略）。
+// ------------------------------------------------------------
+
+test('WIKI-1. 有 wiki/ 时 article 优先注入 + 同名 raw 被 basename 去重', () => {
+  const uniq = 'pace-wiki-test-' + Date.now();
+  const artDir = path.join(paceUtils.VAULT_PATH, 'wiki', 'ai-workflow');
+  fs.mkdirSync(artDir, { recursive: true });
+  const articleFile = path.join(artDir, `_test-${uniq}.md`);
+  fs.writeFileSync(articleFile, ['---','type: wiki-article','status: confirmed',
+    'tags:','  - test-tag','summary: "wiki 提炼摘要"',
+    'sources:',`  - "${uniq} CHG-X 描述, 2026-06-08"`,'---','# Article'].join('\n'));
+  const kDir = path.join(paceUtils.VAULT_PATH, 'knowledge');
+  fs.mkdirSync(kDir, { recursive: true });
+  const rawSame = path.join(kDir, `_test-${uniq}.md`); // 同名 → 应被去重
+  fs.writeFileSync(rawSame, ['---','status: concluded',`projects: [${uniq}]`,'summary: "raw 原始"','---','# Raw'].join('\n'));
+  try {
+    const r = paceUtils.scanRelatedNotes(uniq);
+    const art = r.find(x => x.title === `_test-${uniq}` && x.kind === 'wiki');
+    assert.ok(art, 'article 应匹配（sources 前缀）');
+    assert.strictEqual(art.summary, 'wiki 提炼摘要');
+    assert.strictEqual(r.filter(x => x.title === `_test-${uniq}`).length, 1, '同名 raw 被去重，只剩 article');
+    assert.strictEqual(r[0].kind, 'wiki', 'article 优先排前');
+  } finally { fs.unlinkSync(articleFile); fs.unlinkSync(rawSame); }
+});
+
+test('WIKI-1b. 仅 tags 含项目名（无 sources 前缀）的 article 也匹配（并集）', () => {
+  const uniq = 'pace-wiki-tag-' + Date.now();
+  const artDir = path.join(paceUtils.VAULT_PATH, 'wiki', 'tools');
+  fs.mkdirSync(artDir, { recursive: true });
+  const f = path.join(artDir, `_test-${uniq}.md`);
+  fs.writeFileSync(f, ['---','type: wiki-article','status: likely',
+    'tags:',`  - ${uniq}`,'summary: "仅 tags 匹配"',
+    'sources:','  - "other-project CHG-Y, 2026-06-08"','---','# A'].join('\n'));
+  try {
+    const r = paceUtils.scanRelatedNotes(uniq);
+    assert.ok(r.find(x => x.title === `_test-${uniq}` && x.kind === 'wiki'), 'tags 含项目名应匹配（并集）');
+  } finally { fs.unlinkSync(f); }
+});
+
+test('WIKI-2. 无匹配 wiki article 时只返回 raw（现状不破坏）', () => {
+  const uniq = 'pace-wiki-none-' + Date.now();
+  const kDir = path.join(paceUtils.VAULT_PATH, 'knowledge');
+  fs.mkdirSync(kDir, { recursive: true });
+  const raw = path.join(kDir, `_test-${uniq}.md`);
+  fs.writeFileSync(raw, ['---','status: concluded',`projects: [${uniq}]`,'summary: "只有 raw"','---','# Raw'].join('\n'));
+  try {
+    const r = paceUtils.scanRelatedNotes(uniq);
+    assert.ok(r.find(x => x.title === `_test-${uniq}` && x.kind === 'raw'), 'raw 正常返回');
+  } finally { fs.unlinkSync(raw); }
+});
+
 // ============================================================
 // 7. resolveProjectCwd() — 3 个测试（CLAUDE_PROJECT_DIR 环境变量）
 // ============================================================

@@ -712,14 +712,134 @@ function createTemplates(cwd) {
 }
 
 /**
- * 扫描 thoughts/ 和 knowledge/ 中与指定项目相关的笔记
- * 解析 frontmatter 的 projects/summary/status 字段，返回 L0 摘要
+ * 解析 frontmatter 中某个 YAML list 字段，返回去引号后的字符串数组。
+ * 为什么手写：wiki 的 sources/tags 是 block-style（`key:\n  - item`），
+ * 现有 inline 正则 `key: [a,b]` 无法覆盖；这里同时兼容两种写法，
+ * 避免引入 YAML 依赖（hook 需零依赖、稳健降级）。
+ * @param {string} fm - frontmatter 文本（不含 `---` 包裹）
+ * @param {string} key - 字段名（如 'sources' / 'tags'）
+ * @returns {string[]} 解析出的条目（已 trim、已去除成对引号），无字段返回 []
+ */
+function parseYamlList(fm, key) {
+  const lines = fm.split(/\r?\n/);
+  // 去除成对的首尾引号（"..." 或 '...'），其余原样返回
+  const unquote = (s) => {
+    const t = s.trim();
+    if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === "'" && t[t.length - 1] === "'"))) {
+      return t.slice(1, -1);
+    }
+    return t;
+  };
+  // 定位 `key:` 行（行首无缩进，允许 key 后直接跟 inline list 或换行进入 block）
+  const keyRe = new RegExp('^' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ':\\s*(.*)$');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(keyRe);
+    if (!m) continue;
+    const rest = m[1].trim();
+    // inline 形式：key: [a, b, c]
+    if (rest.startsWith('[')) {
+      const inner = rest.replace(/^\[/, '').replace(/\]\s*$/, '');
+      if (!inner.trim()) return [];
+      return inner.split(',').map(x => unquote(x)).filter(x => x.length > 0);
+    }
+    // block 形式：随后若干 `  - item` 行，直到遇到下一个非缩进 key 或非列表行
+    const items = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j];
+      const itemMatch = line.match(/^\s+-\s+(.*)$/);
+      if (itemMatch) { items.push(unquote(itemMatch[1])); continue; }
+      // 空行容忍（block list 中间一般无空行，但稳健起见跳过纯空白）
+      if (/^\s*$/.test(line)) continue;
+      // 遇到下一个字段（非缩进、形如 `xxx:`）或正文 → 结束
+      break;
+    }
+    return items;
+  }
+  return [];
+}
+
+/**
+ * 扫描 wiki/ + thoughts/ + knowledge/ 中与指定项目相关的笔记，返回 L0 摘要。
+ * 分两层：
+ *  1. wiki 层（高信噪比提炼）：type: wiki-article，按 sources 前缀 OR tags 含项目名匹配（并集）。
+ *  2. raw 层（thoughts/knowledge 原始记录）：按 projects 字段匹配；若 basename 已在 wiki 层出现则去重跳过。
+ * wiki article 排在前面，自然优先于 raw（renderRelatedNotes 截断时优先保留提炼）。
+ * 完全 vault-gated 且 wiki 可选：无 vault → []；无 wiki/ → 只 raw；降级干净，不绑定特定 vault 内容。
  * @param {string} projectName - 当前项目名（小写连字符格式，或由 getProjectName 生成）
- * @returns {Array<{title: string, summary: string, status: string}>}
+ * @returns {Array<{title: string, summary: string, status: string, kind: 'wiki'|'raw'}>}
  */
 function scanRelatedNotes(projectName) {
   if (!VAULT_PATH) return [];
-  const results = [];
+  const projLower = projectName.toLowerCase();
+  const wikiArticles = [];
+  const wikiBasenames = new Set(); // 记录 wiki article 的 basename（去 .md），供 raw 层去重
+  const rawNotes = [];
+
+  // --- 解析单文件 frontmatter：返回 frontmatter 文本或 null ---
+  const fmOf = (content) => {
+    const fmMatch = content.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+    return fmMatch ? fmMatch[1] : null;
+  };
+  const summaryOf = (fm) => {
+    const summaryMatch = fm.match(/^summary:\s*(?:"([^"]*)"|'([^']*)'|(.+))/m);
+    return summaryMatch ? (summaryMatch[1] || summaryMatch[2] || summaryMatch[3] || '').trim() : '';
+  };
+  const statusOf = (fm) => {
+    const statusMatch = fm.match(/^status:\s*(.+)/m);
+    return statusMatch ? statusMatch[1].trim() : 'unknown';
+  };
+
+  // --- wiki 层（先执行，建立 basename 集合，article 优先排前）---
+  const wikiRoot = path.join(VAULT_PATH, 'wiki');
+  try {
+    if (fs.existsSync(wikiRoot)) {
+      // 递归收集 wiki/**/*.md，排除根 index.md/log.md 与 sources/ 目录（非 article）
+      const walk = (dir) => {
+        let out = [];
+        let entries;
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch(e) { return out; }
+        for (const ent of entries) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) {
+            if (ent.name === 'sources') continue; // wiki/sources/** 是 wiki-source，跳过
+            out = out.concat(walk(full));
+          } else if (ent.isFile() && ent.name.endsWith('.md')) {
+            // 仅 wiki 根下的 index.md/log.md 是索引/日志（子目录同名文件仍是 article）
+            if (dir === wikiRoot && (ent.name === 'index.md' || ent.name === 'log.md')) continue;
+            out.push(full);
+          }
+        }
+        return out;
+      };
+      for (const file of walk(wikiRoot)) {
+        try {
+          const content = fs.readFileSync(file, 'utf8');
+          const fm = fmOf(content);
+          if (!fm) continue;
+          // 仅 type: wiki-article
+          const typeMatch = fm.match(/^type:\s*(.+)/m);
+          if (!typeMatch || typeMatch[1].trim() !== 'wiki-article') continue;
+          // 匹配项目：sources 前缀（`<项目名> ` 开头或全等）OR tags 含项目名（并集）
+          const sources = parseYamlList(fm, 'sources');
+          const tags = parseYamlList(fm, 'tags');
+          const sourceHit = sources.some(s => {
+            const tl = s.trim().toLowerCase();
+            return tl === projLower || tl.startsWith(projLower + ' ');
+          });
+          const tagHit = tags.some(t => t.trim().toLowerCase() === projLower);
+          if (!sourceHit && !tagHit) continue;
+          // archived 不注入
+          const status = statusOf(fm);
+          if (status === 'archived') continue;
+          const basename = path.basename(file).replace(/\.md$/, '');
+          wikiBasenames.add(basename);
+          wikiArticles.push({ title: basename, summary: summaryOf(fm), status, kind: 'wiki' });
+        } catch(e) { /* 单文件解析失败静默跳过 */ }
+      }
+    }
+  } catch(e) { /* wiki 根不可读静默跳过，降级为只 raw */ }
+
+  // --- raw 层（thoughts/knowledge，保留原有 projects 匹配；basename 已进 wiki 则去重）---
   for (const dir of ['thoughts', 'knowledge']) {
     const dirPath = path.join(VAULT_PATH, dir);
     try {
@@ -736,20 +856,21 @@ function scanRelatedNotes(projectName) {
           const projMatch = fm.match(/^projects:\s*\[([^\]]*)\]/m);
           if (!projMatch) continue;
           const projects = projMatch[1].split(',').map(p => p.trim().toLowerCase());
-          if (!projects.includes(projectName.toLowerCase())) continue;
+          if (!projects.includes(projLower)) continue;
+          // basename 去重：同名提炼已进 wiki 层，raw 不再补充
+          const basename = file.replace(/\.md$/, '');
+          if (wikiBasenames.has(basename)) continue;
           // 解析 status（archived 不注入）
-          const statusMatch = fm.match(/^status:\s*(.+)/m);
-          const status = statusMatch ? statusMatch[1].trim() : 'unknown';
+          const status = statusOf(fm);
           if (status === 'archived') continue;
-          // 解析 summary
-          const summaryMatch = fm.match(/^summary:\s*(?:"([^"]*)"|'([^']*)'|(.+))/m);
-          const summary = summaryMatch ? (summaryMatch[1] || summaryMatch[2] || summaryMatch[3] || '').trim() : '';
-          results.push({ title: file.replace(/\.md$/, ''), summary, status });
+          rawNotes.push({ title: basename, summary: summaryOf(fm), status, kind: 'raw' });
         } catch(e) { /* 单文件解析失败静默跳过 */ }
       }
     } catch(e) { /* 目录不可读静默跳过 */ }
   }
-  return results;
+
+  // wiki article 在前优先，raw 在后
+  return [...wikiArticles, ...rawNotes];
 }
 
 // I-04: 多行格式按功能分组，便于 diff 审阅

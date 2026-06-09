@@ -866,14 +866,17 @@ function renderGit(state) {
   return `=== Git 状态 ===\n分支: ${state.git.branch}\n最近提交: ${state.git.lastCommit}\n\n`;
 }
 
-/** 相关讨论 section（重构前 801-813），startup 5 条 / compact 3 条。 */
+/** 相关讨论 section（重构前 801-813），startup 5 条 / compact 3 条。
+ *  scanRelatedNotes 返回 wiki article（kind='wiki'）在前 + raw（kind='raw'）在后，
+ *  截断后自然优先保留高信噪比提炼。wiki 用 [wiki] 前缀，raw 保留 [status] 前缀。 */
 function renderRelatedNotes(state, eventType) {
   const notes = state.relatedNotes;
   if (!(notes && notes.length > 0)) return '';
   const maxNotes = eventType === 'compact' ? 3 : 5;
-  let out = `=== 相关讨论 (thoughts/ + knowledge/) ===\n`;
+  let out = `=== 相关讨论 (wiki + knowledge/thoughts) ===\n`;
   notes.slice(0, maxNotes).forEach(n => {
-    out += `[${n.status}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`;
+    const label = n.kind === 'wiki' ? 'wiki' : n.status;
+    out += `[${label}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`;
   });
   out += '\n';
   return out;
