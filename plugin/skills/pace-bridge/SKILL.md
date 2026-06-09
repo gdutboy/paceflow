@@ -90,7 +90,7 @@ node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" -
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new
 ```
 
-把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 放到 Agent prompt 顶部，再追加：
+把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file-prefix` 放到 Agent prompt 顶部，再追加：
 
 ```text
 title: <计划标题>
@@ -133,7 +133,7 @@ artifact-writer 逐块建 N 个 `changes/<id>.md`（各写 `change-set` + `chang
 - `task.md` 活跃 wikilink 索引
 - `implementation_plan.md` 活跃 wikilink 索引
 
-若没有先运行 helper，hook 会要求带 `reserved-id` / `reserved-file` 重派；把提示中的字段原样加入 Agent prompt 后重派。编号一律来自 helper 预留。
+若没有先运行 helper，hook 会要求带 `reserved-id` / `reserved-file-prefix` 重派；把提示中的字段原样加入 Agent prompt 后重派。编号一律来自 helper 预留。
 
 ### Step 4：auto-APPROVED（可选）
 

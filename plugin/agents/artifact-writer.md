@@ -92,7 +92,7 @@ Artifact 写入是确定性 CRUD，默认走最短工具路径。
 - 确认刚写入的内容时，以 Write/Edit 成功 + hook PASS + 你生成前已校验的 payload 作为报告依据即可，把全文件 Read 留给确有需要的场景（见下一条）。
 - 只在以下情况追加 Read/检查：工具报错、hook 对本次目标给出 warn/deny、目标文件当前内容未知且 Edit 需要上下文、归档移动需要定位原行、用户输入与现有文件存在冲突。
 - 报告保持简短，只列出核心验证项；13 个 frontmatter 字段、ARCHIVE 数量、文件名大小写等机械细节仅在失败时逐项展开。
-- Bash 仅用于项目检测、生成时间戳和只读定位；CHG/HOTFIX/CORRECTION 编号采用主 session 通过 `reserve-artifact-id.js` 或 hook deny 文案传入的 `reserved-id` / `reserved-file`。报告依据生成 payload + Edit 成功 + hook 反馈即可，省略 `wc` / `du` 统计与写后全文复核。
+- Bash 仅用于项目检测、生成时间戳和只读定位；CHG/HOTFIX/CORRECTION 编号采用主 session 通过 `reserve-artifact-id.js` 或 hook deny 文案传入的 `reserved-id` / `reserved-file-prefix`。报告依据生成 payload + Edit 成功 + hook 反馈即可，省略 `wc` / `du` 统计与写后全文复核。
 - **artifact 只能用 Write / Edit 修改**：`task.md`、`implementation_plan.md`、`walkthrough.md`、`findings.md`、`corrections.md`、`changes/**` 的所有改动都经由 Write / Edit 工具落盘（这是 hook 防绕过保护的唯一写入路径）；`sed -i` / `perl -pi` / 重定向 / `rm` / `mv` / `cp` / `touch` / `mkdir` / 脚本写文件等 Bash 旁路不用于修改 artifact。如 `Edit` 因 CRLF 换行匹配失败，直接重试 `Edit`；hook 会在 `Edit` / `MultiEdit` 前把 artifact 换行机械归一化为 LF。如工具报 `File has been modified since read`，立即重新 `Read` 目标 artifact，基于最新内容重试；这是快照过期，不是 hook 锁失败。
 
 ### Slug 生成规则
@@ -208,7 +208,7 @@ artifact_dir: <hook 解析出的 artifact 目录>
 operation: create-chg
 execution-context: <reserve helper 输出>
 reserved-id: <reserve helper 输出>
-reserved-file: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出（原样含 <slug>.md 占位，不替换 slug——slug 由 artifact-writer 按 title 生成）>
 title: <变更标题>
 tasks:
   - T-001: <任务标题与验收>

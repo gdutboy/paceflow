@@ -42,7 +42,7 @@ node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" -
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new
 ```
 
-再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样加入 Agent prompt。artifact writer 必须使用该预留编号；artifact 文件统一由 artifact writer 写入。
+再把 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file-prefix` 原样加入 Agent prompt。artifact writer 必须使用该预留编号；artifact 文件统一由 artifact writer 写入。
 
 reserve helper 从目标项目 cwd 与 artifact-root 配置解析 artifact_dir；自动化场景用 `--cwd` 指定项目 cwd，其余 artifact/root/project 路径由 helper 自行解析。普通子目录默认继承最近父级 Project Root，`local` 表示 Project Root 本地目录。若用户已明确选择 vault/local 但配置尚未写入，先运行 hook 提示的 `set-artifact-root` helper；若当前子目录是独立项目，先运行 `set-project-root --mode independent`。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。
 

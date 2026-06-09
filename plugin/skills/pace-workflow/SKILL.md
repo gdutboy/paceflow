@@ -120,7 +120,7 @@ node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" -
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg --type hotfix --new
 ```
 
-将 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file` 原样放在 Agent prompt 顶部，再追加：
+将 helper 输出的 `artifact_dir` / `operation` / `execution-context` / `reserved-id` / `reserved-file-prefix` 原样放在 Agent prompt 顶部，再追加：
 
 ```text
 title: <变更标题>
@@ -134,7 +134,7 @@ technical-decision: <How>
 
 A 阶段完成标志：`task.md` 与 `implementation_plan.md` 有同一个活跃 `[[chg-*]]` / `[[hotfix-*]]` 索引，且 `changes/<id>.md` 存在。
 
-若没有先运行 helper，`create-chg` 首次派遣会被 hook 阻止并返回 `reserved-id` / `reserved-file`；把这些字段原样加入 Agent prompt 后重派，编号一律来自 helper 预留。
+若没有先运行 helper，`create-chg` 首次派遣会被 hook 阻止并返回 `reserved-id` / `reserved-file-prefix`；把这些字段原样加入 Agent prompt 后重派，编号一律来自 helper 预留。
 
 ---
 

@@ -5,7 +5,7 @@
 
 ## When To Use
 
-用于创建新的 CHG/HOTFIX 详情文件和根索引行。主 session 必须先通过 reserve helper 取得 `reserved-id` / `reserved-file`，再派本操作。
+用于创建新的 CHG/HOTFIX 详情文件和根索引行。主 session 必须先通过 reserve helper 取得 `reserved-id` / `reserved-file-prefix`，再派本操作。
 
 ## Correct Prompt Example
 
@@ -14,7 +14,7 @@ artifact_dir: <hook 解析出的 artifact 目录>
 operation: create-chg
 execution-context: <reserve helper 输出>
 reserved-id: <reserve helper 输出>
-reserved-file: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出（原样含 <slug>.md 占位，不替换 slug——slug 由你按 title 生成）>
 title: <变更标题>
 tasks:
   - T-001: <任务标题与验收>
@@ -45,7 +45,7 @@ technical-decision: <How>
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
 2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，保留该 CHG 内编号。任务编号始终是 CHG 局部的，编号来源限于本次输入顺序或输入自带的 `T-NNN`。
 3. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
-4. Write `changes/chg-yyyymmdd-nn.md`（详情文件结构见下）
+4. 按 title 生成描述性 slug（英文 kebab-case），用 reserved-file-prefix 拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 后 Write（详情文件结构见下，slug 规则见下方「文件名 slug」段）
 5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部；按下方"索引插入契约"组织替换片段）
 6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区；按下方"索引插入契约"组织替换片段）
 7. 基于 payload + Edit 成功 + hook 反馈做低成本验证；验证只依据这三项信号即可，仅当 hook 报告本次目标问题时才重新 Read 详情文件或两个索引文件
@@ -56,13 +56,17 @@ technical-decision: <How>
 
 ## CHG-ID 分配（hook reservation + 二次防御）
 
-并发派多 agent 时，编号唯一来源是 hook 预留：主 session 先运行 hook/skill 提供的 `reserve-artifact-id.js --operation create-chg` 绝对路径命令，原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，再把 helper 输出的 `reserved-id` / `reserved-file` 原样写进 Agent prompt。artifact-writer 始终使用 prompt 中的 hook 预留编号（`reserved-id` 是 nn 的权威来源）。
+并发派多 agent 时，编号唯一来源是 hook 预留：主 session 先运行 hook/skill 提供的 `reserve-artifact-id.js --operation create-chg` 绝对路径命令，原子预留 `CHG-YYYYMMDD-NN` 或 `HOTFIX-YYYYMMDD-NN`，再把 helper 输出的 `reserved-id` / `reserved-file-prefix` 原样写进 Agent prompt。artifact-writer 始终使用 prompt 中的 hook 预留编号（`reserved-id` 是 nn 的权威来源）。
 
 二次防御：
 
-1. 若 prompt 已包含 helper 或 hook deny 文案给出的 `reserved-id` / `reserved-file`：直接使用该编号与文件路径。
+1. 若 prompt 已包含 helper 或 hook deny 文案给出的 `reserved-id` / `reserved-file-prefix`：直接使用该编号与文件路径。
 2. 若缺少 reserved 信息：报告 `hook-deny` 并停止，由主 session 重新预留后再派遣 artifact-writer（新建 `changes/chg-*.md` / `changes/hotfix-*.md` 始终以 reserved 信息为前提）。
 3. 写入目标文件已存在 → 报告 `file-conflict` 并停止，由主 session 重新派遣；已有详情保持原样（Write 仅用于尚不存在的预留文件）。
+
+## 文件名 slug（对称 finding/correction）
+
+`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。slug **只进文件名**——frontmatter `id` 与 task.md / implementation_plan.md 索引行 wikilink `[[chg-yyyymmdd-nn]]` 都保持**纯 ID 不带 slug**（索引行标题已含描述，wikilink 无需 slug）。旧无 slug 文件（`chg-yyyymmdd-nn.md`）仍兼容、不迁移。
 
 ## 详情文件结构
 
@@ -180,7 +184,7 @@ tasks:
 
 处理规范：
 
-1. 逐块独立执行单 CHG 创建流程：每块写 `changes/<id>.md`，frontmatter 在 `type` 之后插入 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记）；再写 task.md / implementation_plan.md 各一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
+1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（frontmatter `id` 仍纯 ID，slug 只进文件名），frontmatter 在 `type` 之后插入 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记）；再写 task.md / implementation_plan.md 各一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
 2. `change-set-total` 只是 prompt 字段，用于校验块数，**不写入 frontmatter**；写入 frontmatter 的是 `change-set` + `change-set-seq`（两者均为 §2.1 可空字段，仅 batch 成员写入）。
 3. 全部块成功才报告 `SUCCESS`；中途某块失败 → 报告已成功建了哪些 CHG、失败在第几块及原因，未消费的 reserved-id 保留，由主 session 修正后重派剩余块（已建好的不重复创建）。
 4. hook（`agent-lifecycle-guard`）已对 batch 做确定性前置校验：缺块 / 某块缺 reserved-id·title·tasks / 块数与 `change-set-total` 不符 / 缺 `change-set` / reserved-id 与 hook 预留不匹配，都会在派遣前 DENY；agent 收到的 batch prompt 已通过结构校验。

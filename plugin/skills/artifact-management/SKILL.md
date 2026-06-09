@@ -125,7 +125,7 @@ artifact_dir: <hook 解析出的 artifact 目录>
 operation: create-chg
 execution-context: <reserve helper 输出>
 reserved-id: <reserve helper 输出>
-reserved-file: <reserve helper 输出>
+reserved-file-prefix: <reserve helper 输出（原样含 <slug>.md 占位，slug 由 artifact-writer 按 title 生成）>
 title: <变更标题>
 tasks:
   - T-001: <任务标题与验收>
@@ -344,7 +344,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 编号规范
 
-- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`；批量创建一个 change-set 的 N 个 CHG 用 `--count N` 一次预留 N 个连号（仅 create-chg 支持）。`create-chg --type` 只支持 `change` / `hotfix`；finding/research 沉淀走 `record-finding`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file` 原样写入 Agent prompt。
+- `CHG-YYYYMMDD-NN` / `HOTFIX-YYYYMMDD-NN`：由 hook 原子预留。主路径是在派 `artifact-writer create-chg` 前先运行 SessionStart / PreToolUse 提示中的 reserve helper 完整命令；如果上下文没有完整命令，按上方 helper 命令来源从当前 skill 根目录拼出同版本绝对路径。普通 CHG 用 `--operation create-chg`；HOTFIX 用 `--operation create-chg --type hotfix`；批量创建一个 change-set 的 N 个 CHG 用 `--count N` 一次预留 N 个连号（仅 create-chg 支持）。`create-chg --type` 只支持 `change` / `hotfix`；finding/research 沉淀走 `record-finding`。同一 session 默认复用尚未消费的 `create-chg` reservation，若已预留普通 CHG 后要改建 HOTFIX，或确实要第二个新编号，加 `--new`。再把 helper 输出的 `reserved-id` / `reserved-file-prefix` 原样写入 Agent prompt。
 - `T-NNN`：由 artifact writer 为当前 CHG/HOTFIX 分配的局部编号，写入 `changes/<id>.md` 的 `## 任务清单`；不同 CHG 可以重复 `T-001`，后续操作用 `target + task-id` 定位。
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 前原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。先按 helper 命令来源运行 `reserve-artifact-id.js --operation record-correction`，再把 helper 输出的 `reserved-file-prefix` 原样写入 Agent prompt。
@@ -397,7 +397,7 @@ artifact_dir: <helper 输出>
 operation: create-chg
 execution-context: <helper 输出>
 reserved-id: <helper 输出>
-reserved-file: <helper 输出>
+reserved-file-prefix: <helper 输出（原样含 <slug>.md 占位）>
 title: <标题>
 tasks:
   - T-001: <任务>
