@@ -710,19 +710,34 @@ function ownerDisplay(summary) {
 }
 
 /** 活跃 CHG 摘要 section（重构前 595-603）。 */
+// 跨 CHG 任务本体注入总量上限（chars）——CHG-20260609-03 R 审计 P2：任务本体 push 到 l0，
+//   而 assembleWithBudget 只截 l3、head（含 l0）永不截，宣称的第④层「全局兜底」对任务本体无效。
+//   自带跨 CHG 累计护栏，防多个 in-progress CHG（含忘 close 的累积）线性撑破 9500/10000。
+const TASK_INJECTION_TOTAL_MAX = 3000;
+
 function renderActiveChangeSummary(state) {
   const summaries = state.activeChangeSummaries;
   if (!(summaries.length > 0)) return '';
   let out = `=== 活跃 CHG 摘要 ===\n`;
+  let taskBudgetUsed = 0;            // 跨 CHG 任务本体累计 chars（P2 总量护栏）
+  let taskBudgetPointerShown = false;
   for (const s of summaries) {
     out += `- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`;
     // 任务清单本体展开（CHG-20260609-03 T-001）：collectState 已按相关度把任务行加工成
     //   s.tasks = { items, omitted, mode }（in-progress 完整行含 [状态]，planned 只 T-NNN 标题）。
-    //   渲染层只做缩进展开，不再判 IO/状态——预算护栏（展开上限、planned 降级）已在 collectState 落定。
+    //   渲染层做缩进展开 + 跨 CHG 总量护栏；单 CHG 内展开上限/planned 降级已在 collectState 落定。
     if (s.tasks && Array.isArray(s.tasks.items) && s.tasks.items.length > 0) {
-      for (const line of s.tasks.items) out += `    ${line}\n`;
-      // 超展开上限的剩余任务以指针收口，引导 AI 按需 Read 详情文件取全量。
-      if (s.tasks.omitted > 0) out += `    （另有 ${s.tasks.omitted} 个任务，Read changes/${s.slug || (s.id || '').toLowerCase()}.md）\n`;
+      let block = s.tasks.items.map(line => `    ${line}\n`).join('');
+      // 超单 CHG 展开上限的剩余任务以指针收口，引导 AI 按需 Read 详情文件取全量。
+      if (s.tasks.omitted > 0) block += `    （另有 ${s.tasks.omitted} 个任务，Read changes/${s.slug || (s.id || '').toLowerCase()}.md）\n`;
+      // 跨 CHG 总量护栏（P2 修复）：l0 不受 assembleWithBudget 截，超总量后续 CHG 不展开本体、一次性指针收口。
+      if (taskBudgetUsed + block.length <= TASK_INJECTION_TOTAL_MAX) {
+        out += block;
+        taskBudgetUsed += block.length;
+      } else if (!taskBudgetPointerShown) {
+        out += `    （任务本体注入已达预算上限，其余活跃 CHG 任务见各自 changes/<id>.md）\n`;
+        taskBudgetPointerShown = true;
+      }
     }
   }
   out += `继续、恢复或收口已有 CHG 前，先 Read 对应 changes/<id>.md，确认任务清单、实施详情和工作记录；本摘要只用于定位，不替代 CHG 详情。\n`;

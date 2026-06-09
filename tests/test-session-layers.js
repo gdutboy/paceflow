@@ -478,6 +478,21 @@ test('SL-27. buildTaskInjection 无任务行降级返回 null（渲染层不出�
   assert.ok(text.includes('=== 活跃 CHG 摘要 ==='), '无 tasks 时摘要仍注入');
 });
 
+test('SL-28. 跨 CHG 任务本体总量护栏（超上限后续 CHG 不展开 + 指针，P2 修复）', () => {
+  const bigTasks = Array.from({ length: 8 }, (_, i) => `T-00${i + 1} [/] ${'长任务标题占位'.repeat(12)}`);
+  const summaries = Array.from({ length: 6 }, (_, k) => ({
+    id: `CHG-2026060${k}-09`, category: 'running', status: 'in-progress',
+    ownerDisposition: 'current', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active',
+    taskCheckbox: '/', implCheckbox: '/', pending: 8, approved: true, verified: false, reviewed: false,
+    path: `/tmp/x/chg-${k}.md`, changeSet: '', changeSetSeq: '',
+    tasks: { items: bigTasks, omitted: 0, mode: 'full' },
+  }));
+  const { l0 } = buildLayers(makeActiveState({ activeChangeSummaries: summaries }), 'startup', paceUtils, 'core');
+  const text = l0.join('\n');
+  assert.ok(text.includes('任务本体注入已达预算上限'), '超跨 CHG 总量护栏后注入收口指针');
+  assert.ok(l0.join('').length < 9500, `l0 任务本体总量受控 <9500（实际 ${l0.join('').length}）`);
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

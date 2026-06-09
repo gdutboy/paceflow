@@ -297,8 +297,9 @@ function collectRelatedNotes(cwd, getProjectName, scanRelatedNotes) {
   } catch (e) { return []; } // Vault 不可用静默跳过
 }
 
-// in-progress CHG 任务行展开上限（预算护栏①）：超量任务以「另有 K 个」指针收口，
-//   避免单个多任务 CHG 撑爆 core hook 预算（整体仍受 assembleWithBudget(9500) 兜底）。
+// in-progress CHG 任务行展开上限（预算护栏①）：超量任务以「另有 K 个」指针收口，避免单个多任务 CHG 撑爆预算。
+//   注意：任务本体注入 l0（head 永不截，assembleWithBudget 只截 l3），故跨 CHG 总量护栏在 layers.js
+//   renderActiveChangeSummary（TASK_INJECTION_TOTAL_MAX），不依赖 assembleWithBudget 兜底（CHG-03 R 审计 P2）。
 const IN_PROGRESS_TASK_LIMIT = 8;
 
 // 单行任务字符上限（预算护栏②）：本仓库惯例把验收详情写进任务标题（dogfood 实证单行可达 400+ 字），
