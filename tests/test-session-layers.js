@@ -666,6 +666,21 @@ test('SL-38. truncateSpec 砍掉「## 目录结构」段（前缀匹配，非精
   assert.ok(text.includes('已省略 spec 目录/依赖列表'), '附省略指针');
 });
 
+// --- 39. E4：Artifact 目录段删重复「路径:」行，但保留 artifact mode「模式:」行 ---
+// plan 草拟说「路径/模式都重复」是误判：项目上下文段「模式」是 project root mode（inherited/independent），
+//   Artifact 目录段「模式」是 artifact 存储 mode（本地/vault），语义不同——只有路径真重复（== Artifact Root）。
+test('SL-39. Artifact 目录段删重复「路径:」但保留 artifact mode（E4 去重）', () => {
+  const state = makeActiveState({ artifactDirInjected: true });
+  const head = buildLayers(state, 'startup', paceUtils, 'core').l1head.join('\n');
+  const artDirSection = head.split('=== Artifact 目录 ===')[1] || '';
+  assert.ok(head.includes('=== PACEflow 项目上下文 ===') && head.includes('Artifact Root:'), '项目上下文段给出 Artifact Root');
+  assert.ok(head.includes('=== Artifact 目录 ==='), 'Artifact 目录段标题保留（功能锚点）');
+  assert.ok(!artDirSection.includes('路径: '), 'Artifact 目录段删重复「路径:」行（== 项目上下文 Artifact Root）');
+  assert.ok(artDirSection.includes('模式: '), 'Artifact 目录段保留 artifact mode「模式:」行（与项目上下文 project root mode 语义不同，不重复）');
+  assert.ok(artDirSection.includes('仅用于 PaceFlow artifacts'), 'Artifact 目录段保留独有用途说明');
+  assert.ok(artDirSection.includes('plan 同步 helper'), 'Artifact 目录段保留 plan 同步 helper');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

@@ -275,10 +275,13 @@ function renderNativePlanReminder(state, eventType) {
     + '请调用 Skill(paceflow:pace-bridge)，按该 skill 桥接为 v6 CHG 并记录同步标记。\n\n';
 }
 
-/** Artifact 目录 section（重构前 writeArtifactDirSection 315-327 的输出部分）。 */
+/** Artifact 目录 section（重构前 writeArtifactDirSection 315-327 的输出部分）。
+ *  E4 去重：删「路径:」行（== 项目上下文段 Artifact Root，真重复）；保留「模式:」行——
+ *  那是 artifact 存储 mode（本地项目根目录/Obsidian vault project），与项目上下文段的 project root
+ *  mode（继承/独立，mode=inherited/independent）语义不同，不重复。 */
 function renderArtifactDirSection(state) {
   const ad = state.artifactDir;
-  return `=== Artifact 目录 ===\n路径: ${ad.display}\n模式: ${ad.mode}\n仅用于 PaceFlow artifacts：${ad.content}。\nCHG 编号 / artifact-root / 独立子项目 helper 见上方「PACEflow 工作流入口」段。\nplan 同步 helper: node "${ad.scripts.syncPlan}" --plan "<已桥接 plan 绝对路径>"\n\n`;
+  return `=== Artifact 目录 ===\n模式: ${ad.mode}\n仅用于 PaceFlow artifacts：${ad.content}（路径见上方「项目上下文」段 Artifact Root）。\nCHG 编号 / artifact-root / 独立子项目 helper 见上方「PACEflow 工作流入口」段。\nplan 同步 helper: node "${ad.scripts.syncPlan}" --plan "<已桥接 plan 绝对路径>"\n\n`;
 }
 
 /**
