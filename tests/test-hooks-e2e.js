@@ -404,6 +404,28 @@ test('C1. SessionStart 注入 change-set 整体进度', () => {
   assert.ok(!/进度 \d+\/\d+/.test(r.stdout), 'CS-PROGRESS：不再输出会虚高的「进度 done/n」');
 });
 
+test('C1t. SessionStart core 注入活跃 CHG 任务清单本体（in-progress 完整 + planned 标题）', () => {
+  // CHG-20260609-03 T-001：core hook 在活跃 CHG 摘要下展开任务本体。
+  // in-progress CHG 给完整任务行（含 [状态]），planned CHG 只给任务标题。
+  const dir = makeV6ProjectWithChanges('ss-task-body', [
+    {
+      id: 'CHG-20260609-03', status: 'in-progress', task: '[/]', approved: true,
+      tasks: ['- [/] T-001 正在做的任务甲', '- [ ] T-002 待办任务乙'],
+    },
+    {
+      id: 'CHG-20260609-09', status: 'planned', task: '[ ]', approved: false,
+      tasks: ['- [ ] T-001 规划任务标题丙', '- [ ] T-002 规划任务标题丁'],
+    },
+  ]);
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  // in-progress：完整任务行本体（含状态）注入，AI 开局即见
+  assert.ok(r.stdout.includes('T-001') && r.stdout.includes('正在做的任务甲'), 'in-progress 注入完整任务本体');
+  assert.ok(r.stdout.includes('待办任务乙'), 'in-progress 注入全部活跃任务行');
+  // planned：任务标题注入，让 AI 知规划
+  assert.ok(r.stdout.includes('规划任务标题丙'), 'planned 注入任务标题');
+});
+
 test('C1c. change-set 分母不一致 → 不臆断总数、不虚高（CS-PROGRESS 回归）', () => {
   const dir = makeV6ProjectWithChanges('ss-cs-mixed', [
     { id: 'CHG-20260607-02', status: 'planned', task: '[ ]', changeSet: 'mixset', changeSetSeq: '2/4' },

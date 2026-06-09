@@ -124,6 +124,18 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     ? collectRelatedNotes(cwd, getProjectName, scanRelatedNotes)
     : [];
 
+  // --- 活跃 CHG 任务清单本体（CHG-20260609-03 T-001）---
+  // 仅 core 加工：任务本体只在 core group 的 renderActiveChangeSummary 渲染，artifact group 不需要（省 CPU）。
+  //   数据零额外 IO——summarizeActiveChanges 已透出 taskSectionRaw（复用 entry.detail.content）。
+  //   按相关度分级挂 s.tasks：in-progress（正在做）注入完整任务行+展开上限，planned（已规划）只任务标题。
+  //   无任务清单段 / 解析为空 → 不设 s.tasks，渲染层降级不出空展开。
+  if (isCore) {
+    for (const s of activeChangeSummaries) {
+      const t = buildTaskInjection(s);
+      if (t) s.tasks = t;
+    }
+  }
+
   return {
     cwd,
     eventType,
@@ -285,4 +297,52 @@ function collectRelatedNotes(cwd, getProjectName, scanRelatedNotes) {
   } catch (e) { return []; } // Vault 不可用静默跳过
 }
 
-module.exports = { collectState, enrichSummaryOwner, collectAgedFindings, collectGit };
+// in-progress CHG 任务行展开上限（预算护栏①）：超量任务以「另有 K 个」指针收口，
+//   避免单个多任务 CHG 撑爆 core hook 预算（整体仍受 assembleWithBudget(9500) 兜底）。
+const IN_PROGRESS_TASK_LIMIT = 8;
+
+// 单行任务字符上限（预算护栏②）：本仓库惯例把验收详情写进任务标题（dogfood 实证单行可达 400+ 字），
+//   8 条 × 长行会逼近预算。逐行截到此长度（超出补 …）保住 T-NNN + 标题主干，全量仍可 Read 详情文件取。
+const TASK_LINE_MAX_CHARS = 160;
+
+/** 单行任务文本截断：超过 TASK_LINE_MAX_CHARS 时截断并补省略号，保住 T-NNN + 标题主干。 */
+function clampTaskLine(line) {
+  const s = String(line);
+  return s.length > TASK_LINE_MAX_CHARS ? `${s.slice(0, TASK_LINE_MAX_CHARS)}…` : s;
+}
+
+// 活跃区任务行：`- [状态] T-NNN 标题`（状态 ∈ 空/x/-/!//）。^ 锚行首，避免误抓正文中的 T-NNN 引用。
+const TASK_LINE_RE = /^- \[[ x!\/-]\]\s+T-\d{3}\b.*$/gm;
+// 从完整任务行剥离 `- [状态] ` 前缀，得到 `T-NNN 标题`（planned 只注入标题，不含 [状态]）。
+const TASK_PREFIX_RE = /^- \[[ x!\/-]\]\s+/;
+
+/**
+ * 把活跃 CHG 摘要的任务清单段（summary.taskSectionRaw）加工成注入本体（CHG-20260609-03 T-001）。
+ * 按「与当前工作相关度」分级：
+ *   - in-progress（status='in-progress' 或 category='running'）：完整任务行（含 [状态]），展开上限 8，
+ *     超量记 omitted；mode='full'。AI 开局即见当前在做哪个任务、状态如何。
+ *   - 其余活跃态（planned/backlog/ready 等）：只任务标题（去 [状态]），mode='title'，让 AI 知规划但不耗预算。
+ * 降级：无 taskSectionRaw / 无任务行 → 返回 null（不挂 s.tasks，渲染层不出空展开）。
+ * @param {object} summary - 富集后的活跃 CHG 摘要（含 taskSectionRaw / status / category）。
+ * @returns {{items: string[], omitted: number, mode: 'full'|'title'}|null}
+ */
+function buildTaskInjection(summary) {
+  const raw = summary && summary.taskSectionRaw;
+  if (!raw || typeof raw !== 'string') return null;
+  const lines = raw.match(TASK_LINE_RE) || [];
+  if (lines.length === 0) return null;
+  // in-progress = 正在做（完整行+状态）；其余活跃态（planned/backlog/ready）= 只标题。
+  const isInProgress = summary.status === 'in-progress' || summary.category === 'running';
+  if (isInProgress) {
+    // 先取上限 N 条（护栏①），再逐行截字符（护栏②）——双层共同封顶单 CHG 注入体积。
+    const items = lines.slice(0, IN_PROGRESS_TASK_LIMIT).map(clampTaskLine);
+    const omitted = lines.length - items.length;
+    return { items, omitted, mode: 'full' };
+  }
+  // planned/backlog/ready：去 [状态] 前缀只留 T-NNN 标题；同样逐行截字符（验收详情常写在标题里）。
+  const items = lines.map(l => clampTaskLine(l.replace(TASK_PREFIX_RE, '').trim())).filter(Boolean);
+  if (items.length === 0) return null;
+  return { items, omitted: 0, mode: 'title' };
+}
+
+module.exports = { collectState, enrichSummaryOwner, collectAgedFindings, collectGit, buildTaskInjection };

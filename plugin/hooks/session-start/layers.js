@@ -716,6 +716,14 @@ function renderActiveChangeSummary(state) {
   let out = `=== 活跃 CHG 摘要 ===\n`;
   for (const s of summaries) {
     out += `- ${s.id} category=${s.category} status=${s.status} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`;
+    // 任务清单本体展开（CHG-20260609-03 T-001）：collectState 已按相关度把任务行加工成
+    //   s.tasks = { items, omitted, mode }（in-progress 完整行含 [状态]，planned 只 T-NNN 标题）。
+    //   渲染层只做缩进展开，不再判 IO/状态——预算护栏（展开上限、planned 降级）已在 collectState 落定。
+    if (s.tasks && Array.isArray(s.tasks.items) && s.tasks.items.length > 0) {
+      for (const line of s.tasks.items) out += `    ${line}\n`;
+      // 超展开上限的剩余任务以指针收口，引导 AI 按需 Read 详情文件取全量。
+      if (s.tasks.omitted > 0) out += `    （另有 ${s.tasks.omitted} 个任务，Read changes/${s.slug || (s.id || '').toLowerCase()}.md）\n`;
+    }
   }
   out += `继续、恢复或收口已有 CHG 前，先 Read 对应 changes/<id>.md，确认任务清单、实施详情和工作记录；本摘要只用于定位，不替代 CHG 详情。\n`;
   out += '\n';

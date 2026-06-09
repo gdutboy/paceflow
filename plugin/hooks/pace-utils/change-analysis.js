@@ -310,9 +310,13 @@ module.exports = function createChangeAnalysis(ctx) {
       const fm = entry.detail && entry.detail.frontmatter || {};
       const classified = classifyChange(entry);
       const tasks = entry.detail && !entry.detail.missing ? classified.tasks : null;
+      // 透出 ## 任务清单段原文（复用 entry.detail.content，零额外 IO）：供 SessionStart core
+      //   把任务行加工成注入本体（collect-state.js 按相关度分级）。读失败/无该段时为 ''，下游降级不崩。
+      const taskSectionRaw = entry.detail && !entry.detail.missing ? extractTaskSection(entry.detail.content) : '';
       return {
         id: entry.id,
         slug: entry.slug,
+        taskSectionRaw,
         taskCheckbox: entry.taskCheckbox || null,
         implCheckbox: entry.implCheckbox || null,
         status: fm.status || (entry.detail && entry.detail.missing ? 'missing-detail' : 'unknown'),
