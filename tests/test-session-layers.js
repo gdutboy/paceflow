@@ -519,6 +519,37 @@ test('SL-30. wiki 多时 knowledge 仍保证名额不被挤光（CHG-04 修复 M
   assert.ok(wikiCount <= 3, `wiki 受名额限制 ≤3（实际 ${wikiCount}）`);
 });
 
+// --- 31. findings 注入新→旧，与文件物理顺序无关（CHG-06 T-002 防回归）---
+test('SL-31. findings 注入按 date 降序（新→旧），不依赖文件物理顺序', () => {
+  // 文件物理顺序故意旧→新（06-01 在上、06-09 在下），同 P1 全保留以排除 impact 排序干扰
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'findings.md', full: '# 调研记录\n\n## 未解决问题\n\n'
+      + '- [ ] [[f-old|最旧项]] — x [date:: 2026-06-01] [impact:: P1]\n'
+      + '- [ ] [[f-mid|居中项]] — y [date:: 2026-06-05] [impact:: P1]\n'
+      + '- [ ] [[f-new|最新项]] — z [date:: 2026-06-09] [impact:: P1]\n' },
+  ]});
+  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const all = [...layers.l1head, ...layers.l3].join('\n');
+  const iNew = all.indexOf('最新项'), iMid = all.indexOf('居中项'), iOld = all.indexOf('最旧项');
+  assert.ok(iNew >= 0 && iMid >= 0 && iOld >= 0, '三条 finding 都注入');
+  assert.ok(iNew < iMid && iMid < iOld, `注入应新→旧（最新在前），实际 new=${iNew} mid=${iMid} old=${iOld}`);
+});
+
+// --- 32. corrections 注入新→旧，与文件物理顺序无关（CHG-06 T-002 防回归）---
+test('SL-32. corrections 注入按 date 降序（新→旧），不依赖文件物理顺序', () => {
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'corrections.md', full: '# Corrections 索引\n\n## 活跃记录\n\n'
+      + '- [[correction-2026-06-01-01-old]] 最旧纠正项 [date:: 2026-06-01]\n'
+      + '- [[correction-2026-06-05-01-mid]] 居中纠正项 [date:: 2026-06-05]\n'
+      + '- [[correction-2026-06-09-01-new]] 最新纠正项 [date:: 2026-06-09]\n' },
+  ]});
+  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const all = [...layers.l1head, ...layers.l3].join('\n');
+  const iNew = all.indexOf('最新纠正项'), iMid = all.indexOf('居中纠正项'), iOld = all.indexOf('最旧纠正项');
+  assert.ok(iNew >= 0 && iMid >= 0 && iOld >= 0, '三条 correction 都注入');
+  assert.ok(iNew < iMid && iMid < iOld, `注入应新→旧（最新在前），实际 new=${iNew} mid=${iMid} old=${iOld}`);
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

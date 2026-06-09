@@ -69,7 +69,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 5. `mkdir -p changes/corrections/`（仅在 base `changes/` 已存在时）
 6. Write `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`（详情文件结构见下）
 7. corrections.md 不存在 → Write 新建（用 spec §5.6.5 模板）
-8. Read + Edit `corrections.md` 添加索引行（spec §5.5 模板）
+8. Read + Edit `corrections.md`：在活跃区**第一个 correction 索引行之前**插入新索引行（最新在顶，prepend，与下一条索引行间不留空行）。活跃区 = 文件头到第一个 `<!-- ARCHIVE -->`；已有 `- [[correction-` 索引行时插到第一个之前，暂无索引行时插到「## 活跃记录」/「## 索引」标题下方。格式见 spec §5.5
 
 ## 详情文件结构
 

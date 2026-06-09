@@ -43,7 +43,7 @@ body: <完整 Markdown 正文>
 1. 生成 finding-id（FINDING-YYYY-MM-DD-slug，slug 参考 spec slug 规则）
 2. `mkdir -p changes/findings/`（仅在 base `changes/` 已存在时）
 3. Write `changes/findings/finding-yyyy-mm-dd-slug.md`（详情文件结构见下；`body` 必须使用输入原文）
-4. Read + Edit `findings.md` 摘要索引添加索引行（spec §5.4 模板）
+4. Read + Edit `findings.md`：在活跃区**第一个 finding 索引行之前**插入新索引行（最新在顶，prepend）。活跃区 = 文件头到第一个 `<!-- ARCHIVE -->`；已有 `- [<状态>] [[finding-` 索引行时插到第一个之前，暂无索引行时插到活跃区最后一个标题（`## 未解决问题` 或 `## 摘要索引`）下方。格式见 spec §5.4
 
 ## 详情文件结构
 

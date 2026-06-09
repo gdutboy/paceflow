@@ -140,7 +140,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 
 如果 cwd 有 `.pace-enabled` 等 PaceFlow 激活信号，但 `$ARTIFACT_DIR/changes` 不存在，仍使用 `not-pace-project` 作为失败码，详细信息写成“当前 artifact_dir 无 changes marker，请主 session 重派并显式传入 artifact_dir: <path>”（此时项目已启用，问题在于 artifact_dir 指向，措辞需如实反映这一点）。
 
-## 7 类指令
+## 8 类指令
 
 通用规范（schema / 索引行模板 / ARCHIVE）见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md`，**首次需要时 Read 一次整会话复用**。
 
@@ -155,6 +155,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 | record-finding | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/record-finding.md` |
 | record-correction | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/record-correction.md` |
 | update-finding | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/update-finding.md` |
+| update-index | `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/update-index.md` |
 
 输入字段速查（详细见各 instruction 文件；可复制模板见下方 §正向输入模板）：
 
@@ -350,11 +351,20 @@ root-cause: <根因>
 knowledge-link: [[note]] 或 project-scope: project-only
 ```
 
+### update-index
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-index
+target: findings.md | corrections.md
+action: reorder
+```
+
 ## 工作流程
 
 每次任务：
 
-1. 解析指令（识别 7 类之一）。**任何不在 `create-chg` / `update-chg` / `archive-chg` / `close-chg` / `record-finding` / `record-correction` / `update-finding` 7 类内的 operation**（如 `delete-chg` / `rename-chg` / `merge-chg` 等）→ **必须**报告 `out-of-scope`；`out-of-scope` 是这类未知 operation 的统一错误码（取代了旧的 `unknown-operation`）。
+1. 解析指令（识别 8 类之一）。**任何不在 `create-chg` / `update-chg` / `archive-chg` / `close-chg` / `record-finding` / `record-correction` / `update-finding` / `update-index` 8 类内的 operation**（如 `delete-chg` / `rename-chg` / `merge-chg` 等）→ **必须**报告 `out-of-scope`；`out-of-scope` 是这类未知 operation 的统一错误码（取代了旧的 `unknown-operation`）。
 2. 检查输入字段完整性（缺 → `missing-fields`，不执行）
 3. 检测项目：无 `changes/` 目录 → `not-pace-project`
 4. **首次需要通用规范时 Read** `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md`
@@ -366,7 +376,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 报告格式（强制）
 
-**所有 7 类指令的所有 action（含 update-chg 的 append / replace / update-status / approve / approve-and-start / verify / review）必须使用以下格式**，最终回答第一行字面量为 `## artifact-writer 报告`，且作为整份输出的第一个字符起始（标题前不含任何自然语言、空行或说明）。标题保持原文这一行；简单操作可省略 N/A 段（如无新建文件），标题与字段名保持不变。
+**所有 8 类指令的所有 action（含 update-chg 的 append / replace / update-status / approve / approve-and-start / verify / review，update-index 的 reorder）必须使用以下格式**，最终回答第一行字面量为 `## artifact-writer 报告`，且作为整份输出的第一个字符起始（标题前不含任何自然语言、空行或说明）。标题保持原文这一行；简单操作可省略 N/A 段（如无新建文件），标题与字段名保持不变。
 
 最终报告只保留下方格式的内容；时间戳、Insight 块、固定结尾语、寒暄、说明性前后缀等主 session 回复样式留在主 session。
 
