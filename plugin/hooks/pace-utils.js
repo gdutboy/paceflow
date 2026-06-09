@@ -863,9 +863,10 @@ function scanRelatedNotes(projectName) {
           if (!projMatch) continue;
           const projects = projMatch[1].split(',').map(p => p.trim().toLowerCase());
           if (!projects.includes(projLower)) continue;
-          // basename 去重：同名提炼已进 wiki 层，knowledge/thoughts 不再补充
+          // basename 去重：只对 knowledge——已提炼进 wiki 的 knowledge 不重复（wiki 从 knowledge ingest）。
+          //   thoughts 是未成熟想法、不进 wiki，即使巧合同名也保留（独立段价值在思考过程而非结论）。
           const basename = file.replace(/\.md$/, '');
-          if (wikiBasenames.has(basename)) continue;
+          if (dir === 'knowledge' && wikiBasenames.has(basename)) continue;
           // 解析 status（archived 不注入）
           const status = statusOf(fm);
           if (status === 'archived') continue;

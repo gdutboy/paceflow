@@ -1797,6 +1797,23 @@ test('WIKI-4. knowledge 与 thoughts 分到不同 kind（CHG-04）', () => {
   } finally { fs.unlinkSync(kf); fs.unlinkSync(tf); }
 });
 
+test('WIKI-5. thoughts 同名 wiki article 不被去重（thoughts 不进 wiki，独立段保留）', () => {
+  const uniq = 'pace-wiki-tdup-' + Date.now();
+  const aDir = path.join(paceUtils.VAULT_PATH, 'wiki', 'ai-workflow');
+  const tDir = path.join(paceUtils.VAULT_PATH, 'thoughts');
+  fs.mkdirSync(aDir, { recursive: true });
+  fs.mkdirSync(tDir, { recursive: true });
+  const wf = path.join(aDir, `_dup-${uniq}.md`);
+  const tf = path.join(tDir, `_dup-${uniq}.md`); // 与 wiki article 同 basename
+  fs.writeFileSync(wf, ['---','type: wiki-article','status: confirmed','tags:',`  - ${uniq}`,'summary: "wiki 提炼"','---','# W'].join('\n'));
+  fs.writeFileSync(tf, ['---','status: discussing',`projects: [${uniq}]`,'summary: "未成熟想法"','---','# T'].join('\n'));
+  try {
+    const r = paceUtils.scanRelatedNotes(uniq);
+    assert.ok(r.find(x => x.title === `_dup-${uniq}` && x.kind === 'wiki'), 'wiki article 注入');
+    assert.ok(r.find(x => x.title === `_dup-${uniq}` && x.kind === 'thoughts'), '同名 thoughts 不被去重、独立保留（只 knowledge 去重）');
+  } finally { fs.unlinkSync(wf); fs.unlinkSync(tf); }
+});
+
 // ============================================================
 // 7. resolveProjectCwd() — 3 个测试（CLAUDE_PROJECT_DIR 环境变量）
 // ============================================================
