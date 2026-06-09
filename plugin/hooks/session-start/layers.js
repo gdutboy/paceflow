@@ -942,15 +942,17 @@ function renderGit(state) {
 function renderRelatedNotes(state, eventType) {
   const notes = state.relatedNotes;
   if (!(notes && notes.length > 0)) return '';
-  const compact = eventType === 'compact';
   // 按 kind 分组（scanRelatedNotes 返回 wiki 排序后 → knowledge → thoughts 的扁平数组）。
   const wiki = notes.filter(n => n.kind === 'wiki');
   const knowledge = notes.filter(n => n.kind === 'knowledge');
   const thoughts = notes.filter(n => n.kind === 'thoughts');
   // 各类独立名额（分别 slice）——knowledge 不被 wiki 挤光（CHG-04 修复 M5 的 wiki≥5 挤出问题）；thoughts 独立段。
-  const wikiMax = compact ? 2 : 3;
-  const knowledgeMax = compact ? 1 : 2;
-  const thoughtsMax = compact ? 2 : 3;
+  // N1：去掉 compact?2:3 三元——单 hook 时代 compact 走快照恢复故精简名额省体积；M4 退役快照后 compact 与
+  //   startup 同走实时读路径，精简约束已无主，名额统一到 startup（wiki 3 / knowledge 2 / thoughts 3）。
+  //   eventType 仍保留为 render 上下文参数（调用方传入，event-aware 语义钩子），当前三类名额与事件无关。
+  const wikiMax = 3;
+  const knowledgeMax = 2;
+  const thoughtsMax = 3;
   let out = '';
   // 段1：相关知识（wiki 提炼 + 未进 wiki 的 knowledge raw，各保证名额）。
   const knowledgeBlock = [...wiki.slice(0, wikiMax), ...knowledge.slice(0, knowledgeMax)];

@@ -549,6 +549,32 @@ test('SL-32. corrections 注入按 date 降序（新→旧），不依赖文件�
   assert.ok(iNew < iMid && iMid < iOld, `注入应新→旧（最新在前），实际 new=${iNew} mid=${iMid} old=${iOld}`);
 });
 
+// --- 33. N1：renderRelatedNotes startup/compact 名额逐项相等（去 compact 三元后对称）---
+test('SL-33. startup/compact 相关知识+thoughts 注入数量逐项相等（N1 对称）', () => {
+  // 各类喂足 6 条（> 任何名额），强制名额成为唯一截断因素，从而暴露 startup/compact 数量差。
+  const wiki = Array.from({ length: 6 }, (_, i) => ({ title: `wiki-${i}`, summary: 'w', status: 'confirmed', kind: 'wiki' }));
+  const knowledge = Array.from({ length: 6 }, (_, i) => ({ title: `know-${i}`, summary: 'k', status: 'concluded', kind: 'knowledge' }));
+  const thoughts = Array.from({ length: 6 }, (_, i) => ({ title: `think-${i}`, summary: 't', status: 'discussing', kind: 'thoughts' }));
+  const notes = [...wiki, ...knowledge, ...thoughts];
+  const startupText = buildLayers(makeActiveState({ relatedNotes: notes, eventType: 'startup' }), 'startup', paceUtils, 'core').l3.join('\n');
+  const compactText = buildLayers(makeActiveState({ relatedNotes: notes, eventType: 'compact' }), 'compact', paceUtils, 'core').l3.join('\n');
+  const countLabel = (text, label) => (text.match(new RegExp(`\\[${label}`, 'g')) || []).length;
+  // 逐项相等：wiki / knowledge / thoughts 三类 startup 与 compact 注入数量必须一致。
+  const startupWiki = countLabel(startupText, 'wiki\\]');
+  const compactWiki = countLabel(compactText, 'wiki\\]');
+  const startupKnow = countLabel(startupText, 'knowledge·');
+  const compactKnow = countLabel(compactText, 'knowledge·');
+  const startupThink = countLabel(startupText, 'thought·');
+  const compactThink = countLabel(compactText, 'thought·');
+  assert.strictEqual(compactWiki, startupWiki, `wiki 名额 compact(${compactWiki}) 应等于 startup(${startupWiki})`);
+  assert.strictEqual(compactKnow, startupKnow, `knowledge 名额 compact(${compactKnow}) 应等于 startup(${startupKnow})`);
+  assert.strictEqual(compactThink, startupThink, `thoughts 名额 compact(${compactThink}) 应等于 startup(${startupThink})`);
+  // 统一到 startup 名额：wiki 3 / knowledge 2 / thoughts 3。
+  assert.strictEqual(startupWiki, 3, 'startup wiki 名额 3');
+  assert.strictEqual(startupKnow, 2, 'startup knowledge 名额 2');
+  assert.strictEqual(startupThink, 3, 'startup thoughts 名额 3');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
