@@ -32,7 +32,7 @@
 | ID | 问题 | 根因 | 修法 | sev |
 |---|---|---|---|---|
 | **N1** | compact 比 startup 少注入相关知识（5→3）、thoughts（3→2） | `renderRelatedNotes`（layers.js:951-953）`compact?2:3` 硬编码——单 hook 时代 compact 走快照恢复、精简为省快照体积；M4 退役快照后该约束消失，精简名额却原样保留成无主残留 | 去掉 `compact?2:3` 三元，compact 名额统一到 startup（wiki 3 / knowledge 2 / thoughts 3）；补 startup/compact **注入内容逐项相等**对称测试（原对称测试只验在场不验数量）| 🔴高 |
-| **M1** | git 段只有分支+commit，缺 A2（脏文件 / ahead-behind） | `collectGit`（collect-state.js:272-281）+ `renderGit`（layers.js:934-936）从未实现 design §5 A2 | `collectGit` 加 `git status --porcelain`（脏文件数）+ `rev-list --count`（ahead/behind）；`renderGit` 渲染。子进程沿用现有 `timeout` 保护 | 🟡中 |
+| **M1** | git 段只有分支+commit，缺 A2（脏文件 / ahead-behind） | `collectGit`（collect-state.js:272-281）+ `renderGit`（layers.js:934-936）从未实现 design §5 A2 | `collectGit` 加 `git status --porcelain`（脏文件数）+ `git status -sb` 首行解析（ahead/behind/有无上游；实现定为 status -sb 而非 rev-list --count——无上游时 status -sb 不抛错、hasUpstream 判定天然内聚，避免 rev-list 对 `@{u}` 缺失非零退出的额外分支）；`renderGit` 渲染。子进程沿用现有 `timeout` 保护 | 🟡中 |
 | **M2** | walkthrough 注入 3 条，design L0 说 10 条 | `WALK_KEEP=3`（layers.js:366）M3 有意收紧体积，与 design L0「10 条」冲突 | `WALK_KEEP` 回 **10**（用户裁定）；design L0 已是 10，实现对齐即可 | 🟡中低 |
 
 ### 2.4 冗余 / cosmetic
