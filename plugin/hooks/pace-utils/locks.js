@@ -734,7 +734,7 @@ module.exports = function createLockUtils(ctx) {
   function reservationMatchesArtifactRel(reservation, artifactRel) {
     if (!reservation || !artifactRel) return { ok: true };
     const rel = String(artifactRel || '').replace(/\\/g, '/');
-    if (reservation.filePrefix && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}(?:-.+)?\.md$/i.test(rel)) {
+    if (reservation.filePrefix && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}(?:-[^/]+)?\.md$/i.test(rel)) {
       // rel 两种来源都须匹配本 reservation 的 id 主干（filePrefix 去末尾 `-`）：
       //   ① lookup 用 reserved-id 推的精确 `chg-date-nn.md`（无 slug，batch 块仅有 reserved-id 时走此路）；
       //   ② artifact-writer 实际写入的带 slug 全名 `chg-date-nn-<slug>.md`（startsWith filePrefix）。

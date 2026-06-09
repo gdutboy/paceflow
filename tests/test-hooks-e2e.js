@@ -2726,6 +2726,21 @@ test('T-4-slug. 旧无 slug CHG 文件仍被 readChangeDetail 找到（兼容不
   assert.match(slugDetail.content, /新带 slug CHG/);
 });
 
+test('T-slug-R. create-chg deny 恢复文案全用 reserved-file-prefix（R 审计 P2-1 stale 防回归）', () => {
+  const dir = makeV6Project('slug-r-stale-hint', { withIndex: false, detail: false });
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\n创建一个新变更。`;
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-slug-r-stale', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'Create CHG', prompt } },
+  });
+  assert.ok(r.stdout.includes('"deny"'), '首次无 reserved 应 deny 并给恢复指引');
+  // P2-1：CHG reserve 产出 reserved-file-prefix；恢复文案/模板不得残留裸 reserved-file，
+  //   否则主 session 照填 → explicitReservationFromPrompt 解析出 fileRel → reservationMatchesExplicit
+  //   因 CHG reservation 无 fileRel 判 mismatch 误拦。
+  assert.ok(r.stdout.includes('reserved-file-prefix'), 'deny 文案应含 reserved-file-prefix 指引');
+  assert.ok(!/reserved-file(?!-prefix)/.test(r.stdout), 'deny 文案不得残留裸 reserved-file（须全部 reserved-file-prefix）');
+});
+
 test('9hc-helper2b. reserve-artifact-id helper 拒绝 create-chg --type research', () => {
   const dir = makeV6Project('agent-reserve-helper-research-type', { withIndex: false, detail: false });
   const r = runReserveHelper({

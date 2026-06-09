@@ -127,7 +127,7 @@ module.exports = function createChangeAnalysis(ctx) {
       const detailPath = detailPathForId(artDir, expectedId);
       if (detailPath && !fs.existsSync(detailPath)) {
         const linkHint = linkMatchesExpected ? `指向 [[${expectedSlug}]]，但` : `应指向 [[${expectedSlug}]]，且`;
-        issues.push(`walkthrough.md 行 ${expectedId} ${linkHint}详情文件不存在：changes/${expectedSlug}.md。`);
+        issues.push(`walkthrough.md 行 ${expectedId} ${linkHint}详情文件不存在：changes/${expectedSlug}.md（或带 slug 的 ${expectedSlug}-*.md）。`);
       }
       const expectedContext = walkthroughContextForChange(cwd, expectedId);
       const missingContext = expectedContext.filter(spec => !textHasContextMarker(summaryCell, spec));

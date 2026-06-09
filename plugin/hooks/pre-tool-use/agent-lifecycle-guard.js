@@ -66,7 +66,7 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
       'operation: create-chg',
       'execution-context: <helper 输出>',
       'reserved-id: <helper 输出或 hook deny 输出>',
-      'reserved-file: <helper 输出或 hook deny 输出>',
+      'reserved-file-prefix: <helper 输出或 hook deny 输出（含 <slug>.md 占位，原样保留不替换）>',
       'title: <变更标题>',
       'tasks:',
       '  - T-001: <任务标题与验收>',
@@ -316,7 +316,7 @@ function artifactWriterCreateChgHint(artDir) {
     'title: <变更标题>',
     'tasks:',
     '- T-001: <首个任务>',
-    '若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file 作为 fallback；收到后原样写入 prompt 重派。'
+    '若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file-prefix 作为 fallback；收到后原样写入 prompt 重派。'
   ].join('\n');
 }
 
@@ -602,7 +602,7 @@ function artifactReservationDenyReason(match, artifactRel) {
   return [
     `artifact-writer 写入的详情文件不匹配 hook 预留编号：${artifactRel}。`,
     `期望：${match.expected}`,
-    '请使用主 session 重派 prompt 中的 reserved-id / reserved-file，不要重新扫描索引自行分配编号。'
+    '请使用主 session 重派 prompt 中的 reserved-id / reserved-file-prefix，不要重新扫描索引自行分配编号。'
   ].join('\n');
 }
 
