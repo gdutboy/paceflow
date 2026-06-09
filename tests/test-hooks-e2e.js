@@ -7069,6 +7069,70 @@ test('MH-6. hooks.json SessionStart 注册 core + artifact 两个 command', () =
   assert.ok(cmds.some(c => c.includes('--group artifact')), '有 artifact command');
 });
 
+// === CHG-08 §B：pre-tool-use 写保护豁免 P 阶段规划产物（projectMutationNeedsGate）===
+// finding-2026-06-08-pre-tool-use-planning-file-e-gate-false-deny：own actionable CHG 非 runnable（[!] pause）时，
+// 写 docs/superpowers/{specs,plans}、docs/plans 规划产物被 E 门控误拦标准 brainstorming/writing-plans。
+// 修复豁免纯规划路径；验反向（widen-matcher-verify-reverse）不放松真正 E gate（代码/README/docs 非规划子目录仍拦）。
+test('PB-1. own 非 runnable CHG 写规划产物(design doc)放行——不被 E 门控误拦', () => {
+  const dir = makeV6Project('ptu-planning-exempt', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),  // [!] → blocked>0 → 非 runnable
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-current', state: 'active' });  // own actionable（复现 finding）
+  fs.mkdirSync(path.join(dir, 'docs', 'superpowers', 'specs'), { recursive: true });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current', tool_name: 'Write', tool_input: { file_path: path.join(dir, 'docs/superpowers/specs/2026-06-09-x-design.md'), content: '# design\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('E 阶段未就绪'), '规划产物(design doc)不应被 E 门控拦');
+  assert.ok(!r.stdout.includes('"permissionDecision":"deny"'), '规划产物应放行');
+});
+
+test('PB-2. 反向：own 非 runnable CHG 写 README.md(非规划产物)仍被 E 门控 deny', () => {
+  const dir = makeV6Project('ptu-readme-still-gated', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-current', state: 'active' });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current', tool_name: 'Write', tool_input: { file_path: path.join(dir, 'README.md'), content: 'docs\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('E 阶段未就绪'), 'README.md 非规划产物，仍应被 E 门控（防 under-block）');
+});
+
+test('PB-3. 反向：own 非 runnable CHG 写代码(.js)仍被 E 门控 deny', () => {
+  const dir = makeV6Project('ptu-code-still-gated', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-current', state: 'active' });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { ...codeEditStdin(dir), session_id: 'sid-current' },  // Edit src.js（isCodeFile，第一条件 gate，豁免不影响代码）
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('E 阶段未就绪'), '代码文件 isCodeFile，仍应被 E 门控');
+});
+
+test('PB-4. 反向：own 非 runnable CHG 写 docs/REFERENCE.md(docs 下非规划子目录)仍被 E 门控 deny', () => {
+  // 验豁免精确到 docs/plans、docs/superpowers/{specs,plans}，不豁免整个 docs/（否则写 REFERENCE/README 绕过 E 门控）
+  const dir = makeV6Project('ptu-docs-ref-still-gated', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[!]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-current', state: 'active' });
+  fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-current', tool_name: 'Write', tool_input: { file_path: path.join(dir, 'docs/REFERENCE.md'), content: '# ref\n' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('E 阶段未就绪'), 'docs/ 下非规划子目录(REFERENCE.md)仍应被 E 门控');
+});
+
 cleanupAll();
 
 const total = t.passed + t.failed;

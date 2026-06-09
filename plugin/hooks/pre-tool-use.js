@@ -950,6 +950,11 @@ paceUtils.withStdinParsed((stdin) => {
   // worktree get a soft note only; PaceFlow hard-gates artifact semantics, not generic
   // edits to every path the user may explicitly request.
   const isInsideProject = normalizedFile.startsWith(projectBoundaryWithSlash) || !!artifactRelForMutation;
+  // P 阶段规划产物（docs/plans、docs/superpowers/{specs,plans}）豁免 projectMutationNeedsGate 第二条件：
+  //   这些是 brainstorming/writing-plans 先于任何 CHG 的规划写入，非 CHG 执行。代码文件(isCodeFile)仍走第一条件
+  //   被 gate；docs/ 下非规划子目录(REFERENCE/README)也不豁免（防 under-block，FINDING-2026-06-08-...e-gate-false-deny）。
+  const isPlanningArtifact = isInsideProject && !artifactRelForMutation && normalizedFile.startsWith(projectBoundaryWithSlash)
+    && paceUtils.PLANNING_ARTIFACT_DIRS.some(d => normalizedFile.slice(projectBoundaryWithSlash.length).startsWith(d + '/'));
   const hostNonArtifactWriteNote = isFileMutationTool(toolName) && paceSignal
     ? worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRelForMutation)
     : '';
@@ -1371,7 +1376,7 @@ paceUtils.withStdinParsed((stdin) => {
     });
     const currentToolIsArtifactWriter = isArtifactWriterAgent(stdin);
     const artifactWriterArtifactMutation = currentToolIsArtifactWriter && !!artifactRelForMutation;
-    const projectMutationNeedsGate = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0));
+    const projectMutationNeedsGate = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0 && !isPlanningArtifact));
     const gatedEntries = isCodeFile ? actionableEntries : currentOwnedActionableEntries;
     const structuralCheckNeeded = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 

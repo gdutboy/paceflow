@@ -89,7 +89,12 @@ const SESSION_SCOPED_FLAG_PREFIXES = [
   'post-continue-',
 ];
 
+// plan-sync 桥接检测目录（hasPlanFiles/listPlanFiles）；E 门控规划产物豁免另见下方 PLANNING_ARTIFACT_DIRS（多含 specs），新增规划路径需同步评估两者。
 const PLAN_DIRS = ['docs/plans', 'docs/superpowers/plans'];
+
+// P 阶段规划产物目录：projectMutationNeedsGate 豁免——brainstorming/writing-plans 先于任何 CHG 的规划产物
+// （specs = design doc，plans = 实现计划），非 CHG 执行写入。只豁免这些精确路径，不豁免整个 docs/（防 under-block）。
+const PLANNING_ARTIFACT_DIRS = ['docs/plans', 'docs/superpowers/plans', 'docs/superpowers/specs'];
 
 module.exports = {
   PACE_VERSION,
@@ -125,4 +130,5 @@ module.exports = {
   SESSION_SCOPED_FLAGS,
   SESSION_SCOPED_FLAG_PREFIXES,
   PLAN_DIRS,
+  PLANNING_ARTIFACT_DIRS,
 };
