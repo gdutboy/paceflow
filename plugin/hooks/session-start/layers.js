@@ -27,11 +27,14 @@ function sliceUtf8ToBytes(str, maxBytes) {
   return str.slice(0, lo);
 }
 
-// 活跃 CHG 展示排序档位：running（正在执行）最前 → closing-required（待收尾）→ 其余（backlog/ready/blocked）。
+// 活跃 CHG 展示排序档位：inconsistent（索引/详情损坏或状态违例）最前——损坏最该优先暴露，
+//   排在所有正常档之前，避免被正常 CHG 淹没；其后 running（正在执行）→ closing-required（待收尾）
+//   → 其余（backlog/ready/blocked）。
 function rankChangeCategory(category) {
-  if (category === 'running') return 0;
-  if (category === 'closing-required') return 1;
-  return 2;
+  if (category === 'inconsistent') return 0;
+  if (category === 'running') return 1;
+  if (category === 'closing-required') return 2;
+  return 3;
 }
 
 // 从 change-set-seq（"i/N"）提取分子 i 用于排序；无法解析回退 0。
@@ -477,6 +480,40 @@ function truncateFindings(output, state, paceUtils) {
  * @param {string} output - 已跳过 [x]/[-] 的 findings 文本
  * @returns {string} impact 截断后的文本
  */
+/**
+ * 列表区整形（CHG-20260609-01 T-002）：把活跃区列表行按保留集过滤 + 自定义排序重排，
+ *   长尾指针追加到列表**末尾**（不夹在中间割裂 P0/P1 等关键项——审查发现 C/H），
+ *   列表区外结构（## 标题 / blockquote / ARCHIVE / 列表前后正文）原样保留。
+ *   做法：把「列表区」（首个到末个列表行之间整段，含中间空行）整体替换为 排序后的保留行 [+ 指针]。
+ * @param {string[]} lines - output.split('\n')
+ * @param {Array<{i:number,text:string}>} items - 所有列表行（带行号 i + 排序字段 + 原文 text）
+ * @param {Set<number>} keepSet - 要保留的列表行行号
+ * @param {(a,b)=>number} sortFn - 保留行排序比较器（决定输出顺序，如 date 降序=新→旧）
+ * @param {string} pointerText - 长尾指针（空串=无省略不插）
+ * @returns {string}
+ */
+function reorderListWithPointer(lines, items, keepSet, sortFn, pointerText) {
+  if (items.length === 0) return lines.join('\n');
+  const keptTexts = items.filter(o => keepSet.has(o.i)).slice().sort(sortFn).map(o => o.text);
+  const first = items[0].i;
+  const last = items[items.length - 1].i;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (i < first || i > last) { out.push(lines[i]); continue; }
+    if (i === first) {
+      for (const t of keptTexts) out.push(t);
+      if (pointerText) out.push(pointerText);
+    }
+    // first..last 之间的原列表行 + 空行全部跳过（已由排序后的 keptTexts 替代）。
+  }
+  return out.join('\n');
+}
+
+// finding impact 排序档（P0 最高，必看项排最前）。
+function findingImpactRank(impact) {
+  return impact === 'P0' ? 0 : impact === 'P1' ? 1 : impact === 'P2' ? 2 : 3;
+}
+
 function truncateFindingsByImpact(output) {
   const lines = output.split('\n');
   // 收集开放索引行（`- [ ] ...`）及其 impact 与 date；只处理「## 未解决问题」段内的索引。
@@ -489,30 +526,22 @@ function truncateFindingsByImpact(output) {
     const dateM = l.match(/\[date::\s*(\d{4}-\d{2}-\d{2})\]/);
     openIdx.push({ i, impact, date: dateM ? dateM[1] : '', text: l });
   }
+  if (openIdx.length === 0) return output;
   const lowItems = openIdx.filter(o => o.impact === 'P2' || o.impact === 'P3');
-  if (lowItems.length <= 5) return output; // P2/P3 不超量，无需截断
-  // 保留最近 5 条 P2/P3（date 降序，同 date 保持原序），其余行号标记删除。
+  // 保留集：P0/P1 全部 + P2/P3 最近 5 条（date 降序选择，同 date 保持原序）。
   const keepLow = new Set(lowItems
     .map((o, k) => ({ o, k }))
     .sort((a, b) => b.o.date.localeCompare(a.o.date) || a.k - b.k)
     .slice(0, 5)
     .map(({ o }) => o.i));
-  const dropLines = new Set(lowItems.filter(o => !keepLow.has(o.i)).map(o => o.i));
-  const omitted = dropLines.size;
-  const out = [];
-  let pointerInserted = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (dropLines.has(i)) {
-      // 在首个被删行位置插入一次长尾指针，保持文档其余结构。
-      if (!pointerInserted) {
-        out.push(`（另有 ${omitted} 条 P2/P3 finding，详见 findings.md）`);
-        pointerInserted = true;
-      }
-      continue;
-    }
-    out.push(lines[i]);
-  }
-  return out.join('\n');
+  const keepSet = new Set(openIdx.filter(o => o.impact === 'P0' || o.impact === 'P1' || keepLow.has(o.i)).map(o => o.i));
+  const omitted = lowItems.length > 5 ? lowItems.length - 5 : 0;
+  const pointer = omitted > 0 ? `（另有 ${omitted} 条 P2/P3 finding，详见 findings.md）` : '';
+  // 输出排序：impact 优先（P0>P1>P2>P3，必看项突出）+ 同 impact date 降序（新→旧，#3）；
+  //   指针追加列表末尾（不割裂 P0/P1，C）。即使无省略也重排，统一修正旧→新。
+  return reorderListWithPointer(lines, openIdx, keepSet,
+    (a, b) => findingImpactRank(a.impact) - findingImpactRank(b.impact) || b.date.localeCompare(a.date) || a.i - b.i,
+    pointer);
 }
 
 /** impl_plan 智能截断（重构前 559-586）：只注入 [/]/[ ] 索引+详情，跳过 [x]/[-]。 */
@@ -562,27 +591,20 @@ function truncateCorrections(output) {
       || lines[i].match(/correction-(\d{4}-\d{2}-\d{2})/i);
     recs.push({ i, date: dateM ? dateM[1] : '', text: lines[i] });
   }
-  if (recs.length <= 6) return output; // 不超量，无需截断
-  const keep = new Set(recs
+  if (recs.length === 0) return output;
+  // 保留最近 6 条（date 降序选择，同 date 保持原序）。
+  const keepSet = new Set(recs
     .map((r, k) => ({ r, k }))
     .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.k - b.k)
     .slice(0, 6)
     .map(({ r }) => r.i));
-  const dropLines = new Set(recs.filter(r => !keep.has(r.i)).map(r => r.i));
-  const omitted = dropLines.size;
-  const out = [];
-  let pointerInserted = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (dropLines.has(i)) {
-      if (!pointerInserted) {
-        out.push(`（另有 ${omitted} 条更早纠正记录，避免重犯请 Read corrections.md）`);
-        pointerInserted = true;
-      }
-      continue;
-    }
-    out.push(lines[i]);
-  }
-  return out.join('\n');
+  const omitted = recs.length > 6 ? recs.length - 6 : 0;
+  const pointer = omitted > 0 ? `（另有 ${omitted} 条更早纠正记录，避免重犯请 Read corrections.md）` : '';
+  // 输出 date 降序（新→旧，#3）；指针追加列表末尾（不在顶部——审查 H：旧版指针插首个 drop 行=最老记录=文件头）。
+  //   即使无省略也重排，统一修正旧→新展示。
+  return reorderListWithPointer(lines, recs, keepSet,
+    (a, b) => b.date.localeCompare(a.date) || a.i - b.i,
+    pointer);
 }
 
 // spec 类内摘要要砍掉的低频可随时 Read 的段落（标题精确匹配）：目录、依赖列表。
@@ -802,6 +824,9 @@ function renderCrossSessionAndExecution(state, paceUtils) {
     const currentCategories = new Set(['running']);
     const currentSessionSummaries = state.activeChangeSummaries.filter(s => !isForeignSummary(s));
     const blockedSessionSummaries = currentSessionSummaries.filter(s => s.category === 'blocked');
+    // inconsistent 是「索引/详情损坏或状态违例」（detail 缺失 / 索引错位 / active 但已归档或取消等），不是 deferred——
+    //   必须独立暴露给 AI 人工核对，不能被 else 兜底成「当前无活跃 CHG」（G：状态机渲染漏判，摘要显示损坏但执行上下文说「无」自相矛盾）。
+    const inconsistentSessionSummaries = currentSessionSummaries.filter(s => s.category === 'inconsistent');
     const foreignProgressSummaries = foreignOwnedSummariesForInjection(state.activeChangeSummaries);
     const detailPending = state.activeChangeSummaries
       .filter(s => !isForeignSummary(s))
@@ -837,13 +862,29 @@ function renderCrossSessionAndExecution(state, paceUtils) {
         changes: blockedSessionSummaries.slice(0, 5).map(s => s.id).join(','),
       }));
     }
+    // CHG 状态异常段（独立 if，与正常执行上下文并存）：损坏 CHG 必须人工核对，优先级高于「无活跃 CHG」兜底。
+    if (inconsistentSessionSummaries.length > 0) {
+      let out = `\n=== CHG 状态异常（需人工核对）===\n`;
+      for (const s of inconsistentSessionSummaries.slice(0, 5)) {
+        out += `- ${s.id} status=${s.status || '?'} ${s.path ? '→ ' + s.path.replace(/\\/g, '/') : 'detail 缺失'}\n`;
+      }
+      if (inconsistentSessionSummaries.length > 5) out += `- ... 另有 ${inconsistentSessionSummaries.length - 5} 个\n`;
+      out += '这些 CHG 索引/详情损坏或状态违例（detail 缺失 / 索引错位 / active 但已归档或取消等），不是 deferred；先人工核对修复，勿当正常活跃 CHG 继续执行。\n\n';
+      blocks.push(out);
+      pushLog(state, logEntry('SessionStart', 'INCONSISTENT_CHANGE_SUMMARY', {
+        cwd: state.cwd,
+        count: inconsistentSessionSummaries.length,
+        changes: inconsistentSessionSummaries.slice(0, 5).map(s => s.id).join(','),
+      }));
+    }
     if (detailPending > 0) {
       blocks.push(`\n=== CHG 执行上下文 ===\nv6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN；继续前先 Read 对应 changes/<id>.md。Claude 任务面板只是工作记忆，按需要使用。\n\n`);
     } else if (hasCompleted) {
       blocks.push(`\n=== CHG 执行上下文 ===\n活跃索引中有已完成/跳过变更待 close-chg；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
     } else if (hasIndexPending && state.paceSignal === 'artifact') {
       blocks.push(`\n=== CHG 执行上下文 ===\n当前没有执行中的未完成 T-NNN；backlog / ready / blocked 属于 deferred。Stop 会用可见提醒提示这些 deferred CHG。\n\n`);
-    } else {
+    } else if (inconsistentSessionSummaries.length === 0) {
+      // 只有 inconsistent CHG 时不注入「无活跃 CHG」——上方「CHG 状态异常」段已说明，避免与摘要自相矛盾误导。
       blocks.push(`\n=== CHG 执行上下文 ===\n当前无活跃 CHG。\n\n`);
     }
   } catch (e) {}

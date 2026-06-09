@@ -291,6 +291,87 @@ test('SL-15. findings 仅 active [ ] 注入，[-] won-t-fix 排除', () => {
   assert.ok(!all.includes('已决定不修'), '[-] won\'t-fix 不注入');
 });
 
+// === CHG-20260609-01 收尾质量修复断言 ===
+
+// --- T-001 G：inconsistent CHG 不被渲染成「无活跃 CHG」 ---
+test('SL-16. inconsistent CHG 注入「状态异常」段、不渲染成「无活跃 CHG」（G 修复）', () => {
+  const state = makeActiveState({
+    taskFullCached: '# 任务\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n',
+    activeChangeSummaries: [
+      { id: 'CHG-20260609-09', category: 'inconsistent', status: 'unknown',
+        ownerDisposition: 'current', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active',
+        pending: 0, approved: false, verified: false, reviewed: false,
+        path: '/tmp/fixture-project/changes/chg-20260609-09.md', changeSet: '', changeSetSeq: '' },
+    ],
+  });
+  const { l0 } = buildLayers(state, 'startup', paceUtils, 'core');
+  const text = l0.join('\n');
+  assert.ok(text.includes('=== CHG 状态异常'), '损坏 CHG 应注入「CHG 状态异常」段');
+  assert.ok(text.includes('CHG-20260609-09'), '状态异常段含损坏 CHG id');
+  assert.ok(!text.includes('当前无活跃 CHG'), '有 inconsistent 时不注入「无活跃 CHG」（G：避免与摘要矛盾误导）');
+});
+
+// --- T-001 D：inconsistent 排序最前 ---
+test('SL-17. inconsistent CHG 排序在 running 之前（rankChangeCategory，D 修复）', () => {
+  const state = makeActiveState({
+    taskFullCached: '# 任务\n\n<!-- ARCHIVE -->\n',
+    activeChangeSummaries: [
+      { id: 'CHG-RUN', category: 'running', status: 'in-progress', ownerDisposition: 'current',
+        ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active',
+        pending: 3, approved: true, verified: false, reviewed: false, path: '/tmp/x/run.md', changeSet: '', changeSetSeq: '' },
+      { id: 'CHG-BROKEN', category: 'inconsistent', status: 'unknown', ownerDisposition: 'current',
+        ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active',
+        pending: 0, approved: false, verified: false, reviewed: false, path: '/tmp/x/broken.md', changeSet: '', changeSetSeq: '' },
+    ],
+  });
+  const { l0 } = buildLayers(state, 'startup', paceUtils, 'core');
+  const summary = l0.find(b => b.includes('活跃 CHG 摘要')) || '';
+  const idxBroken = summary.indexOf('CHG-BROKEN');
+  const idxRun = summary.indexOf('CHG-RUN');
+  assert.ok(idxBroken >= 0 && idxRun >= 0, '两个 CHG 都在摘要');
+  assert.ok(idxBroken < idxRun, 'inconsistent 排在 running 之前（损坏优先暴露）');
+});
+
+// --- T-002 C/#3：findings 截断指针末尾 + impact 优先 + 同档新→旧 ---
+test('SL-18. findings 截断指针在列表末尾不割裂 P0/P1 + impact 优先 + 同档新→旧（C/#3 修复）', () => {
+  const finds = [
+    '- [ ] [[f-p1|P1 项]] — x [date:: 2026-06-04] [impact:: P1]',
+    '- [ ] [[f-p3a|P3 a]] — x [date:: 2026-06-01] [impact:: P3]',
+    '- [ ] [[f-p3b|P3 b]] — x [date:: 2026-06-02] [impact:: P3]',
+    '- [ ] [[f-p3c|P3 c]] — x [date:: 2026-06-03] [impact:: P3]',
+    '- [ ] [[f-p3d|P3 d]] — x [date:: 2026-06-05] [impact:: P3]',
+    '- [ ] [[f-p3e|P3 e]] — x [date:: 2026-06-06] [impact:: P3]',
+    '- [ ] [[f-p3f|P3 f]] — x [date:: 2026-06-07] [impact:: P3]',
+  ].join('\n');
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'findings.md', full: `# 调研记录\n\n## 未解决问题\n\n${finds}\n` },
+  ]});
+  const { l3 } = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const block = l3.find(b => b.includes('=== findings.md ===')) || '';
+  const listLines = block.split('\n').filter(l => /^- \[ \]/.test(l) || l.includes('另有'));
+  const pointerIdx = listLines.findIndex(l => l.includes('另有'));
+  assert.ok(pointerIdx >= 0, '应有长尾指针（6 条 P3 超 5）');
+  assert.strictEqual(pointerIdx, listLines.length - 1, '指针在列表末尾（不夹在 finding 中间，C 修复）');
+  assert.ok(block.indexOf('P1 项') < block.indexOf('P3 f'), 'P1 排在 P3 前（impact 优先）');
+  assert.ok(block.indexOf('P3 f') < block.indexOf('P3 c'), 'P3 同档新→旧（06-07 在 06-03 前）');
+});
+
+// --- T-002 H/#3：corrections 截断指针末尾 + 新→旧 ---
+test('SL-19. corrections 截断保留新→旧 + 指针在末尾不在顶部（H/#3 修复）', () => {
+  const corr = Array.from({ length: 8 }, (_, i) =>
+    `- [[correction-2026-06-0${i + 1}-01-x]] 纠正 ${i} [date:: 2026-06-0${i + 1}]`).join('\n');
+  const state = makeActiveState({ artifactFiles: [
+    { file: 'corrections.md', full: `# Corrections 索引\n\n## 活跃记录\n\n${corr}\n` },
+  ]});
+  const { l3 } = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const block = l3.find(b => b.includes('=== corrections.md ===')) || '';
+  const recLines = block.split('\n').filter(l => /^- \[\[correction/.test(l));
+  assert.ok(recLines[0].includes('2026-06-08'), `首条应是最近 06-08（新→旧，实际 ${recLines[0]}）`);
+  const listLines = block.split('\n').filter(l => /^- \[\[correction/.test(l) || l.includes('另有'));
+  assert.ok(listLines[listLines.length - 1].includes('另有'), '指针在列表末尾');
+  assert.ok(!listLines[0].includes('另有'), '指针不在顶部（H 修复）');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
