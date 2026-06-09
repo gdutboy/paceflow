@@ -252,6 +252,8 @@ body: <完整 Markdown 正文>
 
 用户纠正类记录使用 `record-correction`；`record-finding` 的 `type` 限于 `research | observation | comparison | bug-report`。
 
+判定不修的 finding 一落地即 won't-fix：传 `status: rejected` + `rejection-reason`（≥10 字符）直接落 `[-]`（已决定不修的追踪记录，不注入 SessionStart，避免技术债污染上下文）；finding `[-]` 语义区别于任务跳过 `[-]` 与 CHG 取消 `[-]`。已记录的 finding 改判不修则派 `update-finding status: rejected`。
+
 记录 correction：
 
 ```text

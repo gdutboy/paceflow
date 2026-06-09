@@ -246,8 +246,8 @@ artifact writer 会同时写：
 3. **读 P0-P3 报告**：P0=有具体触发路径的功能错误/数据丢失/流程阻塞；P1=高影响但不直接阻塞；P2=代码质量/文档过时；P3=优化建议。
 4. **路由 findings**（主 session 判断，调既有 writer 操作）：
    - **修前复核（路由到「修」的前置）**：review 报告是**待评估建议、非命令**。路由任何 finding 去「修」前，主 session 用三件武器（最小复现 / 路径追踪 / 设计意图查证）**独立复核为真**，复核不下来就不修（降级 / `record-finding` / won't-fix）。subagent 的 Phase 2 不替代这一步。细节见 [references/review-methodology.md](references/review-methodology.md) step 4。
-   - **P0 / P1** → 复核为真后开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding`）；
-   - **P2 / P3** → 派 `record-finding` 进 backlog；
+   - **P0 / P1** → 复核为真后开 HOTFIX（`create-chg --type hotfix`）修，或判定不修则记 won't-fix finding（`record-finding` 带 `status: rejected` + `rejection-reason`，落 `[-]`，不注入 SessionStart）；
+   - **P2 / P3** → 派 `record-finding` 进 backlog：actionable 待修留 `[ ]`（默认），已决定不修标 `[-]`（won't-fix，同样 `status: rejected` + `rejection-reason`）；
    - **迭代闸**：审计-findings 生出的 HOTFIX **默认不自动重审**（深度=1），防"审计→修→再审"无止境递归。
 5. **派 close-chg**：findings 路由完成后，派上方 V 段的 `close-chg`（含 `review-confirmed: true` / `review-source` / `review-findings`）一把梭折叠 VERIFIED + REVIEWED + 归档；只想记录审计暂不归档时，才派 `update-chg action=review`。
 

@@ -70,6 +70,8 @@ body: <完整 Markdown 正文>
 - `rejected` / `merged` → `[-]`
 - `blocked` → `[!]`
 
+> **finding `[-]` = 已决定不修的追踪记录**（won't-fix / rejected / merged），语义区别于任务状态 `[-]`（跳过）与 CHG 状态 `[-]`（取消）。**记录即 won't-fix**：判定不修的 finding 一落地就传 `status: rejected` + `rejection-reason`，直接落 `[-]`（无需先 open 再 `update-finding`）。`[-]` 不被 SessionStart 注入（注入只取 active `[ ]`），避免已决定不修的技术债污染上下文成噪音。
+
 `<extra-meta>` 可选：
 - `[change:: [[chg-id]]]`（status=accepted 时）
 - `[merges:: [[finding-id]]]`（合并自）
