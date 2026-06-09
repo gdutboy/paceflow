@@ -942,13 +942,35 @@ function renderGit(state) {
 function renderRelatedNotes(state, eventType) {
   const notes = state.relatedNotes;
   if (!(notes && notes.length > 0)) return '';
-  const maxNotes = eventType === 'compact' ? 3 : 5;
-  let out = `=== 相关讨论 (wiki + knowledge/thoughts) ===\n`;
-  notes.slice(0, maxNotes).forEach(n => {
-    const label = n.kind === 'wiki' ? 'wiki' : n.status;
-    out += `[${label}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`;
-  });
-  out += '\n';
+  const compact = eventType === 'compact';
+  // 按 kind 分组（scanRelatedNotes 返回 wiki 排序后 → knowledge → thoughts 的扁平数组）。
+  const wiki = notes.filter(n => n.kind === 'wiki');
+  const knowledge = notes.filter(n => n.kind === 'knowledge');
+  const thoughts = notes.filter(n => n.kind === 'thoughts');
+  // 各类独立名额（分别 slice）——knowledge 不被 wiki 挤光（CHG-04 修复 M5 的 wiki≥5 挤出问题）；thoughts 独立段。
+  const wikiMax = compact ? 2 : 3;
+  const knowledgeMax = compact ? 1 : 2;
+  const thoughtsMax = compact ? 2 : 3;
+  let out = '';
+  // 段1：相关知识（wiki 提炼 + 未进 wiki 的 knowledge raw，各保证名额）。
+  const knowledgeBlock = [...wiki.slice(0, wikiMax), ...knowledge.slice(0, knowledgeMax)];
+  if (knowledgeBlock.length > 0) {
+    out += `=== 相关知识 (wiki + knowledge) ===\n`;
+    knowledgeBlock.forEach(n => {
+      const label = n.kind === 'wiki' ? 'wiki' : `knowledge·${n.status}`;
+      out += `[${label}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`;
+    });
+    out += '\n';
+  }
+  // 段2：未成熟想法（thoughts，不成熟/未实现，独立段明确标注）。
+  const thoughtsBlock = thoughts.slice(0, thoughtsMax);
+  if (thoughtsBlock.length > 0) {
+    out += `=== 未成熟想法 (thoughts) ===\n`;
+    thoughtsBlock.forEach(n => {
+      out += `[thought·${n.status}] ${n.title}${n.summary ? ' — "' + n.summary + '"' : ''}\n`;
+    });
+    out += '\n';
+  }
   return out;
 }
 

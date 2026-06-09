@@ -759,21 +759,25 @@ function parseYamlList(fm, key) {
 }
 
 /**
- * 扫描 wiki/ + thoughts/ + knowledge/ 中与指定项目相关的笔记，返回 L0 摘要。
- * 分两层：
- *  1. wiki 层（高信噪比提炼）：type: wiki-article，按 sources 前缀 OR tags 含项目名匹配（并集）。
- *  2. raw 层（thoughts/knowledge 原始记录）：按 projects 字段匹配；若 basename 已在 wiki 层出现则去重跳过。
- * wiki article 排在前面，自然优先于 raw（renderRelatedNotes 截断时优先保留提炼）。
- * 完全 vault-gated 且 wiki 可选：无 vault → []；无 wiki/ → 只 raw；降级干净，不绑定特定 vault 内容。
+ * 扫描 wiki/ + knowledge/ + thoughts/ 中与指定项目相关的笔记，返回 L0 摘要。
+ * 区分三类来源（kind），让渲染层能给各类各自名额，避免 wiki 多时挤光 knowledge/thoughts：
+ *  1. wiki（kind:'wiki'，高信噪比提炼）：type: wiki-article，按 sources 前缀 OR tags 含项目名匹配（并集）。
+ *     wiki 内部按 status 排序（confirmed > likely > 其他），不依赖 readdir walk 序，保证截断时优先保留高置信度。
+ *  2. knowledge（kind:'knowledge'，已沉淀但未提炼进 wiki 的原始记录）：扫 knowledge/，按 projects 匹配；
+ *     basename 已在 wiki 层出现则去重跳过（同一主题提炼优先）。
+ *  3. thoughts（kind:'thoughts'，未成熟/未实现想法）：扫 thoughts/，按 projects 匹配。
+ * 返回扁平数组：wiki（排序后）在前、knowledge 居中、thoughts 在后；渲染层按 kind 分组各给名额。
+ * 完全 vault-gated 且 wiki 可选：无 vault → []；无 wiki/ → 只 knowledge/thoughts；无 thoughts/ → 不出该类；降级干净。
  * @param {string} projectName - 当前项目名（小写连字符格式，或由 getProjectName 生成）
- * @returns {Array<{title: string, summary: string, status: string, kind: 'wiki'|'raw'}>}
+ * @returns {Array<{title: string, summary: string, status: string, kind: 'wiki'|'knowledge'|'thoughts'}>}
  */
 function scanRelatedNotes(projectName) {
   if (!VAULT_PATH) return [];
   const projLower = projectName.toLowerCase();
   const wikiArticles = [];
   const wikiBasenames = new Set(); // 记录 wiki article 的 basename（去 .md），供 raw 层去重
-  const rawNotes = [];
+  const knowledgeNotes = []; // kind:'knowledge'——已沉淀但未提炼进 wiki 的原始记录
+  const thoughtsNotes = []; // kind:'thoughts'——未成熟/未实现想法
 
   // --- 解析单文件 frontmatter：返回 frontmatter 文本或 null ---
   const fmOf = (content) => {
@@ -839,9 +843,11 @@ function scanRelatedNotes(projectName) {
     }
   } catch(e) { /* wiki 根不可读静默跳过，降级为只 raw */ }
 
-  // --- raw 层（thoughts/knowledge，保留原有 projects 匹配；basename 已进 wiki 则去重）---
-  for (const dir of ['thoughts', 'knowledge']) {
+  // --- knowledge / thoughts 层：按所在目录拆 kind（CHG-04），projects 匹配；basename 已进 wiki 则去重 ---
+  //   knowledge=已沉淀原始记录、thoughts=未成熟/未实现想法，渲染层据 kind 分两段各给名额。
+  for (const dir of ['knowledge', 'thoughts']) {
     const dirPath = path.join(VAULT_PATH, dir);
+    const sink = dir === 'knowledge' ? knowledgeNotes : thoughtsNotes;
     try {
       if (!fs.existsSync(dirPath)) continue;
       const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.md'));
@@ -857,20 +863,23 @@ function scanRelatedNotes(projectName) {
           if (!projMatch) continue;
           const projects = projMatch[1].split(',').map(p => p.trim().toLowerCase());
           if (!projects.includes(projLower)) continue;
-          // basename 去重：同名提炼已进 wiki 层，raw 不再补充
+          // basename 去重：同名提炼已进 wiki 层，knowledge/thoughts 不再补充
           const basename = file.replace(/\.md$/, '');
           if (wikiBasenames.has(basename)) continue;
           // 解析 status（archived 不注入）
           const status = statusOf(fm);
           if (status === 'archived') continue;
-          rawNotes.push({ title: basename, summary: summaryOf(fm), status, kind: 'raw' });
+          sink.push({ title: basename, summary: summaryOf(fm), status, kind: dir });
         } catch(e) { /* 单文件解析失败静默跳过 */ }
       }
     } catch(e) { /* 目录不可读静默跳过 */ }
   }
 
-  // wiki article 在前优先，raw 在后
-  return [...wikiArticles, ...rawNotes];
+  // wiki 内部排序：status confirmed > likely > 其他（不依赖 readdir walk 序——CHG-04 修复 wiki 子集任意问题）。
+  const wikiStatusRank = (s) => (s === 'confirmed' ? 0 : s === 'likely' ? 1 : 2);
+  wikiArticles.sort((a, b) => wikiStatusRank(a.status) - wikiStatusRank(b.status));
+  // 三类带 kind 扁平返回（wiki 排序后 → knowledge → thoughts）；渲染层按 kind 分两段、各给名额。
+  return [...wikiArticles, ...knowledgeNotes, ...thoughtsNotes];
 }
 
 // I-04: 多行格式按功能分组，便于 diff 审阅

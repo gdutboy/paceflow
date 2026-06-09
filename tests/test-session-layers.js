@@ -493,6 +493,32 @@ test('SL-28. 跨 CHG 任务本体总量护栏（超上限后续 CHG 不展开 + 
   assert.ok(l0.join('').length < 9500, `l0 任务本体总量受控 <9500（实际 ${l0.join('').length}）`);
 });
 
+test('SL-29. 相关讨论两段渲染（wiki+knowledge 段 + thoughts 独立段，CHG-04）', () => {
+  const state = makeActiveState({ relatedNotes: [
+    { title: 'wiki-a', summary: 'w', status: 'confirmed', kind: 'wiki' },
+    { title: 'know-a', summary: 'k', status: 'concluded', kind: 'knowledge' },
+    { title: 'think-a', summary: 't', status: 'discussing', kind: 'thoughts' },
+  ] });
+  const text = buildLayers(state, 'startup', paceUtils, 'core').l3.join('\n');
+  assert.ok(text.includes('=== 相关知识 (wiki + knowledge) ==='), '段1 相关知识标题');
+  assert.ok(text.includes('[wiki] wiki-a') && text.includes('know-a'), '段1 含 wiki + knowledge');
+  assert.ok(text.includes('=== 未成熟想法 (thoughts) ==='), '段2 未成熟想法标题');
+  assert.ok(text.includes('think-a'), '段2 含 thoughts');
+});
+
+test('SL-30. wiki 多时 knowledge 仍保证名额不被挤光（CHG-04 修复 M5 wiki≥5 挤出）', () => {
+  const wiki = Array.from({ length: 6 }, (_, i) => ({ title: `wiki-${i}`, summary: 'w', status: 'confirmed', kind: 'wiki' }));
+  const knowledge = [
+    { title: 'know-x', summary: 'k', status: 'concluded', kind: 'knowledge' },
+    { title: 'know-y', summary: 'k', status: 'concluded', kind: 'knowledge' },
+  ];
+  const state = makeActiveState({ relatedNotes: [...wiki, ...knowledge] });
+  const text = buildLayers(state, 'startup', paceUtils, 'core').l3.join('\n');
+  assert.ok(text.includes('know-x'), 'knowledge 项仍注入（不被 6 个 wiki 挤光）');
+  const wikiCount = (text.match(/\[wiki\]/g) || []).length;
+  assert.ok(wikiCount <= 3, `wiki 受名额限制 ≤3（实际 ${wikiCount}）`);
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
