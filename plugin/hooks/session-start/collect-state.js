@@ -265,9 +265,9 @@ function collectAgedFindings(cwd, paceSignal, paceUtils, ageFlagExistedBefore) {
 }
 
 /**
- * 读取 git 分支与最近提交（重构前 790-799）。
+ * 读取 git 分支、最近提交、脏文件数与 ahead/behind（design §5 A2）。
  * @param {string} cwd - 项目工作目录。
- * @returns {{ branch: string, lastCommit: string }|null} 非 git 项目返回 null。
+ * @returns {{ branch: string, lastCommit: string, dirtyCount: number, ahead: number, behind: number, hasUpstream: boolean }|null} 非 git 项目返回 null。
  */
 function collectGit(cwd) {
   try {
@@ -275,7 +275,26 @@ function collectGit(cwd) {
     const gitOpts = { cwd, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] };
     const branch = execSync('git rev-parse --abbrev-ref HEAD', gitOpts).trim();
     const lastCommit = execSync('git log --oneline -1', gitOpts).trim();
-    if (branch && lastCommit) return { branch, lastCommit };
+    if (!(branch && lastCommit)) return null;
+    // 脏文件数：porcelain 每行一个变更文件（含未跟踪），空输出即干净。
+    let dirtyCount = 0;
+    try {
+      const porcelain = execSync('git status --porcelain', gitOpts);
+      dirtyCount = porcelain.split('\n').filter(l => l.trim().length > 0).length;
+    } catch (e) {}
+    // ahead/behind：status -sb 首行如 `## master...origin/master [ahead 1, behind 2]`；无上游则无 `...remote`。
+    let ahead = 0, behind = 0, hasUpstream = false;
+    try {
+      const sb = execSync('git status -sb', gitOpts).split('\n')[0] || '';
+      if (/\.\.\./.test(sb)) {
+        hasUpstream = true;
+        const am = sb.match(/ahead (\d+)/);
+        const bm = sb.match(/behind (\d+)/);
+        if (am) ahead = Number(am[1]);
+        if (bm) behind = Number(bm[1]);
+      }
+    } catch (e) {}
+    return { branch, lastCommit, dirtyCount, ahead, behind, hasUpstream };
   } catch (e) {} // 非 git 项目静默跳过
   return null;
 }

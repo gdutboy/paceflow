@@ -11,7 +11,7 @@ const assert = require('assert');
 const { createTestRunner } = require('./test-utils');
 const paceUtils = require('../plugin/hooks/pace-utils');
 const { buildLayers } = require('../plugin/hooks/session-start/layers');
-const { buildTaskInjection } = require('../plugin/hooks/session-start/collect-state');
+const { buildTaskInjection, collectGit } = require('../plugin/hooks/session-start/collect-state');
 const { assembleWithBudget } = require('../plugin/hooks/session-start/budget');
 
 const t = createTestRunner('pace-session-layers');
@@ -591,6 +591,60 @@ test('SL-34. walkthrough 注入保留最近 10 条索引行（M2 WALK_KEEP=10）
   assert.ok(text.includes('第12条 ') && text.includes('第3条 '), '最近 10 条应保留（第12..第3）');
   assert.ok(!text.includes('第2条 ') && !text.includes('第1条 '), '第1/第2 条应被省略（超出 10 条）');
   assert.ok(text.includes('已省略 2 条旧记录'), '省略指针应报「已省略 2 条」（12-10）');
+});
+
+// --- 35/36. M1：renderGit 渲染脏文件数 + ahead/behind（design §5 A2）。Git 段在 buildLayers l1 层。---
+test('SL-35. renderGit 渲染脏文件数与 ahead/behind（M1 A2）', () => {
+  const dirty = makeActiveState({ git: {
+    branch: 'master', lastCommit: 'abc123 改了点东西',
+    dirtyCount: 3, ahead: 1, behind: 2, hasUpstream: true,
+  }});
+  const L = buildLayers(dirty, 'startup', paceUtils, 'core');
+  const text = [...L.l1, ...L.l0, ...L.l3].join('\n');
+  assert.ok(text.includes('=== Git 状态 ===') && text.includes('分支: master'), 'Git 段含分支');
+  assert.ok(text.includes('3 个文件未提交'), '渲染脏文件数 3');
+  assert.ok(text.includes('ahead 1') && text.includes('behind 2'), '渲染 ahead/behind');
+});
+
+test('SL-36. renderGit 干净工作区 + 无上游不渲染 ahead/behind（M1 A2 边界）', () => {
+  const clean = makeActiveState({ git: {
+    branch: 'master', lastCommit: 'abc123 init',
+    dirtyCount: 0, ahead: 0, behind: 0, hasUpstream: false,
+  }});
+  const L = buildLayers(clean, 'startup', paceUtils, 'core');
+  const text = [...L.l1, ...L.l0, ...L.l3].join('\n');
+  assert.ok(text.includes('=== Git 状态 ===') && text.includes('干净'), '干净工作区显示「干净」');
+  assert.ok(!text.includes('ahead') && !text.includes('behind'), '无上游不渲染 ahead/behind 行');
+});
+
+// --- 37. M1：collectGit 报脏文件数 + ahead/behind（真实临时 git repo）---
+test('SL-37. collectGit 报脏文件数 + ahead/behind（真实临时 git repo）', () => {
+  const cp = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'pace-collectgit-'));
+  const run = (cmd) => cp.execSync(cmd, { cwd: repo, stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    run('git init -q');
+    run('git config user.email t@t.t');
+    run('git config user.name t');
+    run('git checkout -q -b master');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'v1\n');
+    run('git add a.txt');
+    run('git commit -q -m init');
+    // 脏：改 a.txt 不提交 + 新增未跟踪文件 → porcelain 2 行。
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'v2\n');
+    fs.writeFileSync(path.join(repo, 'b.txt'), 'new\n');
+    const git = collectGit(repo);
+    assert.ok(git && git.branch === 'master', 'branch=master');
+    assert.strictEqual(git.dirtyCount, 2, 'porcelain 2 行（1 改 + 1 未跟踪）');
+    assert.strictEqual(git.hasUpstream, false, '无 remote → hasUpstream=false');
+    assert.strictEqual(git.ahead, 0, '无上游 ahead=0');
+    assert.strictEqual(git.behind, 0, '无上游 behind=0');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 process.on('exit', () => {

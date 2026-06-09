@@ -930,10 +930,21 @@ function renderAgedFindings(state) {
   return out;
 }
 
-/** Git 状态 section（重构前 790-799）。 */
+/** Git 状态 section（重构前 790-799；M1 A2 加脏文件数 + ahead/behind）。 */
 function renderGit(state) {
   if (!state.git) return '';
-  return `=== Git 状态 ===\n分支: ${state.git.branch}\n最近提交: ${state.git.lastCommit}\n\n`;
+  const g = state.git;
+  let out = `=== Git 状态 ===\n分支: ${g.branch}\n最近提交: ${g.lastCommit}\n`;
+  // 脏文件：design §5 A2——有未提交变更时提示数量，干净时显式标注（避免「无信息=不确定」）。
+  if (typeof g.dirtyCount === 'number') {
+    out += g.dirtyCount > 0 ? `工作区: ${g.dirtyCount} 个文件未提交\n` : `工作区: 干净\n`;
+  }
+  // ahead/behind：仅有上游且任一 > 0 时渲染，无上游/已同步不噪声。
+  if (g.hasUpstream && (g.ahead > 0 || g.behind > 0)) {
+    out += `与上游: ahead ${g.ahead} / behind ${g.behind}\n`;
+  }
+  out += '\n';
+  return out;
 }
 
 /** 相关讨论 section（CHG-04 重构为两段）：段1「相关知识 (wiki + knowledge)」wiki 提炼 + knowledge raw
