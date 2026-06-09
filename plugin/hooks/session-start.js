@@ -150,12 +150,12 @@ if (rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md'))) {
   rootChoicePromptText = [
     '=== PACEflow 启用提示 ===',
     '本项目已触发 PACEflow 信号；收到代码修改任务时先调用 Skill(paceflow:pace-workflow)。',
-    '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
+    '涉及 artifact/CHG 字段、任务状态、批准、验证、归档、记录调研/纠正时，再调用 Skill(paceflow:artifact-management)。',
     '首次写代码或派 artifact-writer 时，PreToolUse 会要求选择 artifact root；选择前不会创建 .pace/、changes/ 或 Obsidian 空项目目录。',
     `若当前子目录应作为独立 PaceFlow 项目，先运行：node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
     `若用户已明确选择 vault/local，先从当前项目 cwd 运行：node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
     `配置写入后再运行：node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
-    'reserve helper 不接受 --artifact-dir / --artifact-root / --project-dir；不要搜索 plugin cache 猜版本。',
+    'reserve helper 从当前项目 cwd 和 .pace/artifact-root 自动解析 artifact_dir；自动化场景用 --cwd 指定项目 cwd 即可。',
     '',
   ].join('\n') + '\n';
 }

@@ -254,12 +254,12 @@ function renderWorkflowEntry(state, eventType, paceUtils) {
   const lines = [
     '=== PACEflow 工作流入口 ===',
     `信号: ${reason}`,
-    '收到实现、迁移、CHG、验证或归档任务时，先调用 Skill(paceflow:pace-workflow)。',
-    '涉及 artifact/CHG 字段、任务状态、批准、验证或归档时，再调用 Skill(paceflow:artifact-management)。',
+    '收到实现、迁移、CHG、验证、归档、记录 finding/correction 任务时，先调用 Skill(paceflow:pace-workflow)。',
+    '涉及 artifact/CHG 字段、任务状态、批准、验证、归档、记录调研/纠正时，再调用 Skill(paceflow:artifact-management)。',
     `artifact-root helper: node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
     `独立子项目 helper: node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
     `预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
-    'reserve helper 从当前项目 cwd 和 .pace/artifact-root 解析 artifact_dir；不要搜索 plugin cache，也不要传 --artifact-dir / --artifact-root / --project-dir。',
+    'reserve helper 从当前项目 cwd 和 .pace/artifact-root 自动解析 artifact_dir；自动化场景用 --cwd 指定项目 cwd 即可。',
     '',
   ];
   return lines.join('\n') + '\n';
@@ -278,7 +278,7 @@ function renderNativePlanReminder(state, eventType) {
 /** Artifact 目录 section（重构前 writeArtifactDirSection 315-327 的输出部分）。 */
 function renderArtifactDirSection(state) {
   const ad = state.artifactDir;
-  return `=== Artifact 目录 ===\n路径: ${ad.display}\n模式: ${ad.mode}\n仅用于 PaceFlow artifacts：${ad.content}。\nartifact-root helper: node "${ad.scripts.setArtifactRoot}" --choice local 或 --choice vault\n独立子项目 helper: node "${ad.scripts.setProjectRoot}" --mode independent\n预留编号 helper: node "${ad.scripts.reserveArtifactId}" --operation create-chg\nplan 同步 helper: node "${ad.scripts.syncPlan}" --plan "<已桥接 plan 绝对路径>"\n\n`;
+  return `=== Artifact 目录 ===\n路径: ${ad.display}\n模式: ${ad.mode}\n仅用于 PaceFlow artifacts：${ad.content}。\nCHG 编号 / artifact-root / 独立子项目 helper 见上方「PACEflow 工作流入口」段。\nplan 同步 helper: node "${ad.scripts.syncPlan}" --plan "<已桥接 plan 绝对路径>"\n\n`;
 }
 
 /**
@@ -295,6 +295,8 @@ function renderArtifactFiles(state, paceUtils) {
   const found = [];
   for (const { file, full } of state.artifactFiles) {
     let block = `=== ${file} ===\n`;
+    // findings 子路径线索（corrections.md 文件头已有 blockquote，findings.md 缺——注入层补，所有项目生效）。
+    if (file === 'findings.md') block += '（finding 详情在 changes/findings/<id>.md，按需 Read 完整正文）\n';
     const archiveMatch = full.match(ARCHIVE_PATTERN);
     // M3 T-002：findings 缺 ARCHIVE 时不走通用「字节截断 + 缺失警告」兜底（那是 mid-line 字节切，
     //   且 20000 字节远超 9500 chars 注入预算 → 整条被 packL3 omit、警告 footer 不可达）。改为：
@@ -476,7 +478,7 @@ function truncateFindings(output, state, paceUtils) {
  * findings impact 优先类内截断（M3 T-002 / design §3.6）：
  *   开放 [ ] 索引行按 impact 分档——P0/P1 全保留，P2/P3 仅保留最近 5 条（按 date 降序），
  *   被省略的 P2/P3 以「（另有 M 条 P2/P3 finding，详见 findings.md）」长尾指针替代。
- *   只动 `## 未解决问题` 下的开放索引行；P0/P1 与详情段落不受影响。无超量时原样返回。
+ *   只动开放 `- [ ]` 索引行（数据模型保证活跃区索引连续单段，详情在 changes/findings/<id>.md）；P0/P1 与详情段落不受影响。无超量时仍按 impact+date 重排。
  * @param {string} output - 已跳过 [x]/[-] 的 findings 文本
  * @returns {string} impact 截断后的文本
  */
@@ -516,7 +518,7 @@ function findingImpactRank(impact) {
 
 function truncateFindingsByImpact(output) {
   const lines = output.split('\n');
-  // 收集开放索引行（`- [ ] ...`）及其 impact 与 date；只处理「## 未解决问题」段内的索引。
+  // 收集开放索引行（`- [ ] ...`）及其 impact 与 date（扫活跃区全部开放索引行——数据模型保证它们连续单段）。
   const openIdx = [];
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
@@ -742,7 +744,11 @@ function renderChangeSetProgress(state) {
       .filter(t => t > 0))];
     const seqs = members.map(m => m.changeSetSeq || m.id).join(', ');
     const totalSuffix = (totals.length === 1 && members.length > 1) ? `，变更集共 ${totals[0]} 个` : '';
-    out += `- change-set ${name}：还有 ${members.length} 个待执行（${seqs}）${totalSuffix}\n`;
+    // 区分执行中（running）与待执行——running 不是「待执行」，避免提示 AI 对执行中的 CHG 重复 approve-and-start。
+    const runningCount = members.filter(m => m.category === 'running').length;
+    const pendingCount = members.length - runningCount;
+    const statusDesc = runningCount > 0 ? `还有 ${runningCount} 个执行中 + ${pendingCount} 个待执行` : `还有 ${pendingCount} 个待执行`;
+    out += `- change-set ${name}：${statusDesc}（${seqs}）${totalSuffix}\n`;
   }
   out += `一个 change-set 是一组规划好的可闭环 CHG；逐个 approve-and-start 执行，勿遗漏后续阶段。\n\n`;
   return out;

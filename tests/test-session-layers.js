@@ -372,6 +372,41 @@ test('SL-19. corrections 截断保留新→旧 + 指针在末尾不在顶部（H
   assert.ok(!listLines[0].includes('另有'), '指针不在顶部（H 修复）');
 });
 
+// === CHG-20260609-02 文案 + helper 精简断言 ===
+
+test('SL-20. 工作流入口含 finding/correction 场景 + 正向 framing（CHG-02 T-001）', () => {
+  const state = makeActiveState();
+  const head = buildLayers(state, 'startup', paceUtils, 'core').l1head.join('\n');
+  assert.ok(head.includes('finding/correction'), '工作流入口含 finding/correction 场景');
+  assert.ok(head.includes('自动解析') && head.includes('--cwd'), '正向 framing（自动解析 + --cwd）');
+  assert.ok(!head.includes('不要搜索') && !head.includes('不要传'), '无负向 framing（不要搜索/不要传）');
+});
+
+test('SL-21. helper 去重（Artifact 目录指向工作流入口）+ findings 子路径（CHG-02 T-002）', () => {
+  const state = makeActiveState({
+    artifactDirInjected: true,
+    artifactFiles: [{ file: 'findings.md', full: '# 调研记录\n\n## 未解决问题\n\n- [ ] [[f|x]] — y [date:: 2026-06-08] [impact:: P1]\n' }],
+  });
+  const headText = buildLayers(state, 'startup', paceUtils, 'core').l1head.join('\n');
+  const artDirSection = headText.split('=== Artifact 目录 ===')[1] || '';
+  assert.ok(artDirSection.includes('见上方') && artDirSection.includes('工作流入口'), 'Artifact 目录 helper 指向工作流入口（去重）');
+  assert.ok(!artDirSection.includes('artifact-root helper:'), 'Artifact 目录段不再重复 artifact-root helper');
+  const findingsBlock = buildLayers(state, 'startup', paceUtils, 'artifact').l3.find(b => b.includes('=== findings.md ===')) || '';
+  assert.ok(findingsBlock.includes('changes/findings/'), 'findings 块含子路径线索');
+});
+
+test('SL-22. change-set 进度区分执行中 vs 待执行（running 不算待执行，CHG-02 T-002）', () => {
+  const state = makeActiveState({
+    activeChangeSummaries: [
+      { id: 'CHG-A', category: 'running', status: 'in-progress', ownerDisposition: 'current', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active', pending: 2, approved: true, verified: false, reviewed: false, path: '/tmp/x/a.md', changeSet: 'cs-test', changeSetSeq: '1/3' },
+      { id: 'CHG-B', category: 'backlog', status: 'planned', ownerDisposition: 'current', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'active', pending: 0, approved: false, verified: false, reviewed: false, path: '/tmp/x/b.md', changeSet: 'cs-test', changeSetSeq: '2/3' },
+    ],
+  });
+  const csText = buildLayers(state, 'startup', paceUtils, 'core').l0.find(b => b.includes('change-set 整体进度')) || '';
+  assert.ok(csText.includes('执行中'), 'change-set 进度区分执行中');
+  assert.ok(!csText.includes('还有 2 个待执行'), '不把 running 算入待执行（1 running + 1 backlog ≠ 2 待执行）');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
