@@ -1019,11 +1019,19 @@ test('vault 和 CWD 都有 → vault 优先', () => {
   assert.strictEqual(getArtifactDir(dir), vaultDir);
 });
 
-test('新项目（无 artifact）→ vault 目录', () => {
+test('新项目（无 artifact、无配置）→ 默认本地项目根（F3 偏 local）', () => {
   const dir = makeTmpDir('gad-new');
+  // F3：全新无配置项目默认偏 local（项目根），不再隐式指 vault；显式 artifact-root=vault 仍走 vault。
+  assert.strictEqual(getArtifactDir(dir), dir);
+});
+
+test('新项目 + 显式 artifact-root=vault → 仍 vault（F3 不破坏显式选择，验反向）', () => {
+  const dir = makeTmpDir('gad-new-vault-choice');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'vault\n', 'utf8');
   const projectName = path.basename(dir).toLowerCase().replace(/\s+/g, '-');
   const expected = path.join(paceUtils.VAULT_PATH, 'projects', projectName);
-  assert.strictEqual(getArtifactDir(dir), expected);
+  assert.strictEqual(getArtifactDir(dir), expected, '显式 vault 选择优先级高于 F3 默认');
 });
 
 test('artifact-root=local → 返回项目本地目录', () => {
@@ -1325,7 +1333,9 @@ test('子目录 project-root=independent 阻断父级继承', () => {
   assert.strictEqual(rootInfo.mode, 'independent');
   assert.strictEqual(getProjectStateDir(child), child);
   assert.strictEqual(isPaceProject(child), false);
-  assert.strictEqual(getArtifactDir(child), path.join(paceUtils.VAULT_PATH, 'projects', 'new-direction'));
+  // F3：全新 independent 子项目（无显式 artifact-root choice）默认 local（child 自身），不隐式指 vault；
+  //   independent 只阻断父级继承，artifact root 仍走 getArtifactDir 的 F3 默认。
+  assert.strictEqual(getArtifactDir(child), child);
 });
 
 test('中间父级 .pace/disabled 阻断继续继承更外层 Project Root', () => {

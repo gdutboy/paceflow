@@ -524,8 +524,10 @@ function getArtifactDir(cwd) {
     _artifactDirCache = { cwd, dir: legacyDir };
     return legacyDir;
   }
-  // 新项目 → vault（有 VAULT_PATH 时）或 CWD（无 VAULT_PATH）
-  result = VAULT_PATH ? path.join(VAULT_PATH, 'projects', projectCandidates[0]) : stateDir;
+  // 新项目（无配置、无 vault v6 changes/、无 local v6 changes/、无 legacy）→ 默认本地项目根
+  //   （F3：偏 local，不隐式指 vault）。显式 artifact-root / 已有 changes/ / 已迁 vault 在上方分支已早返回；
+  //   此处仅「四不沾全新项目」的隐式默认——用户未表态前默认 local，避免注入 Artifact Root 误导指向 vault。
+  result = stateDir;
   _artifactDirCache = { cwd, dir: result };
   return result;
 }
