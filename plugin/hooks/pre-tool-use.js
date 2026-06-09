@@ -94,6 +94,7 @@ const {
 const {
   isArtifactWriterManagedRel,
   directArtifactMutationDenyReason,
+  isChangeDetailArtifactRel,
   detectChangeDetailMarkerMutation,
   markerMutationDenyReason,
 } = require('./pre-tool-use/marker-guard');
@@ -961,7 +962,7 @@ paceUtils.withStdinParsed((stdin) => {
   let artifactResourceLockHeld = null;
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
-      if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation)) {
+      if (isChangeDetailArtifactRel(artifactRelForMutation)) {
         const mutationText = [content, newString].filter(Boolean).join('\n');
         if (/^status:\s*archived\s*$/mi.test(mutationText)) {
           const missingArchive = ['task.md', 'implementation_plan.md'].filter(file => {
@@ -996,7 +997,7 @@ paceUtils.withStdinParsed((stdin) => {
           }
         }
       }
-      if (toolName === 'Write' && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation)) {
+      if (toolName === 'Write' && isChangeDetailArtifactRel(artifactRelForMutation)) {
         const fm = paceUtils.parseFrontmatter(content || '');
         const status = String(fm.status || '').replace(/^["']|["']$/g, '').trim();
         if (status && !['planned', 'in-progress', 'completed', 'archived', 'cancelled'].includes(status)) {
@@ -1028,7 +1029,7 @@ paceUtils.withStdinParsed((stdin) => {
       }, artifactRelForMutation);
       if (toolName === 'Write') {
         const writeNeedsReservation = !fs.existsSync(filePath) && (
-          /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRelForMutation) ||
+          isChangeDetailArtifactRel(artifactRelForMutation) ||
           /^changes\/corrections\/correction-\d{4}-\d{2}-\d{2}-\d{2}-.+\.md$/i.test(artifactRelForMutation)
         );
         if (writeNeedsReservation && !reservation) {

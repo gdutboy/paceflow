@@ -958,12 +958,20 @@ test('同一 session 多个 reservation 可按目标文件精确匹配', () => {
   });
   assert.strictEqual(first.reserved, true);
   assert.strictEqual(second.reserved, true);
-  assert.notStrictEqual(first.fileRel, second.fileRel);
-  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, first.fileRel).fileRel, first.fileRel);
-  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, second.fileRel).fileRel, second.fileRel);
-  assert.strictEqual(clearArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, first.fileRel), true);
-  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, first.fileRel), null);
-  assert.strictEqual(findArtifactReservationForRel(dir, { sessionId: 'sid-same', agentId: 'agent-late' }, second.fileRel).fileRel, second.fileRel);
+  // CHG-slug：CHG/HOTFIX reservation 改用 filePrefix（末尾 `-` 留 slug 占位），不再有精确 fileRel。
+  assert.notStrictEqual(first.filePrefix, second.filePrefix);
+  const owner = { sessionId: 'sid-same', agentId: 'agent-late' };
+  const firstFile = `${first.filePrefix}detail.md`;
+  const secondFile = `${second.filePrefix}detail.md`;
+  // 带 slug 全名精确命中各自 reservation。
+  assert.strictEqual(findArtifactReservationForRel(dir, owner, firstFile).filePrefix, first.filePrefix);
+  assert.strictEqual(findArtifactReservationForRel(dir, owner, secondFile).filePrefix, second.filePrefix);
+  // 精确 id 推的 rel（无 slug，batch 块 lookup 走此路）也须命中对的 reservation，不被多 reservation 顺序误取。
+  const firstExactRel = `${first.filePrefix.replace(/-$/, '')}.md`;
+  assert.strictEqual(findArtifactReservationForRel(dir, owner, firstExactRel).filePrefix, first.filePrefix);
+  assert.strictEqual(clearArtifactReservationForRel(dir, owner, firstFile), true);
+  assert.strictEqual(findArtifactReservationForRel(dir, owner, firstFile), null);
+  assert.strictEqual(findArtifactReservationForRel(dir, owner, secondFile).filePrefix, second.filePrefix);
 });
 
 test('isArtifactRuntimeControlPath 识别锁/sequence/reservation 控制面', () => {

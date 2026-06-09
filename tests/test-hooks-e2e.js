@@ -132,7 +132,14 @@ function reservedFromStdout(stdout) {
   const id = (text.match(/reserved-id:\s*([A-Z]+-\d{8}-\d{2}|CORRECTION-\d{4}-\d{2}-\d{2}-\d{2})/) || [])[1] || '';
   const file = (text.match(/reserved-file:\s*([^\s；]+)/) || [])[1] || '';
   const prefix = (text.match(/reserved-file-prefix:\s*([^\s；<]+)(?:<slug>\.md)?/) || [])[1] || '';
-  return { id, file, prefix };
+  // 统一访问：CHG/HOTFIX/correction 走 filePrefix（reserved-file-prefix，带 <slug> 占位），
+  //   detailFile 用固定 slug `detail` 拼出 artifact-writer 实际写入的详情文件路径；
+  //   promptReservedLine 是加进 artifact-writer prompt 的预留行（精确 reserved-file，或 prefix 原样占位）。
+  const detailFile = file || (prefix ? `${prefix}detail.md` : '');
+  const promptReservedLine = file
+    ? `reserved-file: ${file}`
+    : (prefix ? `reserved-file-prefix: ${prefix}<slug>.md` : '');
+  return { id, file, prefix, detailFile, promptReservedLine };
 }
 
 function projectNameForDir(dir) {
@@ -1583,7 +1590,7 @@ test('9b. create-chg 首次预留编号后重派，写 verified-date null → �
   assert.strictEqual(first.code, 0);
   assert.ok(first.stdout.includes('"deny"'));
   const reserved = reservedFromStdout(first.stdout);
-  assert.ok(reserved.id && reserved.file);
+  assert.ok(reserved.id && reserved.detailFile);
 
   const pre = runHook('pre-tool-use.js', {
     cwd: dir,
@@ -1593,7 +1600,7 @@ test('9b. create-chg 首次预留编号后重派，写 verified-date null → �
       tool_input: {
         subagent_type: 'paceflow:artifact-writer',
         description: 'Create CHG',
-        prompt: `${prompt}\nreserved-id: ${reserved.id}\nreserved-file: ${reserved.file}`,
+        prompt: `${prompt}\nreserved-id: ${reserved.id}\n${reserved.promptReservedLine}`,
       },
     },
   });
@@ -1633,7 +1640,7 @@ test('9b1. create-chg 写入非法 CHG status=open → DENY', () => {
     },
   });
   const reserved = reservedFromStdout(first.stdout);
-  assert.ok(reserved.id && reserved.file);
+  assert.ok(reserved.id && reserved.detailFile);
   const pre = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
@@ -1642,7 +1649,7 @@ test('9b1. create-chg 写入非法 CHG status=open → DENY', () => {
       tool_input: {
         subagent_type: 'paceflow:artifact-writer',
         description: 'Create CHG',
-        prompt: `${prompt}\nreserved-id: ${reserved.id}\nreserved-file: ${reserved.file}`,
+        prompt: `${prompt}\nreserved-id: ${reserved.id}\n${reserved.promptReservedLine}`,
       },
     },
   });
@@ -1657,7 +1664,7 @@ test('9b1. create-chg 写入非法 CHG status=open → DENY', () => {
       agent_type: 'paceflow:artifact-writer',
       tool_name: 'Write',
       tool_input: {
-        file_path: path.join(dir, reserved.file),
+        file_path: path.join(dir, reserved.detailFile),
         content: invalid,
       },
     },
@@ -2561,7 +2568,7 @@ test('9hc. artifact-writer create-chg 带 vault artifact_dir + reserved-id → �
   assert.strictEqual(first.code, 0);
   assert.ok(first.stdout.includes('"deny"'));
   const reserved = reservedFromStdout(first.stdout);
-  assert.ok(reserved.id && reserved.file);
+  assert.ok(reserved.id && reserved.detailFile);
 
   const r = runHook('pre-tool-use.js', {
     cwd: worktree,
@@ -2571,7 +2578,7 @@ test('9hc. artifact-writer create-chg 带 vault artifact_dir + reserved-id → �
       tool_input: {
         subagent_type: 'paceflow:artifact-writer',
         description: 'Create CHG',
-        prompt: `${prompt}\nreserved-id: ${reserved.id}\nreserved-file: ${reserved.file}`,
+        prompt: `${prompt}\nreserved-id: ${reserved.id}\n${reserved.promptReservedLine}`,
       },
     },
   });
@@ -2594,7 +2601,7 @@ test('9hc-helper. reserve-artifact-id helper 预留 create-chg 后 Agent 首派�
   assert.strictEqual(helper.code, 0);
   assert.ok(helper.stdout.includes(`artifact_dir: ${dir.replace(/\\/g, '/')}/`));
   assert.ok(helper.stdout.includes(`reserved-id: CHG-${today().replace(/-/g, '')}-01`));
-  assert.ok(helper.stdout.includes(`reserved-file: changes/chg-${today().replace(/-/g, '')}-01.md`));
+  assert.ok(helper.stdout.includes(`reserved-file-prefix: changes/chg-${today().replace(/-/g, '')}-01-<slug>.md`));
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'helper 应在 root 已选择后懒创建 changes/');
   assert.ok(fs.existsSync(path.join(dir, 'task.md')), 'helper 应在 root 已选择后懒创建 task.md');
 
@@ -2690,7 +2697,15 @@ test('9hc-helper2a. reserve-artifact-id helper 支持 HOTFIX 类型且 --new 避
   const compact = today().replace(/-/g, '');
   assert.ok(chg.stdout.includes(`reserved-id: CHG-${compact}-01`));
   assert.ok(hotfix.stdout.includes(`reserved-id: HOTFIX-${compact}-01`));
-  assert.ok(hotfix.stdout.includes(`reserved-file: changes/hotfix-${compact}-01.md`));
+  assert.ok(hotfix.stdout.includes(`reserved-file-prefix: changes/hotfix-${compact}-01-<slug>.md`));
+});
+
+test('T-2-slug. reserve create-chg 输出 reserved-file-prefix 含 <slug> 占位（CHG-slug）', () => {
+  const dir = makeV6Project('reserve-chg-prefix', { withIndex: false, detail: false });
+  const r = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg'], env: { CLAUDE_CODE_SESSION_ID: 'sid-chg-prefix' } });
+  assert.strictEqual(r.code, 0);
+  assert.match(r.stdout, /reserved-file-prefix: changes\/chg-\d{8}-\d{2}-<slug>\.md/, 'CHG 应输出 reserved-file-prefix 带 <slug> 占位');
+  assert.doesNotMatch(r.stdout, /reserved-file: changes\/chg-\d{8}-\d{2}\.md/, '不应再输出精确 reserved-file');
 });
 
 test('9hc-helper2b. reserve-artifact-id helper 拒绝 create-chg --type research', () => {
@@ -2957,7 +2972,7 @@ test('BCG-6. 单 CHG（无 --- CHG 块）走现有路径放行（回归）', () 
   const env = { CLAUDE_CODE_SESSION_ID: 'sid-single-reg' };
   const res = runReserveHelper({ cwd: dir, args: ['--operation', 'create-chg'], env });
   const id = (res.stdout.match(/CHG-\d{8}-\d{2}/) || [])[0];
-  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\nreserved-id: ${id}\nreserved-file: changes/${id.toLowerCase()}.md\ntitle: 单条\ntasks:\n- T-001: do`;
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: create-chg\nreserved-id: ${id}\nreserved-file-prefix: changes/${id.toLowerCase()}-<slug>.md\ntitle: 单条\ntasks:\n- T-001: do`;
   const r = runBatchAgent(dir, 'sid-single-reg', prompt);
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'), '单 CHG 应回归放行');
@@ -3783,7 +3798,7 @@ test('9hc0c. artifact-writer 持有写锁时可新建 changes 详情，已有详
   assert.strictEqual(first.code, 0);
   assert.ok(first.stdout.includes('"deny"'));
   const reserved = reservedFromStdout(first.stdout);
-  assert.ok(reserved.id && reserved.file);
+  assert.ok(reserved.id && reserved.detailFile);
 
   const pre = runHook('pre-tool-use.js', {
     cwd: dir,
@@ -3793,7 +3808,7 @@ test('9hc0c. artifact-writer 持有写锁时可新建 changes 详情，已有详
       tool_input: {
         subagent_type: 'paceflow:artifact-writer',
         description: 'Create CHG',
-        prompt: `${prompt}\nreserved-id: ${reserved.id}\nreserved-file: ${reserved.file}`,
+        prompt: `${prompt}\nreserved-id: ${reserved.id}\n${reserved.promptReservedLine}`,
       },
     },
   });
@@ -3807,7 +3822,7 @@ test('9hc0c. artifact-writer 持有写锁时可新建 changes 详情，已有详
       agent_type: 'paceflow:artifact-writer',
       tool_name: 'Write',
       tool_input: {
-        file_path: path.join(dir, reserved.file),
+        file_path: path.join(dir, reserved.detailFile),
         content: '# new detail\n',
       },
     },

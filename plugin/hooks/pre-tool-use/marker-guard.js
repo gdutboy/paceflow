@@ -20,7 +20,9 @@ function directArtifactMutationDenyReason(toolName, artifactRel) {
 }
 
 function isChangeDetailArtifactRel(artifactRel) {
-  return /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(String(artifactRel || ''));
+  // CHG-slug：详情文件名可带描述性 slug（chg-date-nn-<slug>.md），slug 段可选（旧文件无 slug）。
+  //   [^/]+ 限单层文件名不跨目录。是 marker 检测 / status 校验 / reservation 强制的统一 CHG 详情识别。
+  return /^changes\/(?:chg|hotfix)-\d{8}-\d{2}(?:-[^/]+)?\.md$/i.test(String(artifactRel || ''));
 }
 
 function detectChangeDetailMarkerMutation({ artifactRel, newString, oldString, content }) {

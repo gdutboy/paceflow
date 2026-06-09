@@ -698,9 +698,11 @@ module.exports = function createLockUtils(ctx) {
       const reservations = seq.numbers.map((num) => {
         const nn = String(num).padStart(2, '0');
         const id = `${kind}-${dateCompact}-${nn}`;
-        const fileRel = `changes/${lower}-${dateCompact}-${nn}.md`;
-        const written = writeArtifactReservation(cwd, owner, { operation, kind, id, fileRel });
-        return { reserved: true, operation, kind, id, fileRel, path: written.path };
+        // CHG/HOTFIX 文件名 slug：用 filePrefix（末尾 `-` 留 slug 占位，对称 correction），
+        //   reserve 输出 reserved-file-prefix；artifact-writer 按 title 生成 slug 补全文件名。
+        const filePrefix = `changes/${lower}-${dateCompact}-${nn}-`;
+        const written = writeArtifactReservation(cwd, owner, { operation, kind, id, filePrefix });
+        return { reserved: true, operation, kind, id, filePrefix, path: written.path };
       });
       return { reserved: true, operation, reservations };
     }
@@ -732,10 +734,15 @@ module.exports = function createLockUtils(ctx) {
   function reservationMatchesArtifactRel(reservation, artifactRel) {
     if (!reservation || !artifactRel) return { ok: true };
     const rel = String(artifactRel || '').replace(/\\/g, '/');
-    if (reservation.fileRel && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(rel)) {
-      return rel === reservation.fileRel
+    if (reservation.filePrefix && /^changes\/(?:chg|hotfix)-\d{8}-\d{2}(?:-.+)?\.md$/i.test(rel)) {
+      // rel 两种来源都须匹配本 reservation 的 id 主干（filePrefix 去末尾 `-`）：
+      //   ① lookup 用 reserved-id 推的精确 `chg-date-nn.md`（无 slug，batch 块仅有 reserved-id 时走此路）；
+      //   ② artifact-writer 实际写入的带 slug 全名 `chg-date-nn-<slug>.md`（startsWith filePrefix）。
+      //   只认带 slug 会让精确 lookup rel 落入末尾默认放行，多 reservation 时按遍历顺序误取（BCG-1 回归）。
+      const stem = reservation.filePrefix.replace(/-$/, '');
+      return (rel === `${stem}.md` || (rel.startsWith(reservation.filePrefix) && rel.endsWith('.md')))
         ? { ok: true }
-        : { ok: false, expected: reservation.fileRel, actual: rel };
+        : { ok: false, expected: `${reservation.filePrefix}<slug>.md`, actual: rel };
     }
     if (reservation.filePrefix && /^changes\/corrections\/correction-\d{4}-\d{2}-\d{2}-\d{2}-.+\.md$/i.test(rel)) {
       return rel.startsWith(reservation.filePrefix) && rel.endsWith('.md')
