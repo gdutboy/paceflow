@@ -609,8 +609,10 @@ function truncateCorrections(output) {
     pointer);
 }
 
-// spec 类内摘要要砍掉的低频可随时 Read 的段落（标题精确匹配）：目录、依赖列表。
+// spec 类内摘要要砍掉的低频可随时 Read 的段落（标题前缀匹配）：目录（含「目录结构」）、依赖列表。
 //   保留「项目概述 / 技术栈 / 禁止事项」等高价值约束段——禁止事项是 AI 不可违反的约束，必须保住（e2e 2h）。
+//   E3：改前缀匹配——真实/模板标题是「## 目录结构」，精确 includes('目录') 永不命中、致 spec 全文注入。
+//   保留数组 + some(startsWith) 而非钉死全名 ['目录结构',...]：对未来标题漂移（目录与结构/目录说明）鲁棒（spec §5）。
 const SPEC_OMIT_SECTIONS = ['目录', '依赖列表'];
 /**
  * spec 类内摘要（M3 T-002 / design §3.6）：
@@ -630,7 +632,7 @@ function truncateSpec(output) {
   // 命中要省略的段（标题在 SPEC_OMIT_SECTIONS 中），范围为本标题到下一个 ## 起点（或文末）。
   const dropRanges = [];
   for (let i = 0; i < heads.length; i++) {
-    if (!SPEC_OMIT_SECTIONS.includes(heads[i].name)) continue;
+    if (!SPEC_OMIT_SECTIONS.some(omit => heads[i].name.startsWith(omit))) continue;
     const end = i + 1 < heads.length ? heads[i + 1].start : output.length;
     dropRanges.push([heads[i].start, end]);
   }
