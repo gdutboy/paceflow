@@ -360,10 +360,10 @@ function renderArtifactFiles(state, paceUtils) {
   return { blocks, found };
 }
 
-/** walkthrough 索引表截断：保留最近 3 行 + 删除 v6 永不触发的详情段落处理（重构前 449-503；M3 T-002 10→3）。 */
+/** walkthrough 索引表截断：保留最近 10 行 + 删除 v6 永不触发的详情段落处理（重构前 449-503；M2 回 10 对齐 design L0）。 */
 function truncateWalkthrough(output) {
-  // 索引表截断：保留表头 + 最近 3 行数据行（M3 T-002：从 10 收紧到 3，控制 walkthrough 块体积）。
-  const WALK_KEEP = 3;
+  // 索引表截断：保留表头 + 最近 10 行数据行（M2：design L0 规定 10 条，从 M3 的 3 回归 10）。
+  const WALK_KEEP = 10;
   const dataRe = /^\| \d{4}-\d{2}-\d{2} \|/gm;
   const dataRows = [];
   let m;

@@ -575,6 +575,24 @@ test('SL-33. startup/compact 相关知识+thoughts 注入数量逐项相等（N1
   assert.strictEqual(startupThink, 3, 'startup thoughts 名额 3');
 });
 
+// --- 34. M2：walkthrough 索引表保留最近 10 行（WALK_KEEP 回 10，对齐 design L0）---
+test('SL-34. walkthrough 注入保留最近 10 条索引行（M2 WALK_KEEP=10）', () => {
+  // 12 行（date 递增），断言保留最近 10 行（第3..第12）+ 省略指针报「已省略 2 条」。
+  const rows = Array.from({ length: 12 }, (_, i) => {
+    const d = String(i + 1).padStart(2, '0');
+    return `| 2026-06-${d} | 第${i + 1}条 | CHG-x |`;
+  }).join('\n');
+  const walk = `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n\n<!-- ARCHIVE -->\n`;
+  const state = makeActiveState({ artifactFiles: [{ file: 'walkthrough.md', full: walk }] });
+  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
+  const text = [...layers.l1head, ...layers.l3].join('\n');
+  // 保留最近 10 条：第12..第3 在，第2/第1 被省略。尾空格锚定单元格——「第12条 」不会误含「第2条 」、
+  //   「第11条 」不会误含「第1条 」（中间隔位），避免 plan 草拟里 `第2条|`（无空格）永不匹配的误绿。
+  assert.ok(text.includes('第12条 ') && text.includes('第3条 '), '最近 10 条应保留（第12..第3）');
+  assert.ok(!text.includes('第2条 ') && !text.includes('第1条 '), '第1/第2 条应被省略（超出 10 条）');
+  assert.ok(text.includes('已省略 2 条旧记录'), '省略指针应报「已省略 2 条」（12-10）');
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

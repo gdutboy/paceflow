@@ -668,7 +668,7 @@ test('2d3. SessionStart 缺 ARCHIVE 的 CJK 大文件层2 截断后警告 footer
 });
 
 test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
-  // M3 T-002：walkthrough 表格类内截断从最近 10 行收紧到最近 3 行（控制块体积，存活 packL3）。
+  // M2：walkthrough 表格类内截断保留最近 10 行（design L0，从 M3 的 3 回归 10）。
   const dir = makeV6Project('ss-walkthrough-recent', { walkToday: false });
   const rows = Array.from({ length: 12 }, (_, i) => {
     const day = String(i + 1).padStart(2, '0');
@@ -677,12 +677,12 @@ test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
   fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n<!-- ARCHIVE -->\n`, 'utf8');
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
   assert.strictEqual(r.code, 0);
-  // 12 行 → 保留最近 3 行（05-12/11/10），省略其余（含 05-09、05-01）。
+  // 12 行 → 保留最近 10 行（05-12..05-03），省略最旧 2（05-02、05-01）。
   assert.ok(r.stdout.includes('| 2026-05-12 | smoke 12 | CHG-20260504-01 |'));
-  assert.ok(r.stdout.includes('| 2026-05-10 | smoke 10 | CHG-20260504-01 |'));
-  assert.ok(!r.stdout.includes('| 2026-05-09 | smoke 09 | CHG-20260504-01 |'), '第 4 新及更旧应被省略');
+  assert.ok(r.stdout.includes('| 2026-05-03 | smoke 03 | CHG-20260504-01 |'), '最近 10 之一 05-03 应保留');
+  assert.ok(!r.stdout.includes('| 2026-05-02 | smoke 02 | CHG-20260504-01 |'), '第 11 新及更旧应被省略');
   assert.ok(!r.stdout.includes('| 2026-05-01 | smoke 01 | CHG-20260504-01 |'));
-  assert.ok(r.stdout.includes('已省略 9 条旧记录'), '应附「已省略 9 条旧记录」长尾指针');
+  assert.ok(r.stdout.includes('已省略 2 条旧记录'), '应附「已省略 2 条旧记录」长尾指针');
   assert.ok(r.stdout.indexOf('2026-05-12') < r.stdout.indexOf('2026-05-11'));
 });
 
@@ -733,10 +733,9 @@ test('2e3. SessionStart walkthrough 表格截断同日多条保留最新（prepe
   fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n<!-- ARCHIVE -->\n`, 'utf8');
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
   assert.strictEqual(r.code, 0);
-  // M3 T-002：11 条同日 → 保留最新 3（smoke 11/10/09，prepend index0~2），省略最旧 8（smoke 08~01）。
+  // M2：11 条同日 → 保留最新 10（smoke 11..02，prepend index0~9），省略最旧 1（smoke 01）。
   assert.ok(r.stdout.includes('smoke 11'), '最新条目 smoke 11（prepend index0）必须保留');
-  assert.ok(r.stdout.includes('smoke 09'), '最新 3 条之一 smoke 09 应保留');
-  assert.ok(!r.stdout.includes('smoke 08'), '第 4 新 smoke 08 应被省略');
+  assert.ok(r.stdout.includes('smoke 02'), '最新 10 条之一 smoke 02 应保留');
   assert.ok(!r.stdout.includes('smoke 01'), '最旧条目 smoke 01 应被省略');
 });
 
