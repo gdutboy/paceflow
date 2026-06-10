@@ -39,7 +39,7 @@ version: "4.0"
 PACEflow v6.0.0 采用"独立详情文件 + 索引仅放 wikilink"模式。每个 CHG/HOTFIX 操作都按以下两步落地，详情与索引各司其职：
 
 1. Write 独立详情文件 `changes/<chg-id>.md`（含 frontmatter + 任务清单 + 4 段结构）；任务列表与变更详情都写在这个文件里。
-2. Edit `task.md` / `implementation_plan.md` 仅追加 wikilink 索引行：`- [<state>] [[<chg-id>]] <title> #<type> [tasks::]`；索引始终用 wikilink（`[[chg-20260503-01]]`），保持指向详情文件。
+2. Edit `task.md` / `implementation_plan.md` 仅追加 wikilink 索引行：`- [<state>] [[<详情文件名 stem>|<chg-id>]] <title> #<type> [tasks::]`；wikilink target 用详情文件名全名（带 slug 文件如 `[[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]]`，旧无 slug 文件 `[[chg-20260503-01]]`），保持 Obsidian 按文件名可解析。
 
 详细操作步骤见 `${CLAUDE_PLUGIN_ROOT}/agent-references/instructions/<指令>.md`。
 

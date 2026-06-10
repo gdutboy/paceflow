@@ -16,7 +16,7 @@ artifact_dir: <hook 解析出的 artifact 目录>
 operation: update-finding
 target: FINDING-YYYY-MM-DD-slug      （或 finding-yyyy-mm-dd-slug，大小写不敏感）
 status: accepted                     （可选；枚举见下）
-change-link: [[chg-yyyymmdd-nn]]     （可选；与 accepted 搭配，表示由该变更处置）
+change-link: [[chg-yyyymmdd-nn]]     （可选；与 accepted 搭配，表示由该变更处置。写入索引 [change:: ...] 时若目标是带 slug 详情文件，glob changes/chg-yyyymmdd-nn*.md 取 stem 写 [[<stem>|chg-yyyymmdd-nn]]，旧无 slug 文件保持纯 ID）
 append: <要追加到详情正文末尾的 Markdown>   （可选，原样追加）
 ```
 

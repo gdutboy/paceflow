@@ -45,9 +45,9 @@ const SKILL_DIRS = [
 ];
 
 const FORMAT_SNIPPETS = {
-  taskEntry: '- [ ] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
-  taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN.md，并同步 task.md / implementation_plan.md 索引。',
-  implIndex: '- [/] [[chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
+  taskEntry: '- [ ] [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]（wikilink 用详情文件名全名 + |纯ID 别名；旧无 slug 文件用 [[chg-YYYYMMDD-NN]]）',
+  taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN-<slug>.md，并同步 task.md / implementation_plan.md 索引。',
+  implIndex: '- [/] [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
   implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
   approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；approve/approve-and-start 都必须带 approval-confirmed、approval-source、approval-evidence',
   verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；主路径是验证结果已读取后 close-chg，暂不归档时才用 update-chg action=verify',
@@ -64,7 +64,7 @@ const FORMAT_SNIPPETS = {
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
-  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |',
+  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |',
   skillRef: '流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)',
 };
 

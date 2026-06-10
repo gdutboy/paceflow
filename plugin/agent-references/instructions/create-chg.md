@@ -66,7 +66,7 @@ technical-decision: <How>
 
 ## 文件名 slug（对称 finding/correction）
 
-`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。slug **只进文件名**——frontmatter `id` 与 task.md / implementation_plan.md 索引行 wikilink `[[chg-yyyymmdd-nn]]` 都保持**纯 ID 不带 slug**（索引行标题已含描述，wikilink 无需 slug）。旧无 slug 文件（`chg-yyyymmdd-nn.md`）仍兼容、不迁移。
+`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。frontmatter `id` 保持**纯 ID 不带 slug**；task.md / implementation_plan.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名用大写 `HOTFIX-YYYYMMDD-NN` 或小写均可，显示简洁且 Obsidian 按文件名解析才不断链——alias 不参与 linkpath 解析，纯 ID wikilink 对带 slug 文件名是死链）。旧无 slug 文件（`chg-yyyymmdd-nn.md`）索引行保持 `[[chg-yyyymmdd-nn]]` 不迁移（全名=纯 ID 天然解析）。
 
 ## 详情文件结构
 
@@ -107,7 +107,7 @@ technical-decision: <How>
 `T-NNN` 是 **当前 CHG/HOTFIX 内的局部任务 ID**，不是全项目全局 ID。不同 CHG 都可以有 `T-001`，后续操作必须同时带 `target: CHG-...` 与 `task-id: T-...` 消除歧义。主 session 不需要为新 CHG 预分配 T-ID。
 
 ```
-- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
+- [ ] [[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
 ```
 
 ### 索引插入契约
@@ -136,7 +136,7 @@ old_string:
 
 new_string:
 
-- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-001~T-001] [worktree:: main] [branch:: main]
+- [ ] [[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]] <title> #change [tasks:: T-001~T-001] [worktree:: main] [branch:: main]
 
 <!-- ARCHIVE -->
 ```
@@ -146,7 +146,7 @@ new_string:
 ```markdown
 <!-- 详情与任务清单位于 changes/<id>.md；本文件只保留索引。 -->
 
-- [ ] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-001~T-001] [worktree:: main] [branch:: main]
+- [ ] [[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]] <title> #change [tasks:: T-001~T-001] [worktree:: main] [branch:: main]
 
 <!-- ARCHIVE -->
 ```
@@ -184,7 +184,7 @@ tasks:
 
 处理规范：
 
-1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（frontmatter `id` 仍纯 ID，slug 只进文件名），frontmatter 在 `type` 之后插入 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记）；再写 task.md / implementation_plan.md 各一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
+1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（frontmatter `id` 仍纯 ID；索引 wikilink 用全名 + `|` 纯 ID 别名，见「文件名 slug」段），frontmatter 在 `type` 之后插入 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记）；再写 task.md / implementation_plan.md 各一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
 2. `change-set-total` 只是 prompt 字段，用于校验块数，**不写入 frontmatter**；写入 frontmatter 的是 `change-set` + `change-set-seq`（两者均为 §2.1 可空字段，仅 batch 成员写入）。
 3. 全部块成功才报告 `SUCCESS`；中途某块失败 → 报告已成功建了哪些 CHG、失败在第几块及原因，未消费的 reserved-id 保留，由主 session 修正后重派剩余块（已建好的不重复创建）。
 4. hook（`agent-lifecycle-guard`）已对 batch 做确定性前置校验：缺块 / 某块缺 reserved-id·title·tasks / 块数与 `change-set-total` 不符 / 缺 `change-set` / reserved-id 与 hook 预留不匹配，都会在派遣前 DENY；agent 收到的 batch prompt 已通过结构校验。

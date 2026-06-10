@@ -52,8 +52,8 @@ date: YYYY-MM-DD
 type: change                         # change | hotfix
 change-set: null                     # 可选；所属批量变更集名（仅 batch create CHG 成员写入），单独 CHG 省略
 change-set-seq: null                 # 可选；该 CHG 在变更集内序号，如 "2/4"（仅 batch 成员写入），单独 CHG 省略
-parent-tasks: ["[[task]]"]
-parent-impl: ["[[implementation_plan]]"]
+parent-tasks: ["[[<artifact-dir-name>/task|task]]"]   # <artifact-dir-name> 取 artifact_dir 最后一段目录名（如 paceflow-hooks）——裸 [[task]] 在 Obsidian 多项目库按文件名解析会命中错误项目，部分路径唯一消歧；local 模式不在 Obsidian 库内，同样写法无害
+parent-impl: ["[[<artifact-dir-name>/implementation_plan|implementation_plan]]"]
 related-finding: null                # "[[finding-xxx]]" 或 null
 aliases: []
 tags: []
@@ -168,10 +168,12 @@ schema-version: "6.0"
 ### 5.1 task.md
 
 ```
-- [<checkbox>] [[chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
+- [<checkbox>] [[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]] <title> #change [tasks:: T-NNN~T-NNN] [worktree:: <name>] [branch:: <branch>]
 ```
 
-例：`- [/] [[chg-20260502-01]] hooks.json if 条件优化 #change [tasks:: T-001~T-003]`
+例：`- [/] [[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]] 激活信号收紧 #change [tasks:: T-001~T-004]`
+
+wikilink 用**详情文件名全名 + `|` 纯 ID 别名**（Obsidian 按文件名解析 linkpath，alias 不参与解析——纯 ID wikilink 对带 slug 文件名是死链）。旧无 slug 详情文件（`chg-yyyymmdd-nn.md`）的索引行保持 `[[chg-yyyymmdd-nn]]`，不迁移。
 
 机械格式：CHG/HOTFIX 索引行必须独占一行，并从行首 `- [` 开始。低成本验证时用行首格式确认索引，而不是只搜索 wikilink 文本。
 
@@ -181,7 +183,7 @@ schema-version: "6.0"
 
 **hashtag 与 type 对齐**：
 - `type: change` → `#change`
-- `type: hotfix` → `#hotfix`，文件名前缀 `hotfix-`，wikilink `[[hotfix-yyyymmdd-nn]]`
+- `type: hotfix` → `#hotfix`，文件名前缀 `hotfix-`，wikilink `[[hotfix-yyyymmdd-nn-<slug>|hotfix-yyyymmdd-nn]]`
 - `type: research` → `#research`
 
 ### 5.2 implementation_plan.md
@@ -191,10 +193,12 @@ schema-version: "6.0"
 ### 5.3 walkthrough.md（表格行）
 
 ```
-| <YYYY-MM-DD> | [[chg-yyyymmdd-nn]] <one-line summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |
+| <YYYY-MM-DD> | [[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]] <one-line summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |
 ```
 
-例：`| 2026-05-02 | [[chg-20260502-01]] hooks.json if 条件优化（T-001-T-003） [worktree:: smoke] [branch:: feature-x] | CHG-20260502-01 |`
+例：`| 2026-06-10 | [[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]] 激活信号收紧（T-001-T-004） [worktree:: main] [branch:: master] | CHG-20260610-06 |`
+
+wikilink 同 §5.1：全名 + `|` 纯 ID 别名；旧无 slug 文件保持纯 ID。
 
 新记录插入到表头与分隔行的下一行（最新在顶，prepend），与 walkthrough 详情段落方向一致；session-start 注入按日期降序保留最近若干条。
 
@@ -207,7 +211,7 @@ schema-version: "6.0"
 ```
 
 `<extra-meta>` 可包含：
-- `[change:: [[chg-id]]]`（关联实施 CHG，status=accepted 时）
+- `[change:: [[<chg 详情文件名全名>|chg-id]]]`（关联实施 CHG，status=accepted 时；目标是带 slug 文件时用全名+别名，旧无 slug 文件直接 `[[chg-id]]`——glob `changes/chg-yyyymmdd-nn*.md` 取 stem）
 - `[merges:: [[finding-id]]]`（合并自）
 - `[merged-into:: [[finding-id]]]`（被合并到）
 

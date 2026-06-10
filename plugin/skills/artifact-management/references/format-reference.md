@@ -19,7 +19,7 @@
 
 ## 活跃任务
 
-- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
+- [/] [[chg-20260504-01-hooks-v6-rework|chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
 
 <!-- ARCHIVE -->
 ```
@@ -31,7 +31,7 @@
 
 ## 变更索引
 
-- [/] [[chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
+- [/] [[chg-20260504-01-hooks-v6-rework|chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
 
 <!-- ARCHIVE -->
 ```
@@ -47,7 +47,7 @@
 
 | 日期 | 完成内容 | 关联变更 |
 | --- | --- | --- |
-| 2026-05-04 | [[chg-20260504-01]] hooks v6 改造验证通过 [worktree:: main] [branch:: main] | CHG-20260504-01 |
+| 2026-05-04 | [[chg-20260504-01-hooks-v6-rework|chg-20260504-01]] hooks v6 改造验证通过 [worktree:: main] [branch:: main] | CHG-20260504-01 |
 
 <!-- ARCHIVE -->
 ```
