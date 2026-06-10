@@ -11,7 +11,7 @@ allowed-tools: Bash, AskUserQuestion, Read
 ## 按 `$ARGUMENTS` 分派
 
 - `enable` → 运行 Bash：`node "${CLAUDE_PLUGIN_ROOT}/hooks/set-activation.js" --enable --cwd "<当前项目 cwd 绝对路径>"`
-  - 若 helper 输出「首次启用」并要求选 artifact-root：用 AskUserQuestion 让用户选「Obsidian vault project」或「本地项目目录」（至少两个选项），再按用户选择运行 helper 输出里给出的对应 `set-artifact-root.js --choice local|vault` 命令。
+  - 若 helper 输出「已启用（首次）」或「已启用（manual 标记）」并给出 set-artifact-root 命令：用 AskUserQuestion 让用户选「Obsidian vault project」或「本地项目目录」（至少两个选项），再按用户选择运行 helper 输出里给出的对应 `set-artifact-root.js --choice local|vault` 命令（输出说明已配置过则跳过）。
   - 若 helper 输出「恢复既有项目」：无需选 root，按提示调用 `Skill(paceflow:pace-workflow)` 继续。
 - `disable` → 运行 Bash：`node "${CLAUDE_PLUGIN_ROOT}/hooks/set-activation.js" --disable --cwd "<当前项目 cwd 绝对路径>"`。向用户确认 PACEflow 已禁用、artifact 未被删除、随时可 `/paceflow enable` 恢复。
 - `status`（或参数为空）→ 运行 Bash：`node "${CLAUDE_PLUGIN_ROOT}/hooks/set-activation.js" --status --cwd "<当前项目 cwd 绝对路径>"`，把状态原样转述给用户。

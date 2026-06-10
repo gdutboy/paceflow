@@ -110,13 +110,27 @@ function doEnable(cwd) {
   }
   // 既有强信号（changes/ / 配置 / legacy / .pace-enabled）→ 删标记即自动恢复。
   const signalAfter = paceUtils.isPaceProject(cwd);
-  if (signalAfter) {
+  if (signalAfter && signalAfter !== 'manual') {
     log(paceUtils.logEntry('SetActivation', 'ENABLE_RESTORE', { proj: paceUtils.getProjectName(cwd), signal: signalAfter }));
     process.stdout.write([
       'PACEflow 已启用（恢复既有项目）。',
       `signal: ${signalAfter}`,
       '既有 artifact / 配置已自动恢复，可继续按 PACE 流程工作。',
       '下一步：调用 Skill(paceflow:pace-workflow) 继续创建/恢复 CHG。',
+    ].join('\n') + '\n');
+    return;
+  }
+  if (signalAfter === 'manual') {
+    // manual = .pace-enabled 标记或 artifact-root 配置存在，但不保证 changes/ 等真实 artifact 在——
+    // 不称「恢复既有项目」（spec §5 恢复判据是既有 changes/），如实报告并给选 root 出口（已配置则忽略）。
+    log(paceUtils.logEntry('SetActivation', 'ENABLE_MANUAL', { proj: paceUtils.getProjectName(cwd), signal: signalAfter }));
+    process.stdout.write([
+      'PACEflow 已启用（manual 标记）。',
+      'signal: manual',
+      '若尚未选择 artifact 存放位置，按下列命令选择（已配置过则忽略）：',
+      `  node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local --cwd "${cwd.replace(/\\/g, '/')}"`,
+      `  node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice vault --cwd "${cwd.replace(/\\/g, '/')}"`,
+      '之后调用 Skill(paceflow:pace-workflow) 创建/恢复 CHG。',
     ].join('\n') + '\n');
     return;
   }

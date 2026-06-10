@@ -7321,6 +7321,73 @@ test('B2. commands/paceflow.md 存在且声明 enable/disable/status 与 set-act
 // CHG-B B3：disable 无条件可达（spec §5.1 不变量 1，回归锁定）
 // ============================================================
 
+test('B1. 继承子目录：disable/enable 归一宿主 .pace（写宿主读宿主，无 split-brain）', () => {
+  // 用户场景：cwd 是父 PACEflow 项目的普通子目录（如本仓库 paceflow/ 之于 paceflow-hooks/）。
+  // disable 粒度 = 停用整个 Project Root（spec §5.1），标记必须落宿主、双视角一致。
+  const root = makeTmpDir('b1-inherit-host');
+  const child = path.join(root, 'packages', 'api');
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', '.gitignore'), '*\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'changes'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  const r = runSetActivationHelper({ cwd: child, args: ['--disable', '--cwd', child] });
+  assert.strictEqual(r.code, 0, r.stdout + r.stderr);
+  assert.ok(fs.existsSync(path.join(root, '.pace', 'disabled')), 'disabled 应落宿主 .pace/');
+  assert.ok(!fs.existsSync(path.join(child, '.pace', 'disabled')), 'disabled 不应落子目录');
+  delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+  let pu = require('../plugin/hooks/pace-utils');
+  assert.strictEqual(pu.isPaceProject(child), false, 'child 视角应已禁用');
+  assert.strictEqual(pu.isPaceProject(root), false, '宿主视角应已禁用（同一 Project Root）');
+  const r2 = runSetActivationHelper({ cwd: child, args: ['--enable', '--cwd', child] });
+  assert.strictEqual(r2.code, 0, r2.stdout + r2.stderr);
+  assert.ok(!fs.existsSync(path.join(root, '.pace', 'disabled')), 'enable 应清宿主标记');
+  delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+  pu = require('../plugin/hooks/pace-utils');
+  assert.strictEqual(pu.isPaceProject(root), 'artifact', '宿主既有 changes/ 自动恢复');
+  assert.match(r2.stdout, /恢复/, '有 changes/ 的恢复应报恢复文案');
+});
+
+test('B1. 独立子项目：disable 只停用子项目，父项目不受影响', () => {
+  const root = makeTmpDir('b1-indep-host');
+  const child = path.join(root, 'tool');
+  fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.pace', '.gitignore'), '*\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'changes'), { recursive: true });
+  fs.mkdirSync(child, { recursive: true });
+  const decl = runSetProjectRootHelper({ cwd: child, args: ['--mode', 'independent', '--cwd', child] });
+  assert.strictEqual(decl.code, 0, decl.stdout + decl.stderr);
+  const r = runSetActivationHelper({ cwd: child, args: ['--disable', '--cwd', child] });
+  assert.strictEqual(r.code, 0, r.stdout + r.stderr);
+  assert.ok(fs.existsSync(path.join(child, '.pace', 'disabled')), '独立子项目 disabled 应落子项目自身 .pace/');
+  assert.ok(!fs.existsSync(path.join(root, '.pace', 'disabled')), '父项目不应被写 disabled');
+  delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+  const pu = require('../plugin/hooks/pace-utils');
+  assert.strictEqual(pu.isPaceProject(child), false, '子项目已禁用');
+  assert.strictEqual(pu.isPaceProject(root), 'artifact', '父项目不受影响');
+});
+
+test('B1. worktree：disable 归一宿主 .pace（worktree 与宿主共享激活态）', () => {
+  const host = makeTmpDir('b1-wt-host');
+  const worktree = makeTmpDir('b1-wt-tree');
+  fs.mkdirSync(path.join(host, '.git', 'worktrees', 'wt'), { recursive: true });
+  fs.mkdirSync(path.join(host, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(host, '.pace', '.gitignore'), '*\n', 'utf8');
+  fs.mkdirSync(path.join(host, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(host, '.git', 'worktrees', 'wt')}\n`, 'utf8');
+  const r = runSetActivationHelper({ cwd: worktree, args: ['--disable', '--cwd', worktree] });
+  assert.strictEqual(r.code, 0, r.stdout + r.stderr);
+  assert.ok(fs.existsSync(path.join(host, '.pace', 'disabled')), 'disabled 应落宿主 .pace/');
+  assert.ok(!fs.existsSync(path.join(worktree, '.pace', 'disabled')), 'disabled 不应落 worktree');
+  delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+  const pu = require('../plugin/hooks/pace-utils');
+  assert.strictEqual(pu.isPaceProject(worktree), false, 'worktree 视角已禁用');
+  assert.strictEqual(pu.isPaceProject(host), false, '宿主视角已禁用（共享激活态）');
+  const r2 = runSetActivationHelper({ cwd: worktree, args: ['--enable', '--cwd', worktree] });
+  assert.strictEqual(r2.code, 0, r2.stdout + r2.stderr);
+  delete require.cache[require.resolve('../plugin/hooks/pace-utils')];
+  assert.strictEqual(require('../plugin/hooks/pace-utils').isPaceProject(host), 'artifact', 'worktree 侧 enable 恢复宿主');
+});
+
 test('B3. 已激活+无活跃任务项目 Bash 跑 set-activation --disable 不被 pre-tool-use 拦', () => {
   // 回归锁定：bash-guard mutation gate 保护 artifact + .pace/{locks,sequences,...} 但不含 .pace/disabled，
   // isArtifactRuntimeControlPath 清单亦不含 disabled——未来改 bash-guard 不得误伤这条逃生路（P0 复发）。
