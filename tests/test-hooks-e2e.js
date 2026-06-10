@@ -7297,6 +7297,26 @@ test('B1. 未知参数 → 非零退出 + usage', () => {
   assert.match(r.stdout, /Usage|--enable|--disable|--status/);
 });
 
+// ============================================================
+// CHG-B B2：/paceflow slash command（manifest + 命令文件结构）
+// ============================================================
+
+test('B2. plugin.json 声明 commands 含 ./commands/paceflow.md', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+  assert.ok(Array.isArray(manifest.commands), 'plugin.json 应有 commands 数组');
+  assert.ok(manifest.commands.includes('./commands/paceflow.md'), 'commands 应含 paceflow.md');
+});
+
+test('B2. commands/paceflow.md 存在且声明 enable/disable/status 与 set-activation', () => {
+  const md = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'commands', 'paceflow.md'), 'utf8');
+  assert.match(md, /set-activation\.js/, '应引用 set-activation helper');
+  assert.match(md, /enable/);
+  assert.match(md, /disable/);
+  assert.match(md, /status/);
+  assert.match(md, /\$ARGUMENTS|\$1/, '应消费用户参数');
+  assert.match(md, /不得为绕过|不要为绕过|绕过单次 deny/, '应含 disable 防滥用约束（spec §5.1 不变量 2）');
+});
+
 cleanupAll();
 
 const total = t.passed + t.failed;
