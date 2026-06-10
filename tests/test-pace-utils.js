@@ -106,19 +106,20 @@ test('只有运行态 .pace/ 目录 → false（不等于启用信号）', () =>
   assert.strictEqual(isPaceProject(dir), false);
 });
 
-test('有 docs/plans/2026-01-01-test.md → superpowers', () => {
-  const dir = makeTmpDir('superpowers');
+// CHG-A A1：isPaceProject 收紧——code-count / dated-plan 不再返回激活信号（降级到 detectSoftSignal）
+test('docs/plans/<date>-*.md 但无强信号 → false（A1 收紧，原 superpowers/dated-plan 不再激活）', () => {
+  const dir = makeTmpDir('dated-plan-no-activate');
   fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'docs', 'plans', '2026-01-01-test.md'), '# Plan\n');
-  assert.strictEqual(isPaceProject(dir), 'superpowers');
+  assert.strictEqual(isPaceProject(dir), false);
 });
 
-test('3+ 代码文件（.js） → code-count', () => {
-  const dir = makeTmpDir('code-count');
+test('3+ 代码文件但无强信号 → false（A1 收紧，原 code-count 不再激活）', () => {
+  const dir = makeTmpDir('code-count-no-activate');
   fs.writeFileSync(path.join(dir, 'a.js'), '');
   fs.writeFileSync(path.join(dir, 'b.js'), '');
   fs.writeFileSync(path.join(dir, 'c.js'), '');
-  assert.strictEqual(isPaceProject(dir), 'code-count');
+  assert.strictEqual(isPaceProject(dir), false);
 });
 
 test('优先级：artifact 存在时忽略 code-count', () => {
@@ -1382,12 +1383,11 @@ test('父级残留 .pace/.gitignore 不会被当成 Project Root', () => {
   fs.mkdirSync(path.join(root, '.pace'), { recursive: true });
   fs.writeFileSync(path.join(root, '.pace', '.gitignore'), '*\n', 'utf8');
   fs.mkdirSync(child, { recursive: true });
-  fs.writeFileSync(path.join(child, 'a.js'), '');
-  fs.writeFileSync(path.join(child, 'b.js'), '');
-  fs.writeFileSync(path.join(child, 'c.js'), '');
+  // A1 后 code-count 不再激活——改用 changes/ 强信号验证「信号按 child 视角解析」的原意图。
+  fs.mkdirSync(path.join(child, 'changes'), { recursive: true });
 
   assert.strictEqual(getProjectStateDir(child), child);
-  assert.strictEqual(isPaceProject(child), 'code-count');
+  assert.strictEqual(isPaceProject(child), 'artifact');
 });
 
 test('子目录本地 artifact-root 显式声明当前目录为 Project Root', () => {
@@ -2090,7 +2090,9 @@ test('bridge candidate plans: current-native-plan 即使较旧也保持桥接提
   assert.strictEqual(candidates.length, 1);
   assert.strictEqual(candidates[0].name, '2026-03-08-current-plan.md');
   assert.ok(paceUtils.formatBridgeHint(dir, dir).fileList.includes('2026-03-08-current-plan.md'));
-  assert.strictEqual(isPaceProject(dir), 'superpowers');
+  // A1 收紧：bridge candidate（含 current-native-plan）仍被 hasBridgeCandidatePlanFiles 检出（上方断言），
+  // 但不再驱动 isPaceProject 激活——降级到 detectSoftSignal 的 dated-plan 软信号。
+  assert.strictEqual(isPaceProject(dir), false);
 });
 
 // ============================================================

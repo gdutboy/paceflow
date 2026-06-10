@@ -30,7 +30,6 @@ const {
   hasUnsyncedPlanFiles,
   createTemplates,
   readActive,
-  formatBridgeHint,
   getNativePlanPath,
   getActiveChangeEntries,
   isChangeApproved,
@@ -1565,13 +1564,9 @@ paceUtils.withStdinParsed((stdin) => {
 
       // T-076: 场景化 DENY 消息
       let reason;
-      // W-dry-2: 使用 formatBridgeHint 消除重复的 listPlanFiles + 格式化代码
-      const bridgeHint = formatBridgeHint(cwd, artDir);
-      if (paceSignal === 'superpowers' && bridgeHint) {
-        reason = `${createdMsg}检测到 Superpowers 计划文件：${bridgeHint.fileList}。请执行桥接：${bridgeHint.bridgeSteps}\n${FORMAT_SNIPPETS.skillRef}`;
-      } else if (paceSignal === 'superpowers') {
-        reason = `${createdMsg}检测到 Superpowers 信号但无计划文件。请先执行 P-A-C 流程。\ntask.md 任务格式：${FORMAT_SNIPPETS.taskEntry}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n${FORMAT_SNIPPETS.skillRef}`;
-      } else if (taskFileExists || createdFiles.includes('task.md')) {
+      // CHG-A A1：原 paceSignal === 'superpowers' 两个分支已删——isPaceProject 不再返回 'superpowers'
+      //   （dated-plan 降级 detectSoftSignal）。已激活项目的未同步 plan 桥接提示由下方 hasUnsyncedPlanFiles 分支承载。
+      if (taskFileExists || createdFiles.includes('task.md')) {
         // W-flow-1: 区分"全部完成待归档"和"无任务"
         const hasDoneItems = /- \[[x\-]\]/.test(taskActiveContent);
         if (hasDoneItems) {

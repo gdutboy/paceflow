@@ -569,7 +569,7 @@ function countCodeFiles(cwd) {
 /**
  * 多信号 PACE 激活判断
  * @param {string} cwd - 当前工作目录
- * @returns {'artifact'|'superpowers'|'manual'|'code-count'|false}
+ * @returns {'artifact'|'manual'|'legacy'|false} 仅强信号激活；弱信号（code-count/dated-plan）见 detectSoftSignal
  */
 function isPaceProject(cwd) {
   try {
@@ -603,13 +603,12 @@ function isPaceProject(cwd) {
     // A stored artifact-root choice is an explicit PACE entry signal even
     // before templates/changes have been lazily initialized.
     if (configuredDir || storedArtifactRootChoice) return 'manual';
-    // 信号 2（强）：当前/近期/显式选中的 Superpowers plan 文件。
-    // 旧 plan 只作为历史 backlog，不再让普通会话长期进入 superpowers 信号。
-    if (hasBridgeCandidatePlanFiles(cwd)) return 'superpowers';
-    // 信号 3（强）：手动激活标记
+    // 强信号：手动激活标记（用户显式 enable 或既有 .pace-enabled）。
     if (fs.existsSync(path.join(getProjectStateDir(cwd), '.pace-enabled'))) return 'manual';
-    // 信号 4（弱/兜底）：3+ 代码文件（原有逻辑）
-    if (countCodeFiles(cwd) >= 3) return 'code-count';
+    // CHG-A A1：原 dated-plan（superpowers）与 code-count（3+ 文件）两个弱信号 return 已移除。
+    //   它们信号强度与后果倒挂（最弱信号触发静默建 artifact + 永久锁定 + 写代码 deny），
+    //   现降级到 detectSoftSignal——只提示 AI 主动询问用户，不再激活任何门控。
+    //   countCodeFiles / hasBridgeCandidatePlanFiles 检测逻辑保留，供 detectSoftSignal 复用。
   } catch(e) {}
   return false;
 }
