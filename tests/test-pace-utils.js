@@ -2706,7 +2706,8 @@ test('plugin manifest 与 marketplace version 一致', () => {
 test('plugin runtime root 不包含开发资料', () => {
   const repoRoot = path.join(__dirname, '..');
   const pluginRoot = path.join(repoRoot, 'plugin');
-  const allowedTopLevel = new Set(['.claude-plugin', 'agent-references', 'agents', 'hooks', 'migrate', 'skills']);
+  // CHG-B B2：commands/ 为 plugin slash command 发布面（plugin.json "commands" 声明），加入白名单。
+  const allowedTopLevel = new Set(['.claude-plugin', 'agent-references', 'agents', 'commands', 'hooks', 'migrate', 'skills']);
   for (const name of fs.readdirSync(pluginRoot)) {
     assert.ok(allowedTopLevel.has(name), `plugin runtime 顶层不应包含 ${name}`);
   }
