@@ -2330,6 +2330,26 @@ test('SLUGWL-3. parseChangeIndex 旧纯 ID 形态回归（slug=纯ID 小写）',
   assert.strictEqual(entries[0].slug, 'chg-20260609-09');
 });
 
+test('SLUGWL-5. migrate/fix-slug-wikilinks：parent 链接与 wikilink 迁移纯函数', () => {
+  const mig = require('../migrate/fix-slug-wikilinks');
+  // parent 链接：裸 [[task]] → 部分路径；已迁移内容幂等（返回 null）
+  const fm = '---\nparent-tasks: ["[[task]]"]\nparent-impl: ["[[implementation_plan]]"]\n---\n';
+  const out = mig.migrateParentLinks(fm, 'paceflow-hooks');
+  assert.match(out, /parent-tasks: \["\[\[paceflow-hooks\/task\|task\]\]"\]/);
+  assert.match(out, /parent-impl: \["\[\[paceflow-hooks\/implementation_plan\|implementation_plan\]\]"\]/);
+  assert.strictEqual(mig.migrateParentLinks(out, 'paceflow-hooks'), null, '已迁移应幂等返回 null');
+  // wikilink：映射内纯 ID → 全名|纯ID；映射外（旧无 slug）保持；onlyBelowArchive 不动活跃区
+  const slugMap = new Map([['chg-20260610-06', 'chg-20260610-06-some-slug']]);
+  const idx = '- [/] [[chg-20260610-06]] 活跃 #change\n<!-- ARCHIVE -->\n- [x] [[chg-20260610-06]] 归档 #change\n- [x] [[chg-20260609-09]] 旧 #change\n';
+  const r = mig.migrateWikilinks(idx, slugMap, true);
+  assert.strictEqual(r.count, 1, '仅 ARCHIVE 下方映射内 1 处');
+  assert.match(r.text, /- \[\/\] \[\[chg-20260610-06\]\] 活跃/, '活跃区不动');
+  assert.match(r.text, /- \[x\] \[\[chg-20260610-06-some-slug\|chg-20260610-06\]\] 归档/);
+  assert.match(r.text, /- \[x\] \[\[chg-20260609-09\]\] 旧/, '旧无 slug 保持纯 ID');
+  const r2 = mig.migrateWikilinks(idx, slugMap, false);
+  assert.strictEqual(r2.count, 2, '含活跃区共 2 处');
+});
+
 test('SLUGWL-4. findActiveIndexBelowArchive 检出全名形态的误插活跃行', () => {
   const content = [
     '## 活跃任务', '', '<!-- ARCHIVE -->', '',
