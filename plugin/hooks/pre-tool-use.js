@@ -193,8 +193,16 @@ paceUtils.withStdinParsed((stdin) => {
   log(projectLogEntry('PreToolUse', 'ENTRY', { proj, tool: toolName, file: filePath, stdin_ok: stdin.ok }));
 
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
+  // CHG-D D1：所有 PACE deny 文案统一追加逃生口（spec §5.1 不变量 2：指向用户决策，
+  //   deny 主信息仍引导走 PACE 流程；disable 是给真不想用 PACEflow 的用户的退出，不是 AI 绕过单次 deny 的手段）。
+  //   幂等守卫：reason 已含 /paceflow disable 时不重复追加。
+  const PACE_ESCAPE_HATCH = '若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow disable 停用。';
+  function withEscapeHatch(reason) {
+    const r = String(reason || '');
+    return r.includes('/paceflow disable') ? r : `${r}\n${PACE_ESCAPE_HATCH}`;
+  }
   function denyOrHint(reason, { hardInTeammate = false } = {}) {
-    const enrichedReason = paceUtils.appendArtifactDirHint(cwd, reason);
+    const enrichedReason = withEscapeHatch(paceUtils.appendArtifactDirHint(cwd, reason));
     // teammate = 纯执行者，任务管理归主 session（单一权威源）。流程引导类 deny（artifact-root 选择/迁移/桥接，
     // 需主 session 与用户交互完成）对 teammate 软化为提示，避免死锁；但写代码门（hardInTeammate）即使 teammate
     // 也硬阻断 + 回报引导，避免 teammate 在未批准/无活跃 CHG/索引损坏时越界写代码绕过 PACE。
@@ -211,7 +219,7 @@ paceUtils.withStdinParsed((stdin) => {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: reason
+        permissionDecisionReason: withEscapeHatch(reason)
       }
     };
     process.stdout.write(JSON.stringify(output));
