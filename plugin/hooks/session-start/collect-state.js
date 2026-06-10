@@ -29,7 +29,7 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   const {
     ARTIFACT_FILES, readFull, summarizeActiveChanges, changeOwnerStatus,
     getNativePlanPath, formatBridgeHint, scanRelatedNotes, getProjectName,
-    resolveEffectiveProjectRoot, getArtifactDir,
+    resolveEffectiveProjectRoot, getArtifactDir, detectSoftSignal,
   } = paceUtils;
   const { proj, hookInput, rootChoicePending, artifactRootChoice, v5MigrationInfo } = extra;
 
@@ -135,6 +135,15 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     }
   }
 
+  // --- 软信号（CHG-20260610-08 C1）---
+  // 仅 core 算：软信号提问指示在 core group 注入。detectSoftSignal 内部已含 disabled / 已激活
+  //   → false 守卫，此处外层再限 !paceSignal（已激活不提示）&& !rootChoicePending（已进激活
+  //   流程时软信号让位，不抢戏）。读失败 fail-safe false（漏提示=不激活=野外安全，spec §8）。
+  let softSignal = false;
+  if (isCore && !paceSignal && !rootChoicePending) {
+    try { softSignal = detectSoftSignal(cwd); } catch (e) { softSignal = false; }
+  }
+
   return {
     cwd,
     eventType,
@@ -162,6 +171,8 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     nativePlanPath,
     // findings 过期
     agedFindings,
+    // 软信号提问（CHG-20260610-08 C1）
+    softSignal,
     // git
     git,
     // 相关讨论

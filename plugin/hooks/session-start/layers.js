@@ -120,6 +120,12 @@ function buildLayers(state, eventType, paceUtils, group) {
 
   // ── core 块：项目骨架（每次 session 固定需要）──────────────────────────────
   if (isCore) {
+    // === 0. 软信号提问指示（CHG-20260610-08 C1）===
+    //   软信号命中（code-count/dated-plan）且未激活 → 指示 AI 在响应用户前用 AskUserQuestion 问是否启用。
+    //   additionalContext 用户不可见，只能指示 AI 提问，不能直接问用户（spec §2）。放 l1head 最前（head 永不截）。
+    const softPrompt = renderSoftSignalPrompt(state);
+    if (softPrompt) l1head.push(softPrompt);
+
     // === 1. 项目上下文（重构前 137-139 + writeProjectContextSection 104-119）===
     const projCtx = renderProjectContext(state, paceUtils);
     if (projCtx) l1head.push(projCtx);
@@ -212,6 +218,24 @@ function buildLayers(state, eventType, paceUtils, group) {
 // ============================================================================
 // 各 section 渲染函数：返回字符串（含尾部换行），与重构前对应 write 调用逐字一致。
 // ============================================================================
+
+/**
+ * 软信号提问指示 section（CHG-20260610-08 C1 / spec §7）。
+ * 泛化措辞讲价值不讲机制：不写「N 个代码文件」（dated-plan 触发时无代码文件，写了自相矛盾）。
+ * AI 问用户的话术与选项语义与 spec §7 对齐（启用 / 暂不，暂不=不再主动问、随时可 enable）。
+ */
+function renderSoftSignalPrompt(state) {
+  if (!state.softSignal) return '';
+  return [
+    '=== PACEflow 启用询问 ===',
+    '检测到本项目可纳入 PACEflow 管理但未启用。在响应用户前，用 AskUserQuestion 询问是否启用：',
+    '问题：「PACEflow 可以管理这个项目的开发流程（任务追踪 / 变更记录 / 验证审计）。是否启用？」',
+    '选项「启用」→ 引导运行 /paceflow enable（首次会让用户选 artifact 存放位置）。',
+    '选项「暂不」→ 运行 /paceflow disable（本项目不再主动询问，随时可 /paceflow enable 开启）。',
+    '在用户回答前不要创建 changes/、不要派 artifact-writer、不要按 PACE 流程拦截写代码。',
+    '',
+  ].join('\n') + '\n';
+}
 
 /** 项目上下文 section（重构前 writeProjectContextSection + 触发条件 137）。 */
 function renderProjectContext(state, paceUtils) {

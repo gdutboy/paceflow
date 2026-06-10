@@ -7388,6 +7388,43 @@ test('B1. worktree：disable 归一宿主 .pace（worktree 与宿主共享激活
   assert.strictEqual(require('../plugin/hooks/pace-utils').isPaceProject(host), 'artifact', 'worktree 侧 enable 恢复宿主');
 });
 
+// ============================================================
+// CHG-C C1：SessionStart 软信号提问层（指示 AI AskUserQuestion 询问启用）
+// ============================================================
+
+test('C1. code-count 项目 SessionStart core 注入提问指示', () => {
+  const dir = makeTmpDir('c1-prompt-inject');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.py'), '# c');
+  const r = runHook('session-start.js', { cwd: dir, args: ['--group', 'core'], env: { PACE_VAULT_PATH: '' }, stdin: { type: 'startup' } });
+  assert.match(r.stdout, /AskUserQuestion/, '应指示 AI 用 AskUserQuestion');
+  assert.match(r.stdout, /\/paceflow enable/, '应指向 /paceflow enable');
+  // spec §7：讲价值不讲机制——不暴露「N 个代码文件」触发细节（dated-plan 触发时无代码文件，写了自相矛盾）。
+  assert.doesNotMatch(r.stdout, /\d+\s*个代码文件/, '不应暴露 code-count 机制细节');
+});
+
+test('C1. 有 .pace/disabled 的 code-count 项目 → 不注入提问指示', () => {
+  const dir = makeTmpDir('c1-disabled-no-prompt');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.py'), '# c');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'disabled'), '');
+  const r = runHook('session-start.js', { cwd: dir, args: ['--group', 'core'], env: { PACE_VAULT_PATH: '' }, stdin: { type: 'startup' } });
+  assert.doesNotMatch(r.stdout, /PACEflow 启用询问/, 'disabled 项目不应注入提问指示');
+});
+
+test('C1. 已激活（changes/）项目 → 不注入软信号提问指示', () => {
+  const dir = makeTmpDir('c1-active-no-prompt');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.py'), '# c');
+  const r = runHook('session-start.js', { cwd: dir, args: ['--group', 'core'], stdin: { type: 'startup' } });
+  assert.doesNotMatch(r.stdout, /PACEflow 启用询问/, '已激活项目不出软信号提问');
+});
+
 test('B3. 已激活+无活跃任务项目 Bash 跑 set-activation --disable 不被 pre-tool-use 拦', () => {
   // 回归锁定：bash-guard mutation gate 保护 artifact + .pace/{locks,sequences,...} 但不含 .pace/disabled，
   // isArtifactRuntimeControlPath 清单亦不含 disabled——未来改 bash-guard 不得误伤这条逃生路（P0 复发）。
