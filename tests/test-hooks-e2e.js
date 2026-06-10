@@ -7317,6 +7317,25 @@ test('B2. commands/paceflow.md 存在且声明 enable/disable/status 与 set-act
   assert.match(md, /不得为绕过|不要为绕过|绕过单次 deny/, '应含 disable 防滥用约束（spec §5.1 不变量 2）');
 });
 
+// ============================================================
+// CHG-B B3：disable 无条件可达（spec §5.1 不变量 1，回归锁定）
+// ============================================================
+
+test('B3. 已激活+无活跃任务项目 Bash 跑 set-activation --disable 不被 pre-tool-use 拦', () => {
+  // 回归锁定：bash-guard mutation gate 保护 artifact + .pace/{locks,sequences,...} 但不含 .pace/disabled，
+  // isArtifactRuntimeControlPath 清单亦不含 disabled——未来改 bash-guard 不得误伤这条逃生路（P0 复发）。
+  const dir = makeTmpDir('b3-disable-unconditional');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true }); // artifact 强信号
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 任务\n\n## 活跃任务\n\n<!-- ARCHIVE -->\n'); // 无活跃任务
+  const cmd = `node "${SET_ACTIVATION_HELPER}" --disable --cwd "${dir}"`;
+  const r = runHookDetailed('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Bash', tool_input: { command: cmd } },
+  });
+  assert.ok(!r.stdout.includes('"permissionDecision":"deny"'),
+    'disable 命令不应被 pre-tool-use 拦（逃生口完整性，spec §5.1 不变量 1）：' + r.stdout);
+});
+
 cleanupAll();
 
 const total = t.passed + t.failed;
