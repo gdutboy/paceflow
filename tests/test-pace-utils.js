@@ -2357,6 +2357,39 @@ test('SLUGWL-5. migrate/fix-slug-wikilinks：parent 链接与 wikilink 迁移纯
   assert.strictEqual(r4.count, 0, '已转义内容幂等');
 });
 
+test('SLUGWL-7. 全名活跃索引行 → getActiveChangeEntries 详情可解析（R 审计 P0-1 回归）', () => {
+  // P0-1：entries.slug 改全名后，readChangeDetail 必须用纯 ID 调（detailPathForId 只认纯 ID 入参）。
+  const dir = makeTmpDir('slugwl-fullname-active');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260610-06-some-slug.md'),
+    '---\nchg-id: CHG-20260610-06\nstatus: in-progress\n---\n# t\n\n## 任务清单\n\n- [/] T-001 x\n\n<!-- APPROVED -->\n', 'utf8');
+  const line = '- [/] [[chg-20260610-06-some-slug|chg-20260610-06]] 标题 #change [tasks:: T-001~T-001]\n';
+  fs.writeFileSync(path.join(dir, 'task.md'), `# 任务\n\n## 活跃任务\n\n${line}\n<!-- ARCHIVE -->\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), `# 计划\n\n## 变更索引\n\n${line}\n<!-- ARCHIVE -->\n`, 'utf8');
+  paceUtils._clearArtifactDirCache();
+  const entries = paceUtils.getActiveChangeEntries(dir);
+  assert.strictEqual(entries.length, 1);
+  assert.ok(entries[0].detail && !entries[0].detail.missing, '全名行的详情必须可解析（不得 detail-missing）');
+  const cls = paceUtils.classifyChange(entries[0]);
+  assert.strictEqual(cls.category, 'running', '应分类为 running 而非 inconsistent：' + JSON.stringify({ category: cls.category, reason: cls.reason }));
+});
+
+test('SLUGWL-8. 混合形态（task 纯 ID + impl 全名）join 不裂（R 审计 P1-1 回归）', () => {
+  const dir = makeTmpDir('slugwl-mixed-join');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260610-06-some-slug.md'),
+    '---\nchg-id: CHG-20260610-06\nstatus: in-progress\n---\n# t\n\n## 任务清单\n\n- [/] T-001 x\n\n<!-- APPROVED -->\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'task.md'),
+    '# 任务\n\n## 活跃任务\n\n- [/] [[chg-20260610-06]] 标题 #change\n\n<!-- ARCHIVE -->\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'implementation_plan.md'),
+    '# 计划\n\n## 变更索引\n\n- [/] [[chg-20260610-06-some-slug|chg-20260610-06]] 标题 #change\n\n<!-- ARCHIVE -->\n', 'utf8');
+  paceUtils._clearArtifactDirCache();
+  const entries = paceUtils.getActiveChangeEntries(dir);
+  assert.strictEqual(entries.length, 1, '同一 CHG 两种形态必须 join 成单条：' + JSON.stringify(entries.map(e => e.slug)));
+  assert.strictEqual(entries[0].id, 'CHG-20260610-06');
+  assert.ok(entries[0].task && entries[0].impl, '两侧索引都应命中');
+});
+
 test('SLUGWL-6. validateWalkthroughLinks 接受 \\| 转义全名行 + 仍校验纯 ID 旧行', () => {
   const dir = makeTmpDir('slugwl-walkthrough-escape');
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });

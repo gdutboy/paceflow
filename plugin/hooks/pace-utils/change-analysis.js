@@ -123,7 +123,10 @@ module.exports = function createChangeAnalysis(ctx) {
       const link = summaryCell.match(/\[\[([^|\]#]+)(?:#[^|\]]+)?(?:\|[^\]]+)?\]\]/);
       let linkMatchesExpected = false;
       if (!link) {
-        issues.push(`walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedDisplay}]]。`);
+        // R 审计 P3-2：cell 含 [[ 但 match 失败多半是表格内别名分隔符未转义（裸 | 把 wikilink 切到了下一列）。
+        issues.push(summaryCell.includes('[[')
+          ? `walkthrough.md 行 ${expectedId} 的 wikilink 别名分隔符未转义（表格内必须写 \\|），应为 [[${expectedDisplay}]]。`
+          : `walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedDisplay}]]。`);
       } else {
         const target = String(link[1] || '').trim().toLowerCase();
         if (target !== expectedSlug && !(detailStem && target === detailStem)) {
@@ -279,18 +282,21 @@ module.exports = function createChangeAnalysis(ctx) {
   function getActiveChangeEntries(cwd) {
     const taskEntries = parseChangeIndex(ctx.readActive(cwd, 'task.md') || '');
     const implEntries = parseChangeIndex(ctx.readActive(cwd, 'implementation_plan.md') || '');
-    const taskBySlug = new Map(taskEntries.map(e => [e.slug, e]));
-    const implBySlug = new Map(implEntries.map(e => [e.slug, e]));
-    const slugs = new Set([...taskBySlug.keys(), ...implBySlug.keys()]);
+    // HOTFIX-20260610-01 R 审计 P0-1/P1-1：join 与详情解析一律用纯 ID，不用 slug（stem 全名）——
+    //   detailPathForId 只认纯 ID 入参（glob 自行命中带 slug 文件）；slug 当 join 键会在
+    //   task/impl 索引行形态不一致（纯 ID vs 全名）的迁移窗口把同一 CHG 裂成两条 index-missing。
+    const taskById = new Map(taskEntries.map(e => [e.id, e]));
+    const implById = new Map(implEntries.map(e => [e.id, e]));
+    const ids = new Set([...taskById.keys(), ...implById.keys()]);
     const entries = [];
-    for (const slug of slugs) {
-      const task = taskBySlug.get(slug) || null;
-      const impl = implBySlug.get(slug) || null;
+    for (const id of ids) {
+      const task = taskById.get(id) || null;
+      const impl = implById.get(id) || null;
       const base = task || impl;
-      const detail = readChangeDetail(cwd, slug);
+      const detail = readChangeDetail(cwd, id);
       entries.push({
-        slug,
-        id: base.id,
+        slug: base.slug,
+        id,
         task,
         impl,
         taskCheckbox: task && task.checkbox,
