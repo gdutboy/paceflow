@@ -613,6 +613,34 @@ function isPaceProject(cwd) {
   return false;
 }
 
+/**
+ * 软信号检测（CHG-A A2）：与 isPaceProject 激活层正交——只用于提示 AI 主动询问用户，
+ *   不触发任何门控（deny / 建 artifact / 锁定）。
+ *   规则：有 .pace/disabled（用户已禁用，与 isPaceProject T-080 守卫同源双路径）或已激活
+ *   （isPaceProject 真值）→ false（不提示）；否则 code-count（3+ 代码文件）优先于
+ *   dated-plan（docs/plans|docs/superpowers/plans 下 <date>-*.md，mtime 新鲜或当前 native plan，
+ *   即被 A1 移除的原 superpowers 信号同判据 1:1 降级）。
+ *   读文件失败一律返回 false（fail-safe：漏提示=不激活=野外安全，spec §8）。
+ * @param {string} cwd - 当前工作目录
+ * @returns {'code-count'|'dated-plan'|false}
+ */
+function detectSoftSignal(cwd) {
+  try {
+    // 已禁用 → 不提示（与 isPaceProject 的 T-080 disabled 守卫同源双路径）。
+    const disabledPaths = [
+      path.join(cwd, '.pace', 'disabled'),
+      path.join(getProjectRuntimeDir(cwd), 'disabled'),
+    ];
+    if (disabledPaths.some(fp => fs.existsSync(fp))) return false;
+    // 已激活（强信号）→ 不再软提示（已 enabled / 既有 changes/ / 配置 / legacy）。
+    if (isPaceProject(cwd)) return false;
+    // code-count 优先于 dated-plan（更直接的「这是代码项目」信号）。
+    if (countCodeFiles(cwd) >= 3) return 'code-count';
+    if (hasBridgeCandidatePlanFiles(cwd)) return 'dated-plan';
+  } catch (e) {}
+  return false;
+}
+
 /** 读取文件活跃区（ARCHIVE_MARKER 上方内容），artifact 文件自动解析 vault 目录 */
 function readActive(cwd, filename) {
   const dir = ARTIFACT_FILES.includes(filename) ? getArtifactDir(cwd) : cwd;
@@ -911,7 +939,7 @@ module.exports = {
   resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd,
   projectLogFields, projectLogEntry,
   // 项目检测与路径
-  isPaceProject, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
+  isPaceProject, detectSoftSignal, isTeammate, isArtifactWriterAgentType, normalizeSessionId, currentSessionId,
   getArtifactDir, _clearArtifactDirCache, resolveEffectiveProjectRoot, getProjectStateDir, getProjectRuntimeDir,
   getArtifactRootChoicePath, getProjectRootMarkerPath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
   isLocalArtifactRootChoicePath, localArtifactRootChoiceDenyReason, isProjectRootMarkerPath, projectRootMarkerDenyReason,

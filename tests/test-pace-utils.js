@@ -15,7 +15,7 @@ const subagentStop = require('../plugin/hooks/subagent-stop');
 const batchArchiveV5 = require('../plugin/migrate/batch-archive-v5');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
 const createLockUtils = require('../plugin/hooks/pace-utils/locks');
-const { isPaceProject, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
+const { isPaceProject, detectSoftSignal, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -130,6 +130,70 @@ test('优先级：artifact 存在时忽略 code-count', () => {
   fs.writeFileSync(path.join(dir, 'b.js'), '');
   fs.writeFileSync(path.join(dir, 'c.js'), '');
   assert.strictEqual(isPaceProject(dir), 'artifact');
+});
+
+// ============================================================
+// detectSoftSignal()（CHG-A A2：软信号层，与激活层正交）
+// ============================================================
+console.log('\n--- detectSoftSignal ---');
+
+test('detectSoftSignal: 空目录 → false', () => {
+  const dir = makeTmpDir('soft-empty');
+  assert.strictEqual(detectSoftSignal(dir), false);
+});
+
+test('detectSoftSignal: 3+ 代码文件 → "code-count"', () => {
+  const dir = makeTmpDir('soft-code-count');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.go'), '// c');
+  assert.strictEqual(detectSoftSignal(dir), 'code-count');
+});
+
+test('detectSoftSignal: 1-2 代码文件且无 plan → false（未达阈值）', () => {
+  const dir = makeTmpDir('soft-below-threshold');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  assert.strictEqual(detectSoftSignal(dir), false);
+});
+
+test('detectSoftSignal: docs/plans/<date>-*.md（mtime 新鲜）→ "dated-plan"', () => {
+  const dir = makeTmpDir('soft-dated-plan');
+  const planDir = path.join(dir, 'docs', 'plans');
+  fs.mkdirSync(planDir, { recursive: true });
+  // isFresh 按 mtime（14 天窗口）判定，新建文件 mtime=now 必然新鲜；文件名日期不参与判定。
+  fs.writeFileSync(path.join(planDir, '2026-06-09-feature.md'), '# 计划\n');
+  assert.strictEqual(detectSoftSignal(dir), 'dated-plan');
+});
+
+test('detectSoftSignal: 有 .pace/disabled → false（用户已禁用，不提示）', () => {
+  const dir = makeTmpDir('soft-disabled');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.py'), '# c');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'disabled'), '');
+  assert.strictEqual(detectSoftSignal(dir), false);
+});
+
+test('detectSoftSignal: 已激活（有 changes/）→ false（已 enabled 不再软提示）', () => {
+  const dir = makeTmpDir('soft-already-active');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.py'), '# c');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  assert.strictEqual(detectSoftSignal(dir), false);
+});
+
+test('detectSoftSignal: code-count 优先于 dated-plan（双命中返回 code-count）', () => {
+  const dir = makeTmpDir('soft-both');
+  fs.writeFileSync(path.join(dir, 'a.js'), '// a');
+  fs.writeFileSync(path.join(dir, 'b.ts'), '// b');
+  fs.writeFileSync(path.join(dir, 'c.py'), '# c');
+  const planDir = path.join(dir, 'docs', 'plans');
+  fs.mkdirSync(planDir, { recursive: true });
+  fs.writeFileSync(path.join(planDir, '2026-06-09-x.md'), '# x\n');
+  assert.strictEqual(detectSoftSignal(dir), 'code-count');
 });
 
 console.log('\n--- date helpers ---');
