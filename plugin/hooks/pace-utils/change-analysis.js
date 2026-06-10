@@ -129,7 +129,11 @@ module.exports = function createChangeAnalysis(ctx) {
           : `walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedDisplay}]]。`);
       } else {
         const target = String(link[1] || '').trim().toLowerCase();
-        if (target !== expectedSlug && !(detailStem && target === detailStem)) {
+        // CHG-20260611-01 收紧：详情文件存在时唯一合法 target 是其 stem 全名——纯 ID 指向带 slug
+        //   文件名在 Obsidian 是死链（旧无 slug 文件 stem=纯 ID 天然兼容）；详情文件缺失时退回
+        //   纯 ID 校验，缺失本身由下方 detail-missing issue 单独报。
+        const validTarget = detailStem || expectedSlug;
+        if (target !== validTarget) {
           issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedDisplay}]]，当前为 [[${target}]]。`);
         } else {
           linkMatchesExpected = true;
