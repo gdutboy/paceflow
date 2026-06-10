@@ -99,7 +99,7 @@ function doDisable(cwd) {
     'PACEflow 已禁用（disabled）。',
     `disabled-marker: ${disabledPath(cwd).replace(/\\/g, '/')}`,
     '本操作只写禁用标记，不删除任何 artifact（changes/ 等全部保留）。',
-    '随时可运行 /paceflow enable 或 set-activation --enable 恢复。',
+    '随时可运行 /paceflow:enable 或 set-activation --enable 恢复。',
   ].join('\n') + '\n');
 }
 
@@ -152,7 +152,7 @@ function doEnable(cwd) {
     `  node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice local --cwd "${cwd.replace(/\\/g, '/')}"`,
     `  node "${paceUtils.SET_ARTIFACT_ROOT_SCRIPT}" --choice vault --cwd "${cwd.replace(/\\/g, '/')}"`,
     '选择完成后调用 Skill(paceflow:pace-workflow) 创建首个 CHG。',
-    '如需撤销启用，运行 /paceflow disable。',
+    '如需撤销启用，运行 /paceflow:disable。',
   ].join('\n') + '\n');
 }
 
@@ -165,13 +165,13 @@ function doStatus(cwd) {
     `current-cwd: ${cwd.replace(/\\/g, '/')}`,
   ];
   if (state === 'disabled') {
-    lines.push(`disabled-marker: ${disabledPath(cwd).replace(/\\/g, '/')}`, '运行 /paceflow enable 恢复。');
+    lines.push(`disabled-marker: ${disabledPath(cwd).replace(/\\/g, '/')}`, '运行 /paceflow:enable 恢复。');
   } else if (state === 'enabled') {
-    lines.push(`signal: ${paceUtils.isPaceProject(cwd)}`, 'PACEflow 正在管理本项目；运行 /paceflow disable 可禁用。');
+    lines.push(`signal: ${paceUtils.isPaceProject(cwd)}`, 'PACEflow 正在管理本项目；运行 /paceflow:disable 可禁用。');
   } else {
     lines.push(soft
-      ? `检测到软信号（${soft}）但未启用；运行 /paceflow enable 启用。`
-      : '未检测到激活信号；运行 /paceflow enable 可手动启用。');
+      ? `检测到软信号（${soft}）但未启用；运行 /paceflow:enable 启用。`
+      : '未检测到激活信号；运行 /paceflow:enable 可手动启用。');
   }
   process.stdout.write(lines.join('\n') + '\n');
 }

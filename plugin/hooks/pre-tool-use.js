@@ -195,11 +195,11 @@ paceUtils.withStdinParsed((stdin) => {
   // v4.7: teammate 降级——PACE 流程 deny → additionalContext 提醒
   // CHG-D D1：所有 PACE deny 文案统一追加逃生口（spec §5.1 不变量 2：指向用户决策，
   //   deny 主信息仍引导走 PACE 流程；disable 是给真不想用 PACEflow 的用户的退出，不是 AI 绕过单次 deny 的手段）。
-  //   幂等守卫：reason 已含 /paceflow disable 时不重复追加。
-  const PACE_ESCAPE_HATCH = '若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow disable 停用。';
+  //   幂等守卫：reason 已含 /paceflow:disable 时不重复追加。
+  const PACE_ESCAPE_HATCH = '若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用。';
   function withEscapeHatch(reason) {
     const r = String(reason || '');
-    return r.includes('/paceflow disable') ? r : `${r}\n${PACE_ESCAPE_HATCH}`;
+    return r.includes('/paceflow:disable') ? r : `${r}\n${PACE_ESCAPE_HATCH}`;
   }
   function denyOrHint(reason, { hardInTeammate = false } = {}) {
     const enrichedReason = withEscapeHatch(paceUtils.appendArtifactDirHint(cwd, reason));
@@ -1603,8 +1603,8 @@ paceUtils.withStdinParsed((stdin) => {
       // I-9: 变量名语义化
       const isNewFileForHint = toolName === 'Write' && !fs.existsSync(filePath);
       const displayCountForHint = codeCount + (isNewFileForHint ? 1 : 0);
-      // CHG-A A3b：措辞改指向 /paceflow enable（显式启用为主），不再建议直接建 CHG。
-      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件。如需用 PACEflow 管理本项目的任务/变更/验证，运行 /paceflow enable。`;
+      // CHG-A A3b：措辞改指向 /paceflow:enable（显式启用为主），不再建议直接建 CHG。
+      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件。如需用 PACEflow 管理本项目的任务/变更/验证，运行 /paceflow:enable。`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",

@@ -230,8 +230,8 @@ function renderSoftSignalPrompt(state) {
     '=== PACEflow 启用询问 ===',
     '检测到本项目可纳入 PACEflow 管理但未启用。在响应用户前，用 AskUserQuestion 询问是否启用：',
     '问题：「PACEflow 可以管理这个项目的开发流程（任务追踪 / 变更记录 / 验证审计）。是否启用？」',
-    '选项「启用」→ 引导运行 /paceflow enable（首次会让用户选 artifact 存放位置）。',
-    '选项「暂不」→ 运行 /paceflow disable（本项目不再主动询问，随时可 /paceflow enable 开启）。',
+    '选项「启用」→ 引导运行 /paceflow:enable（首次会让用户选 artifact 存放位置）。',
+    '选项「暂不」→ 运行 /paceflow:disable（本项目不再主动询问，随时可 /paceflow:enable 开启）。',
     '在用户回答前不要创建 changes/、不要派 artifact-writer、不要按 PACE 流程拦截写代码。',
     '',
   ].join('\n') + '\n';

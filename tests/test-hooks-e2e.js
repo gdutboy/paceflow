@@ -7301,20 +7301,50 @@ test('B1. 未知参数 → 非零退出 + usage', () => {
 // CHG-B B2：/paceflow slash command（manifest + 命令文件结构）
 // ============================================================
 
-test('B2. plugin.json 声明 commands 含 ./commands/paceflow.md', () => {
+test('B2. plugin.json 声明三个独立命令文件（HOTFIX-20260610-02 拆分）', () => {
+  // 插件 command 一律 /<plugin>:<command> 命名空间形态（官方规则，无 alias 机制）；
+  // 单文件 paceflow.md 会变成重复的 /paceflow:paceflow，拆三文件得到 /paceflow:enable|disable|status。
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
   assert.ok(Array.isArray(manifest.commands), 'plugin.json 应有 commands 数组');
-  assert.ok(manifest.commands.includes('./commands/paceflow.md'), 'commands 应含 paceflow.md');
+  for (const f of ['./commands/enable.md', './commands/disable.md', './commands/status.md']) {
+    assert.ok(manifest.commands.includes(f), `commands 应含 ${f}`);
+  }
+  assert.ok(!manifest.commands.includes('./commands/paceflow.md'), '旧单文件命令应已移除');
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'plugin', 'commands', 'paceflow.md')), 'paceflow.md 文件应已删除');
 });
 
-test('B2. commands/paceflow.md 存在且声明 enable/disable/status 与 set-activation', () => {
-  const md = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'commands', 'paceflow.md'), 'utf8');
-  assert.match(md, /set-activation\.js/, '应引用 set-activation helper');
-  assert.match(md, /enable/);
-  assert.match(md, /disable/);
-  assert.match(md, /status/);
-  assert.match(md, /\$ARGUMENTS|\$1/, '应消费用户参数');
-  assert.match(md, /不得为绕过|不要为绕过|绕过单次 deny/, '应含 disable 防滥用约束（spec §5.1 不变量 2）');
+test('B2. 三个命令文件各自引用 set-activation 对应子命令 + disable 含防滥用约束', () => {
+  const cmdDir = path.join(__dirname, '..', 'plugin', 'commands');
+  const enable = fs.readFileSync(path.join(cmdDir, 'enable.md'), 'utf8');
+  assert.match(enable, /set-activation\.js" --enable/, 'enable.md 应调 --enable');
+  assert.match(enable, /AskUserQuestion/, 'enable.md 应保留首次启用选 root 流程');
+  const disable = fs.readFileSync(path.join(cmdDir, 'disable.md'), 'utf8');
+  assert.match(disable, /set-activation\.js" --disable/, 'disable.md 应调 --disable');
+  assert.match(disable, /不得为绕过|绕过单次 deny/, 'disable.md 应含防滥用约束（spec §5.1 不变量 2）');
+  const status = fs.readFileSync(path.join(cmdDir, 'status.md'), 'utf8');
+  assert.match(status, /set-activation\.js" --status/, 'status.md 应调 --status');
+});
+
+test('B2. 运行时文案不残留旧的 /paceflow <子命令> 空格形态（命令 404 防回归）', () => {
+  // 旧形态 /paceflow enable 对用户是 404（实际命令是 /paceflow:enable）——发布面全部文案必须用冒号形态。
+  const roots = ['hooks', 'skills', 'commands', 'agents', 'agent-references'];
+  const bad = [];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(js|md)$/.test(entry.name)) continue;
+      const content = fs.readFileSync(full, 'utf8');
+      for (const m of content.matchAll(/\/paceflow (enable|disable|status)/g)) {
+        bad.push(`${path.relative(path.join(__dirname, '..'), full)}: ${m[0]}`);
+      }
+    }
+  }
+  for (const r of roots) {
+    const dir = path.join(__dirname, '..', 'plugin', r);
+    if (fs.existsSync(dir)) walk(dir);
+  }
+  assert.deepStrictEqual(bad, [], '发布面残留旧命令形态: ' + bad.join('; '));
 });
 
 // ============================================================
@@ -7399,7 +7429,7 @@ test('C1. code-count 项目 SessionStart core 注入提问指示', () => {
   fs.writeFileSync(path.join(dir, 'c.py'), '# c');
   const r = runHook('session-start.js', { cwd: dir, args: ['--group', 'core'], env: { PACE_VAULT_PATH: '' }, stdin: { type: 'startup' } });
   assert.match(r.stdout, /AskUserQuestion/, '应指示 AI 用 AskUserQuestion');
-  assert.match(r.stdout, /\/paceflow enable/, '应指向 /paceflow enable');
+  assert.match(r.stdout, /\/paceflow:enable/, '应指向 /paceflow:enable（插件命令的真实可用形态）');
   // spec §7：讲价值不讲机制——不暴露「N 个代码文件」触发细节（dated-plan 触发时无代码文件，写了自相矛盾）。
   assert.doesNotMatch(r.stdout, /\d+\s*个代码文件/, '不应暴露 code-count 机制细节');
 });
@@ -7458,7 +7488,7 @@ test('D1. 无活跃任务 deny 文案含 /paceflow disable 逃生口（指向用
   assert.ok(parsed && parsed.hookSpecificOutput, 'deny 应产出 hookSpecificOutput: ' + r.stdout);
   assert.strictEqual(parsed.hookSpecificOutput.permissionDecision, 'deny', '应为 deny');
   const reason = parsed.hookSpecificOutput.permissionDecisionReason || '';
-  assert.match(reason, /\/paceflow disable/, 'deny 文案应含逃生口 /paceflow disable');
+  assert.match(reason, /\/paceflow:disable/, 'deny 文案应含逃生口 /paceflow:disable');
   assert.match(reason, /若你（用户）不需要/, '逃生口应指向用户决策（spec §5.1 不变量 2）');
 });
 
@@ -7475,7 +7505,7 @@ test('D1. hardDeny 路径（teammate 删 artifact）同样带逃生口', () => {
   try { parsed = JSON.parse(r.stdout); } catch (e) {}
   assert.ok(parsed && parsed.hookSpecificOutput, 'hardDeny 应产出 hookSpecificOutput: ' + r.stdout);
   assert.strictEqual(parsed.hookSpecificOutput.permissionDecision, 'deny');
-  assert.match(parsed.hookSpecificOutput.permissionDecisionReason || '', /\/paceflow disable/, 'hardDeny 文案也应含逃生口');
+  assert.match(parsed.hookSpecificOutput.permissionDecisionReason || '', /\/paceflow:disable/, 'hardDeny 文案也应含逃生口');
 });
 
 cleanupAll();
