@@ -2295,6 +2295,49 @@ test('CS-3. change-set: null 字面量归一为 JS null（非字符串 "null"）
   assert.strictEqual(cls.changeSetSeq, null, '带引号 null 也应归一为 JS null');
 });
 
+// ============================================================
+// HOTFIX-20260610-01 T-001：索引行 wikilink 全名（带 slug）形态解析兼容
+// ============================================================
+
+test('SLUGWL-1. parseChangeIndex 解析全名|纯ID 别名形态索引行', () => {
+  const entries = paceUtils.parseChangeIndex(
+    '- [/] [[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]] 激活信号收紧 #change [tasks:: T-001~T-004]'
+  );
+  assert.strictEqual(entries.length, 1);
+  assert.strictEqual(entries[0].id, 'CHG-20260610-06', 'id 应为纯 ID');
+  assert.strictEqual(entries[0].slug, 'chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix', 'slug 应为文件 stem 全名');
+  assert.strictEqual(entries[0].checkbox, '/');
+  assert.match(entries[0].rest, /^激活信号收紧/);
+  assert.strictEqual(entries[0].malformed, false);
+});
+
+test('SLUGWL-2. parseChangeIndex 全名无别名 + HOTFIX 全名形态', () => {
+  const entries = paceUtils.parseChangeIndex([
+    '- [ ] [[chg-20260610-08-sessionstart-soft-signal-prompt-layer]] 提问层 #change',
+    '- [x] [[hotfix-20260610-01-chg-slug-wikilink-fix|HOTFIX-20260610-01]] wikilink 修复 #change',
+  ].join('\n'));
+  assert.strictEqual(entries.length, 2);
+  assert.strictEqual(entries[0].id, 'CHG-20260610-08');
+  assert.strictEqual(entries[0].slug, 'chg-20260610-08-sessionstart-soft-signal-prompt-layer');
+  assert.strictEqual(entries[1].id, 'HOTFIX-20260610-01');
+  assert.strictEqual(entries[1].slug, 'hotfix-20260610-01-chg-slug-wikilink-fix');
+});
+
+test('SLUGWL-3. parseChangeIndex 旧纯 ID 形态回归（slug=纯ID 小写）', () => {
+  const entries = paceUtils.parseChangeIndex('- [x] [[chg-20260609-09]] 旧形态 #change');
+  assert.strictEqual(entries.length, 1);
+  assert.strictEqual(entries[0].id, 'CHG-20260609-09');
+  assert.strictEqual(entries[0].slug, 'chg-20260609-09');
+});
+
+test('SLUGWL-4. findActiveIndexBelowArchive 检出全名形态的误插活跃行', () => {
+  const content = [
+    '## 活跃任务', '', '<!-- ARCHIVE -->', '',
+    '- [/] [[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]] 误插 #change',
+  ].join('\n');
+  assert.deepStrictEqual(paceUtils.findActiveIndexBelowArchive(content), ['chg-20260610-06']);
+});
+
 test('AIBA-1. findActiveIndexBelowArchive 检出 ARCHIVE 下方的活跃状态索引行', () => {
   const content = [
     '# 项目任务追踪', '', '## 活跃任务', '', '<!-- ARCHIVE -->', '',

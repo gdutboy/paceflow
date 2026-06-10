@@ -140,22 +140,29 @@ module.exports = function createChangeAnalysis(ctx) {
 
   function parseChangeIndex(activeText) {
     const entries = [];
-    const lineRe = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/i;
-    const malformedRe = /^(.+)- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(?:\|[^\]]+)?\]\]\s*(.*)$/i;
+    // HOTFIX-20260610-01：wikilink 支持带 slug 全名（chg-yyyymmdd-nn-<slug>）+ 可选 |别名。
+    //   组 2 捕获纯 ID 部分（id 推导用），组 3 捕获可选 slug 段（slug 字段拼出文件 stem 全名，
+    //   供 task/impl 跨索引 join 与 changes/<slug>.md 路径提示）。旧纯 ID 形态（无 slug 段）继续兼容。
+    const lineRe = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(-[a-z0-9][a-z0-9-]*)?(?:\|[^\]]+)?\]\]\s*(.*)$/i;
+    const malformedRe = /^(.+)- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(-[a-z0-9][a-z0-9-]*)?(?:\|[^\]]+)?\]\]\s*(.*)$/i;
     for (const line of String(activeText || '').split(/\r?\n/)) {
-      let m = line.match(lineRe);
-      let malformed = false;
-      if (!m) {
+      let checkbox, idPart, slugPart, rest, malformed;
+      const m = line.match(lineRe);
+      if (m) {
+        [, checkbox, idPart, slugPart, rest] = m;
+        malformed = false;
+      } else {
         const embedded = line.match(malformedRe);
         if (!embedded) continue;
-        m = embedded.slice(1);
+        [, , checkbox, idPart, slugPart, rest] = embedded;
         malformed = true;
       }
-      const slug = m[2].toLowerCase();
-      const id = slug.startsWith('chg-')
-        ? `CHG-${slug.slice(4).toUpperCase()}`
-        : `HOTFIX-${slug.slice(7).toUpperCase()}`;
-      entries.push({ checkbox: m[1].toLowerCase(), slug, id, rest: (m[3] || '').trim(), line, malformed });
+      const idLower = idPart.toLowerCase();
+      const slug = `${idLower}${(slugPart || '').toLowerCase()}`;
+      const id = idLower.startsWith('chg-')
+        ? `CHG-${idLower.slice(4).toUpperCase()}`
+        : `HOTFIX-${idLower.slice(7).toUpperCase()}`;
+      entries.push({ checkbox: checkbox.toLowerCase(), slug, id, rest: (rest || '').trim(), line, malformed });
     }
     return entries;
   }
@@ -344,7 +351,8 @@ module.exports = function createChangeAnalysis(ctx) {
     const below = text.slice(marker.index + marker[0].length);
     const bad = [];
     for (const line of below.split(/\r?\n/)) {
-      const m = line.match(/^- \[([ /!])\] \[\[((?:chg|hotfix)-\d{8}-\d{2})\]\]/i);
+      // HOTFIX-20260610-01：兼容带 slug 全名 + 可选 |别名形态；报告仍用纯 ID（人读定位）。
+      const m = line.match(/^- \[([ /!])\] \[\[((?:chg|hotfix)-\d{8}-\d{2})(?:-[a-z0-9][a-z0-9-]*)?(?:\|[^\]]+)?\]\]/i);
       if (m) bad.push(m[2].toLowerCase());
     }
     return bad;
