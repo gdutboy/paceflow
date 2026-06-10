@@ -53,9 +53,10 @@ function migrateParentLinks(content, dirName) {
 
 /**
  * 索引/walkthrough 文本中的纯 ID wikilink 全名化；onlyBelowArchive 时仅迁 <!-- ARCHIVE --> 之后部分。
- * 返回 { text, count }。
+ * escapePipe=true（walkthrough 表格行）时别名分隔符写 \|（裸 | 是表格列分隔符，会切坏表格列），
+ * 并把此前误写的未转义全名|别名形态修正为 \|。返回 { text, count }。
  */
-function migrateWikilinks(content, slugMap, onlyBelowArchive) {
+function migrateWikilinks(content, slugMap, onlyBelowArchive, escapePipe) {
   let head = '';
   let body = String(content);
   if (onlyBelowArchive) {
@@ -65,13 +66,21 @@ function migrateWikilinks(content, slugMap, onlyBelowArchive) {
     head = body.slice(0, cut);
     body = body.slice(cut);
   }
+  const sep = escapePipe ? '\\|' : '|';
   let count = 0;
-  const migrated = body.replace(/\[\[((?:chg|hotfix)-\d{8}-\d{2})\]\]/gi, (mm, id) => {
+  let migrated = body.replace(/\[\[((?:chg|hotfix)-\d{8}-\d{2})\]\]/gi, (mm, id) => {
     const stem = slugMap.get(id.toLowerCase());
     if (!stem) return mm; // 旧无 slug 文件：保持纯 ID
     count += 1;
-    return `[[${stem}|${id.toLowerCase()}]]`;
+    return `[[${stem}${sep}${id.toLowerCase()}]]`;
   });
+  if (escapePipe) {
+    // 修正此前误写的未转义形态 [[stem|id]] → [[stem\|id]]（已转义的 \| 不重复处理）。
+    migrated = migrated.replace(/\[\[((?:chg|hotfix)-\d{8}-\d{2}-[a-z0-9-]+)(?<!\\)\|((?:chg|hotfix)-\d{8}-\d{2})\]\]/gi, (mm, stem, id) => {
+      count += 1;
+      return `[[${stem}\\|${id}]]`;
+    });
+  }
   return { text: head + migrated, count };
 }
 
@@ -104,15 +113,15 @@ function main() {
 
   // 2) 索引文件（活跃区默认跳过）与 walkthrough（全文迁移）
   const targets = [
-    { rel: 'task.md', onlyBelowArchive: !includeActive },
-    { rel: 'implementation_plan.md', onlyBelowArchive: !includeActive },
-    { rel: 'walkthrough.md', onlyBelowArchive: false },
+    { rel: 'task.md', onlyBelowArchive: !includeActive, escapePipe: false },
+    { rel: 'implementation_plan.md', onlyBelowArchive: !includeActive, escapePipe: false },
+    { rel: 'walkthrough.md', onlyBelowArchive: false, escapePipe: true },
   ];
   for (const t of targets) {
     const fp = path.join(artDir, t.rel);
     if (!fs.existsSync(fp)) continue;
     const content = fs.readFileSync(fp, 'utf8');
-    const { text, count } = migrateWikilinks(content, slugMap, t.onlyBelowArchive);
+    const { text, count } = migrateWikilinks(content, slugMap, t.onlyBelowArchive, t.escapePipe);
     if (count > 0) {
       report.push(`wikilinks×${count}: ${t.rel}${t.onlyBelowArchive ? '（仅 ARCHIVE 下方）' : ''}`);
       if (!dryRun) fs.writeFileSync(fp, text, 'utf8');

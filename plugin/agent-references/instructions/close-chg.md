@@ -133,7 +133,7 @@ walkthrough-summary: <完成摘要>
   - `<slug>` 取目标详情文件名去掉 `.md` 后的完整 stem；wikilink 写 `[[<stem>|<纯ID小写>]]`——带 slug 文件如 `chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix.md` 对应 `[[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]]`，旧无 slug 文件如 `chg-20260511-02.md` 对应 `[[chg-20260511-02]]`（stem 来源是文件名，与标题无关）。
   - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
   - 若今日或历史已有包含 `[[<stem>` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加；若该行缺少索引行已有的执行上下文，则 Edit 该行补齐。
-  - 否则在 `## 最近工作` 表头与分隔行的下一行**插入为第一条**（最新在顶，prepend）：`| <YYYY-MM-DD> | [[<stem>|<纯ID小写>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`（没有上下文时省略 `[worktree:: ...] [branch:: ...]`；旧无 slug 文件 stem=纯ID，直接 `[[<stem>]]`）
+  - 否则在 `## 最近工作` 表头与分隔行的下一行**插入为第一条**（最新在顶，prepend）：`| <YYYY-MM-DD> | [[<stem>\|<纯ID小写>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`——**表格内别名分隔符必须写 `\|` 转义**（裸 `|` 会切坏表格列）。没有上下文时省略 `[worktree:: ...] [branch:: ...]`；旧无 slug 文件 stem=纯ID，直接 `[[<stem>]]` 无别名无需转义。
   - 若 `## 最近工作` 下尚无表头，先写入表头 `| 日期 | 完成内容 | 关联变更 |` 与分隔行 `| --- | --- | --- |`，再把上面的表格行作为表头下第一条写入（见 `artifact-writer-spec.md` §5.3）。
 
 ### 4. 归档详情状态

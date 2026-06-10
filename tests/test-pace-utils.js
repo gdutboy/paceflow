@@ -2348,6 +2348,29 @@ test('SLUGWL-5. migrate/fix-slug-wikilinks：parent 链接与 wikilink 迁移纯
   assert.match(r.text, /- \[x\] \[\[chg-20260609-09\]\] 旧/, '旧无 slug 保持纯 ID');
   const r2 = mig.migrateWikilinks(idx, slugMap, false);
   assert.strictEqual(r2.count, 2, '含活跃区共 2 处');
+  // walkthrough（escapePipe）：纯 ID → \| 转义形态；未转义旧迁移产物修正为 \|；已转义幂等
+  const wt = '| 2026-06-10 | [[chg-20260610-06]] 摘要 | CHG-20260610-06 |\n| 2026-06-09 | [[chg-20260610-06-some-slug|chg-20260610-06]] 未转义 | CHG-20260610-06 |\n';
+  const r3 = mig.migrateWikilinks(wt, slugMap, false, true);
+  assert.match(r3.text, /\[\[chg-20260610-06-some-slug\\\|chg-20260610-06\]\] 摘要/, '纯 ID 应迁为 \\| 转义形态');
+  assert.match(r3.text, /\[\[chg-20260610-06-some-slug\\\|chg-20260610-06\]\] 未转义/, '未转义形态应修正为 \\|');
+  const r4 = mig.migrateWikilinks(r3.text, slugMap, false, true);
+  assert.strictEqual(r4.count, 0, '已转义内容幂等');
+});
+
+test('SLUGWL-6. validateWalkthroughLinks 接受 \\| 转义全名行 + 仍校验纯 ID 旧行', () => {
+  const dir = makeTmpDir('slugwl-walkthrough-escape');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260610-06-some-slug.md'), '---\nchg-id: CHG-20260610-06\nstatus: archived\n---\n# t\n\n## 任务清单\n\n- [x] T-001 x\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20260609-09.md'), '---\nchg-id: CHG-20260609-09\nstatus: archived\n---\n# t\n\n## 任务清单\n\n- [x] T-001 x\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'walkthrough.md'), [
+    '# 工作记录', '', '## 最近工作', '',
+    '| 日期 | 完成内容 | 关联变更 |', '| --- | --- | --- |',
+    '| 2026-06-10 | [[chg-20260610-06-some-slug\\|chg-20260610-06]] 全名转义行 | CHG-20260610-06 |',
+    '| 2026-06-09 | [[chg-20260609-09]] 旧纯 ID 行 | CHG-20260609-09 |',
+    '', '<!-- ARCHIVE -->', '',
+  ].join('\n'), 'utf8');
+  const issues = paceUtils.validateWalkthroughLinks(dir);
+  assert.deepStrictEqual(issues, [], '转义全名行与旧纯 ID 行都不应报 issue：' + JSON.stringify(issues));
 });
 
 test('SLUGWL-4. findActiveIndexBelowArchive 检出全名形态的误插活跃行', () => {

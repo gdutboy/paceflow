@@ -64,7 +64,7 @@ const FORMAT_SNIPPETS = {
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
-  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |',
+  walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN-<slug>\\|chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |（表格内 wikilink 别名分隔符必须写 \\| 转义，否则裸 | 会切坏表格列）',
   skillRef: '流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)',
 };
 

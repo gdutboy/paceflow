@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const {
   normalizeChangeId,
   detailPathForId,
@@ -105,21 +106,28 @@ module.exports = function createChangeAnalysis(ctx) {
     const issues = [];
     for (const line of String(active || '').split(/\r?\n/)) {
       if (!/^\|\s*\d{4}-\d{2}-\d{2}\s*\|/.test(line)) continue;
-      const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+      // HOTFIX-20260610-01：表格内 wikilink 别名必须写 \|（否则裸 | 把表格切出多余列）。
+      //   切列前把 \| 占位保护，cell 内还原为裸 |，让下方 wikilink 正则按标准 [[target|alias]] 形态解析。
+      const cells = line.replace(/\\\|/g, '\u0001').split('|').slice(1, -1)
+        .map(cell => cell.trim().replace(/\u0001/g, '|'));
       if (cells.length < 3) continue;
       const summaryCell = cells[1] || '';
       const id = (cells[2] || '').match(/\b(CHG|HOTFIX)-\d{8}-\d{2}\b/i);
       if (!id) continue;
       const expectedId = id[0].toUpperCase();
       const expectedSlug = slugForChangeId(expectedId);
+      // 合法 target：纯 ID（旧无 slug 文件）或当前详情文件 stem 全名（带 slug 文件）。
+      const detailFp = detailPathForId(artDir, expectedId);
+      const detailStem = detailFp ? path.basename(detailFp, '.md').toLowerCase() : '';
+      const expectedDisplay = detailStem && detailStem !== expectedSlug ? `${detailStem}\\|${expectedSlug}` : expectedSlug;
       const link = summaryCell.match(/\[\[([^|\]#]+)(?:#[^|\]]+)?(?:\|[^\]]+)?\]\]/);
       let linkMatchesExpected = false;
       if (!link) {
-        issues.push(`walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedSlug}]]。`);
+        issues.push(`walkthrough.md 行 ${expectedId} 缺少 wikilink，应为 [[${expectedDisplay}]]。`);
       } else {
         const target = String(link[1] || '').trim().toLowerCase();
-        if (target !== expectedSlug) {
-          issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedSlug}]]，当前为 [[${target}]]。`);
+        if (target !== expectedSlug && !(detailStem && target === detailStem)) {
+          issues.push(`walkthrough.md 行 ${expectedId} 的 wikilink 应为 [[${expectedDisplay}]]，当前为 [[${target}]]。`);
         } else {
           linkMatchesExpected = true;
         }
