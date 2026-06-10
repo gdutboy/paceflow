@@ -252,13 +252,15 @@ paceUtils.withStdinParsed((stdin) => {
     warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。PostToolUse 不再校验或修复 v5 活跃详情格式。迁移或桥接后仍需重试被阻止的原始代码写入；不要把迁移本身报告为代码任务完成。`);
   } else if (isFileMutationTool && isCodeFile) {
     // task.md 不存在时，只对代码写入提示，避免无关文档编辑被 PACE 提醒打扰。
+    // CHG-A A1：'superpowers' 半边已删（isPaceProject 不再返回该值）；野外软信号项目（fallbackSignal=false）
+    //   的提示措辞改指向 /paceflow enable（显式启用为主，与 pre-tool-use 软提醒对称）。
     const fallbackSignal = isPaceProject(cwd);
-    if (fallbackSignal === 'superpowers' || fallbackSignal === 'manual') {
+    if (fallbackSignal === 'manual') {
       warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在；写代码或派 artifact-writer 前请先创建 v6 CHG。${FORMAT_SNIPPETS.skillRef}`);
     } else {
       const codeCount = countCodeFiles(cwd);
       if (codeCount >= 3) {
-        warnings.push(`检测到 ${codeCount} 个代码文件但 task.md 不存在。如果这是 PACE 任务，请先创建 v6 CHG。${FORMAT_SNIPPETS.skillRef}`);
+        warnings.push(`检测到 ${codeCount} 个代码文件。如需用 PACEflow 管理本项目的任务/变更/验证，运行 /paceflow enable。`);
       }
     }
   }

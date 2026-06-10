@@ -333,7 +333,8 @@ if (paceSignal === 'artifact') {
   addWarning('repair', `检测到 ${existing.join(', ')} 但缺少 task.md，Artifact 不完整。task.md 格式：${FORMAT_SNIPPETS.taskGroup}`);
 } else {
   // 无任何 artifact：v4.3.5 多信号检测
-  if (paceSignal === 'superpowers' || paceSignal === 'manual') {
+  // CHG-A A1：'superpowers' 半边已删（isPaceProject 不再返回该值，dated-plan 降级 detectSoftSignal）。
+  if (paceSignal === 'manual') {
     // T-078 D2 修复：无 artifact 时仅记录日志，不加入 warnings
     log(projectLogEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'no artifact' }));
   } else {
