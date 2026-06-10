@@ -1586,35 +1586,17 @@ paceUtils.withStdinParsed((stdin) => {
       return;
     }
 
-    // T-079: 第二级 — off-by-one 前瞻判断（无强信号但 Write 新文件将达到阈值）
-    if (!paceSignal && toolName === 'Write' && !fs.existsSync(filePath)) {
-      const futureCount = codeCount + 1;
-      if (futureCount >= 3) {
-        if (needsArtifactRootChoice) {
-          const output = denyOrHint(artifactRootChoiceReason);
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, dur: Date.now() - t0 }));
-          return;
-        }
-        let createdFiles = [];
-        try { createdFiles = createTemplates(cwd); } catch(e) {}
-        const createdMsg = createdFiles.length > 0
-          ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
-          : `${artifactRootHint}。`;
-        const reason = `${createdMsg}即将写入第 ${futureCount} 个代码文件，达到 PACE 激活阈值。请先创建 v6 CHG；若用户已批准并准备开始，派 artifact-writer approve-and-start 后再写代码。字段格式见 Skill(paceflow:artifact-management)。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
-        const output = denyOrHint(reason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: `code-count-lookahead(${futureCount})`, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
-        return;
-      }
-    }
+    // CHG-A A3b：原 T-079 code-count-lookahead（Write 第 3 文件达阈值即 deny + 建模板）已移除——
+    //   它是 isPaceProject 之外的第二个 code-count 激活路径，与「弱信号不门控」冲突（spec §3/§10）。
+    //   code-count 现仅由 detectSoftSignal 在 SessionStart 提示 AI 询问用户，不在 pre-tool-use 拦截。
 
-    // 第三级：软提醒（1-2 个代码文件）
+    // 第三级：软提醒（非 PACE 项目写代码文件）
     if (codeCount >= 1) {
       // I-9: 变量名语义化
       const isNewFileForHint = toolName === 'Write' && !fs.existsSync(filePath);
       const displayCountForHint = codeCount + (isNewFileForHint ? 1 : 0);
-      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件，如果这是正式项目，建议先派 artifact-writer create-chg 建立 v6 CHG 后再继续写代码。`;
+      // CHG-A A3b：措辞改指向 /paceflow enable（显式启用为主），不再建议直接建 CHG。
+      const ctx = `提醒：这是项目中的第 ${displayCountForHint} 个代码文件。如需用 PACEflow 管理本项目的任务/变更/验证，运行 /paceflow enable。`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",

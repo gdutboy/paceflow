@@ -89,6 +89,8 @@ function applyRuntimeEffects(cwd, eventType, paceSignal, rootChoicePending, artD
 
   // === W11：createTemplates（重构前 282-313 的 else-if，both 无 eventType 守卫）===
   //   rootChoicePending 分支本身无写盘（只注入提示 + log，注入文本由 layers 生成、log 由编排层 flush）。
+  //   CHG-A A3：code-count/dated-plan 弱信号已从 isPaceProject 移除 → paceSignal=false → 守卫整块短路，
+  //   不再对软信号项目静默建 changes/。仅强信号（manual/legacy，paceSignal!=='artifact' 且非空）走懒建模板。
   if (!(rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md')))
       && paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected
       && !fs.existsSync(path.join(artDir, 'task.md'))) {
@@ -134,6 +136,8 @@ function applyArtifactGroupEffects(cwd, paceSignal, artDir, deps) {
 
   // === W11：createTemplates（与 core 重复，幂等；task.md 已存在则不重建）===
   //   守卫与 core 的 applyRuntimeEffects 一字不差：rootChoicePending/v5MigrationInfo/task.md 存在性。
+  //   CHG-A A3：code-count/dated-plan 弱信号已从 isPaceProject 移除 → paceSignal=false → 守卫整块短路，
+  //   不再对软信号项目静默建 changes/。仅强信号（manual/legacy，paceSignal!=='artifact' 且非空）走懒建模板。
   if (!(rootChoicePending && !fs.existsSync(path.join(artDir, 'task.md')))
       && paceSignal && paceSignal !== 'artifact' && !v5MigrationInfo.detected
       && !fs.existsSync(path.join(artDir, 'task.md'))) {
