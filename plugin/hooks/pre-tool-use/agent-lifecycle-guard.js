@@ -147,6 +147,8 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
       'review-confirmed: true',
       'review-source: manual | <所选 review agent 名>',
       "review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>",
+      'implementation-notes:',
+      '  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>',
       'walkthrough-summary: <完成摘要>',
     ].join('\n');
   }
@@ -559,15 +561,19 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     if (!promptHasTrueField(text, 'review-confirmed')) missing.push('review-confirmed: true');
     if (!promptHasNonEmptyField(text, 'review-source')) missing.push('review-source');
     if (!promptHasNonEmptyField(text, 'review-findings')) missing.push('review-findings');
+    if (!promptHasNonEmptyField(text, 'implementation-notes')) missing.push('implementation-notes');
     if (!promptHasNonEmptyField(text, 'walkthrough-summary')) missing.push('walkthrough-summary');
     if (missing.length > 0) {
       return [
         `派 artifact-writer 执行 close-chg 时缺少必填字段：${missing.join(', ')}。`,
         FORMAT_SNIPPETS.skillRef,
         'close-chg 只能在主 session 已运行并读取验证结果、且已编排对抗审计并路由 findings 后调用；验证是否通过经 verification-confirmed、审计是否跑过经 review-confirmed 传入，agent 不得自行判断。',
+        missing.includes('implementation-notes')
+          ? '实施详情是 CHG 的执行态记录：close 前主 session 必须按任务整理实际改动说明（每个 T-NNN 改了哪些文件、关键实现、对应 commit）经 implementation-notes 传入，agent 据此写入 ## 实施详情 段；缺失则详情文件只剩创建时的规划态信息（Why/What/How），执行情况无从审计。'
+          : '',
         '请重派同一个 agent，并使用完整 prompt 顶部模板：',
         promptTemplateForOperation({ prompt, artDir, operation: 'close-chg' })
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     }
   }
 

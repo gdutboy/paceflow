@@ -90,7 +90,7 @@ technical-decision: <How>
 
 **技术决策（How）**：<technical-decision>
 
-（各任务的实施说明在执行阶段由 `update-chg section=implementation` 按实际改动 append；create 阶段任务未实施，不在此预填占位符。）
+（各任务的实施说明在收口时由 `close-chg implementation-notes` 字段写入，中途可用 `update-chg section=implementation` append；create 阶段任务未实施，不在此预填占位符。）
 
 ## 工作记录
 

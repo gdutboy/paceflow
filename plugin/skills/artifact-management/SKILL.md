@@ -97,7 +97,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 只记录 V 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`verify` |
 | 只记录 R 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`review` |
 | 归档 CHG/HOTFIX | operation=`archive-chg`，target=`CHG-...`；已取消 CHG 也用此操作做取消归档 |
-| 最后任务验证审计后完成并归档 | operation=`close-chg`，target=`CHG-...`，需要 `verification-confirmed: true` + `complete-open-tasks: true` + `review-confirmed: true`（附 review-source / review-findings） |
+| 最后任务验证审计后完成并归档 | operation=`close-chg`，target=`CHG-...`，需要 `verification-confirmed: true` + `complete-open-tasks: true` + `review-confirmed: true`（附 review-source / review-findings）+ `implementation-notes`（per-task 实施说明） |
 | 记录 finding | operation=`record-finding` |
 | 记录 correction | 先运行 reserve helper `--operation record-correction`，再派 operation=`record-correction` 并带 `reserved-file-prefix` |
 | 重排索引（findings.md/corrections.md 活跃区改日期降序新→旧） | operation=`update-index`，target=`findings.md`/`corrections.md`，action=`reorder` |
@@ -205,10 +205,14 @@ review-confirmed: true
 review-source: manual | <所选 review agent 名>
 review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink）>
 verify-summary: <已运行并读取的验证结果>
+implementation-notes:
+  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>
 walkthrough-summary: <完成摘要>
 ```
 
-只记录验证，暂不归档：
+`implementation-notes` 是 close-chg 必填字段（与 `verify-summary` 同款内容字段），agent 据此把各任务实际改动写入 `## 实施详情` 段 `### T-NNN` 标题下——缺失会被 hook 拒绝。
+
+只记录验证，暂不归档（不强制 `implementation-notes`；该字段在最终 close-chg 收口时必填）：
 
 ```text
 artifact_dir: <hook 解析出的 artifact 目录>
@@ -467,6 +471,8 @@ review-confirmed: true
 review-source: manual | <所选 review agent 名>
 review-findings: <P0/P1/P2/P3 计数 + 各自处置 wikilink>
 verify-summary: <已运行并阅读的验证结果>
+implementation-notes:
+  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>
 walkthrough-summary: <完成摘要>
 ```
 

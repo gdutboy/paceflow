@@ -19,6 +19,8 @@ review-confirmed: true
 review-source: manual | <所选 review agent 名>
 review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>
 verify-summary: <已运行并读取的验证结果>
+implementation-notes:
+  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>
 walkthrough-summary: <完成摘要>
 ```
 
@@ -31,6 +33,7 @@ walkthrough-summary: <完成摘要>
 - `review-source`（必填，`manual` 或所选 review agent 名）
 - `review-findings`（必填，P0/P1/P2/P3 计数 + 各自处置 wikilink，写入 `## 审查记录`）
 - `verify-summary`（必填，一行验证结果摘要，写入 `## 工作记录`）
+- `implementation-notes`（必填，per-task 实施说明：每个 T-NNN 的实际改动——改了哪些文件、关键实现、对应 commit。与 `verify-summary` 同款内容字段（存在且非空，长短不限），写入 `## 实施详情` 段各 `### T-NNN` 标题下，见操作步骤 1.5）
 - `walkthrough-summary`（必填，一行完成摘要，写入 `walkthrough.md`）
 
 ## 语义
@@ -38,11 +41,12 @@ walkthrough-summary: <完成摘要>
 `close-chg` 是收尾合并操作，只能在主 session 已经运行并阅读验证结果、且已编排对抗审计并路由 findings 后调用。它可以一次完成：
 
 1. 必要时把未完成任务收口为 `[x]`
-2. 推 frontmatter `status` 到 `completed`
-3. 写入 `verified-date` + `<!-- VERIFIED -->`
-4. 写入 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录`（在 VERIFIED 之后、归档之前）
-5. 追加验证工作记录
-6. 归档到 ARCHIVE 下方并写 `walkthrough.md`
+2. 把 `implementation-notes` 按任务写入 `## 实施详情` 执行态记录
+3. 推 frontmatter `status` 到 `completed`
+4. 写入 `verified-date` + `<!-- VERIFIED -->`
+5. 写入 `reviewed-date` + `<!-- REVIEWED -->` + `## 审查记录`（在 VERIFIED 之后、归档之前）
+6. 追加验证工作记录
+7. 归档到 ARCHIVE 下方并写 `walkthrough.md`
 
 即 close-chg 主路径一把梭：完成 → VERIFIED → REVIEWED → 归档 → walkthrough。
 
@@ -58,7 +62,7 @@ walkthrough-summary: <完成摘要>
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 解析 target → 详情文件路径；文件不存在 → `target-not-found`
 2. 校验必填字段：
-   - 缺 `verification-confirmed` / `complete-open-tasks` / `review-confirmed` / `review-source` / `review-findings` / `verify-summary` / `walkthrough-summary` → `missing-fields`
+   - 缺 `verification-confirmed` / `complete-open-tasks` / `review-confirmed` / `review-source` / `review-findings` / `verify-summary` / `implementation-notes` / `walkthrough-summary` → `missing-fields`
    - `verification-confirmed` 非布尔 `true` → `format-violation`
    - `complete-open-tasks` 非布尔 `true` → `format-violation`
    - `review-confirmed` 非布尔 `true` → `format-violation`
@@ -95,6 +99,20 @@ walkthrough-summary: <完成摘要>
 - 若 status 已是 `archived`：
   - 不改 status / completed-date / archived-date
   - 继续执行索引归档一致性修复（若根索引仍在活跃区）
+
+### 1.5 写入实施详情执行态记录
+
+把 `implementation-notes` 的各任务说明写入 `## 实施详情` 段末尾（规划态 Why/What/How 之后、`## 工作记录` 之前），每个任务一个三级标题：
+
+```markdown
+### T-NNN
+
+<该任务实际改动说明>
+```
+
+- 若存在创建时的占位注释行（「（各任务的实施说明在执行阶段由 … 不在此预填占位符。）」），写入时删除该行。
+- 若某 `### T-NNN` 标题已存在（此前 `update-chg section=implementation` append 过）：不重复建标题，在该标题下补充本次说明；内容已一致则幂等跳过。
+- `[-]` 跳过任务可省略或写一行跳过原因。
 
 ### 2. 写入 V 阶段标记
 
@@ -150,6 +168,7 @@ walkthrough-summary: <完成摘要>
 - `verification-confirmed` 非 true → `format-violation`
 - `complete-open-tasks` 非 true → `format-violation`
 - 缺 `review-confirmed` / `review-source` / `review-findings` → `missing-fields`（提示改派 `update-chg action=review` 或补字段后重派）
+- 缺 `implementation-notes` → `missing-fields`（实施详情执行态记录是 close 的输入，由主 session 按任务整理实际改动传入，agent 不代写、不留空）
 - `review-confirmed` 非 true → `format-violation`
 - `reviewed-date` 与 `<!-- REVIEWED -->` 不一致（仅一者存在） → `format-violation: review state inconsistent`
 - `<!-- APPROVED -->` 缺失 → `format-violation`

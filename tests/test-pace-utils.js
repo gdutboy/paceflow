@@ -624,7 +624,7 @@ test('A05: agent-lifecycle-guard operation/action 行带尾随文字仍强制必
   assert.ok(deny('operation: close-chg 顺便归档\ntarget: CHG-20260101-01').includes('缺少必填字段'), 'close-chg 尾随文字缺字段应 deny');
   assert.ok(deny('operation: update-chg 立刻\naction: approve-and-start\ntarget: CHG-20260101-01').includes('缺少必填字段'), 'update-chg 尾随 + approve-and-start 缺字段应 deny');
   assert.ok(deny('operation: close-chg\ntarget: CHG-20260101-01').includes('缺少必填字段'), '干净 close-chg 缺字段 deny（回归）');
-  assert.strictEqual(deny('operation: close-chg\ntarget: CHG-20260101-01\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0\nwalkthrough-summary: done'), '', '完整 close-chg 放行（回归）');
+  assert.strictEqual(deny('operation: close-chg\ntarget: CHG-20260101-01\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0\nimplementation-notes: T-001 改 hello.js\nwalkthrough-summary: done'), '', '完整 close-chg 放行（回归）');
 });
 
 test('A06: v5 ignored 后 v5MigrationPromptMessage 抑制（修 Stop 死锁）', () => {

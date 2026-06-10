@@ -188,7 +188,7 @@ PreToolUse 放行条件：活跃 CHG 在 `task.md` 与 `implementation_plan.md` 
 | 场景 | agent 操作 |
 |------|------------|
 | 批准并开始当前 CHG | `update-chg target=CHG-... action=approve-and-start ... task-id=T-NNN` |
-| 连续执行完成且验证已通过 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true` |
+| 连续执行完成且验证已通过 | `close-chg target=CHG-... verification-confirmed=true complete-open-tasks=true implementation-notes=<per-task 实施说明>` |
 | 用户要求暂停/先停/等待外部信息 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[!] status-reason=<原因>` |
 | 跨 session 前记录已完成任务 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[x]` |
 | 已批准但暂不开始，后来单独开始某任务 | `update-chg target=CHG-... section=tasks action=update-status task-id=T-NNN new-status=[/]` |
@@ -221,11 +221,16 @@ review-confirmed: true
 review-source: manual | <所选 review agent 名>
 review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX / won't-fix finding / record-finding 的 wikilink）>
 verify-summary: <测试/手动验证摘要>
+implementation-notes:
+  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>
 walkthrough-summary: <完成摘要>
 ```
 
+`implementation-notes` 必填（与 `verify-summary` 同款内容字段，hook 缺失即拒绝）：close 前主 session 按任务整理实际改动说明，agent 据此写入 `## 实施详情` 段 `### T-NNN` 标题下——缺失则详情文件只剩创建时的规划态信息（Why/What/How），执行情况无从审计。`update-chg action=verify`（只记录验证暂不归档）不要求此字段。
+
 artifact writer 会同时写：
 - 必要时把当前 CHG 的 `[ ]` / `[/]` 任务收口为 `[x]`，先推 frontmatter `status: completed`，最终归档为 `status: archived`
+- `## 实施详情` 段各任务 `### T-NNN` 执行态记录（来自 `implementation-notes`）
 - frontmatter `verified-date: YYYY-MM-DDTHH:mm:ss+08:00`
 - `changes/<id>.md` 中紧邻 `<!-- APPROVED -->` 下一行的 `<!-- VERIFIED -->`
 - frontmatter `reviewed-date` 与紧邻 `<!-- VERIFIED -->` 下一行的 `<!-- REVIEWED -->`（R 阶段标记，详见下方 R 小节与 Skill(paceflow:artifact-management)）
