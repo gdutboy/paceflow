@@ -1809,6 +1809,19 @@ test('PAUSE-3. sid 空 → 全部 no-op/false', () => {
   assert.strictEqual(paceUtils.clearSessionPause(dir, ''), false);
 });
 
+test('PAUSE-4. 恶意 sessionId 路径穿越被 safeLockName 中和（R 审计 P3-1 回归）', () => {
+  const dir = makeTmpDir('pause-traversal');
+  const evil = '../../outside-runtime';
+  assert.strictEqual(paceUtils.writeSessionPause(dir, evil), true);
+  const runtime = paceUtils.getProjectRuntimeDir(dir);
+  assert.ok(!fs.existsSync(path.join(runtime, '..', '..', 'outside-runtime')), '不得逃出 runtime 目录');
+  const files = fs.readdirSync(runtime).filter(f => f.startsWith('paused-'));
+  assert.strictEqual(files.length, 1, '标志应落在 runtime 内：' + files.join(','));
+  assert.ok(!files[0].includes('/'), '文件名不含路径分隔符');
+  assert.strictEqual(paceUtils.isSessionPaused(dir, evil), true, '同一恶意 sid 读写自洽');
+  assert.strictEqual(paceUtils.clearSessionPause(dir, evil), true);
+});
+
 test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {
   const dir = makeTmpDir('vault-choice-missing-env-utils');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });

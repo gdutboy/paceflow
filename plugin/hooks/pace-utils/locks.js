@@ -628,7 +628,9 @@ module.exports = function createLockUtils(ctx) {
   // 删除、mtime 超 SESSION_PAUSE_TTL_MS 懒清理（crash 残留兜底）。
   function sessionPausePath(cwd, sessionId) {
     const sid = ctx.normalizeSessionId(sessionId);
-    return sid ? path.join(ctx.getProjectRuntimeDir(cwd), `paused-${sid}`) : '';
+    // safeLockName 对齐全仓 session-keyed 文件名约定（R 审计 P3-1）：恶意 --session 值的
+    // 路径分隔符被转义，穿越中和；真实 UUID sid 经 encodeURIComponent 原样不变。
+    return sid ? path.join(ctx.getProjectRuntimeDir(cwd), `paused-${safeLockName(sid)}`) : '';
   }
 
   function writeSessionPause(cwd, sessionId) {
