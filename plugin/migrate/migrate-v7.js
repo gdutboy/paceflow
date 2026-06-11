@@ -149,7 +149,8 @@ function rewriteFrontmatter(content, kind, backfillDate) {
     }
   }
   const rebuilt = `---\n${keep.join('\n')}\n---${m[2]}`;
-  return { content: content.slice(0, m[0].length).replace(m[0], rebuilt) + content.slice(m[0].length), dropped, added, backfill };
+  // 直接 slice 拼接（不走 String.replace——其替换串会把 $&/$1 当替换模式，frontmatter 含 $ 时损坏帧）
+  return { content: rebuilt + content.slice(m[0].length), dropped, added, backfill };
 }
 
 /** task.md：删除「## v5 历史归档」段到文件尾 */
@@ -174,7 +175,9 @@ function reorderFindingsIndex(content) {
     head = head.replace(/<!-- 格式：[^>]*-->/, FINDINGS_HEADER_COMMENT);
   }
   if (moved.length > 0) {
-    tail = tail.replace(ARCHIVE_MARKER, `${ARCHIVE_MARKER}\n\n${moved.join('\n')}`);
+    // slice 拼接（不走 String.replace——moved 行含 $ 时会被当替换模式损坏）
+    const at = tail.indexOf(ARCHIVE_MARKER) + ARCHIVE_MARKER.length;
+    tail = `${tail.slice(0, at)}\n\n${moved.join('\n')}${tail.slice(at)}`;
   }
   return head + tail;
 }
@@ -227,20 +230,24 @@ function main() {
 
   for (const rel of collectDetailFiles(artDir)) {
     const abs = path.join(artDir, rel);
-    const before = fs.readFileSync(abs, 'utf8');
+    const raw = fs.readFileSync(abs, 'utf8');
+    // BOM 剥离 + CRLF → LF 归一（与 hook 对 artifact Edit 的换行归一行为一致）：
+    // 否则 frontmatter 边界正则不匹配 → 文件漏迁，叠加验收 skip 通道成假绿。
+    const before = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n');
     const kind = kindForDetailFile(rel);
     const chgId = changeIdForFile(rel);
+    const fmStatus = (parseFrontmatter(raw).status || '').replace(/"/g, '');
     const r = rewriteFrontmatter(before, kind, () => {
       const fromWalkthrough = backfillDateFromWalkthrough(walkthroughContent, chgId);
       if (fromWalkthrough) {
         backfillReport.push(`${chgId} ← walkthrough 索引行 ${fromWalkthrough}`);
         return { value: `${fromWalkthrough}T00:00:00+08:00` };
       }
-      backfillReport.push(`${chgId} ← 执行日 ${executionDay}（walkthrough 无记录）`);
+      backfillReport.push(`${chgId}（status=${fmStatus}）← 执行日 ${executionDay}（walkthrough 无记录，占位值）`);
       return { value: `${executionDay}T00:00:00+08:00` };
     });
     for (const k of r.dropped) droppedStats[k] = (droppedStats[k] || 0) + 1;
-    if (r.content !== before) changes.push({ rel, before, after: r.content });
+    if (r.content !== raw) changes.push({ rel, before: raw, after: r.content });
   }
 
   // 索引文件
@@ -298,14 +305,16 @@ function main() {
     fs.writeFileSync(path.join(artDir, c.rel), c.after);
   }
 
-  // 验收：全部详情文件过 7.0 封闭合同
+  // 验收：全部详情文件过 7.0 封闭合同。skipped（非 7.0 帧）= 漏迁，与校验失败同等对待——
+  // validateFrontmatterSchema 对非 7.0 帧返回 ok:true+skipped，只信 r.ok 会把漏迁文件假绿放行。
   const failures = [];
   for (const rel of collectDetailFiles(artDir)) {
     const content = fs.readFileSync(path.join(artDir, rel), 'utf8');
     const fm = parseFrontmatter(content);
     const kind = kindForDetailFile(rel);
     const r = validateFrontmatterSchema(kind, fm.status || '', fm);
-    if (!r.ok) failures.push(`${rel}: missing=[${(r.missing || []).join(',')}] unknown=[${(r.unknown || []).join(',')}]`);
+    if (r.skipped) failures.push(`${rel}: 仍非 7.0 帧（漏迁，schema-version=${fm['schema-version'] || '缺失'}）`);
+    else if (!r.ok) failures.push(`${rel}: missing=[${(r.missing || []).join(',')}] unknown=[${(r.unknown || []).join(',')}]`);
   }
   if (failures.length > 0) {
     // 还原备份
