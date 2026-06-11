@@ -1347,8 +1347,8 @@ paceUtils.withStdinParsed((stdin) => {
   if (paceSignal === 'artifact') {
     const activeEntriesAll = getActiveChangeEntries(cwd);
     const actionableEntries = activeEntriesAll.filter(e => {
-      const marks = [e.taskCheckbox, e.implCheckbox].filter(Boolean);
-      return marks.some(m => m === ' ' || m === '/' || m === '!');
+      const m = e.taskCheckbox;
+      return m === ' ' || m === '/' || m === '!';
     });
 
     // 阻止主 session 直接手写 C/V 阶段标志；应派 artifact writer。
@@ -1419,7 +1419,7 @@ paceUtils.withStdinParsed((stdin) => {
     const structuralCheckNeeded = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 
     if (structuralCheckNeeded) {
-      const malformed = actionableEntries.filter(e => e.taskMalformed || e.implMalformed);
+      const malformed = actionableEntries.filter(e => e.taskMalformed);
       if (malformed.length > 0) {
         const ids = malformed.map(e => e.id).join(', ');
         const reason = [
@@ -1429,20 +1429,6 @@ paceUtils.withStdinParsed((stdin) => {
         const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MALFORMED${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
-        return;
-      }
-
-      const mismatched = actionableEntries.filter(e => !e.task || !e.impl);
-      if (mismatched.length > 0) {
-        const ids = mismatched.map(e => e.id).join(', ');
-        const reason = [
-          `v6 索引不一致：${ids} 必须同时存在于 task.md 与 implementation_plan.md 活跃区。`,
-          '请派 artifact-writer 修复索引；不要用 Bash、临时脚本、Obsidian CLI 或主 session 直接改 artifact。',
-          '如果 artifact-writer 修复索引也被同一检查阻止，请停止重试并报告 hook 日志。'
-        ].join('\n');
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MISMATCH${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
         return;
       }
 
@@ -1459,7 +1445,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (projectMutationNeedsGate) {
       if (gatedEntries.length === 0) {
-        const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
+        const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox));
         // CHG-20260611-02：被排除的 sibling CHG 存在时，写明三出口（自建/接手/原 session 处理）。
         const siblingHeld = actionableEntries.length - nonSiblingActionableEntries.length;
         const siblingHint = siblingHeld > 0
@@ -1487,7 +1473,7 @@ paceUtils.withStdinParsed((stdin) => {
       const runnableEntries = approvedEntries.filter(e => {
         const fmStatus = (e.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
         const tasks = paceUtils.countDetailTasks(e.detail.content);
-        return e.taskCheckbox === '/' && e.implCheckbox === '/' && fmStatus === 'in-progress' && tasks.blocked === 0;
+        return e.taskCheckbox === '/' && fmStatus === 'in-progress' && tasks.blocked === 0;
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
@@ -1500,7 +1486,7 @@ paceUtils.withStdinParsed((stdin) => {
 
       const summaries = summarizeActiveChanges(cwd)
         .filter(s => runnableEntries.some(e => e.slug === s.slug))
-        .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} impl=${s.implCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed} path=${s.path}`)
+        .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed} path=${s.path}`)
         .join('\n');
       const additionalContext = hostNonArtifactWriteNote
         ? `当前 v6 活跃变更：\n${summaries}\n\n${hostNonArtifactWriteNote}`

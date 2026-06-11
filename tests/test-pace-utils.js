@@ -2549,20 +2549,18 @@ test('SLUGWL-7. 全名活跃索引行 → getActiveChangeEntries 详情可解析
   assert.strictEqual(cls.category, 'running', '应分类为 running 而非 inconsistent：' + JSON.stringify({ category: cls.category, reason: cls.reason }));
 });
 
-test('SLUGWL-8. 混合形态（task 纯 ID + impl 全名）join 不裂（R 审计 P1-1 回归）', () => {
+test('SLUGWL-8. task.md 纯 ID 行命中带 slug 详情文件（v7 单索引；原双索引 join 防裂回归改写）', () => {
   const dir = makeTmpDir('slugwl-mixed-join');
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'changes', 'chg-20260610-06-some-slug.md'),
     '---\nchg-id: CHG-20260610-06\nstatus: in-progress\n---\n# t\n\n## 任务清单\n\n- [/] T-001 x\n\n<!-- APPROVED -->\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'task.md'),
     '# 任务\n\n## 活跃任务\n\n- [/] [[chg-20260610-06]] 标题 #change\n\n<!-- ARCHIVE -->\n', 'utf8');
-  fs.writeFileSync(path.join(dir, 'implementation_plan.md'),
-    '# 计划\n\n## 变更索引\n\n- [/] [[chg-20260610-06-some-slug|chg-20260610-06]] 标题 #change\n\n<!-- ARCHIVE -->\n', 'utf8');
   paceUtils._clearArtifactDirCache();
   const entries = paceUtils.getActiveChangeEntries(dir);
-  assert.strictEqual(entries.length, 1, '同一 CHG 两种形态必须 join 成单条：' + JSON.stringify(entries.map(e => e.slug)));
+  assert.strictEqual(entries.length, 1, '纯 ID 索引行 + 带 slug 详情文件应为单条：' + JSON.stringify(entries.map(e => e.slug)));
   assert.strictEqual(entries[0].id, 'CHG-20260610-06');
-  assert.ok(entries[0].task && entries[0].impl, '两侧索引都应命中');
+  assert.ok(entries[0].task && !entries[0].detail.missing, '索引命中且详情经 glob 解析到带 slug 文件');
 });
 
 test('SLUGWL-6. validateWalkthroughLinks 接受 \\| 转义全名行 + 仍校验纯 ID 旧行', () => {
@@ -3298,6 +3296,34 @@ test('detailPathForId：文件不存在回退精确路径（fail-safe）', () =>
 test('detailPathForId：非法 id 返回 null', () => {
   const dir = makeTmpDir('dp-bad');
   assert.strictEqual(detailPathForId(dir, 'not-an-id'), null);
+});
+
+// ============================================================
+// V7A. v7 双文件合并——getActiveChangeEntries 单读 task.md（CHG-20260611-08 T-001）
+// ============================================================
+console.log('\n--- V7A: task.md 单索引 ---');
+
+test('V7A-1: getActiveChangeEntries 只读 task.md，impl_plan 缺失不影响', () => {
+  const dir = makeTmpDir('v7a-single-index');
+  writeV6ChangeFixture(dir);
+  fs.unlinkSync(path.join(dir, 'implementation_plan.md')); // 已迁移布局：impl_plan 不存在
+  const entries = paceUtils.getActiveChangeEntries(dir);
+  assert.strictEqual(entries.length, 1, 'V7A-1a: impl_plan 缺失时 entry 仍可见');
+  assert.strictEqual(entries[0].taskCheckbox, '/', 'V7A-1b: taskCheckbox 正常');
+  assert.ok(!('impl' in entries[0]) && !('implCheckbox' in entries[0]), 'V7A-1c: entry 不再含 impl 字段');
+  const cls = paceUtils.classifyChange(entries[0]);
+  assert.strictEqual(cls.category, 'running', 'V7A-1d: 单索引下 classify 正常 running');
+  assert.ok(!('implCheckbox' in cls), 'V7A-1e: classified 对象不再含 implCheckbox');
+});
+
+test('V7A-2: task.md 同 ID 重复行按 Map 去重为单 entry（沿旧实现语义）', () => {
+  const dir = makeTmpDir('v7a-dedupe');
+  writeV6ChangeFixture(dir);
+  const taskPath = path.join(dir, 'task.md');
+  const dupLine = '- [/] [[chg-20260507-01]] 测试变更重复行 #change [tasks:: T-001]\n';
+  fs.writeFileSync(taskPath, fs.readFileSync(taskPath, 'utf8').replace('<!-- ARCHIVE -->', `${dupLine}<!-- ARCHIVE -->`), 'utf8');
+  const entries = paceUtils.getActiveChangeEntries(dir);
+  assert.strictEqual(entries.length, 1, 'V7A-2: 重复行不裂成两个 entry');
 });
 
 // ============================================================

@@ -187,12 +187,6 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     const entries = getActiveChangeEntries(cwd);
-    const mismatched = paceUtils.isArtifactWriterAgentType(stdin.agentType)
-      ? []
-      : entries.filter(e => !e.task || !e.impl);
-    if (mismatched.length > 0) {
-      warnings.push(`v6 索引不一致：${mismatched.map(e => e.id).join(', ')} 未同时存在于 task.md 和 implementation_plan.md。`);
-    }
 
     if (artifactRel === 'task.md' || artifactRel === 'implementation_plan.md') {
       try {
@@ -213,7 +207,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (['foreign-fresh', 'sibling-fresh'].includes(ownerStatus.disposition)) continue;
         const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
         const tasks = countDetailTasks(entry.detail.content);
-        if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
+        if (entry.taskCheckbox === 'x' && !['completed', 'archived'].includes(status)) {
           warnOnce(`status-mismatch-${entry.slug}`, `${entry.id} 索引 [x] 与详情 status=${status || 'missing'} 不一致，请派 update-chg action=update-status 修复。`);
         }
         if (status === 'completed' && !isChangeVerified(entry.detail)) {

@@ -233,7 +233,6 @@ module.exports = function createChangeAnalysis(ctx) {
     const verified = isChangeVerified(detail);
     const reviewed = isChangeReviewed(detail);
     const taskCheckbox = entry && entry.taskCheckbox;
-    const implCheckbox = entry && entry.implCheckbox;
     const base = {
       id: entry && entry.id,
       slug: entry && entry.slug,
@@ -245,72 +244,55 @@ module.exports = function createChangeAnalysis(ctx) {
       changeSet: frontmatterNullable(fm['change-set']),
       changeSetSeq: frontmatterNullable(fm['change-set-seq']),
       taskCheckbox,
-      implCheckbox,
       detail,
       category: 'backlog',
       reason: '',
     };
 
-    if (!entry || !entry.task || !entry.impl) {
+    // v7（CHG-20260611-08）：task.md 单索引——index-missing 仅防卫空 entry（正常路径不可达），
+    //   index-mismatch（旧双索引 checkbox 不一致）随双文件合并退役。
+    if (!entry || !entry.task) {
       return { ...base, category: 'inconsistent', reason: 'index-missing' };
     }
-    if (entry.taskMalformed || entry.implMalformed) {
+    if (entry.taskMalformed) {
       return { ...base, category: 'inconsistent', reason: 'index-malformed' };
     }
     if (!detail || detail.missing) {
       return { ...base, category: 'inconsistent', reason: 'detail-missing' };
     }
-    if (taskCheckbox && implCheckbox && taskCheckbox !== implCheckbox) {
-      return { ...base, category: 'inconsistent', reason: 'index-mismatch' };
-    }
-    if ((taskCheckbox === 'x' || implCheckbox === 'x') && tasks.pending > 0) {
+    if (taskCheckbox === 'x' && tasks.pending > 0) {
       return { ...base, category: 'inconsistent', reason: 'index-completed-with-pending-tasks' };
     }
-    if ((taskCheckbox === 'x' || implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
+    if (taskCheckbox === 'x' && !['completed', 'archived'].includes(status)) {
       return { ...base, category: 'inconsistent', reason: 'index-completed-status-mismatch' };
     }
-    if ((['in-progress', 'completed'].includes(status) || taskCheckbox === '/' || implCheckbox === '/') && tasks.total === 0) {
+    if ((['in-progress', 'completed'].includes(status) || taskCheckbox === '/') && tasks.total === 0) {
       return { ...base, category: 'inconsistent', reason: 'task-list-empty' };
     }
 
     if (status === 'archived') return { ...base, category: 'inconsistent', reason: 'active-archived' };
-    if (status === 'cancelled' || taskCheckbox === '-' || implCheckbox === '-') return { ...base, category: 'inconsistent', reason: 'active-cancelled' };
-    if (taskCheckbox === '!' || implCheckbox === '!' || tasks.blocked > 0) return { ...base, category: 'blocked' };
-    if (status === 'completed' || taskCheckbox === 'x' || implCheckbox === 'x') return { ...base, category: 'closing-required' };
-    if (status === 'in-progress' || taskCheckbox === '/' || implCheckbox === '/') return { ...base, category: 'running' };
+    if (status === 'cancelled' || taskCheckbox === '-') return { ...base, category: 'inconsistent', reason: 'active-cancelled' };
+    if (taskCheckbox === '!' || tasks.blocked > 0) return { ...base, category: 'blocked' };
+    if (status === 'completed' || taskCheckbox === 'x') return { ...base, category: 'closing-required' };
+    if (status === 'in-progress' || taskCheckbox === '/') return { ...base, category: 'running' };
     if (status === 'planned' && approved) return { ...base, category: 'ready' };
     if (status === 'planned' || status === '') return { ...base, category: 'backlog' };
     return { ...base, category: 'inconsistent', reason: 'unknown-status' };
   }
 
   function getActiveChangeEntries(cwd) {
+    // v7（CHG-20260611-08）：task.md 是唯一 CHG/HOTFIX 索引（双文件合并，implementation_plan 退役）。
+    //   Map 按纯 ID 去重保留——同 CHG 重复行的脏数据不裂成两个 entry（沿旧双索引实现的 join 语义）。
     const taskEntries = parseChangeIndex(ctx.readActive(cwd, 'task.md') || '');
-    const implEntries = parseChangeIndex(ctx.readActive(cwd, 'implementation_plan.md') || '');
-    // HOTFIX-20260610-01 R 审计 P0-1/P1-1：join 与详情解析一律用纯 ID，不用 slug（stem 全名）——
-    //   detailPathForId 只认纯 ID 入参（glob 自行命中带 slug 文件）；slug 当 join 键会在
-    //   task/impl 索引行形态不一致（纯 ID vs 全名）的迁移窗口把同一 CHG 裂成两条 index-missing。
     const taskById = new Map(taskEntries.map(e => [e.id, e]));
-    const implById = new Map(implEntries.map(e => [e.id, e]));
-    const ids = new Set([...taskById.keys(), ...implById.keys()]);
-    const entries = [];
-    for (const id of ids) {
-      const task = taskById.get(id) || null;
-      const impl = implById.get(id) || null;
-      const base = task || impl;
-      const detail = readChangeDetail(cwd, id);
-      entries.push({
-        slug: base.slug,
-        id,
-        task,
-        impl,
-        taskCheckbox: task && task.checkbox,
-        implCheckbox: impl && impl.checkbox,
-        taskMalformed: Boolean(task && task.malformed),
-        implMalformed: Boolean(impl && impl.malformed),
-        detail,
-      });
-    }
-    return entries;
+    return [...taskById.values()].map(task => ({
+      slug: task.slug,
+      id: task.id,
+      task,
+      taskCheckbox: task.checkbox,
+      taskMalformed: Boolean(task.malformed),
+      detail: readChangeDetail(cwd, task.id),
+    }));
   }
 
   function isChangeApproved(detail) {
@@ -343,7 +325,6 @@ module.exports = function createChangeAnalysis(ctx) {
         slug: entry.slug,
         taskSectionRaw,
         taskCheckbox: entry.taskCheckbox || null,
-        implCheckbox: entry.implCheckbox || null,
         status: fm.status || (entry.detail && entry.detail.missing ? 'missing-detail' : 'unknown'),
         category: classified.category,
         approved: isChangeApproved(entry.detail),

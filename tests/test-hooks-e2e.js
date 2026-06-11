@@ -3943,15 +3943,15 @@ test('9hc0e. artifact-writer 可修复半写索引不一致', () => {
   assert.ok(!r.stdout.includes('索引不一致'));
 });
 
-test('9hc0f. 非 artifact-writer 仍不能在索引不一致时写项目文件', () => {
+test('9hc0f. v7: impl_plan 空索引不再影响写码门（旧双索引 mismatch deny 退役）', () => {
   const dir = makeV6Project('direct-index-mismatch-still-deny', { implIndex: '' });
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: codeEditStdin(dir),
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('"deny"'));
-  assert.ok(r.stdout.includes('索引不一致'));
+  assert.ok(!r.stdout.includes('"deny"'), 'task.md 单索引权威：impl_plan 缺行不再 deny');
+  assert.ok(!r.stdout.includes('索引不一致'));
 });
 
 test('9hc0g. artifact-writer 写 C/E 阶段 artifact 不被项目执行 gate 自锁', () => {
@@ -5659,8 +5659,8 @@ test('10a2. 后台任务不放过 running CHG 的虚假完成声明', () => {
   assert.ok(r.stderr.includes('AI 声称完成'));
 });
 
-test('10a3. 后台任务不放过 artifact 结构不一致', () => {
-  const dir = makeV6Project('stop-background-work-mismatch', { implIndex: '' });
+test('10a3. 后台任务不放过 artifact 结构不一致（v7 换源：索引 [x] vs 详情未完成）', () => {
+  const dir = makeV6Project('stop-background-work-mismatch', { indexMark: '[x]' });
   const r = runHook('stop.js', {
     cwd: dir,
     stdin: {
@@ -5669,7 +5669,7 @@ test('10a3. 后台任务不放过 artifact 结构不一致', () => {
     },
   });
   assert.strictEqual(r.code, 2);
-  assert.ok(r.stderr.includes('不一致'));
+  assert.ok(r.stderr.includes('索引已是 [x]'));
 });
 
 test('11. v6 completed 但未 verified → exit 2', () => {
@@ -5840,11 +5840,11 @@ test('12e. Stop 对 blocked deferred CHG 的完成声明仍软通过', () => {
   assert.ok(JSON.parse(r.stdout).systemMessage.includes('CHG-20260504-01 blocked'));
 });
 
-test('13. v6 索引不一致 → exit 2', () => {
-  const dir = makeV6Project('stop-mismatch', { implIndex: '' });
+test('13. v6 索引与详情状态不一致 → exit 2（v7 换源：双索引 mismatch 退役，改用 [x] vs 未完成）', () => {
+  const dir = makeV6Project('stop-mismatch', { indexMark: '[x]' });
   const r = runHook('stop.js', { cwd: dir });
   assert.strictEqual(r.code, 2);
-  assert.ok(r.stderr.includes('不一致'));
+  assert.ok(r.stderr.includes('索引已是 [x]'));
 });
 
 test('14. .pace/disabled → exit 0', () => {
@@ -6270,7 +6270,7 @@ test('15d. 非 artifact-writer 索引不一致仍提示', () => {
     },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('索引不一致'));
+  assert.ok(!r.stdout.includes('索引不一致'), 'v7: impl_plan 缺行不再产生跨索引不一致 warning');
 });
 
 test('15e. 写入 .pace/artifact-root 不触发无任务流程提醒', () => {

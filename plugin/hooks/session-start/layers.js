@@ -760,7 +760,7 @@ function renderActiveChangeSummary(state, paceUtils) {
   for (const s of summaries) {
     // C2：status 也过 normalizeFrontmatterStatus 去引号归一（与 category 同源；带引号 frontmatter 否则渲染 status="in-progress"）。
     const statusText = paceUtils.normalizeFrontmatterStatus(s.status);
-    out += `- ${s.id} category=${s.category} status=${statusText} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] impl=[${s.implCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`;
+    out += `- ${s.id} category=${s.category} status=${statusText} owner=${ownerDisplay(s)} task=[${s.taskCheckbox || '?'}] pending=${s.pending ?? '?'} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed}\n  ${s.path ? s.path.replace(/\\/g, '/') : 'missing detail'}\n`;
     // 任务清单本体展开（CHG-20260609-03 T-001）：collectState 已按相关度把任务行加工成
     //   s.tasks = { items, omitted, mode }（in-progress 完整行含 [状态]，planned 只 T-NNN 标题）。
     //   渲染层做缩进展开 + 跨 CHG 总量护栏；单 CHG 内展开上限/planned 降级已在 collectState 落定。
