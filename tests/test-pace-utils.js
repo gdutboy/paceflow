@@ -166,6 +166,47 @@ test('detectSoftSignal: docs/plans/<date>-*.md（mtime 新鲜）→ "dated-plan"
   assert.strictEqual(detectSoftSignal(dir), 'dated-plan');
 });
 
+test('MANIFEST-1. detectSoftSignal: src/ 布局（根目录零代码）+ package.json → "manifest"（CHG-20260611-05）', () => {
+  // cc-wechat 野外盲区复刻：代码全在 src/，根目录只有清单文件——code-count 恒 miss，
+  // 清单文件检测补位（finding-2026-06-11-code-count-src-layout-miss-soft-signal）。
+  const dir = makeTmpDir('soft-manifest');
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'index.ts'), '// code in src');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+  assert.strictEqual(detectSoftSignal(dir), 'manifest');
+});
+
+test('MANIFEST-2. 各类清单文件均触发；优先级 code-count > manifest > dated-plan', () => {
+  for (const manifest of ['tsconfig.json', 'pyproject.toml', 'Cargo.toml', 'go.mod']) {
+    const dir = makeTmpDir(`soft-manifest-${manifest.replace(/\W/g, '-')}`);
+    fs.writeFileSync(path.join(dir, manifest), '');
+    assert.strictEqual(detectSoftSignal(dir), 'manifest', manifest + ' 应触发 manifest 软信号');
+  }
+  // code-count 优先（双命中返回更具体的 code-count）
+  const both = makeTmpDir('soft-manifest-code-priority');
+  fs.writeFileSync(path.join(both, 'package.json'), '{}');
+  for (const f of ['a.js', 'b.ts', 'c.py']) fs.writeFileSync(path.join(both, f), '//');
+  assert.strictEqual(detectSoftSignal(both), 'code-count');
+  // manifest 优先于 dated-plan（工程证据强于计划文件）
+  const mp = makeTmpDir('soft-manifest-plan-priority');
+  fs.writeFileSync(path.join(mp, 'package.json'), '{}');
+  fs.mkdirSync(path.join(mp, 'docs', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(mp, 'docs', 'plans', '2026-06-10-x.md'), '# p');
+  assert.strictEqual(detectSoftSignal(mp), 'manifest');
+});
+
+test('MANIFEST-3. manifest 项目 disabled / 已激活仍 false（守卫优先级不变）', () => {
+  const disabled = makeTmpDir('soft-manifest-disabled');
+  fs.writeFileSync(path.join(disabled, 'package.json'), '{}');
+  fs.mkdirSync(path.join(disabled, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(disabled, '.pace', 'disabled'), '');
+  assert.strictEqual(detectSoftSignal(disabled), false);
+  const active = makeTmpDir('soft-manifest-active');
+  fs.writeFileSync(path.join(active, 'package.json'), '{}');
+  fs.mkdirSync(path.join(active, 'changes'), { recursive: true });
+  assert.strictEqual(detectSoftSignal(active), false);
+});
+
 test('detectSoftSignal: 有 .pace/disabled → false（用户已禁用，不提示）', () => {
   const dir = makeTmpDir('soft-disabled');
   fs.writeFileSync(path.join(dir, 'a.js'), '// a');

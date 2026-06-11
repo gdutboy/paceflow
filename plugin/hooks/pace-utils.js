@@ -642,8 +642,13 @@ function detectSoftSignal(cwd) {
     if (disabledPaths.some(fp => fs.existsSync(fp))) return false;
     // 已激活（强信号）→ 不再软提示（已 enabled / 既有 changes/ / 配置 / legacy）。
     if (isPaceProject(cwd)) return false;
-    // code-count 优先于 dated-plan（更直接的「这是代码项目」信号）。
+    // code-count 优先于 manifest / dated-plan（更直接的「这是代码项目」信号）。
     if (countCodeFiles(cwd) >= 3) return 'code-count';
+    // CHG-20260611-05：项目清单文件检测——标准 src/ 布局项目根目录零代码文件，code-count
+    // 恒 miss（finding-2026-06-11-code-count-src-layout-miss-soft-signal）；清单文件存在
+    // 即「这是个工程项目」，零递归成本、误报面小。强于 dated-plan（工程证据 > 计划文件）。
+    const MANIFEST_FILES = ['package.json', 'tsconfig.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle'];
+    if (MANIFEST_FILES.some(f => fs.existsSync(path.join(cwd, f)))) return 'manifest';
     if (hasBridgeCandidatePlanFiles(cwd)) return 'dated-plan';
   } catch (e) {}
   return false;
