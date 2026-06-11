@@ -456,4 +456,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v6.7.0 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify-Review)
+**版本**: v6.7.1 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify-Review)
