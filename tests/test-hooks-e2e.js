@@ -7459,6 +7459,55 @@ test('SE-3. 心跳 revive：detached + 同 session 工具活动 → 升回 activ
   assert.strictEqual(owner.state, 'active', '同 session 心跳应把 detached 升回 active：' + r.stdout);
 });
 
+test('SIB-STOP-1. sibling-fresh：B 的 Stop 跳过硬约束并软提醒（CHG-20260611-02）', () => {
+  const dir = makeV6Project('stop-sibling-fresh', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'active',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-b' } });
+  assert.strictEqual(r.code, 0, 'sibling-fresh 不应阻断 B 的 Stop：' + r.stderr);
+  assert.ok(r.stdout.includes('同目录另一 session 执行中'), '应有 sibling 软提醒：' + r.stdout);
+  assert.ok(r.stdout.includes('不受其完成约束'), r.stdout);
+});
+
+test('SIB-STOP-2. sibling-detached：软提醒含 AskUserQuestion 接手指引与 takeover 字段', () => {
+  const dir = makeV6Project('stop-sibling-detached', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'detached',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-b' } });
+  assert.strictEqual(r.code, 0, 'sibling-detached 不应阻断：' + r.stderr);
+  assert.ok(r.stdout.includes('正常关闭'), r.stdout);
+  assert.ok(r.stdout.includes('AskUserQuestion'), r.stdout);
+  assert.ok(r.stdout.includes('owner-takeover-confirmed'), r.stdout);
+});
+
+test('SIB-STOP-3. sibling-stale 给失联接手指引；同 session 硬约束不回归', () => {
+  const dir = makeV6Project('stop-sibling-stale', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'active',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+    timestampMs: Date.now() - 2 * 60 * 60 * 1000,
+  });
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-b' } });
+  assert.strictEqual(r.code, 0, 'sibling-stale 不应阻断：' + r.stderr);
+  assert.ok(r.stdout.includes('失联'), r.stdout);
+  // 同 session（owner 本人）仍被未完成 CHG 硬约束阻断（软化只对 sibling）
+  const own = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-a' } });
+  assert.strictEqual(own.code, 2, '同 session 的未完成 CHG 仍应阻断：' + own.stdout);
+});
+
 // ============================================================
 // CHG-B B3：disable 无条件可达（spec §5.1 不变量 1，回归锁定）
 // ============================================================

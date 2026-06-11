@@ -62,6 +62,11 @@ function isForeignOwnerStatus(ownerStatus) {
   return ownerStatus.disposition === 'foreign-fresh' || ownerStatus.disposition === 'foreign-stale';
 }
 
+// CHG-20260611-02：同 checkout 其他 session 的 CHG（sibling 三态）——跳过硬约束改软提醒。
+function isSiblingOwnerStatus(ownerStatus) {
+  return String(ownerStatus.disposition || '').startsWith('sibling-');
+}
+
 function addWarning(type, message) {
   warnings.push(message);
   warningTypes.push(type || 'repair');
@@ -169,16 +174,25 @@ if (paceSignal === 'artifact') {
   for (const change of classifiedEntries) {
     const ownerStatus = paceUtils.changeOwnerStatus(cwd, change.id, stdin.sessionId);
     const isForeignOwner = isForeignOwnerStatus(ownerStatus);
-    if (isForeignOwner) foreignOwnedIds.add(change.id);
+    const isSiblingOwner = isSiblingOwnerStatus(ownerStatus);
+    if (isForeignOwner || isSiblingOwner) foreignOwnedIds.add(change.id);
     const isProgressState = ['running', 'blocked', 'closing-required'].includes(change.category);
-    if (isForeignOwner && (isProgressState || isDeferredCategory(change.category))) {
-      log(projectLogEntry('Stop', ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER', {
+    if ((isForeignOwner || isSiblingOwner) && (isProgressState || isDeferredCategory(change.category))) {
+      if (isSiblingOwner) {
+        // CHG-20260611-02 软化：sibling 的 CHG 不进硬 warnings，改人可见软提醒
+        //（emitAllowedStopReminders 通道，仅在本就放行时显示）。
+        softReminders.push(ownerStatus.disposition === 'sibling-fresh'
+          ? `${change.id} 正由同目录另一 session 执行中（owner fresh），本 session 不受其完成约束；请勿接手。`
+          : `${change.id} 的原 session 已${ownerStatus.disposition === 'sibling-detached' ? '正常关闭' : '失联（owner 记录过期）'}。如需本 session 接手，先用 AskUserQuestion 向用户确认，artifact 操作带 owner-takeover-confirmed/owner-takeover-source/owner-takeover-evidence。`);
+      }
+      log(projectLogEntry('Stop', isSiblingOwner ? 'SKIP_SIBLING_CHANGE_OWNER' : (ownerStatus.disposition === 'foreign-stale' ? 'SKIP_FOREIGN_STALE_CHANGE_OWNER' : 'SKIP_FOREIGN_CHANGE_OWNER'), {
         proj,
         change: change.id,
         owner_state: ownerStatus.owner.state || '',
         owner_worktree: ownerStatus.owner.worktree || '',
         owner_branch: ownerStatus.owner.branch || '',
         category: change.category,
+        disposition: ownerStatus.disposition,
       }));
       continue;
     }
