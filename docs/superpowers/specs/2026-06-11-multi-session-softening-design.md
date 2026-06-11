@@ -47,6 +47,10 @@ owner 机制现状（直接复用，不新造）：
 3. **`pre-tool-use.js` L1381 区（currentOwnedActionableEntries，收紧面）**：
    - sibling 三态 `current: false` 自然使 B 不再搭 A 的 running CHG 便车写项目代码。B 写代码撞「无活跃（自有）CHG」时，deny 文案给三出口：自己建 CHG / 用户确认接手（takeover）/ `/paceflow:pause`。
    - 执行期核对 `gatedEntries` / `projectMutationNeedsGate` 周边逻辑，确认 `current: false` 不引入其他路径回归（如 isCodeFile 分支用的是 `actionableEntries` 不是 currentOwned——行为差异要在测试里锁定）。
+4. **`post-tool-use.js` L208 区（修复提醒 owner 过滤，软化面）**：现状仅 `foreign-fresh` 跳过 status-mismatch / verify-missing / review-missing / archive-reminded 等催办——`sibling-fresh` 需对齐跳过（否则 B 仍收 A 的 CHG 催办，软化不完整）；`sibling-detached` / `sibling-stale` 对齐 foreign-stale 现状不跳过（B 是潜在接手者，提醒有意义）。
+5. **`session-start/collect-state.js` `enrichSummaryOwner`（注入显示）**：SessionStart 活跃 CHG 摘要的 `owner=` 字段直接显示 disposition——细分后显示 sibling 三态；`sibling-detached` 顺带提示「原 session 已关闭，可接手」（即 3.2 的 SessionStart 注入增强，从可选升为本消费点的一部分）。
+
+> 消费点全集来源：2026-06-11 锁机制摸底（`docs/artifact-locking-reference.md` §7.2），grep `changeOwnerStatus|isForeignOwnerStatus` 全仓确认共 5 处消费。
 
 ### 3.2 SessionEnd hook（新发布面）
 
@@ -55,7 +59,9 @@ owner 机制现状（直接复用，不新造）：
 - 同时删除本 session 的 pause 标志（见 3.3）。
 - crash/断电不触发 SessionEnd → owner 不降级，由 TTL 30min 自动转 `sibling-stale` 兜底。
 - 接手流：重开 session C 在 SessionStart 注入或 Stop 软提醒中看到 detached CHG 提示 → AskUserQuestion 向用户确认（用户一句「继续」即满足 `user-directive`）→ C 的首次 artifact 操作带 takeover 三字段 → owner 改写为 C，后续 C 即 `current`。
-- SessionStart 注入增强（可选任务，低优先级）：活跃 CHG 摘要中 owner 为 detached 时标注「原 session 已关闭，可接手」。
+- **detached 生命周期（锁摸底发现，2026-06-11）**：owner 心跳（`heartbeatChangeOwners`，pre/post-tool-use）的 `states: ['active','closing']` 过滤不含 detached → detached 记录 mtime 不再被刷新 → SessionEnd 写入 30min 后被 W6 `sweepStaleRuntimeOwners`（RSL-01/02）清除，CHG 转无主（disposition `unknown`，现状「谁碰到谁负责」语义）。接手窗口两段式：30min 内显式 takeover；之后自然无主可直接接续。**不对抗 sweep，不延长 TTL**。
+- **同 session resume 必须 revive**：Claude Code resume 延续同 sessionId 时 A 经 `sameSession` 分支正常工作，但 state 停留 detached 会让 sibling 误判「可接手」——心跳路径遇本 session 的 detached 记录时升回 `active`（state 改写 + 刷新 mtime；实现为 touch 变体或独立 revive 步骤）。SessionEnd 后的残余 hook 活动可能误 revive 的边界风险低（SessionEnd 后不应再有本 session hook 活动），标注即可。
+- SessionStart 注入增强：见 §3.1 消费点 5（已升为必做）。
 
 ### 3.3 /paceflow:pause（完全 per-session disable）
 
