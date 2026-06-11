@@ -196,10 +196,13 @@ paceUtils.withStdinParsed((stdin) => {
   // CHG-D D1：所有 PACE deny 文案统一追加逃生口（spec §5.1 不变量 2：指向用户决策，
   //   deny 主信息仍引导走 PACE 流程；disable 是给真不想用 PACEflow 的用户的退出，不是 AI 绕过单次 deny 的手段）。
   //   幂等守卫：reason 已含 /paceflow:disable 时不重复追加。
-  const PACE_ESCAPE_HATCH = '若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用。';
+  // CHG-20260611-04：双出口——项目级 disable + session 级 pause（同目录多 session 场景更对症）。
+  const PACE_ESCAPE_HATCH = '若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。';
   function withEscapeHatch(reason) {
     const r = String(reason || '');
-    return r.includes('/paceflow:disable') ? r : `${r}\n${PACE_ESCAPE_HATCH}`;
+    // 幂等守卫升级（CHG-20260611-04）：reason 已含任一出口命令即不再追加（防半截重复——
+    // 旧版只查 disable，已含 pause 指引的文案会被叠加第二条逃生口）。
+    return (r.includes('/paceflow:disable') || r.includes('/paceflow:pause')) ? r : `${r}\n${PACE_ESCAPE_HATCH}`;
   }
   function denyOrHint(reason, { hardInTeammate = false } = {}) {
     const enrichedReason = withEscapeHatch(paceUtils.appendArtifactDirHint(cwd, reason));
