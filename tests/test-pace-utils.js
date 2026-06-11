@@ -1542,7 +1542,9 @@ test('executionContextForCwd: git worktree 标记 worktree 名称并写宿主 st
     state: 'active',
   });
   assert.strictEqual(written.ok, true);
-  assert.strictEqual(changeOwnerStatus(child, 'CHG-20260522-01', 'sid-worktree-child').disposition, 'current-worktree');
+  // CHG-20260611-02：同 checkout（worktree 及其 child 子目录归一）不同 session → sibling-fresh
+  //（旧语义 current-worktree；归一性验证不变，断言精确到细分后形态）。
+  assert.strictEqual(changeOwnerStatus(child, 'CHG-20260522-01', 'sid-worktree-child').disposition, 'sibling-fresh');
 });
 
 test('git worktree 内 nested .git 目录仍向上继承宿主 Project Root', () => {
@@ -1605,7 +1607,8 @@ test('change owner runtime: 当前 session / foreign fresh 可区分', () => {
   assert.strictEqual(owner.ok, true);
   assert.strictEqual(owner.sessionId, 'sid-owner');
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-owner').disposition, 'current');
-  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-other').disposition, 'current-worktree');
+  // CHG-20260611-02：同 checkout 不同 session 由 current-worktree 细分为 sibling-fresh。
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-01', 'sid-other').disposition, 'sibling-fresh');
   const foreign = JSON.parse(fs.readFileSync(written.path, 'utf8'));
   foreign.cwd = path.join(dir, 'other-checkout');
   foreign.stateDir = path.join(dir, 'other-checkout');
@@ -1685,7 +1688,72 @@ test('change owner heartbeat: 当前 session 工具活动刷新 owner timestamp'
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-02', 'sid-other').disposition, 'foreign-stale');
   const touched = touchChangeOwnersForSession(dir, { sessionId: 'sid-heartbeat' });
   assert.deepStrictEqual(touched, ['CHG-20260512-02']);
-  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-02', 'sid-other').disposition, 'current-worktree');
+  // CHG-20260611-02：touch 刷回当前 checkout 后，不同 session 查询 → sibling-fresh（旧 current-worktree）。
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260512-02', 'sid-other').disposition, 'sibling-fresh');
+});
+
+test('SIB-1. 同 checkout 不同 session：fresh owner → sibling-fresh（current:false，CHG-20260611-02）', () => {
+  const dir = makeTmpDir('sibling-fresh');
+  const written = writeChangeOwner(dir, 'CHG-20260611-91', { sessionId: 'sid-a', operation: 'update-chg', state: 'active' });
+  assert.strictEqual(written.ok, true);
+  const status = changeOwnerStatus(dir, 'CHG-20260611-91', 'sid-b');
+  assert.strictEqual(status.disposition, 'sibling-fresh');
+  assert.strictEqual(status.current, false);
+  assert.strictEqual(status.sameCheckout, true);
+  assert.strictEqual(status.fresh, true);
+});
+
+test('SIB-2. 同 checkout 不同 session：state=detached → sibling-detached（优先于 stale 判定）', () => {
+  const dir = makeTmpDir('sibling-detached');
+  writeChangeOwner(dir, 'CHG-20260611-92', { sessionId: 'sid-a', operation: 'update-chg', state: 'detached' });
+  const status = changeOwnerStatus(dir, 'CHG-20260611-92', 'sid-b');
+  assert.strictEqual(status.disposition, 'sibling-detached');
+  assert.strictEqual(status.current, false);
+});
+
+test('SIB-3. 同 checkout 不同 session：超 TTL → sibling-stale', () => {
+  const dir = makeTmpDir('sibling-stale');
+  const written = writeChangeOwner(dir, 'CHG-20260611-93', { sessionId: 'sid-a', operation: 'update-chg', state: 'active' });
+  const owner = JSON.parse(fs.readFileSync(written.path, 'utf8'));
+  owner.timestampMs = Date.now() - 2 * 60 * 60 * 1000;
+  owner.updatedAt = new Date(owner.timestampMs).toISOString();
+  fs.writeFileSync(written.path, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
+  const status = changeOwnerStatus(dir, 'CHG-20260611-93', 'sid-b');
+  assert.strictEqual(status.disposition, 'sibling-stale');
+  assert.strictEqual(status.stale, true);
+});
+
+test('SIB-4. sid 空 + 同 checkout → 保留 current-worktree（STOP-03 对称保守，不细分）', () => {
+  const dir = makeTmpDir('sibling-no-sid');
+  const lockUtils = createLockUtils({
+    getProjectRuntimeDir: d => path.join(d, '.pace'),
+    displayDir: d => `${String(d || '').replace(/\\/g, '/')}/`,
+    normalizeSessionId: s => String(s || '').trim(),
+    currentSessionId: () => '',
+    executionContextForCwd: d => ({ cwd: d, stateDir: d, worktree: 'wt-current', branch: 'br-current', text: '[worktree:: wt-current] [branch:: br-current]' }),
+    normalizePath: p => String(p || '').replace(/\\/g, '/'),
+    getArtifactDir: d => d,
+    todayISO: () => '2026-06-11',
+    CHANGE_OWNER_TTL_MS: paceUtils.CHANGE_OWNER_TTL_MS,
+    PROJECT_ROOT_FILE: paceUtils.PROJECT_ROOT_FILE,
+  });
+  lockUtils.writeChangeOwner(dir, 'CHG-20260611-94', { sessionId: 'sid-a', operation: 'update-chg', state: 'active' });
+  const status = lockUtils.changeOwnerStatus(dir, 'CHG-20260611-94', '');
+  assert.strictEqual(status.disposition, 'current-worktree', 'sid 空时不细分 sibling，保留保守路径');
+  assert.strictEqual(status.current, true);
+});
+
+test('SIB-5. 同 session 与 foreign 行为不回归（CHG-20260611-02）', () => {
+  const dir = makeTmpDir('sibling-regression');
+  const written = writeChangeOwner(dir, 'CHG-20260611-95', { sessionId: 'sid-a', operation: 'update-chg', state: 'active' });
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260611-95', 'sid-a').disposition, 'current');
+  const owner = JSON.parse(fs.readFileSync(written.path, 'utf8'));
+  owner.cwd = path.join(dir, 'other');
+  owner.stateDir = path.join(dir, 'other');
+  owner.worktree = 'wt-other';
+  owner.branch = 'br-other';
+  fs.writeFileSync(written.path, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
+  assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260611-95', 'sid-b').disposition, 'foreign-fresh');
 });
 
 test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {

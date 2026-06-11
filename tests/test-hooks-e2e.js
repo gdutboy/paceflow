@@ -1188,7 +1188,10 @@ test('8c. foreign fresh owner 不阻断当前 session 普通非代码写入', ()
   assert.ok(!r.stdout.includes('"deny"'));
 });
 
-test('8c1. 同 worktree 新 session 继承 owner 并继续执行非代码 C/E gate', () => {
+test('8c1. 同 worktree 不同 session：sibling-fresh 的 CHG 不构成新 session 的非代码 gate（CHG-20260611-02 语义变更）', () => {
+  // 旧语义：同 checkout 即 current-worktree（current:true），新 session 自动继承旧 session owner
+  // 的 C/E gate（deny「E 阶段未就绪」）。CHG-20260611-02 细分后 sibling-fresh current:false——
+  // B 写非代码文件回归「无自有活跃 CHG 不 gate」基线；接续工作走 detached/takeover 流。
   const dir = makeV6Project('ptu-same-worktree-owner-non-code-gate', {
     indexMark: '[ ]',
     detail: chgDetail({ status: 'planned', task: '[ ]', approved: true }),
@@ -1214,8 +1217,7 @@ test('8c1. 同 worktree 新 session 继承 owner 并继续执行非代码 C/E ga
     },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(r.stdout.includes('"deny"'));
-  assert.ok(r.stdout.includes('E 阶段未就绪'));
+  assert.ok(!r.stdout.includes('"deny"'), 'sibling-fresh 的 CHG 不应把非代码 gate 算到新 session 头上：' + r.stdout);
 });
 
 test('8d. foreign owner 的结构损坏仍全局阻断非代码写入', () => {

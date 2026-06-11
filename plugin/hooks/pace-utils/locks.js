@@ -577,7 +577,16 @@ module.exports = function createLockUtils(ctx) {
     const closed = owner.state === 'closed';
     if (sameSession) return { disposition: closed ? 'current-closed' : 'current', owner, current: true, sameSession: true, sameCheckout, fresh: true, stale: false };
     if (closed) return { disposition: 'closed', owner, current: false, fresh: true, stale: false };
-    if (sameCheckout) return { disposition: 'current-worktree', owner, current: true, sameSession: false, sameCheckout: true, fresh: !stale, stale };
+    if (sameCheckout) {
+      // STOP-03 对称：sid 空时无法区分同 session 与 sibling，保留 current-worktree 保守路径，
+      // 避免把可能属于当前 session 的 running CHG 误降级（CHG-20260611-02，spec 2026-06-11 §3.1）。
+      if (!sid) return { disposition: 'current-worktree', owner, current: true, sameSession: false, sameCheckout: true, fresh: !stale, stale };
+      // sibling 三态：同 checkout 不同 session。detached（原 session 已正常关闭）优先判，
+      // 其余按新鲜度分 fresh（原 session 活跃，B 只软提醒）/ stale（疑似 crash，可接手）。
+      if (owner.state === 'detached') return { disposition: 'sibling-detached', owner, current: false, sameSession: false, sameCheckout: true, fresh: !stale, stale };
+      if (stale) return { disposition: 'sibling-stale', owner, current: false, sameSession: false, sameCheckout: true, fresh: false, stale: true };
+      return { disposition: 'sibling-fresh', owner, current: false, sameSession: false, sameCheckout: true, fresh: true, stale: false };
+    }
     // STOP-03：无法确定 current session（sid 空——stdin 缺 session_id 且 env 无）时不判 foreign，
     // 避免把可能属于当前 session 的 running CHG 误当 foreign 跳过、放行未完成 CHG。
     if (!sid) return { disposition: 'unknown', owner, current: false, fresh: false, stale: false };
