@@ -89,7 +89,7 @@ tombstone 保留 `<!-- ARCHIVE -->` 标记的原因：cache 未升级的旧 hook
 
 | 帧 | 保留 | 删除 |
 |---|---|---|
-| CHG/HOTFIX | `status`、`date`（创建，人读）、`verified-date`、`reviewed-date`、`archived-date`（人读，本体唯一不可推导日期）、`change-set`、`change-set-seq`（两者仅 batch 创建时）、`parent-tasks`、`schema-version: "7.0"` | `chg-id`、`type`、`completed-date`、`aliases`、`tags`、`related-finding`、`parent-impl` |
+| CHG/HOTFIX | `status`、`date`（创建，人读）、`verified-date`、`reviewed-date`、`archived-date`（人读，本体唯一不可推导日期）、`change-set`、`change-set-seq`（**key 恒在**，仅 batch 创建时值非 null——CHG-09 审计 P1 修正：6.0 规格「单 CHG 省略这两行」措辞废止，7.0 封闭合同下省略 = missing-key 非法）、`parent-tasks`、`schema-version: "7.0"` | `chg-id`、`type`、`completed-date`、`aliases`、`tags`、`related-finding`、`parent-impl` |
 | finding | `status`、`date`（aged 14 天检测消费）、`schema-version` | `finding-id`、`type`、`impact`、`summary`（索引行同名字段为权威）、`merges`、`merged-by`、`related-changes`、`rejection-reason` |
 | correction | `date`、`schema-version` | `correction-id`、五文本字段 trigger-quote/wrong-behavior/correct-behavior/trigger-scenario/root-cause（正文 6 段单源）、`aliases`、`tags`、`knowledge-link`（索引行 `[knowledge::]` + 正文承载） |
 

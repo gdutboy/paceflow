@@ -350,6 +350,7 @@ schema-version: "7.0"
 ```
 
 删除字段同步清理：spec 中 `chg-id`/`type`/`completed-date`/`aliases`/`tags`/`related-finding`/`parent-impl` 定义段删除；finding 模板帧改 `status`/`date`/`schema-version` 三字段；correction 模板帧改 `date`/`schema-version` 两字段（五文本字段只留正文 6 段，knowledge-link 走索引行 `[knowledge::]`）。
+**CHG-09 审计 P1 前置阻塞项**：artifact-writer-spec.md §2.1「单独 CHG 省略 change-set/change-set-seq 两行即可，省略与 null 等价」措辞必须废止改为「key 恒在、非 batch 时值 null」——7.0 封闭合同下省略 = missing-key 非法，漏改则 CHG-10 落地后全量单 CHG 三层批量误报。
 
 - [ ] **Step 2**: agent.md 同步——双写表述改单写；7.0 字段清单与 spec 一致（必填字段名清单保持自包含，D 期测试锁）。
 - [ ] **Step 3**: guard 的 promptTemplateForOperation（grep `promptTemplateForOperation` 定位文件）中 deny 文案涉及 impl_plan/已删字段的同步。
