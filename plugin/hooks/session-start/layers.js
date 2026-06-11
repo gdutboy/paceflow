@@ -699,7 +699,7 @@ function lineReferencesChangeId(line, ids) {
 
 function appendForeignFoldNote(output, count) {
   if (count <= 0) return output;
-  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要。同目录其他 session 正在执行的 CHG 请勿接手；接手必须有用户明确指令与证据（owner-takeover 三字段）。）\n`;
+  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要。其他 worktree 或同目录 session 正在执行的 CHG 请勿接手；接手必须有用户明确指令与证据（owner-takeover 三字段）。）\n`;
 }
 
 function foldForeignOwnedArtifactOutput(file, output, summaries) {
