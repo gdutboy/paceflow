@@ -213,6 +213,15 @@ if (paceSignal === 'artifact') {
       ? `${change.id} 的 owner 记录已过期；优先回到原 worktree/session 处理。若用户明确要求当前 session 修复或接手，请在 artifact-writer prompt 中带 owner-takeover-source 与 owner-takeover-evidence。`
       : '';
 
+    // v7 schema 封闭合同兜底（CHG-20260611-09）：与 status-mismatch 同级的存量漂移检测。
+    {
+      const fm = change.detail && change.detail.frontmatter;
+      const schemaCheck = paceUtils.validateFrontmatterSchema('chg', change.status || '', fm || {});
+      if (!schemaCheck.ok) {
+        addWarning('repair', `${ownerPrefix}${change.id} 不符合 v7 schema 合同：缺失 ${schemaCheck.missing.join(', ') || '无'}；多余 ${schemaCheck.unknown.join(', ') || '无'}。请派 artifact-writer 修复 frontmatter（7.0 字段集见 artifact-writer-spec.md schema 表）。`);
+      }
+    }
+
     if (change.category === 'inconsistent') {
       if (change.reason === 'index-missing') {
         // v7：正常路径不可达（classifyChange 仅防卫空 entry），保守保留兜底文案。

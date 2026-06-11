@@ -379,6 +379,12 @@ module.exports = function createChangeAnalysis(ctx) {
         done: tasks ? tasks.done : null,
         blocked: tasks ? tasks.blocked : null,
         path: entry.detail && entry.detail.path,
+        // v7 schema 合同（CHG-20260611-09）：违规摘要透出（零额外 IO，fm 在手），
+        //   供 SessionStart 格式警告区渲染兜底；合规或 6.0 帧为 null。
+        schemaViolation: (() => {
+          const r = validateFrontmatterSchema('chg', fm.status || '', fm);
+          return r.ok ? null : { missing: r.missing, unknown: r.unknown };
+        })(),
       };
     });
   }

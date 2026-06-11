@@ -6251,6 +6251,55 @@ test('15c. artifact-writer 顺序编辑索引时不提示瞬时不一致', () =>
   assert.ok(!r.stdout.includes('索引不一致'));
 });
 
+test('V7B-6. artifact-writer 写盘 7.0 详情含多余字段 → PostToolUse schema 合同打回', () => {
+  const dir = makeV6Project('post-v7-schema-unknown');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  fs.writeFileSync(fp, [
+    '---', 'status: in-progress', 'date: 2026-06-11', 'change-set: null', 'change-set-seq: null',
+    'verified-date: null', 'reviewed-date: null', 'archived-date: null',
+    'parent-tasks: ["[[task|task]]"]', 'schema-version: "7.0"', 'aliases: []', '---',
+    '', '# t', '', '## 任务清单', '', '- [/] T-001 x', '', '<!-- APPROVED -->', '',
+  ].join('\n'), 'utf8');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-v7b6', agent_type: 'paceaitian-paceflow:artifact-writer', tool_name: 'Edit',
+      tool_input: { file_path: fp, old_string: 'x', new_string: 'y' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('v7 schema 合同'), 'V7B-6: 多余字段 aliases 即时打回');
+  assert.ok(r.stdout.includes('aliases'));
+});
+
+test('V7B-7. 6.0 存量详情写盘 → 无 schema 合同 warning（skipped）', () => {
+  const dir = makeV6Project('post-v7-schema-legacy');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const r = runHook('post-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      agent_id: 'agent-v7b7', agent_type: 'paceaitian-paceflow:artifact-writer', tool_name: 'Edit',
+      tool_input: { file_path: fp, old_string: 'x', new_string: 'y' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('v7 schema 合同'), 'V7B-7: 6.0 帧零误报');
+});
+
+test('V7B-8. Stop 对 7.0 活跃 CHG 帧缺必填 key → repair 拦截', () => {
+  const dir = makeV6Project('stop-v7-schema-missing', {
+    detail: [
+      '---', 'status: in-progress', 'date: 2026-06-11', 'change-set: null', 'change-set-seq: null',
+      'verified-date: null', 'reviewed-date: null', 'archived-date: null',
+      'schema-version: "7.0"', '---',
+      '', '# t', '', '## 任务清单', '', '- [/] T-001 x', '', '<!-- APPROVED -->', '',
+    ].join('\n'),
+  });
+  const r = runHook('stop.js', { cwd: dir });
+  assert.strictEqual(r.code, 2);
+  assert.ok(r.stderr.includes('schema 合同') && r.stderr.includes('parent-tasks'), 'V7B-8: 缺 parent-tasks key 兜底检出');
+});
+
 test('15d. v7: impl_plan 缺行不再产生跨索引不一致提示（旧双索引 warning 退役）', () => {
   const dir = makeV6Project('post-index-mismatch-direct', { implIndex: '' });
   const fp = path.join(dir, 'task.md');

@@ -766,6 +766,12 @@ function renderFormatWarnings(state, found, paceUtils) {
   const { ARCHIVE_PATTERN, ARCHIVE_MARKER, FORMAT_SNIPPETS, detectLegacyImplFormat } = paceUtils;
   if (!(state.paceSignal && found.length > 0)) return '';
   const formatWarnings = [];
+  // v7 schema 合同（CHG-20260611-09）：SessionStart 兜底渲染——summarize 已透出违规摘要（零额外 IO）。
+  for (const s of (state.activeChangeSummaries || [])) {
+    if (s.schemaViolation) {
+      formatWarnings.push(`${s.id} 不符合 v7 schema 合同：缺失 ${s.schemaViolation.missing.join(', ') || '无'}；多余 ${s.schemaViolation.unknown.join(', ') || '无'}。请派 artifact-writer 修复 frontmatter。`);
+    }
+  }
   // v7（CHG-20260611-08 T-002）：emoji/表格格式检测从 implementation_plan.md 迁移到 task.md——
   //   task.md 是唯一索引，格式不可解析会让写码门误判「无活跃 CHG」，检测语义必须保留。
   if (state.taskFullCached) {

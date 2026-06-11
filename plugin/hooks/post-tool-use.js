@@ -148,6 +148,16 @@ paceUtils.withStdinParsed((stdin) => {
         const content = fs.readFileSync(resolvedFilePath, 'utf8');
         const fm = paceUtils.parseFrontmatter(content);
         if (!fm['schema-version']) warnings.push(`${filePath} 缺少 frontmatter schema-version。请派 artifact-writer 修复 schema。`);
+        // v7 schema 封闭合同（CHG-20260611-09）：写盘后立即校验，不合法即时打回还在运行的
+        // artifact-writer 自修。仅对 schema-version "7.0" 的帧生效（6.0 存量由 migrate 通道催办）。
+        {
+          const kind = /^changes\/findings\//i.test(artifactRel || '') ? 'finding'
+            : /^changes\/corrections\//i.test(artifactRel || '') ? 'correction' : 'chg';
+          const schemaCheck = paceUtils.validateFrontmatterSchema(kind, fm.status || '', fm);
+          if (!schemaCheck.ok) {
+            warnings.push(`${filePath} 不符合 v7 schema 合同：缺失 ${schemaCheck.missing.join(', ') || '无'}；多余 ${schemaCheck.unknown.join(', ') || '无'}。7.0 字段集见 artifact-writer-spec.md schema 表，请在当前 turn 修复 frontmatter。`);
+          }
+        }
         if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRel || '')) {
           if (!fm.status) warnings.push(`${filePath} 缺少 frontmatter status。`);
           if (!('verified-date' in fm)) {
