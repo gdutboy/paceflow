@@ -27,8 +27,8 @@ technical-decision: <How>
 
 - `title`（必填）
 - `tasks`（必填，至少 1 个；推荐格式 `["任务描述", ...]`，artifact-writer 为当前 CHG/HOTFIX 分配 `T-001...`）
-- `type`（默认 change，可选 hotfix）
-- `related-finding`（可选，wikilink）
+- `type`（默认 change，可选 hotfix——只决定文件名前缀与 hashtag，7.0 帧无 type 字段）
+- `related-finding`（可选，wikilink——写入正文 `## 关联调研` 段，7.0 帧无此字段）
 - `background` / `scope` / `technical-decision`（可选）
 - `execution-context`（可选但推荐，由 reserve helper 输出，例如 `[worktree:: main] [branch:: main]`）
 

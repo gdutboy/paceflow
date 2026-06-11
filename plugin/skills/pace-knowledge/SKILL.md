@@ -16,7 +16,7 @@ description: >
 
 > **SessionStart 自动注入**：SessionStart hook 会自动扫描 `thoughts/` 和 `knowledge/` 目录中与当前项目相关的笔记（通过 frontmatter `projects` 字段匹配），将 L0 摘要注入到会话上下文中。startup 最多注入 5 条，compact 恢复时缩减为最多 3 条以控制上下文占用。
 
-> **状态体系说明**：knowledge/thoughts 笔记使用 `discussing`/`concluded`/`archived` 状态标记（frontmatter `status` 字段），与 task.md/implementation_plan.md 的 checkbox 状态标记（`[ ]`/`[/]`/`[x]`）是**两套独立的含义系统**，各自在自身文件类型内使用。
+> **状态体系说明**：knowledge/thoughts 笔记使用 `discussing`/`concluded`/`archived` 状态标记（frontmatter `status` 字段），与 task.md 的 checkbox 状态标记（`[ ]`/`[/]`/`[x]`）是**两套独立的含义系统**，各自在自身文件类型内使用。
 
 ---
 

@@ -2,20 +2,15 @@
 
 ```markdown
 ---
-chg-id: CHG-YYYYMMDD-NN
 status: planned
 date: YYYY-MM-DD
-type: change
-parent-tasks: ["[[task]]"]
-parent-impl: ["[[implementation_plan]]"]
-related-finding: null
-aliases: []
-tags: []
-schema-version: "6.0"
-completed-date: null
+change-set: null
+change-set-seq: null
 verified-date: null
 reviewed-date: null
 archived-date: null
+parent-tasks: ["[[<artifact-dir-name>/task|task]]"]
+schema-version: "7.0"
 ---
 
 # 标题

@@ -2,17 +2,9 @@
 
 ```markdown
 ---
-finding-id: FINDING-YYYY-MM-DD-slug
 status: open
-type: research
 date: YYYY-MM-DD
-impact: P1
-summary: ""
-related-changes: []
-merges: []
-merged-by: null
-rejection-reason: null
-schema-version: "6.0"
+schema-version: "7.0"
 ---
 
 # 标题

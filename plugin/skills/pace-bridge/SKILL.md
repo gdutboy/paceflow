@@ -8,7 +8,7 @@ description: >
 
 # Plan → PACEflow 桥接
 
-pace-bridge 不直接 Edit `task.md` / `implementation_plan.md`。桥接的唯一写入路径是派 `artifact-writer`。
+pace-bridge 不直接 Edit `task.md`。桥接的唯一写入路径是派 `artifact-writer`。
 
 ---
 
@@ -130,8 +130,7 @@ artifact-writer 逐块建 N 个 `changes/<id>.md`（各写 `change-set` + `chang
 
 派 `artifact-writer` 执行 `create-chg`。agent 会创建：
 - `changes/chg-yyyymmdd-nn.md`
-- `task.md` 活跃 wikilink 索引
-- `implementation_plan.md` 活跃 wikilink 索引
+- `task.md` 活跃 wikilink 索引（v7 起唯一 CHG 索引）
 
 若没有先运行 helper，hook 会要求带 `reserved-id` / `reserved-file-prefix` 重派；把提示中的字段原样加入 Agent prompt 后重派。编号一律来自 helper 预留。
 
@@ -171,7 +170,7 @@ helper 会写入项目运行态 `.pace/synced-plans`，并在 worktree 场景写
 ## 验证
 
 桥接完成后确认：
-- `task.md` 与 `implementation_plan.md` 都有同一 `[[chg-*]]` 索引。
+- `task.md` 有对应 `[[chg-*]]` 活跃索引。
 - `changes/<id>.md` 存在，frontmatter `status: planned` 或后续已批准。
 - auto-APPROVED 场景下详情文件含 `<!-- APPROVED -->`。
 - 项目运行态 `.pace/synced-plans` 已包含源计划 basename。

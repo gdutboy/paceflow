@@ -136,4 +136,4 @@ walkthrough-summary: <完成摘要>
 - 详情文件不存在 → `target-not-found`
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`
 - ARCHIVE 标记缺失但目标索引行仍在活跃区 → 先补 `<!-- ARCHIVE -->` 独占行再移动索引；缺标记且目标索引行也不存在 → `format-violation: archive marker missing`
-- 索引行在 task.md 或 implementation_plan.md 中找不到 → `format-violation: index row not found`
+- 索引行在 task.md 中找不到 → `format-violation: index row not found`

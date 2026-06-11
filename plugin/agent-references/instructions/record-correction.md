@@ -49,15 +49,15 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## knowledge-link 输入归一
 
-用户简化输入与 frontmatter 双字段的转换规则：
+用户简化输入与 corrections.md 索引行 meta 的转换规则（7.0 帧不承载这两个字段）：
 
-| 用户输入 | frontmatter 输出 |
+| 用户输入 | 索引行 meta 输出 |
 |---------|-----------------|
-| `knowledge-link: project-only` | `knowledge-link: null` + `project-scope: "project-only"` |
-| `knowledge-link: "[[some-note]]"` | `knowledge-link: "[[some-note]]"` + `project-scope: null` |
+| `knowledge-link: project-only` | `[scope:: project-only]` |
+| `knowledge-link: "[[some-note]]"` | `[knowledge:: [[some-note]]]` |
 | `project-scope: project-only` | 同首例 |
 | 缺二者 | `missing-fields` |
-| 同时填且不一致 | 优先 `knowledge-link`，`project-scope: null` |
+| 同时填且不一致 | 优先 `knowledge-link`，输出 `[knowledge:: [[note]]]` |
 
 ## 操作步骤
 
@@ -73,11 +73,11 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## 详情文件结构
 
-frontmatter 五个文本字段填**简述**（一句话，从输入的完整文本提炼），用单引号包裹；**完整文本写入正文对应段落**。两份分离：frontmatter 简述给 AI 快读/Dataview，正文完整给人读。
+**7.0 帧只有 `date` / `schema-version` 两个 key**（spec §2.3 封闭合同）：五个文本字段的完整内容写入正文对应段落（正文单源）；`knowledge-link`/`project-scope` 归一结果写入 corrections.md 索引行 `[knowledge::]` / `[scope::]` meta，不进 frontmatter。
 
 ```markdown
 ---
-[frontmatter, 见 spec §2.3：五个文本字段填简述（single-quoted），经 knowledge-link 归一]
+[frontmatter, 见 spec §2.3]
 ---
 
 # Correction: <派生的 title>

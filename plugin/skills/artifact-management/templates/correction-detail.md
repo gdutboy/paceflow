@@ -2,16 +2,8 @@
 
 ```markdown
 ---
-correction-id: CORRECTION-YYYY-MM-DD-NN
 date: YYYY-MM-DD
-trigger-quote: ""
-wrong-behavior: ""
-correct-behavior: ""
-trigger-scenario: ""
-root-cause: ""
-knowledge-link: null
-project-scope: null
-schema-version: "6.0"
+schema-version: "7.0"
 ---
 
 # Correction: 标题

@@ -24,19 +24,9 @@
 <!-- ARCHIVE -->
 ```
 
-### implementation_plan.md
+（v7 起 `implementation_plan.md` 退役——task.md 是唯一 CHG 索引，存量文件由 migrate-v7 改写为 tombstone。）
 
-```markdown
-# 实施计划
-
-## 变更索引
-
-- [/] [[chg-20260504-01-hooks-v6-rework|chg-20260504-01]] hooks v6 改造 #change [tasks:: T-001~T-006] [worktree:: main] [branch:: main]
-
-<!-- ARCHIVE -->
-```
-
-两者只存 wikilink 索引，不写 CHG 三级标题详情段。
+task.md 只存 wikilink 索引，不写 CHG 三级标题详情段。
 
 ### walkthrough.md
 
@@ -90,20 +80,15 @@ correction 详情写在 `changes/corrections/<id>.md`。
 
 ```markdown
 ---
-chg-id: CHG-YYYYMMDD-NN
 status: planned
 date: YYYY-MM-DD
-type: change
-parent-tasks: ["[[task]]"]
-parent-impl: ["[[implementation_plan]]"]
-related-finding: null
-aliases: []
-tags: []
-schema-version: "6.0"
-completed-date: null
+change-set: null
+change-set-seq: null
 verified-date: null
 reviewed-date: null
 archived-date: null
+parent-tasks: ["[[<artifact-dir-name>/task|task]]"]
+schema-version: "7.0"
 ---
 
 # 标题
@@ -150,7 +135,7 @@ archived-date: null
 | 错误格式 | 正确做法 |
 |---------|----------|
 | `task.md` 内写 CHG 三级标题详情 | 派 agent 写 `changes/<id>.md` |
-| `implementation_plan.md` 内写旧式活跃详情区 | 只保留 wikilink 索引 |
+| 写 `implementation_plan.md`（v7 已退役） | 只写 task.md 单索引 |
 | 主 session 直接写 `<!-- APPROVED -->` | 派 `update-chg action=approve` 或 `approve-and-start`，并带 `approval-confirmed/source/evidence` |
 | 主 session 直接写 `<!-- VERIFIED -->` / `verified-date` | 验证通过后派 `close-chg complete-open-tasks:true`；暂不归档时才派 `update-chg action=verify` |
 | `findings.md` 写长详情 | 派 `record-finding` 写 `changes/findings/<id>.md` |
