@@ -228,6 +228,9 @@ paceUtils.withStdinParsed((stdin) => {
   }
   function heartbeatChangeOwners(reason) {
     if (paceSignal !== 'artifact' || !stdin.sessionId) return;
+    // CHG-20260611-02：同 session resume 后把本 session 的 detached 记录升回 active，
+    // 防 sibling 在原 session 活跃时误判「可接手」（spec §3.2 revive）。
+    paceUtils.reviveDetachedChangeOwnersForSession(cwd, { sessionId: stdin.sessionId });
     const touched = paceUtils.touchChangeOwnersForSession(cwd, {
       sessionId: stdin.sessionId,
       states: ['active', 'closing'],

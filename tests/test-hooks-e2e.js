@@ -7406,6 +7406,60 @@ test('IN1. implementation-notes 字段定义在发布面（instruction + spec + 
 });
 
 // ============================================================
+// CHG-20260611-02：SessionEnd 降级 detached + 心跳 revive
+// ============================================================
+
+test('SE-1. SessionEnd 把本 session 活跃 owner 降级 detached（CHG-20260611-02）', () => {
+  const dir = makeV6Project('session-end-detach');
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-ending', agentId: 'agent-x', state: 'active',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const r = runHook('session-end.js', { cwd: dir, stdin: { session_id: 'sid-ending' } });
+  assert.strictEqual(r.code, 0);
+  const owner = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json'), 'utf8'));
+  assert.strictEqual(owner.state, 'detached');
+});
+
+test('SE-2. SessionEnd 不动 closed 与他 session 记录', () => {
+  const dir = makeV6Project('session-end-detach-scope');
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-ending', agentId: 'agent-x', state: 'closed',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  fs.writeFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-02.json'), JSON.stringify({
+    version: 'change-owner-v1', changeId: 'CHG-20260504-02', sessionId: 'sid-other',
+    state: 'active', cwd: dir, stateDir: dir, worktree: 'main', branch: 'main', timestampMs: Date.now(),
+  }, null, 2) + '\n', 'utf8');
+  const r = runHook('session-end.js', { cwd: dir, stdin: { session_id: 'sid-ending' } });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json'), 'utf8')).state, 'closed');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-02.json'), 'utf8')).state, 'active');
+});
+
+test('SE-3. 心跳 revive：detached + 同 session 工具活动 → 升回 active', () => {
+  const dir = makeV6Project('session-end-revive', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-resumed', agentId: 'agent-x', state: 'detached',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-resumed',
+      tool_name: 'Write',
+      tool_input: { file_path: path.join(dir, 'hello.js'), content: 'console.log(1);\n' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  const owner = JSON.parse(fs.readFileSync(path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json'), 'utf8'));
+  assert.strictEqual(owner.state, 'active', '同 session 心跳应把 detached 升回 active：' + r.stdout);
+});
+
+// ============================================================
 // CHG-B B3：disable 无条件可达（spec §5.1 不变量 1，回归锁定）
 // ============================================================
 

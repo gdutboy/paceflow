@@ -76,6 +76,8 @@ paceUtils.withStdinParsed((stdin) => {
     return [...ids].sort();
   }
   if (paceSignal === 'artifact' && stdin.sessionId && isFileMutationTool && isCodeFile && !isV6ArtifactEdit) {
+    // CHG-20260611-02：心跳前先 revive 本 session 的 detached 记录（同 pre-tool-use，spec §3.2）。
+    paceUtils.reviveDetachedChangeOwnersForSession(cwd, { sessionId: stdin.sessionId });
     const touched = paceUtils.touchChangeOwnersForSession(cwd, {
       sessionId: stdin.sessionId,
       states: ['active', 'closing'],
