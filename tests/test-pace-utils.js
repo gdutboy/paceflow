@@ -3399,6 +3399,40 @@ test('V7B-5: finding/correction kind 各自合同', () => {
 });
 
 // ============================================================
+// V7C. 发布面模板与 7.0 合同一致性（CHG-20260611-10 T-003）
+// ============================================================
+console.log('\n--- V7C: 模板合同一致性 ---');
+
+test('V7C-1: templates 三模板帧全部通过 7.0 封闭合同', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const cases = [
+    { rel: 'plugin/skills/artifact-management/templates/change-detail.md', kind: 'chg', status: 'planned' },
+    { rel: 'plugin/skills/artifact-management/templates/finding-detail.md', kind: 'finding', status: 'open' },
+    { rel: 'plugin/skills/artifact-management/templates/correction-detail.md', kind: 'correction', status: '' },
+  ];
+  for (const c of cases) {
+    const text = fs.readFileSync(path.join(repoRoot, c.rel), 'utf8');
+    // 模板正文里嵌在 ```markdown 代码块中的帧——取第一个 --- ... --- 块
+    const m = text.match(/^---\n([\s\S]*?)\n---/m);
+    assert.ok(m, `${c.rel} 应含 frontmatter 模板块`);
+    const fm = paceUtils.parseFrontmatter(`---\n${m[1]}\n---`);
+    // 模板占位日期（YYYY-MM-DD）对合同无碍（只查非空），placeholder 仍是合法值
+    const r = paceUtils.validateFrontmatterSchema(c.kind, c.status, fm);
+    assert.ok(r.ok, `V7C-1 ${c.rel}: ${JSON.stringify(r)}`);
+  }
+});
+
+test('V7C-2: spec §2.1 yaml 块与 SCHEMA_V7_KEYS 字段集一致（规格-代码互锁雏形）', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const spec = fs.readFileSync(path.join(repoRoot, 'plugin/agent-references/artifact-writer-spec.md'), 'utf8');
+  const yamlBlock = spec.match(/### 2\.1 CHG\/HOTFIX\n\n```yaml\n([\s\S]*?)```/);
+  assert.ok(yamlBlock, 'spec §2.1 应含 yaml 模板块');
+  const keys = yamlBlock[1].split('\n').map(l => (l.match(/^([a-z-]+):/) || [])[1]).filter(Boolean);
+  const expected = ['status', 'date', 'change-set', 'change-set-seq', 'verified-date', 'reviewed-date', 'archived-date', 'parent-tasks', 'schema-version'];
+  assert.deepStrictEqual(keys.sort(), [...expected].sort(), 'V7C-2: spec yaml 字段集 = 代码合同字段集');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 t.cleanup();
