@@ -648,11 +648,20 @@ paceUtils.withStdinParsed((stdin) => {
           : explicitTargetChangeId;
         if (targetChangeId && ['update-chg', 'close-chg', 'archive-chg'].includes(operation)) {
           const ownerStatus = paceUtils.changeOwnerStatus(cwd, targetChangeId, stdin.sessionId);
-          if (ownerStatus.disposition === 'foreign-fresh') {
+          // CHG-20260611-02：sibling-fresh（同目录另一活跃 session）不可静默接手，但接受 takeover
+          // 三字段显式接手（覆盖 crash 后 TTL 窗口内用户要求立即接续的场景；owner 改写后原 session
+          // 自动变 sibling 被隔离）。foreign-fresh 维持无条件 deny（跨 checkout 抢活跃 CHG 风险不同）。
+          if (['foreign-fresh', 'sibling-fresh'].includes(ownerStatus.disposition)
+            && !(ownerStatus.disposition === 'sibling-fresh' && paceUtils.ownerTakeoverConfirmed(stdin.toolInput.prompt))) {
+            const siblingFresh = ownerStatus.disposition === 'sibling-fresh';
             const reason = [
-              `${targetChangeId} 正由另一个 Claude Code session 负责，当前 session 不应接手更新或收尾。`,
+              siblingFresh
+                ? `${targetChangeId} 正由同目录另一个 Claude Code session 负责（owner fresh），当前 session 不应静默接手更新或收尾。`
+                : `${targetChangeId} 正由另一个 Claude Code session 负责，当前 session 不应接手更新或收尾。`,
               `owner: worktree=${ownerStatus.owner.worktree || '-'} branch=${ownerStatus.owner.branch || '-'} state=${ownerStatus.owner.state || '-'}`,
-              '请回到该 worktree/session 完成、暂停或取消；当前 fresh owner 仍有效时，不要由本 session 接手。'
+              siblingFresh
+                ? '该 session 可能仍活跃；优先在原 session 完成、暂停或取消。若用户明确要求本 session 接手（先用 AskUserQuestion 确认），重派同一 artifact-writer 并加入 owner-takeover-confirmed: true / owner-takeover-source: user-directive / owner-takeover-evidence: <用户原话>。'
+                : '请回到该 worktree/session 完成、暂停或取消；当前 fresh owner 仍有效时，不要由本 session 接手。'
             ].join('\n');
             const output = {
               hookSpecificOutput: {
@@ -673,10 +682,14 @@ paceUtils.withStdinParsed((stdin) => {
             }));
             return;
           }
-          if (ownerStatus.disposition === 'foreign-stale' && !paceUtils.ownerTakeoverConfirmed(stdin.toolInput.prompt)) {
+          // CHG-20260611-02：sibling-detached（原 session 正常关闭）/ sibling-stale（疑似 crash）
+          // 与 foreign-stale 同走 takeover 协议——带齐三字段即可接手。
+          if (['foreign-stale', 'sibling-stale', 'sibling-detached'].includes(ownerStatus.disposition) && !paceUtils.ownerTakeoverConfirmed(stdin.toolInput.prompt)) {
             const reason = [
-              `${targetChangeId} 的 owner 记录已过期，但属于另一个 session。`,
-              '优先回到原 worktree/session 继续处理。若用户明确要求由当前 checkout 接手，请重派同一 artifact-writer，并加入：',
+              ownerStatus.disposition === 'sibling-detached'
+                ? `${targetChangeId} 的原 session 已正常关闭（owner detached），接手需用户确认。`
+                : `${targetChangeId} 的 owner 记录已过期，但属于另一个 session。`,
+              '若用户明确要求由当前 session 接手（先用 AskUserQuestion 确认），请重派同一 artifact-writer，并加入：',
               'owner-takeover-confirmed: true',
               'owner-takeover-source: user-directive',
               'owner-takeover-evidence: <用户明确要求当前 session 接手的原话>'
@@ -1381,14 +1394,18 @@ paceUtils.withStdinParsed((stdin) => {
       );
     }
 
+    const ownerStatusById = new Map(actionableEntries.map(e => [e.id, paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId)]));
     const currentOwnedActionableEntries = actionableEntries.filter(e => {
-      const ownerStatus = paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId);
+      const ownerStatus = ownerStatusById.get(e.id);
       return ownerStatus.current && ownerStatus.disposition !== 'current-closed';
     });
+    // CHG-20260611-02 收紧：写码门排除同目录其他 session 持有的 CHG（B 不搭 A 便车）；
+    // foreign worktree 的既有搭便车行为不动（范围见 spec §3.1 消费点 3，后议 finding）。
+    const nonSiblingActionableEntries = actionableEntries.filter(e => !String(ownerStatusById.get(e.id).disposition || '').startsWith('sibling-'));
     const currentToolIsArtifactWriter = isArtifactWriterAgent(stdin);
     const artifactWriterArtifactMutation = currentToolIsArtifactWriter && !!artifactRelForMutation;
     const projectMutationNeedsGate = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0 && !isPlanningArtifact));
-    const gatedEntries = isCodeFile ? actionableEntries : currentOwnedActionableEntries;
+    const gatedEntries = isCodeFile ? nonSiblingActionableEntries : currentOwnedActionableEntries;
     const structuralCheckNeeded = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 
     if (structuralCheckNeeded) {
@@ -1433,9 +1450,14 @@ paceUtils.withStdinParsed((stdin) => {
     if (projectMutationNeedsGate) {
       if (gatedEntries.length === 0) {
         const doneEntries = activeEntriesAll.filter(e => ['x', '-'].includes(e.taskCheckbox) || ['x', '-'].includes(e.implCheckbox));
-        const reason = doneEntries.length > 0
+        // CHG-20260611-02：被排除的 sibling CHG 存在时，写明三出口（自建/接手/原 session 处理）。
+        const siblingHeld = actionableEntries.length - nonSiblingActionableEntries.length;
+        const siblingHint = siblingHeld > 0
+          ? `\n（另有 ${siblingHeld} 个活跃 CHG 由同目录其他 session 持有，不计入本 session：接手需用户确认并在 artifact 操作带 owner-takeover 三字段；本 session 独立工作请先 create-chg。）`
+          : '';
+        const reason = (doneEntries.length > 0
           ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
-          : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`;
+          : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`) + siblingHint;
         const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));

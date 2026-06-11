@@ -4325,7 +4325,10 @@ test('9hc2b. update-status [!] 带原因时 owner state 记录为 blocked', () =
   assert.strictEqual(owner.state, 'blocked');
 });
 
-test('9hc2b1. 同 worktree 新 session 可接续 update-chg 并刷新 owner session', () => {
+test('9hc2b1. 同 worktree 新 session 带 takeover 三字段可接续 update-chg 并刷新 owner（CHG-20260611-02 语义变更）', () => {
+  // 旧语义：同 checkout 即 current-worktree，新 session 静默接续放行。细分后 sibling-fresh
+  // 不可静默接手，但带 owner-takeover 三字段（用户确认）仍可接手——覆盖 crash 后 TTL 窗口
+  // 内接续场景；owner 刷新为新 session 后原 session 自动变 sibling 被隔离。
   const dir = makeV6Project('agent-same-worktree-owner-refresh');
   seedChangeOwner(dir, 'CHG-20260504-01', {
     sessionId: 'sid-previous-same-worktree',
@@ -4353,13 +4356,16 @@ test('9hc2b1. 同 worktree 新 session 可接续 update-chg 并刷新 owner sess
           'approval-confirmed: true',
           'approval-source: user-directive',
           'approval-evidence: 用户要求同 worktree 新 session 继续执行。',
+          'owner-takeover-confirmed: true',
+          'owner-takeover-source: user-directive',
+          'owner-takeover-evidence: 用户要求同 worktree 新 session 继续执行。',
           'task-id: T-001',
         ].join('\n'),
       },
     },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(!r.stdout.includes('"deny"'));
+  assert.ok(!r.stdout.includes('"deny"'), '带 takeover 三字段应放行：' + r.stdout);
   const ownerPath = path.join(dir, '.pace', 'change-owners', 'chg-20260504-01.json');
   const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
   assert.strictEqual(owner.sessionId, 'sid-new-same-worktree-agent');
@@ -7506,6 +7512,132 @@ test('SIB-STOP-3. sibling-stale 给失联接手指引；同 session 硬约束不
   // 同 session（owner 本人）仍被未完成 CHG 硬约束阻断（软化只对 sibling）
   const own = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-a' } });
   assert.strictEqual(own.code, 2, '同 session 的未完成 CHG 仍应阻断：' + own.stdout);
+});
+
+test('SIB-PTU-1. sibling-fresh 的 CHG：artifact-writer 派遣 deny 不可静默接手（CHG-20260611-02）', () => {
+  const dir = makeV6Project('ptu-sibling-fresh-takeover-deny', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'active',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-b',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Update CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'section: work-record',
+          'action: append',
+          'content: 接手记录',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'sibling-fresh 不可静默接手：' + r.stdout);
+  assert.ok(r.stdout.includes('同目录另一'), r.stdout);
+  assert.ok(r.stdout.includes('owner-takeover-confirmed'), 'deny 文案应给显式接手出口：' + r.stdout);
+});
+
+test('SIB-PTU-2. sibling-detached：缺 takeover 三字段 deny，带齐放行', () => {
+  const dir = makeV6Project('ptu-sibling-detached-takeover', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'detached',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const basePrompt = [
+    `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+    'operation: update-chg',
+    'target: CHG-20260504-01',
+    'section: work-record',
+    'action: append',
+    'content: 接手继续执行',
+  ];
+  const denied = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-b',
+      tool_name: 'Agent',
+      tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'Update CHG', prompt: basePrompt.join('\n') },
+    },
+  });
+  assert.ok(denied.stdout.includes('"deny"'), '缺 takeover 字段应 deny：' + denied.stdout);
+  assert.ok(denied.stdout.includes('owner-takeover-confirmed'), denied.stdout);
+  const allowed = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-b',
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Update CHG',
+        prompt: basePrompt.concat([
+          'owner-takeover-confirmed: true',
+          'owner-takeover-source: user-directive',
+          'owner-takeover-evidence: 用户说「继续上次的 CHG」',
+        ]).join('\n'),
+      },
+    },
+  });
+  assert.ok(!allowed.stdout.includes('"deny"'), '带齐 takeover 字段应放行：' + allowed.stdout);
+});
+
+test('SIB-PTU-3. B 写代码不搭 sibling CHG 便车：仅 sibling 活跃 CHG 时写码 deny 含接手指引', () => {
+  const dir = makeV6Project('ptu-sibling-code-no-freeride', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'active',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-b',
+      tool_name: 'Write',
+      tool_input: { file_path: path.join(dir, 'hello.js'), content: 'console.log(1);\n' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'B 写码不应搭 sibling CHG 便车：' + r.stdout);
+  assert.ok(r.stdout.includes('同目录其他 session 持有'), r.stdout);
+  assert.ok(r.stdout.includes('owner-takeover'), r.stdout);
+  assert.ok(r.stdout.includes('create-chg'), r.stdout);
+});
+
+test('SIB-PTU-4. foreign worktree 写码搭便车现状不回归（isCodeFile 仍放行 foreign CHG）', () => {
+  const dir = makeV6Project('ptu-foreign-code-freeride-keep', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-a', agentId: 'agent-a', state: 'active',
+    cwd: path.join(dir, 'other-checkout'), stateDir: path.join(dir, 'other-checkout'),
+    worktree: 'worktree-a', branch: 'branch-a',
+  });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-b',
+      tool_name: 'Write',
+      tool_input: { file_path: path.join(dir, 'hello.js'), content: 'console.log(1);\n' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'), 'foreign 写码搭便车是既有现状，本 CHG 不动：' + r.stdout);
 });
 
 // ============================================================

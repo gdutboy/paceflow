@@ -42,15 +42,16 @@ owner 机制现状（直接复用，不新造）：
    - `isForeignOwnerStatus` 扩展或新增 sibling 判定：`sibling-fresh` 对 progress/deferred 类 CHG 跳过硬 warnings（同 foreign skip），改为 softReminders 一条：「CHG-X 正由同目录另一 session 执行中（owner fresh），本 session 不受其完成约束」。
    - `sibling-detached` / `sibling-stale`：跳过硬 warnings，softReminders 提示「CHG-X 的原 session 已关闭/记录过期；如需本 session 接手，用 AskUserQuestion 向用户确认，接手时 artifact 操作带 owner-takeover 三字段」。
 2. **`pre-tool-use.js` L647 区（artifact 操作接手防护，收紧面）**：
-   - `sibling-fresh` → deny（同 `foreign-fresh` 文案模式，补充「同目录另一 session」措辞）。
+   - `sibling-fresh` → 不可静默接手，但**接受 takeover 三字段显式接手**（实现期修正 2026-06-11：旧测试 9hc2b1 暴露 crash 后 TTL 窗口内用户要求立即接续的场景，无条件 deny 挡死无出口；takeover 协议自带 user-directive+evidence 纪律杠杆，owner 改写后原 session 自动变 sibling 被隔离。`foreign-fresh` 维持无条件 deny——跨 checkout 抢活跃 CHG 风险不同）。
    - `sibling-detached` / `sibling-stale` → 要求 `owner-takeover` 三字段（同 `foreign-stale` 路径）；带字段放行并由既有机制把 owner 改写为当前 session。
-3. **`pre-tool-use.js` L1381 区（currentOwnedActionableEntries，收紧面）**：
-   - sibling 三态 `current: false` 自然使 B 不再搭 A 的 running CHG 便车写项目代码。B 写代码撞「无活跃（自有）CHG」时，deny 文案给三出口：自己建 CHG / 用户确认接手（takeover）/ `/paceflow:pause`。
-   - 执行期核对 `gatedEntries` / `projectMutationNeedsGate` 周边逻辑，确认 `current: false` 不引入其他路径回归（如 isCodeFile 分支用的是 `actionableEntries` 不是 currentOwned——行为差异要在测试里锁定）。
+3. **`pre-tool-use.js` L1381 区（写码门，收紧面）——事实修正（2026-06-11 plan 前核对）**：
+   - `gatedEntries = isCodeFile ? actionableEntries : currentOwnedActionableEntries`（L1388）——**写代码文件的门是项目级纪律门，不看 owner**；细分 `current: false` 只影响非代码文件 gate 触发条件，B 写代码仍会搭 A 的 running CHG 便车放行。「B 不搭便车」需显式过滤：isCodeFile 时 `gatedEntries` 排除 sibling-owned entries（disposition 以 `sibling-` 开头），**foreign 的同款搭便车维持现状不动**（跨 worktree 行为变化超出本设计范围，记 finding 后议）。
+   - B 写代码撞「无 sibling 外活跃 CHG」deny（`DENY_V6_NO_ACTIVE` 路径，L1430-1440）时，文案给三出口：自己建 CHG / 用户确认接手（takeover）/ `/paceflow:pause`。
 4. **`post-tool-use.js` L208 区（修复提醒 owner 过滤，软化面）**：现状仅 `foreign-fresh` 跳过 status-mismatch / verify-missing / review-missing / archive-reminded 等催办——`sibling-fresh` 需对齐跳过（否则 B 仍收 A 的 CHG 催办，软化不完整）；`sibling-detached` / `sibling-stale` 对齐 foreign-stale 现状不跳过（B 是潜在接手者，提醒有意义）。
 5. **`session-start/collect-state.js` `enrichSummaryOwner`（注入显示）**：SessionStart 活跃 CHG 摘要的 `owner=` 字段直接显示 disposition——细分后显示 sibling 三态；`sibling-detached` 顺带提示「原 session 已关闭，可接手」（即 3.2 的 SessionStart 注入增强，从可选升为本消费点的一部分）。
+6. **`session-start/layers.js` `isForeignSummary`（L678，注入折叠面）**：foreign CHG 的任务本体在 SessionStart 注入中被折叠（task.md 行过滤 + impl 详情跳过 + 折叠注记，L697-730）——sibling 三态同样应进折叠集合（B 不该被注入引导执行 A 的任务本体），折叠注记措辞区分「同目录另一 session」与「其他 worktree」。
 
-> 消费点全集来源：2026-06-11 锁机制摸底（`docs/artifact-locking-reference.md` §7.2），grep `changeOwnerStatus|isForeignOwnerStatus` 全仓确认共 5 处消费。
+> 消费点全集来源：2026-06-11 锁机制摸底（`docs/artifact-locking-reference.md` §7.2）+ plan 前核对，grep `changeOwnerStatus|isForeignOwnerStatus|ownerDisposition` 全仓确认共 6 处消费（stop.js / pre-tool-use.js L647 / pre-tool-use.js L1381 / post-tool-use.js L208 / collect-state.js / layers.js）。
 
 ### 3.2 SessionEnd hook（新发布面）
 
