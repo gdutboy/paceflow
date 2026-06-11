@@ -16,6 +16,10 @@ schema-version: "6.0"
 
 # Correction: 标题
 
+## 触发引用
+
+> 用户纠正原话（trigger-quote 完整内容）
+
 ## 错误行为
 
 ## 正确做法

@@ -7536,6 +7536,25 @@ test('IN1. implementation-notes 字段定义在发布面（instruction + spec + 
   assert.ok(guard.includes("'implementation-notes:"), 'guard close-chg 重派模板应含 implementation-notes 行');
 });
 
+test('IN2. 发布面 4 bug 快修断言（CHG-20260611-07）', () => {
+  const root = path.join(__dirname, '..', 'plugin');
+  // A1：agent 契约 close-chg 必填清单含 implementation-notes（v6.6.2 同步遗漏）
+  const agentDoc = fs.readFileSync(path.join(root, 'agents', 'artifact-writer.md'), 'utf8');
+  assert.ok(agentDoc.includes('implementation-notes'), 'agent 契约应含 implementation-notes 必填字段');
+  // A2：archive-chg walkthrough wikilink 规则同步全名+转义（防死链）
+  const archiveDoc = fs.readFileSync(path.join(root, 'agent-references', 'instructions', 'archive-chg.md'), 'utf8');
+  assert.ok(archiveDoc.includes('\\|'), 'archive-chg 应含表格内 \\| 转义规则');
+  assert.ok(/纯ID|纯 ID/.test(archiveDoc), 'archive-chg 应含全名+纯ID别名规则');
+  // A3：correction 模板含触发引用段（对齐 record-correction 六段结构）
+  const correctionTpl = fs.readFileSync(path.join(root, 'skills', 'artifact-management', 'templates', 'correction-detail.md'), 'utf8');
+  assert.ok(correctionTpl.includes('## 触发引用'), 'correction 模板应含 ## 触发引用 段');
+  // B1：commands 不引用发布面不存在的 spec §5.1
+  for (const f of ['disable.md', 'pause.md']) {
+    const cmd = fs.readFileSync(path.join(root, 'commands', f), 'utf8');
+    assert.ok(!cmd.includes('§5.1'), `${f} 不应引用发布面不存在的 spec §5.1`);
+  }
+});
+
 // ============================================================
 // CHG-20260611-02：SessionEnd 降级 detached + 心跳 revive
 // ============================================================

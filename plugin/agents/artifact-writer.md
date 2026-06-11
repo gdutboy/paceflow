@@ -186,7 +186,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 **必填**：`target` / `walkthrough-summary`
 
 ### 4. close-chg
-**必填**：`target` / `verification-confirmed: true` / `complete-open-tasks: true` / `review-confirmed: true` / `review-source` / `review-findings` / `verify-summary` / `walkthrough-summary`
+**必填**：`target` / `verification-confirmed: true` / `complete-open-tasks: true` / `review-confirmed: true` / `review-source` / `review-findings` / `verify-summary` / `implementation-notes`（per-task 实施说明：每个 T-NNN 的实际改动——改了哪些文件、关键实现、对应 commit，写入 `## 实施详情` 段各 `### T-NNN` 标题下）/ `walkthrough-summary`
 `complete-open-tasks: true` 是 hook 机械门禁要求；最后任务验证通过、且主 session 已编排对抗审计并路由 findings 后用它一把梭：收口 `[ ]` / `[/]` T-NNN、写 VERIFIED + REVIEWED、归档索引并写 walkthrough。缺 `review-confirmed` 时拒绝并提示改派 `update-chg action=review` 或补字段。
 
 ### 5. record-finding
