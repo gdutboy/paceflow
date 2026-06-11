@@ -44,11 +44,13 @@ node tests/test-pace-utils.js && node tests/test-hooks-e2e.js && node tests/test
 
 ## CHG-A：hook 读端——单索引兼容 + 跨索引校验退役 + index-transaction 退役
 
-### Task A1: getActiveChangeEntries 单读 task.md + classifyChange 退役双索引分支
+### Task A1: getActiveChangeEntries 单读 task.md + classifyChange 退役双索引分支 + 误伤分支同步删除
+
+> **中间态警告**：本 task 改数据层后 `e.impl` 恒 undefined。`pre-tool-use.js:1435` 与 `post-tool-use.js:189-195` 的双索引 filter 若不同步删除，会把所有 entry 判为 mismatched（前者 deny 一切写码、后者每次写盘误报）。这两处**必须并入本 task 同 commit**，不得留到 A2。
 
 **Files:**
-- Modify: `plugin/hooks/pace-utils/change-analysis.js:286-314`（getActiveChangeEntries）、`:227-284`（classifyChange）
-- Test: `tests/test-pace-utils.js`
+- Modify: `plugin/hooks/pace-utils/change-analysis.js:286-314`（getActiveChangeEntries）、`:227-284`（classifyChange）、`plugin/hooks/pre-tool-use.js:1435-1447`（误伤 deny 分支）、`plugin/hooks/post-tool-use.js:189-195`（误伤 warning 分支）
+- Test: `tests/test-pace-utils.js`、`tests/test-hooks-e2e.js`
 
 - [ ] **Step 1: 写失败测试**——在 test-pace-utils.js 的 change-analysis 测试区追加（fixture 风格参照文件内既有 `getActiveChangeEntries` 用例，使用临时目录 + 写入 task.md）：
 
@@ -83,8 +85,10 @@ Expected: V7A-1c FAIL（现状 entry 含 impl 字段）、V7A-1d FAIL（现状 i
 ```js
 function getActiveChangeEntries(cwd) {
   // v7：task.md 是唯一 CHG/HOTFIX 索引（双文件合并，CHG-A）。
+  // Map 按 ID 去重保留（同 CHG 重复行的脏数据防裂成两个 entry，沿旧实现语义）。
   const taskEntries = parseChangeIndex(ctx.readActive(cwd, 'task.md') || '');
-  return taskEntries.map(task => ({
+  const taskById = new Map(taskEntries.map(e => [e.id, e]));
+  return [...taskById.values()].map(task => ({
     slug: task.slug,
     id: task.id,
     task,
@@ -99,20 +103,23 @@ function getActiveChangeEntries(cwd) {
 1. 删除 `if (!entry || !entry.task || !entry.impl) ... 'index-missing'` 分支，改为 `if (!entry || !entry.task) return { ...base, category: 'inconsistent', reason: 'index-missing' };`（防卫空 entry，正常路径不可达）
 2. `entry.taskMalformed || entry.implMalformed` → `entry.taskMalformed`
 3. 删除 `taskCheckbox !== implCheckbox → 'index-mismatch'` 分支
-4. 所有 `taskCheckbox === 'x' || implCheckbox === 'x'` 等双 checkbox 条件简化为只看 `taskCheckbox`（共 5 处：`'x'` 两处、`'/'` 两处、`'-'` 一处、`'!'` 一处）
+4. 所有双 checkbox 条件简化为只看 `taskCheckbox`（**共 7 处**：`'x'` 三处 L266/L269/L279、`'/'` 两处 L272/L280、`'-'` 一处 L277、`'!'` 一处 L278；以 `grep -n implCheckbox` 清零为收口标准，不按计数核对）
 5. base 对象删除 `implCheckbox` 字段
+6. **同 commit 删除误伤分支**：`pre-tool-use.js:1435-1447` 整段（`const mismatched = actionableEntries.filter(e => !e.task || !e.impl);` 起到该分支 `return;` 止）；`post-tool-use.js:189-195`（`const mismatched = ...` 与 `v6 索引不一致` warning 段）
 
-- [ ] **Step 4: 跑测试**——V7A 通过；既有用例中构造双索引 fixture 的会继续过（task.md 仍是输入）、断言 index-mismatch/index-missing 的会红，**在本 task 内一并改语义**：grep `index-mismatch\|index-missing\|implCheckbox\|implementation_plan` 定位 test-pace-utils.js 内所有相关断言，按新语义改写（双索引不一致用例改为「仅 task.md 权威，impl 不参与」或删除）。
+- [ ] **Step 4: 跑测试**——V7A 通过；既有用例中构造双索引 fixture 的会继续过（task.md 仍是输入）、断言 index-mismatch/index-missing/INDEX_MISMATCH deny 的会红，**在本 task 内一并改语义**：grep `index-mismatch\|index-missing\|INDEX_MISMATCH\|implCheckbox` 定位 test-pace-utils.js 与 test-hooks-e2e.js 内所有相关断言，按新语义改写（双索引不一致用例改为「仅 task.md 权威」或删除）。
 
-Run: `node tests/test-pace-utils.js`
-Expected: 全绿
+Run: `node tests/test-pace-utils.js && node tests/test-hooks-e2e.js`
+Expected: 全绿（A1 触碰了 hook 文件，e2e 必须在本 task 内过，不留 broken commit）
 
 - [ ] **Step 5: Commit** `git commit -m "feat(v7): getActiveChangeEntries 单读 task.md，classifyChange 退役双索引分支（CHG-A T-001）"`
 
-### Task A2: 下游 impl 引用清理（pre/post/stop/collect-state/layers）
+### Task A2: 下游 impl 引用清理（stop 文案/collect-state/layers）
+
+> 执行顺序注意：A2 在 A3 之后执行也可（A2 与 A3 无依赖）；但 collect-state:82 的 readFull 删除与 A3 的 ARCHIVE_REQUIRED_FILES 收窄存在弱耦合（layers.js:335/343 注入兜底消费该常量），建议顺序 A1 → A3 → A2，或 A2/A3 同 commit。误伤性的 pre-tool-use:1435 / post-tool-use:189-195 已在 A1 删除，本 task 只剩无误伤的死代码与文案。
 
 **Files:**
-- Modify: `plugin/hooks/pre-tool-use.js:1435-1447`、`plugin/hooks/post-tool-use.js:189-205`、`plugin/hooks/stop.js:216-224`、`plugin/hooks/session-start/collect-state.js:82`、`plugin/hooks/session-start/layers.js`（371/716 截断、829-836 格式警告、54 优先级数组）
+- Modify: `plugin/hooks/post-tool-use.js:197,249`、`plugin/hooks/stop.js:216-224`、`plugin/hooks/session-start/collect-state.js:82`、`plugin/hooks/session-start/layers.js`（371/716 截断、829-836 格式警告、54 优先级数组）
 - Test: `tests/test-hooks-e2e.js`、`tests/test-session-layers.js`
 
 - [ ] **Step 1: 写失败测试**——test-hooks-e2e.js 追加：
@@ -130,13 +137,12 @@ Expected: 全绿
 - [ ] **Step 2: 确认失败** `node tests/test-hooks-e2e.js` → V7A-3/4/5 FAIL
 
 - [ ] **Step 3: 实现**：
-1. `pre-tool-use.js:1435-1447` 整段删除（`const mismatched = actionableEntries.filter(e => !e.task || !e.impl);` 起到 `return;` 止）——A1 后 `e.impl` 恒 undefined，该分支会误伤一切，必须删
-2. `post-tool-use.js:189-195`：删除 `const mismatched = ...` 与 `v6 索引不一致` warning 段；`:197` 行 `if (artifactRel === 'task.md' || artifactRel === 'implementation_plan.md')` 改为 `if (artifactRel === 'task.md')`
-3. `post-tool-use.js:249` 修复提示文案 `读取 task.md / implementation_plan.md 对应索引` 改 `读取 task.md 对应索引`
-4. `stop.js:216-224`：删除 `index-missing`、`index-mismatch` 两个 reason 分支（A1 后不可达）；`index-malformed`/`active-archived`/`active-cancelled` 分支文案中 `task.md / implementation_plan.md` 改 `task.md`
-5. `collect-state.js:82` 删除 impl_plan readFull 行及其下游格式检查引用
-6. `layers.js`：54 行 ARTIFACT_BLOCK_PRIORITY 数组移除 `'implementation_plan.md'`；371-372/716 截断特殊处理删除；829-836 格式警告中 impl_plan 分支删除
-7. 全文件 grep 验证：`grep -rn "implementation_plan" plugin/hooks/*.js plugin/hooks/session-start/*.js` 剩余命中只允许：pace-utils.js v5 检测（335-370 区）、constants.js DOC 字符串（PACE_ARTIFACT_ROOT_CONTENT，本 task 不动）、locks.js（A3 处理）、pre-tool-use.js PROTECTED 相关（A3 处理）
+1. `post-tool-use.js:197` 行 `if (artifactRel === 'task.md' || artifactRel === 'implementation_plan.md')` 改为 `if (artifactRel === 'task.md')`
+2. `post-tool-use.js:249` 修复提示文案 `读取 task.md / implementation_plan.md 对应索引` 改 `读取 task.md 对应索引`
+3. `stop.js:216-224`：删除 `index-missing`、`index-mismatch` 两个 reason 分支（A1 后不可达死代码）；`index-malformed`/`active-archived`/`active-cancelled` 分支文案中 `task.md / implementation_plan.md` 改 `task.md`
+4. `collect-state.js:82` 删除 impl_plan readFull 行及其下游格式检查引用
+5. `layers.js`：54 行 ARTIFACT_BLOCK_PRIORITY 数组移除 `'implementation_plan.md'`；371-372/716 截断特殊处理删除；829-836 格式警告中 impl_plan 分支删除
+6. 全文件 grep 验证：`grep -rn "implementation_plan" plugin/hooks/*.js plugin/hooks/session-start/*.js` 剩余命中只允许：pace-utils.js v5 检测（335-370 区）、constants.js DOC 字符串（PACE_ARTIFACT_ROOT_CONTENT，本 task 不动）、locks.js（A3 处理）、pre-tool-use.js PROTECTED 相关（A3 处理）
 
 - [ ] **Step 4: 跑全量** `node tests/test-hooks-e2e.js && node tests/test-session-layers.js`——既有 impl_plan 断言（~50 处）按新语义改：双写 fixture 改单写、跨索引 deny/warning 断言删除或反转。
 - [ ] **Step 5: Commit** `git commit -m "feat(v7): hook 下游 impl_plan 消费退役（CHG-A T-002）"`
@@ -175,7 +181,7 @@ Expected: 全绿
 const PROTECTED_ARTIFACTS = [...ARTIFACT_FILES.filter(f => f !== 'spec.md'), 'implementation_plan.md'];
 ```
 
-同步检查 `bash-guard.js` / `powershell-guard.js` 遍历 ARTIFACT_FILES 的 4 处（243/414、194/315）：若用于「artifact 写保护」语义则改用共享的 PROTECTED 集合（提升 PROTECTED_ARTIFACTS 到 constants.js 导出，三文件共用）；若用于其他语义按现场判断并在 commit message 注明
+**明确动作（非条件句）**：PROTECTED_ARTIFACTS 提升到 constants.js 导出，pre-tool-use.js / bash-guard.js / powershell-guard.js 三文件统一改用它。`bash-guard.js:243/414`、`powershell-guard.js:194/315` 现状遍历 ARTIFACT_FILES 做 artifact 写保护——若维持原集合，ARTIFACT_FILES 移除 impl_plan 后 Bash/PS 直写 tombstone 不再被拦，与 pre-tool-use 的 PROTECTED 保护不对称（保护门出现 Bash 旁路）。e2e 补断言：Bash `echo x >> implementation_plan.md` 形态写入仍被 deny
 5. `locks.js:667-689` `markIndexChangesTouchedAndMaybeRelease` 整体替换为：
 
 ```js
@@ -312,7 +318,8 @@ function validateFrontmatterSchema(kind, status, frontmatter) {
 1. create-chg.md:50 删除「6. Read + Edit `implementation_plan.md` 添加索引行」整步（后续步骤序号顺延）；:53 改「本操作只触达详情文件与 `task.md` 一个索引」；:159 改「task.md 的索引行必须保留 `[worktree:: ...] [branch:: ...]`」；:187 batch 段「再写 task.md / implementation_plan.md 各一行」改「再写 task.md 一行」
 2. close-chg.md:86 改「先 Read `task.md`」；:98 改「Read + Edit `task.md`，对应活跃索引 checkbox 改为 `[x]`」；:149 删除「Read implementation_plan.md 同上」；:152 改「从 `task.md` 的目标索引行提取执行上下文」
 3. update-chg.md / archive-chg.md：grep `implementation_plan` 全部命中点同语义改造（双写步骤删半、文案单数化）
-4. 全部 instruction 校验：`grep -rn "implementation_plan" plugin/agent-references/instructions/` 结果应为 0
+4. create-chg.md:69「frontmatter `id` 保持**纯 ID 不带 slug**」表述删除/改写——7.0 帧**无 id 字段**，ID 由文件名唯一承载（wikilink 全名+别名规则保留）
+5. 全部 instruction 校验：`grep -rn "implementation_plan" plugin/agent-references/instructions/` 结果应为 0
 
 - [ ] **Step 2: Commit** `git commit -m "feat(v7): 4 instruction 单写 task.md（CHG-C T-001）"`
 
@@ -367,7 +374,7 @@ schema-version: "7.0"
 **Files:**
 - Modify: `plugin/skills/artifact-management/SKILL.md`（内部两份 close-chg 模板 L198+L461 → 保一删一改指针）、`plugin/skills/*/SKILL.md` helper 命令来源 4 步（保 pace-workflow，其余 3 个改指针）、`plugin/skills/artifact-management/references/{format-reference,change-lifecycle}.md` 状态映射表（改指针指 spec §4.1）、各 instruction CRLF/stale-read 块（spec 立单节，instruction 改一行指针）
 
-- [ ] **Step 1**: 逐项执行矩阵。每项指针格式统一：`> 权威定义见 <文件>（本节不再复制，避免漂移）`+ 保留一行最小语义提示。
+- [ ] **Step 1**: 逐项执行矩阵。每项指针格式统一：`> 权威定义见 <文件>（本节不再复制，避免漂移）`+ 保留一行最小语义提示。**本步同时在 spec schema 表下方加机器可读注释行**（D2 的 V7D-3 测试解析用）：`<!-- schema-keys: chg = status,date,change-set,change-set-seq,verified-date,reviewed-date,archived-date,parent-tasks,schema-version | finding = status,date,schema-version | correction = date,schema-version -->`
 - [ ] **Step 2**: D1 同义收敛——guard 中 `status-reason|block-reason|pause-reason` 三者任一放行的逻辑**不动**（宽容期）；所有文档（SKILL/instruction/spec）统一只写 `status-reason`：grep `block-reason\|pause-reason` 在 plugin/ 下的文档命中全部改 `status-reason`（guard JS 代码命中保留）。
 - [ ] **Step 3**: D2 措辞——`templates/finding-detail.md` 段名注释加「推荐结构，record-finding body 为 opaque payload 时段名可异」。
 - [ ] **Step 4: Commit** `git commit -m "refactor(v7): 规范单源化指针化 + status-reason 收敛（CHG-D T-001）"`
@@ -453,7 +460,7 @@ const DROP_KEYS = {
 // V7E-11: 未迁移布局下 artifact 写盘 → PostToolUse 催办一次（session flag 防重复）
 ```
 
-- [ ] **Step 2-3**: 实现——collect-state 检测函数 `detectUnmigratedV6Layout(cwd)`（readFull impl_plan，`parseChangeIndex` 命中活跃行即未迁移）；layers 注入文案含 `node "<hooks 同级 migrate/migrate-v7.js 绝对路径>" --dry-run`；post-tool-use 催办用新 flag `v7-migrate-reminded`（加入 SESSION_SCOPED_FLAGS）。
+- [ ] **Step 2-3**: 实现——collect-state 检测函数 `detectUnmigratedV6Layout(cwd)`（**readActive** impl_plan——只看 ARCHIVE 上方活跃行；用 readFull 会把归档区旧行也算「未迁移」，全归档 vault 被永久催办。`parseChangeIndex(readActive(...))` 命中行即未迁移）；layers 注入文案含 `node "<hooks 同级 migrate/migrate-v7.js 绝对路径>" --dry-run`；post-tool-use 催办用新 flag `v7-migrate-reminded`（加入 SESSION_SCOPED_FLAGS）。
 - [ ] **Step 4**: 全量基线绿。**Step 5: Commit** + CHG-E 收口。
 
 ---
