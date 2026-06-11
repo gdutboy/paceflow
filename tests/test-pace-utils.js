@@ -1781,6 +1781,34 @@ test('SIB-7. reviveDetachedChangeOwnersForSession 把本 session detached 升回
   assert.strictEqual(JSON.parse(fs.readFileSync(others.path, 'utf8')).state, 'detached', '他 session 不动');
 });
 
+test('PAUSE-1. write/isSessionPaused/clearSessionPause 基本闭环 + sessionId 键控隔离（CHG-20260611-03）', () => {
+  const dir = makeTmpDir('pause-basic');
+  assert.strictEqual(paceUtils.isSessionPaused(dir, 'sid-a'), false, '初始未 pause');
+  assert.strictEqual(paceUtils.writeSessionPause(dir, 'sid-a'), true);
+  assert.strictEqual(paceUtils.isSessionPaused(dir, 'sid-a'), true, '写入后 paused');
+  assert.strictEqual(paceUtils.isSessionPaused(dir, 'sid-b'), false, '他 session 不受影响（sessionId 键控）');
+  assert.strictEqual(paceUtils.clearSessionPause(dir, 'sid-a'), true);
+  assert.strictEqual(paceUtils.isSessionPaused(dir, 'sid-a'), false, 'clear 后失效');
+});
+
+test('PAUSE-2. mtime 超 SESSION_PAUSE_TTL_MS → isSessionPaused false 且懒清理 unlink', () => {
+  const dir = makeTmpDir('pause-ttl');
+  paceUtils.writeSessionPause(dir, 'sid-a');
+  const fp = path.join(paceUtils.getProjectRuntimeDir(dir), 'paused-sid-a');
+  assert.ok(fs.existsSync(fp), '标志文件存在');
+  const old = new Date(Date.now() - paceUtils.SESSION_PAUSE_TTL_MS - 60 * 1000);
+  fs.utimesSync(fp, old, old);
+  assert.strictEqual(paceUtils.isSessionPaused(dir, 'sid-a'), false, '超 TTL 视为无效（crash 残留兜底）');
+  assert.ok(!fs.existsSync(fp), '过期标志被懒清理');
+});
+
+test('PAUSE-3. sid 空 → 全部 no-op/false', () => {
+  const dir = makeTmpDir('pause-no-sid');
+  assert.strictEqual(paceUtils.writeSessionPause(dir, ''), false);
+  assert.strictEqual(paceUtils.isSessionPaused(dir, ''), false);
+  assert.strictEqual(paceUtils.clearSessionPause(dir, ''), false);
+});
+
 test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {
   const dir = makeTmpDir('vault-choice-missing-env-utils');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });

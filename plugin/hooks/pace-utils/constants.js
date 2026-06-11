@@ -26,6 +26,9 @@ const ARTIFACT_SEQUENCE_LOCK_WAIT_MS = Math.max(0, Number(process.env.PACE_ARTIF
 const PLAN_SYNC_LOCK_TTL_MS = ARTIFACT_SEQUENCE_LOCK_TTL_MS;
 const PLAN_SYNC_LOCK_WAIT_MS = ARTIFACT_SEQUENCE_LOCK_WAIT_MS;
 const CHANGE_OWNER_TTL_MS = Math.max(60 * 1000, Number(process.env.PACE_CHANGE_OWNER_TTL_MS || 30 * 60 * 1000) || 30 * 60 * 1000);
+// session 级 pause 标志 TTL（CHG-20260611-03）：防 crash 残留永久免门；正常失效靠
+// /paceflow:resume 或 SessionEnd 删除，TTL 仅兜底。
+const SESSION_PAUSE_TTL_MS = Math.max(60 * 1000, Number(process.env.PACE_SESSION_PAUSE_TTL_MS || 24 * 60 * 60 * 1000) || 24 * 60 * 60 * 1000);
 const ARTIFACT_ROOT_CHOICE_MAX_CHARS = 4096;
 const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(HOOKS_DIR, 'reserve-artifact-id.js').replace(/\\/g, '/');
 const SYNC_PLAN_SCRIPT = path.resolve(HOOKS_DIR, 'sync-plan.js').replace(/\\/g, '/');
@@ -116,6 +119,7 @@ module.exports = {
   PLAN_SYNC_LOCK_TTL_MS,
   PLAN_SYNC_LOCK_WAIT_MS,
   CHANGE_OWNER_TTL_MS,
+  SESSION_PAUSE_TTL_MS,
   ARTIFACT_ROOT_CHOICE_MAX_CHARS,
   RESERVE_ARTIFACT_ID_SCRIPT,
   SYNC_PLAN_SCRIPT,

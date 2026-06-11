@@ -40,6 +40,7 @@ const {
   PLAN_SYNC_LOCK_TTL_MS,
   PLAN_SYNC_LOCK_WAIT_MS,
   CHANGE_OWNER_TTL_MS,
+  SESSION_PAUSE_TTL_MS,
   ARTIFACT_ROOT_CHOICE_MAX_CHARS,
   RESERVE_ARTIFACT_ID_SCRIPT,
   SYNC_PLAN_SCRIPT,
@@ -163,6 +164,10 @@ const {
   touchChangeOwnersForSession,
   detachChangeOwnersForSession,
   reviveDetachedChangeOwnersForSession,
+  sessionPausePath,
+  writeSessionPause,
+  clearSessionPause,
+  isSessionPaused,
   changeOwnerStatus,
   ownerTakeoverConfirmed,
   acquireJsonLock,
@@ -176,6 +181,7 @@ const {
   getArtifactDir,
   todayISO,
   CHANGE_OWNER_TTL_MS,
+  SESSION_PAUSE_TTL_MS,
   PROJECT_ROOT_FILE,
 });
 
@@ -931,7 +937,7 @@ module.exports = {
   // 常量
   PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, PROJECT_ROOT_FILE, V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
-  ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS,
+  ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS, SESSION_PAUSE_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
   RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, PACE_ARTIFACT_ROOT_CONTENT,
   ARCHIVE_MARKER, ARCHIVE_PATTERN, ARCHIVE_REQUIRED_FILES, ARCHIVE_MISSING_INJECT_LIMIT, COMPLETION_PHRASES,
@@ -955,6 +961,7 @@ module.exports = {
   reserveArtifactId, reserveArtifactIds, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
   isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt, explicitChangeTargetFromAgentPrompt,
   getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, touchChangeOwnersForSession, detachChangeOwnersForSession, reviveDetachedChangeOwnersForSession, changeOwnerStatus, ownerTakeoverConfirmed,
+  sessionPausePath, writeSessionPause, clearSessionPause, isSessionPaused,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate, hasNonNullReviewedDate,

@@ -622,6 +622,46 @@ module.exports = function createLockUtils(ctx) {
       /^\s*owner-takeover-evidence\s*[:=]\s*\S+/mi.test(text);
   }
 
+  // CHG-20260611-03：session 级 pause 标志（sessionId 键控）。SESSION_SCOPED_FLAGS 是项目级
+  // 共享标志且被任何新 session 的 W3/W4 startup 清理，不可用于 per-session 状态——此处独立
+  // 键控（不入 SESSION_SCOPED_FLAG_PREFIXES）。失效三路径：/paceflow:resume 删除、SessionEnd
+  // 删除、mtime 超 SESSION_PAUSE_TTL_MS 懒清理（crash 残留兜底）。
+  function sessionPausePath(cwd, sessionId) {
+    const sid = ctx.normalizeSessionId(sessionId);
+    return sid ? path.join(ctx.getProjectRuntimeDir(cwd), `paused-${sid}`) : '';
+  }
+
+  function writeSessionPause(cwd, sessionId) {
+    const fp = sessionPausePath(cwd, sessionId);
+    if (!fp) return false;
+    try {
+      fs.mkdirSync(path.dirname(fp), { recursive: true });
+      fs.writeFileSync(fp, `${JSON.stringify({ sessionId: ctx.normalizeSessionId(sessionId), createdAt: new Date().toISOString(), timestampMs: Date.now() }, null, 2)}\n`, 'utf8');
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function clearSessionPause(cwd, sessionId) {
+    const fp = sessionPausePath(cwd, sessionId);
+    if (!fp) return false;
+    try {
+      if (fs.existsSync(fp)) { fs.unlinkSync(fp); return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  function isSessionPaused(cwd, sessionId, now = Date.now()) {
+    const fp = sessionPausePath(cwd, sessionId);
+    if (!fp) return false;
+    let st;
+    try { st = fs.statSync(fp); } catch (e) { return false; }
+    if (now - st.mtimeMs > ctx.SESSION_PAUSE_TTL_MS) {
+      try { fs.unlinkSync(fp); } catch (e) {}
+      return false;
+    }
+    return true;
+  }
+
   function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
     const rel = String(artifactRel || '').replace(/\\/g, '/');
     if (rel !== 'task.md' && rel !== 'implementation_plan.md') {
@@ -832,6 +872,10 @@ module.exports = function createLockUtils(ctx) {
     touchChangeOwnersForSession,
     detachChangeOwnersForSession,
     reviveDetachedChangeOwnersForSession,
+    sessionPausePath,
+    writeSessionPause,
+    clearSessionPause,
+    isSessionPaused,
     changeOwnerStatus,
     ownerTakeoverConfirmed,
     acquireJsonLock,
