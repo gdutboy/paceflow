@@ -40,6 +40,7 @@ const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(HOOKS_DIR, 'reserve-artifact-id.
 const SYNC_PLAN_SCRIPT = path.resolve(HOOKS_DIR, 'sync-plan.js').replace(/\\/g, '/');
 const SET_ARTIFACT_ROOT_SCRIPT = path.resolve(HOOKS_DIR, 'set-artifact-root.js').replace(/\\/g, '/');
 const SET_PROJECT_ROOT_SCRIPT = path.resolve(HOOKS_DIR, 'set-project-root.js').replace(/\\/g, '/');
+const MIGRATE_V7_SCRIPT = path.resolve(HOOKS_DIR, '..', 'migrate', 'migrate-v7.js').replace(/\\/g, '/');
 const PACE_ARTIFACT_ROOT_CONTENT = 'spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**';
 
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
@@ -84,6 +85,7 @@ const SESSION_SCOPED_FLAGS = [
   'cli-refresh-done',
   'walkthrough-archive-reminded',
   'findings-archive-reminded',
+  'v7-migrate-reminded',
 ];
 
 const SESSION_SCOPED_FLAG_PREFIXES = [
@@ -129,6 +131,7 @@ module.exports = {
   SYNC_PLAN_SCRIPT,
   SET_ARTIFACT_ROOT_SCRIPT,
   SET_PROJECT_ROOT_SCRIPT,
+  MIGRATE_V7_SCRIPT,
   PACE_ARTIFACT_ROOT_CONTENT,
   ARCHIVE_MARKER,
   ARCHIVE_PATTERN,

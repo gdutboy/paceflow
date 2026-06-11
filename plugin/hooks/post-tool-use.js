@@ -273,6 +273,13 @@ paceUtils.withStdinParsed((stdin) => {
     }
   }
 
+  // v7 未迁移催办（CHG-20260611-12 T-002）：artifact 写盘后提醒一次（session flag 去重）。
+  // task.md 是唯一 CHG 索引；impl_plan 活跃区仍含索引行说明项目未迁移，agent 单写 task.md
+  // 会让 impl_plan 渐渐过时——引导用户尽快跑 migrate-v7 收敛布局。
+  if (isV6ArtifactEdit && paceUtils.detectUnmigratedV6Layout(cwd)) {
+    warnOnce('v7-migrate-reminded', `当前项目 implementation_plan.md 活跃区仍含 CHG 索引行（未迁移的 v6 布局；task.md 是唯一 CHG 索引）。建议迁移：node "${paceUtils.MIGRATE_V7_SCRIPT}" --cwd "${cwd}" --dry-run 预览，确认后去掉 --dry-run 执行。`);
+  }
+
   // H12: Obsidian 索引刷新 — artifact 写入后异步触发（每会话 1 次，fire-and-forget）
   // 无论 CLI 是否成功，每会话只触发一次（flag 在 spawn 后立即写入）
   const cliRefreshFile = path.join(PACE_RUNTIME, 'cli-refresh-done');

@@ -138,6 +138,14 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     try { softSignal = detectSoftSignal(cwd); } catch (e) { softSignal = false; }
   }
 
+  // --- v7 未迁移布局检测（CHG-20260611-12 T-002）---
+  // 仅 core 算：迁移提示在 core group 注入。impl_plan 活跃区仍含 CHG 索引行即未迁移；
+  // tombstone / 不存在 / 仅归档区有行不提示。layers 是纯函数层，命令文本数据在此组装。
+  let unmigratedV6Layout = null;
+  if (isCore && paceSignal === 'artifact' && paceUtils.detectUnmigratedV6Layout(cwd)) {
+    unmigratedV6Layout = { script: paceUtils.MIGRATE_V7_SCRIPT, cwd };
+  }
+
   return {
     cwd,
     eventType,
@@ -166,6 +174,8 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     agedFindings,
     // 软信号提问（CHG-20260610-08 C1）
     softSignal,
+    // v7 未迁移布局提示（CHG-20260611-12 T-002）
+    unmigratedV6Layout,
     // git
     git,
     // 相关讨论

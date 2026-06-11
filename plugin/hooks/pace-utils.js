@@ -47,6 +47,7 @@ const {
   SYNC_PLAN_SCRIPT,
   SET_ARTIFACT_ROOT_SCRIPT,
   SET_PROJECT_ROOT_SCRIPT,
+  MIGRATE_V7_SCRIPT,
   PACE_ARTIFACT_ROOT_CONTENT,
   ARCHIVE_MARKER,
   ARCHIVE_PATTERN,
@@ -668,6 +669,22 @@ function readActive(cwd, filename) {
   } catch(e) { return null; }
 }
 
+/**
+ * 检测未迁移的 v6 双索引布局（CHG-20260611-12 T-002）：
+ * implementation_plan.md 活跃区仍含 CHG 索引行（task.md 是唯一 CHG 索引；tombstone /
+ * 不存在 / 仅归档区有行都不算未迁移）。impl_plan 不在 ARTIFACT_FILES，需自行解析 artifact dir
+ * 只读活跃区——读全文会把归档区旧行也算「未迁移」，全归档项目被永久催办。
+ */
+function detectUnmigratedV6Layout(cwd) {
+  try {
+    const fp = path.join(getArtifactDir(cwd), 'implementation_plan.md');
+    const content = fs.readFileSync(fp, 'utf8');
+    const m = content.match(ARCHIVE_PATTERN);
+    const activePart = m ? content.slice(0, m.index) : content;
+    return parseChangeIndex(activePart).length > 0;
+  } catch (e) { return false; }
+}
+
 /** 读取文件全文，artifact 文件自动解析 vault 目录 */
 function readFull(cwd, filename) {
   const dir = ARTIFACT_FILES.includes(filename) ? getArtifactDir(cwd) : cwd;
@@ -971,7 +988,7 @@ module.exports = {
   sessionPausePath, writeSessionPause, clearSessionPause, isSessionPaused,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
-  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate, hasNonNullReviewedDate,
+  readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate, hasNonNullReviewedDate, detectUnmigratedV6Layout, MIGRATE_V7_SCRIPT,
   // 计划文件
   hasPlanFiles, listPlanFiles, hasUnsyncedPlanFiles, listUnsyncedPlanFiles, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, syncPlanFile,
   // 统计与检查

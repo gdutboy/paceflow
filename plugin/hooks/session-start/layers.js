@@ -834,6 +834,18 @@ function renderCrossSessionAndExecution(state, paceUtils) {
       }
     }
 
+    // v7 未迁移布局提示（CHG-20260611-12 T-002）：task.md 是唯一 CHG 索引；
+    // implementation_plan.md 活跃区仍含索引行说明项目尚未迁移，引导用户跑 migrate-v7。
+    if (state.unmigratedV6Layout) {
+      const mig = state.unmigratedV6Layout;
+      let out = `\n=== v7 迁移提示 ===\n`;
+      out += `task.md 是唯一 CHG 索引；当前 implementation_plan.md 活跃区仍含索引行（未迁移的 v6 布局）。\n`;
+      out += `先预览迁移：node "${mig.script}" --cwd "${mig.cwd}" --dry-run\n`;
+      out += `报告确认后去掉 --dry-run 执行（执行前自动备份到 .pace/backups/v7-migration/）。\n\n`;
+      blocks.push(out);
+      pushLog(state, logEntry('SessionStart', 'V7_MIGRATE_HINT', { cwd: state.cwd }));
+    }
+
     // 执行上下文（重构前 708-753）。
     const currentCategories = new Set(['running']);
     const currentSessionSummaries = state.activeChangeSummaries.filter(s => !isForeignSummary(s));

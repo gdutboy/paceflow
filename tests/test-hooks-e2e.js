@@ -8027,6 +8027,41 @@ test('D1. hardDeny 路径（teammate 删 artifact）同样带逃生口', () => {
   assert.match(parsed.hookSpecificOutput.permissionDecisionReason || '', /\/paceflow:disable/, 'hardDeny 文案也应含逃生口');
 });
 
+// ============================================================
+// V7E: 未迁移布局检测与提示（CHG-20260611-12 T-002）
+// ============================================================
+console.log('\n--- V7E: 未迁移布局提示 ---');
+
+test('V7E-9. impl_plan 含活跃 CHG 索引行 → SessionStart 注入 migrate-v7 完整命令', () => {
+  const dir = makeV6Project('v7e-unmigrated');  // 默认 impl_plan 含活跃索引行（v6 双索引布局）
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('migrate-v7.js'), '应注入 migrate-v7 命令');
+  assert.ok(r.stdout.includes('--dry-run'), '命令应含 --dry-run 预览引导');
+});
+
+test('V7E-10. impl_plan 是 tombstone 或不存在 → 无迁移提示', () => {
+  const tombstone = makeV6Project('v7e-tombstone-layout', { implIndex: '' });
+  const r1 = runHook('session-start.js', { cwd: tombstone, stdin: { type: 'startup' } });
+  assert.ok(!r1.stdout.includes('migrate-v7.js'), 'impl_plan 活跃区无索引行 → 不提示');
+
+  const noImpl = makeV6Project('v7e-no-impl');
+  fs.rmSync(path.join(noImpl, 'implementation_plan.md'));
+  const r2 = runHook('session-start.js', { cwd: noImpl, stdin: { type: 'startup' } });
+  assert.ok(!r2.stdout.includes('migrate-v7.js'), 'impl_plan 不存在 → 不提示');
+});
+
+test('V7E-11. 未迁移布局下 artifact 写盘 → PostToolUse 催办一次（flag 防重复）', () => {
+  const dir = makeV6Project('v7e-ptu-remind');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  const stdin = { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } };
+  const r1 = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.strictEqual(r1.code, 0);
+  assert.ok(r1.stdout.includes('migrate-v7.js'), '首次写盘应催办迁移');
+  const r2 = runHook('post-tool-use.js', { cwd: dir, stdin });
+  assert.ok(!r2.stdout.includes('migrate-v7.js'), '同 session 第二次不重复催办（flag 去重）');
+});
+
 cleanupAll();
 
 const total = t.passed + t.failed;
