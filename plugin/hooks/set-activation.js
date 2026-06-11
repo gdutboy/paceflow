@@ -15,7 +15,7 @@ const log = paceUtils.createLogger(LOG_PATH);
 const SELF_PATH = path.resolve(__dirname, 'set-activation.js').replace(/\\/g, '/');
 
 function parseArgs(argv) {
-  const args = { action: '', cwd: '', help: false, unknown: [] };
+  const args = { action: '', cwd: '', session: '', help: false, unknown: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
@@ -26,10 +26,18 @@ function parseArgs(argv) {
       args.action = 'disable';
     } else if (arg === '--status') {
       args.action = 'status';
+    } else if (arg === '--pause') {
+      args.action = 'pause';
+    } else if (arg === '--resume') {
+      args.action = 'resume';
     } else if (arg === '--cwd') {
       const next = argv[i + 1];
       if (next === undefined || next.startsWith('-')) { args.unknown.push(arg); }
       else { args.cwd = String(argv[++i]); }
+    } else if (arg === '--session') {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) { args.unknown.push(arg); }
+      else { args.session = String(argv[++i]); }
     } else if (arg.startsWith('-')) {
       args.unknown.push(arg);
     }
@@ -43,11 +51,15 @@ function usage() {
     'Usage:',
     `  node "${SELF_PATH}" --enable  [--cwd <project-cwd>]`,
     `  node "${SELF_PATH}" --disable [--cwd <project-cwd>]`,
+    `  node "${SELF_PATH}" --pause   [--cwd <project-cwd>] [--session <id>]`,
+    `  node "${SELF_PATH}" --resume  [--cwd <project-cwd>] [--session <id>]`,
     `  node "${SELF_PATH}" --status  [--cwd <project-cwd>]`,
     '',
     '--enable  启用 PACEflow（删除 disabled 标记；既有 changes//配置自动恢复，否则首次启用并引导选 artifact-root）。',
     '--disable 禁用 PACEflow（写 .pace/disabled 标记；不删除任何 artifact，随时可 --enable 恢复）。',
-    '--status  输出当前激活状态（enabled / disabled / inactive）。',
+    '--pause   仅本 session 暂停 PACEflow 流程门（sessionId 键控标志；session 结束自动失效，artifact 完整性门保留）。',
+    '--resume  恢复本 session 的 PACEflow（删除 pause 标志）。',
+    '--status  输出当前激活状态（enabled / disabled / inactive）与本 session paused 状态。',
   ].join('\n');
 }
 
@@ -156,13 +168,58 @@ function doEnable(cwd) {
   ].join('\n') + '\n');
 }
 
+// CHG-20260611-03：--pause / --resume——session 级流程门暂停。仅用户经 /paceflow:pause 主动
+// 运行（spec §5.1 不变量 2 对称且更严：AI 不得为绕过单次 deny 自行 pause）。
+function resolveSessionId(explicit) {
+  return paceUtils.normalizeSessionId(explicit || paceUtils.currentSessionId());
+}
+
+function doPause(cwd, explicitSession) {
+  const sid = resolveSessionId(explicitSession);
+  if (!sid) {
+    fail(cwd, 'DENY_PAUSE_NO_SESSION', [
+      '无法识别当前 session（CLAUDE_CODE_SESSION_ID 为空）。',
+      '请在 Claude Code session 内运行，或显式传 --session <id>；不写无主标志。',
+    ].join('\n'));
+    return;
+  }
+  if (!paceUtils.writeSessionPause(cwd, sid)) {
+    fail(cwd, 'DENY_PAUSE_WRITE_FAILED', '无法写入 pause 标志，请检查 .pace/ 目录可写。', { sid });
+    return;
+  }
+  log(paceUtils.logEntry('SetActivation', 'PAUSE', { proj: paceUtils.getProjectName(cwd), sid }));
+  process.stdout.write([
+    'PACEflow 已在本 session 暂停（paused）。',
+    `session: ${sid}`,
+    '仅流程门（Stop / 写码门）跳过；artifact 仍只能经 artifact-writer 写入（完整性门保留）。',
+    '本 session 结束自动失效；恢复运行 /paceflow:resume。',
+  ].join('\n') + '\n');
+}
+
+function doResume(cwd, explicitSession) {
+  const sid = resolveSessionId(explicitSession);
+  if (!sid) {
+    fail(cwd, 'DENY_RESUME_NO_SESSION', '无法识别当前 session（CLAUDE_CODE_SESSION_ID 为空）。请显式传 --session <id>。');
+    return;
+  }
+  const cleared = paceUtils.clearSessionPause(cwd, sid);
+  log(paceUtils.logEntry('SetActivation', 'RESUME', { proj: paceUtils.getProjectName(cwd), sid, cleared: cleared ? '1' : '0' }));
+  process.stdout.write([
+    cleared ? 'PACEflow 已在本 session 恢复（pause 标志已删除）。' : '本 session 没有 pause 标志（无需恢复）。',
+    `session: ${sid}`,
+  ].join('\n') + '\n');
+}
+
 function doStatus(cwd) {
   const state = currentState(cwd);
   const soft = (() => { try { return paceUtils.detectSoftSignal(cwd); } catch (e) { return false; } })();
-  log(paceUtils.logEntry('SetActivation', 'STATUS', { proj: paceUtils.getProjectName(cwd), state, soft: soft || 'none' }));
+  const sid = resolveSessionId('');
+  const paused = sid ? paceUtils.isSessionPaused(cwd, sid) : false;
+  log(paceUtils.logEntry('SetActivation', 'STATUS', { proj: paceUtils.getProjectName(cwd), state, soft: soft || 'none', paused: paused ? '1' : '0' }));
   const lines = [
     `PACEflow 激活状态: ${state}`,
     `current-cwd: ${cwd.replace(/\\/g, '/')}`,
+    `session-paused: ${paused}${paused ? '（本 session 流程门跳过中；恢复运行 /paceflow:resume）' : ''}`,
   ];
   if (state === 'disabled') {
     lines.push(`disabled-marker: ${disabledPath(cwd).replace(/\\/g, '/')}`, '运行 /paceflow:enable 恢复。');
@@ -189,6 +246,8 @@ function main() {
   }
   if (args.action === 'enable') doEnable(args.cwd);
   else if (args.action === 'disable') doDisable(args.cwd);
+  else if (args.action === 'pause') doPause(args.cwd, args.session);
+  else if (args.action === 'resume') doResume(args.cwd, args.session);
   else doStatus(args.cwd);
 }
 

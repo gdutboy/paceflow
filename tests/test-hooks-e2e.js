@@ -7349,6 +7349,31 @@ test('B1. 未知参数 → 非零退出 + usage', () => {
 // CHG-B B2：/paceflow slash command（manifest + 命令文件结构）
 // ============================================================
 
+test('PAUSE-CLI-1. --pause 写 sessionId 键控标志；env 空 fail；--resume 删；--status 显示（CHG-20260611-03）', () => {
+  const dir = makeTmpDir('pause-cli');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  const noSid = runSetActivationHelper({ cwd: dir, args: ['--pause', '--cwd', dir], env: { CLAUDE_CODE_SESSION_ID: '' } });
+  assert.strictEqual(noSid.code, 2, 'env 空应 fail 不静默写无主标志：' + noSid.stdout);
+  assert.match(noSid.stdout, /--session/, 'fail 文案应提示 --session 出口');
+  const p = runSetActivationHelper({ cwd: dir, args: ['--pause', '--cwd', dir], env: { CLAUDE_CODE_SESSION_ID: 'sid-cli' } });
+  assert.strictEqual(p.code, 0, p.stdout + p.stderr);
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'paused-sid-cli')), 'pause 标志应写入 .pace/');
+  assert.match(p.stdout, /artifact 仍只能经 artifact-writer/, 'pause 输出应说明完整性门保留');
+  const s = runSetActivationHelper({ cwd: dir, args: ['--status', '--cwd', dir], env: { CLAUDE_CODE_SESSION_ID: 'sid-cli' } });
+  assert.match(s.stdout, /session-paused: true/, 'status 应显示 paused：' + s.stdout);
+  const r2 = runSetActivationHelper({ cwd: dir, args: ['--resume', '--cwd', dir], env: { CLAUDE_CODE_SESSION_ID: 'sid-cli' } });
+  assert.strictEqual(r2.code, 0, r2.stdout + r2.stderr);
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'paused-sid-cli')), 'resume 应删标志');
+});
+
+test('PAUSE-CLI-2. --session <id> 显式传参可替代 env', () => {
+  const dir = makeTmpDir('pause-cli-session-arg');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  const p = runSetActivationHelper({ cwd: dir, args: ['--pause', '--cwd', dir, '--session', 'sid-explicit'], env: { CLAUDE_CODE_SESSION_ID: '' } });
+  assert.strictEqual(p.code, 0, p.stdout + p.stderr);
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'paused-sid-explicit')));
+});
+
 test('B2. plugin.json 声明三个独立命令文件（HOTFIX-20260610-02 拆分）', () => {
   // 插件 command 一律 /<plugin>:<command> 命名空间形态（官方规则，无 alias 机制）；
   // 单文件 paceflow.md 会变成重复的 /paceflow:paceflow，拆三文件得到 /paceflow:enable|disable|status。
