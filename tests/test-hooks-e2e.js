@@ -393,7 +393,7 @@ test('2. v6 artifact 注入 + 活跃 CHG 摘要（core group：骨架内容）',
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' } });
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('=== 活跃 CHG 摘要 ==='));
-  assert.ok(r.stdout.includes('spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**'));
+  assert.ok(r.stdout.includes('spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**'));
   assert.ok(r.stdout.includes('CHG-20260504-01'));
   assert.ok(r.stdout.includes('先 Read 对应 changes/<id>.md'));
   assert.ok(r.stdout.includes('本摘要只用于定位，不替代 CHG 详情'));
@@ -798,19 +798,16 @@ test('2f-art. SessionStart owner-aware：artifact group 的 foreign CHG 折叠',
     worktree: 'wt-a',
     branch: 'feature-a',
   });
-  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), fs.readFileSync(path.join(dir, 'implementation_plan.md'), 'utf8').replace(
-    '<!-- ARCHIVE -->',
-    '## 活跃变更详情\n\n### [[chg-20260504-02|外部详情别名]]\n\nforeign detail body\n\n<!-- ARCHIVE -->'
-  ), 'utf8');
   const r = runHook('session-start.js', {
     cwd: dir,
     stdin: { type: 'startup', session_id: 'sid-current-session' },
     args: ['--group', 'artifact'],
   });
   assert.strictEqual(r.code, 0);
+  // v7：impl_plan 不再注入（ARTIFACT_FILES 退役），折叠语义只对 task.md 生效。
   assert.ok(r.stdout.includes('已折叠 1 个其他 worktree/session owner 的 CHG'));
   assert.ok(!r.stdout.includes('外部 worktree 任务标题'));
-  assert.ok(!r.stdout.includes('foreign detail body'));
+  assert.ok(!r.stdout.includes('=== implementation_plan.md ==='), 'v7: impl_plan 文件块不再注入');
 });
 
 test('2g. SessionStart 将当前 blocked CHG 单独展示且不计入执行中 T-NNN', () => {
@@ -899,9 +896,9 @@ test('MH-fmt. 格式合规警告在 artifact group 注入、core group 不注入
   // 格式警告依赖 implFullForFormat/found（artifact 文件），数据只在 artifact group 读。
   // T-003 曾把渲染放 core 块致 found 恒空、双 hook 后 artifact 块又不渲染 → 全 group 丢失。本测试守卫该回归。
   const dir = makeV6Project('ss-fmt-warn-group');
-  // implementation_plan.md 故意放 2 个 ARCHIVE 标记（格式违规：会致活跃区识别错误）。
-  fs.writeFileSync(path.join(dir, 'implementation_plan.md'),
-    '# 实施计划\n\n## 变更索引\n\n- [/] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n\n<!-- ARCHIVE -->\n\n<!-- ARCHIVE -->\n', 'utf8');
+  // v7：格式检测基于 task.md（唯一索引）——故意放 2 个 ARCHIVE 标记（格式违规：会致活跃区识别错误）。
+  fs.writeFileSync(path.join(dir, 'task.md'),
+    '# 项目任务追踪\n\n## 活跃任务\n\n- [/] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n\n<!-- ARCHIVE -->\n\n<!-- ARCHIVE -->\n', 'utf8');
   const core = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'core'] });
   const art = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
   assert.strictEqual(core.code, 0);
@@ -2434,7 +2431,7 @@ test('9hab. artifact-root=local 后首次 create-chg Agent 创建模板并要求
   assert.ok(r.stdout.includes(`artifact_dir: ${dir.replace(/\\/g, '/')}/`));
   assert.ok(fs.existsSync(path.join(dir, 'changes')), 'local agent 放行前应创建 changes/');
   assert.ok(fs.existsSync(path.join(dir, 'task.md')), 'local agent 放行前应创建 task.md');
-  assert.ok(fs.existsSync(path.join(dir, 'implementation_plan.md')), 'local agent 放行前应创建 implementation_plan.md');
+  assert.ok(!fs.existsSync(path.join(dir, 'implementation_plan.md')), 'v7: 新项目不再创建 implementation_plan.md');
   assert.ok(!fs.existsSync(path.join(vaultDir, 'changes')), 'local 选择不应在 vault 创建 changes/');
 });
 
@@ -2490,7 +2487,7 @@ test('9hac. artifact-root=vault 后首次 create-chg Agent 创建 vault 模板�
   assert.ok(r.stdout.includes(`artifact_dir: ${vaultDir.replace(/\\/g, '/')}/`));
   assert.ok(fs.existsSync(path.join(vaultDir, 'changes')), 'vault agent 放行前应创建 changes/');
   assert.ok(fs.existsSync(path.join(vaultDir, 'task.md')), 'vault agent 放行前应创建 task.md');
-  assert.ok(fs.existsSync(path.join(vaultDir, 'implementation_plan.md')), 'vault agent 放行前应创建 implementation_plan.md');
+  assert.ok(!fs.existsSync(path.join(vaultDir, 'implementation_plan.md')), 'v7: vault 新项目不再创建 implementation_plan.md');
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), 'vault 选择不应在本地项目创建 changes/');
 });
 
@@ -2539,7 +2536,7 @@ test('9hb. artifact-writer Agent 未带 vault artifact_dir → DENY 重派', () 
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('artifact_dir'));
   assert.ok(r.stdout.includes('Skill(paceflow:pace-workflow)'));
-  assert.ok(r.stdout.includes('spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**'));
+  assert.ok(r.stdout.includes('spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**'));
   assert.ok(r.stdout.includes(vaultDir.replace(/\\/g, '/')));
 });
 
@@ -2607,7 +2604,7 @@ test('9hc. artifact-writer create-chg 带 vault artifact_dir + reserved-id → �
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('ARTIFACT_DIR 已确认'));
-  assert.ok(r.stdout.includes('spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**'));
+  assert.ok(r.stdout.includes('spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**'));
 });
 
 test('9hc-helper. reserve-artifact-id helper 预留 create-chg 后 Agent 首派即放行', () => {
@@ -5460,10 +5457,11 @@ test('9hh. 懒创建模板写入 LF', () => {
   fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
   assert.ok(r.stdout.includes('"deny"'));
-  for (const file of ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md']) {
+  for (const file of ['task.md', 'walkthrough.md', 'findings.md', 'corrections.md']) {
     const content = fs.readFileSync(path.join(dir, file), 'utf8');
     assert.ok(!content.includes('\r'), `${file} 应为 LF`);
   }
+  assert.ok(!fs.existsSync(path.join(dir, 'implementation_plan.md')), 'v7: 懒创建不再生成 implementation_plan.md');
 });
 
 test('9i. PACE 项目 malformed stdin → fail-closed deny', () => {
@@ -7015,23 +7013,13 @@ test('22e1. PostToolUseFailure 自定义 Bash 验证脚本失败仍注入验证�
   }
 });
 
-test('22c. PostToolUseFailure 保留未完成 index:changes 事务锁', () => {
+test('22c. PostToolUseFailure 写失败直接释放 index:changes 锁（v7 半事务保锁退役）', () => {
   const dir = makeV6Project('ptuf-index-tx-open');
   const lockPath = seedArtifactResourceLock(dir, 'index:changes', {
     sessionId: 'sid-index-fail',
     agentId: 'agent-index-fail',
     file: path.join(dir, 'task.md'),
   });
-  const txDir = path.join(dir, '.pace', 'index-transactions');
-  fs.mkdirSync(txDir, { recursive: true });
-  fs.writeFileSync(path.join(txDir, `${safeLockName('agent:agent-index-fail')}.json`), JSON.stringify({
-    sessionId: 'sid-index-fail',
-    agentId: 'agent-index-fail',
-    ownerKey: 'agent:agent-index-fail',
-    touched: ['task.md'],
-    timestampMs: Date.now(),
-  }, null, 2) + '\n', 'utf8');
-
   const beforeLog = fs.existsSync(path.join(HOOKS_DIR, 'pace-hooks.log')) ? fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8') : '';
   const r = runHook('post-tool-use-failure.js', {
     cwd: dir,
@@ -7040,16 +7028,16 @@ test('22c. PostToolUseFailure 保留未完成 index:changes 事务锁', () => {
       agent_id: 'agent-index-fail',
       agent_type: 'paceflow:artifact-writer',
       tool_name: 'Edit',
-      tool_input: { file_path: path.join(dir, 'implementation_plan.md') },
+      tool_input: { file_path: path.join(dir, 'task.md') },
       error: 'Edit failed',
     },
   });
   assert.strictEqual(r.code, 0);
-  assert.ok(fs.existsSync(lockPath), 'index:changes 半事务失败时应保留锁，等待同 agent 重试或 SubagentStop 清理');
+  assert.ok(!fs.existsSync(lockPath), 'v7: 单文件写失败没有半开事务态，直接释放锁减少并发阻塞');
   const afterLog = fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8');
   const delta = logDelta(beforeLog, afterLog);
-  assert.ok(delta.includes('KEEP_ARTIFACT_RESOURCE_LOCK'));
-  assert.ok(delta.includes('index-transaction-open-after-failure'));
+  assert.ok(delta.includes('RELEASE_ARTIFACT_RESOURCE_LOCK'));
+  assert.ok(!delta.includes('index-transaction-open-after-failure'));
 });
 
 test('22a. PostToolUseFailure 用户中断只记录日志不注入恢复提示', () => {

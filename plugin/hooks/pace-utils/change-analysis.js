@@ -80,7 +80,8 @@ module.exports = function createChangeAnalysis(ctx) {
     const expectedSlug = slugForChangeId(expectedId);
     if (!expectedId || !expectedSlug) return [];
     const byKind = new Map();
-    for (const file of ['task.md', 'implementation_plan.md']) {
+    // v7（CHG-20260611-08 T-002）：task.md 是唯一索引，执行上下文只从它提取。
+    for (const file of ['task.md']) {
       const full = ctx.readFull(cwd, file) || '';
       for (const line of String(full || '').split(/\r?\n/)) {
         if (!lineReferencesChangeId(line, expectedId, expectedSlug)) continue;
@@ -147,7 +148,7 @@ module.exports = function createChangeAnalysis(ctx) {
       const expectedContext = walkthroughContextForChange(cwd, expectedId);
       const missingContext = expectedContext.filter(spec => !textHasContextMarker(summaryCell, spec));
       if (missingContext.length > 0) {
-        issues.push(`walkthrough.md 行 ${expectedId} 缺少执行上下文 ${missingContext.map(spec => spec.marker).join(' ')}，应与 task.md / implementation_plan.md 索引行一致；请派 artifact-writer close-chg 或 archive-chg 补齐。`);
+        issues.push(`walkthrough.md 行 ${expectedId} 缺少执行上下文 ${missingContext.map(spec => spec.marker).join(' ')}，应与 task.md 索引行一致；请派 artifact-writer close-chg 或 archive-chg 补齐。`);
       }
     }
     return issues;

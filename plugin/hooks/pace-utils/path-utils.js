@@ -66,6 +66,9 @@ function isArtifactRelativePath(relPath) {
   // `changes/./x.md` 等形态绕过下方锚定正则。
   const rel = path.posix.normalize(String(relPath || '').replace(/\\/g, '/')).replace(/^\/+/, '');
   if (ARTIFACT_FILES.includes(rel)) return true;
+  // v7（CHG-20260611-08）：impl_plan 退役出 ARTIFACT_FILES 但仍是 PACEflow 管辖路径——
+  // tombstone 与未迁移存量必须继续被识别（否则 Edit/MultiEdit/Bash 直写保护被旁路）。
+  if (rel === 'implementation_plan.md') return true;
   return /^changes\/.+\.md$/i.test(rel);
 }
 

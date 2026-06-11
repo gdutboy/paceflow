@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const paceUtils = require('../pace-utils');
 
-const { ARTIFACT_FILES } = paceUtils;
+const { ARTIFACT_FILES, PROTECTED_ARTIFACTS } = paceUtils;
+// v7（CHG-20260611-08 T-003）：Bash/PS 写保护集合 = ARTIFACT_FILES ∪ PROTECTED（补回退役的 impl_plan，保护语义不收窄）。
+const GUARD_PROTECTED_FILES = [...new Set([...ARTIFACT_FILES, ...PROTECTED_ARTIFACTS])];
 const { segmentAnchorPrefix, scanRedirectTargets, commandRunsScriptEngine } = require('./command-recognition');
 
 // 段首锚点（共享识别层）：PowerShell 侧覆盖 起始 / 换行 / ;| / & 调用操作符 / && || / 分组 (){} /
@@ -191,7 +193,7 @@ function powershellPathLooksArtifact(target, cwd, artDir) {
   } catch(e) {}
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => normalizePowerShellSearchText(dir).replace(/\/+$/, '')))];
   for (const root of roots) {
-    for (const file of ARTIFACT_FILES) {
+    for (const file of GUARD_PROTECTED_FILES) {
       if (t === `${root}/${file}`) return true;
     }
     if (t === `${root}/changes`) return true;
@@ -312,7 +314,7 @@ function powershellCommandReferencesArtifact(command, cwd, artDir) {
   if (powershellCommandPathTokens(c).some(target => powershellPathLooksArtifact(target, cwd, artDir))) return true;
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => normalizePowerShellSearchText(dir).replace(/\/+$/, '')))];
   for (const root of roots) {
-    for (const file of ARTIFACT_FILES) {
+    for (const file of GUARD_PROTECTED_FILES) {
       if (textReferencesPathOrChild(c, `${root}/${file}`)) return true;
     }
     if (textReferencesPathOrChild(c, `${root}/changes`)) return true;

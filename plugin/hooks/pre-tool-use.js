@@ -36,8 +36,8 @@ const {
   summarizeActiveChanges,
 } = paceUtils;
 
-// I-05: 常量提升到模块级（ARTIFACT_FILES 是静态数组，filter 结果不变）
-const PROTECTED_ARTIFACTS = ARTIFACT_FILES.filter(f => f !== 'spec.md');
+// v7（CHG-20260611-08 T-003）：写保护集合改用 constants 单源导出（含退役的 impl_plan tombstone 保护）。
+const { PROTECTED_ARTIFACTS } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 // W-8: 使用共享日志轮转函数
@@ -991,7 +991,8 @@ paceUtils.withStdinParsed((stdin) => {
       if (isChangeDetailArtifactRel(artifactRelForMutation)) {
         const mutationText = [content, newString].filter(Boolean).join('\n');
         if (/^status:\s*archived\s*$/mi.test(mutationText)) {
-          const missingArchive = ['task.md', 'implementation_plan.md'].filter(file => {
+          // v7（CHG-20260611-08）：归档前置只检 task.md 双区结构（唯一索引）。
+          const missingArchive = ['task.md'].filter(file => {
             try { return !paceUtils.ARCHIVE_PATTERN.test(fs.readFileSync(path.join(artDir, file), 'utf8')); }
             catch(e) { return true; }
           });
@@ -1522,7 +1523,7 @@ paceUtils.withStdinParsed((stdin) => {
   if (paceSignal && v5MigrationInfo.detected && taskFileExists && taskActiveContent.trim() && isInsideProject && (isCodeFile || ARTIFACT_FILES.includes(fileName))) {
     const reason = v5MigrationInfo.needsPrompt
       ? v5MigrationReason
-      : `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。当前工具调用已被 hook 阻止，目标代码/artifact 尚未被修改。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md / implementation_plan.md wikilink 索引。不要继续在 task.md / implementation_plan.md 手写 v5 详情、APPROVED 或 VERIFIED。迁移或桥接后必须重试被阻止的原始工具调用；在写入工具成功前不要声称任务已完成。`;
+      : `检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。当前工具调用已被 hook 阻止，目标代码/artifact 尚未被修改。PACEflow 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 将当前计划桥接为 changes/<id>.md + task.md wikilink 索引。不要继续在 task.md 手写 v5 详情、APPROVED 或 VERIFIED。迁移或桥接后必须重试被阻止的原始工具调用；在写入工具成功前不要声称任务已完成。`;
     const output = denyOrHint(reason);
     process.stdout.write(JSON.stringify(output));
     log(projectLogEntry('PreToolUse', `DENY_LEGACY_ACTIVE${teammateTag}`, { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
@@ -1604,7 +1605,7 @@ paceUtils.withStdinParsed((stdin) => {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
             ? `检测到未同步的 Superpowers 计划文件，请调用 paceflow:pace-bridge：Read plan → 派 artifact-writer create-chg 创建 v6 CHG 后再写代码。`
-            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\n${artifactWriterCreateChgHint(artDir)}\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\nimpl_plan 索引格式：${FORMAT_SNIPPETS.implIndex}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
+            : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\n${artifactWriterCreateChgHint(artDir)}\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n索引行格式：${FORMAT_SNIPPETS.taskEntry}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
         }
       } else {
         reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;

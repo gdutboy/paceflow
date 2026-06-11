@@ -188,7 +188,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     const entries = getActiveChangeEntries(cwd);
 
-    if (artifactRel === 'task.md' || artifactRel === 'implementation_plan.md') {
+    if (artifactRel === 'task.md') {
       try {
         const indexContent = resolvedFilePath && fs.existsSync(resolvedFilePath) ? fs.readFileSync(resolvedFilePath, 'utf8') : '';
         const misplaced = paceUtils.findActiveIndexBelowArchive(indexContent);
@@ -240,7 +240,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = [
           `PACEflow PostToolUse 终态修复：你刚写入的 walkthrough.md 仍不符合 v6 完成记录规范（${target}）。`,
           ...walkthroughIssues.map((issue, idx) => `[${idx + 1}] ${issue}`),
-          '请在当前 turn 继续修复，不要结束 artifact-writer 报告：读取 task.md / implementation_plan.md 对应索引与 changes/<id>.md，补齐正确 wikilink 和 [worktree:: ...] [branch:: ...] 上下文；修复后再报告。',
+          '请在当前 turn 继续修复，不要结束 artifact-writer 报告：读取 task.md 对应索引与 changes/<id>.md，补齐正确 wikilink 和 [worktree:: ...] [branch:: ...] 上下文；修复后再报告。',
           '不要改用 Bash、临时脚本或主 session 直接改 artifact。'
         ].join('\n');
         continueBlockOnce('walkthrough', target, reason);

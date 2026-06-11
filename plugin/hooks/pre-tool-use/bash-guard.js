@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const paceUtils = require('../pace-utils');
 
-const { ARTIFACT_FILES } = paceUtils;
+const { ARTIFACT_FILES, PROTECTED_ARTIFACTS } = paceUtils;
+// v7（CHG-20260611-08 T-003）：Bash/PS 写保护集合 = ARTIFACT_FILES ∪ PROTECTED（补回退役的 impl_plan，保护语义不收窄）。
+const GUARD_PROTECTED_FILES = [...new Set([...ARTIFACT_FILES, ...PROTECTED_ARTIFACTS])];
 const { segmentAnchorPrefix, scanRedirectTargets, commandRunsScriptEngine, BASH_WRAPPERS } = require('./command-recognition');
 
 // 段首锚点（共享识别层）：覆盖 命令起始 / 换行 / ;&| / 分组 (){} / && / for…do / wrapper（env/sudo/...）。
@@ -240,7 +242,7 @@ function bashPathLooksArtifact(target, cwd, artDir) {
   // Fallback only catches simple CWD-relative artifact names that tokenization cannot resolve.
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => normalizeCommandSearchText(dir).replace(/\/+$/, '')))];
   for (const root of roots) {
-    for (const file of ARTIFACT_FILES) {
+    for (const file of GUARD_PROTECTED_FILES) {
       if (t === `${root}/${file}`) return true;
     }
     if (t === `${root}/changes`) return true;
@@ -411,7 +413,7 @@ function bashCommandReferencesArtifact(command, cwd, artDir) {
   if (bashCommandPathTokens(c).some(target => bashPathLooksArtifact(target, cwd, artDir))) return true;
   const roots = [...new Set([cwd, artDir].filter(Boolean).map(dir => String(dir).replace(/\\/g, '/').replace(/\/+$/, '')))];
   for (const root of roots) {
-    for (const file of ARTIFACT_FILES) {
+    for (const file of GUARD_PROTECTED_FILES) {
       if (bashTextReferencesPathOrChild(c, `${root}/${file}`)) return true;
     }
     if (bashTextReferencesPathOrChild(c, `${root}/changes`)) return true;

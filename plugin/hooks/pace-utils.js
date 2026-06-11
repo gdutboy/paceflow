@@ -25,6 +25,7 @@ const {
   CODE_EXTS,
   ARTIFACT_FILES,
   MIGRATABLE_ARTIFACT_FILES,
+  PROTECTED_ARTIFACTS,
   ARCHIVE_REQUIRED_FILES,
   ARCHIVE_MISSING_INJECT_LIMIT,
   VAULT_PATH,
@@ -147,7 +148,6 @@ const {
   releaseArtifactResourcesForOwner,
   sweepStaleRuntimeOwners,
   markIndexChangesTouchedAndMaybeRelease,
-  readArtifactIndexTransaction,
   formatArtifactResourceLock,
   reserveArtifactId,
   reserveArtifactIds,
@@ -940,7 +940,7 @@ function scanRelatedNotes(projectName) {
 // I-04: 多行格式按功能分组，便于 diff 审阅
 module.exports = {
   // 常量
-  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, PROJECT_ROOT_FILE, V5_MIGRATION_STATE_FILE,
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, PROTECTED_ARTIFACTS, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, PROJECT_ROOT_FILE, V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS, SESSION_PAUSE_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
@@ -962,7 +962,7 @@ module.exports = {
   artifactResourceForRel, getArtifactResourceLockPath, readArtifactResourceLock,
   acquireArtifactResourceLock, releaseArtifactResourceLock, releaseArtifactResourcesForOwner,
   sweepStaleRuntimeOwners,
-  markIndexChangesTouchedAndMaybeRelease, readArtifactIndexTransaction, formatArtifactResourceLock,
+  markIndexChangesTouchedAndMaybeRelease, formatArtifactResourceLock,
   reserveArtifactId, reserveArtifactIds, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
   isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt, explicitChangeTargetFromAgentPrompt,
   getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, touchChangeOwnersForSession, detachChangeOwnersForSession, reviveDetachedChangeOwnersForSession, changeOwnerStatus, ownerTakeoverConfirmed,

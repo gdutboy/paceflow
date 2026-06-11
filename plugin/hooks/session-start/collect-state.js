@@ -74,15 +74,9 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     }
   }
 
-  // --- 格式合规检查输入（重构前 638-672 读取部分）---
-  // 仅 artifact 读：格式警告渲染归 artifact group（R 审计发现 A 修正后），implFullForFormat + found 与渲染同 group。
-  // core 既不读也不再渲染格式警告——根除「渲染在 core 但数据在 artifact」致 found 恒空、警告全 group 丢失的错位。
-  let implFullForFormat = null;
-  if (isArtifact && paceSignal && artifactFiles.length > 0) {
-    implFullForFormat = readFull(cwd, 'implementation_plan.md');
-  }
-
   // --- 跨会话提醒用 task.md 全文（重构前 674-678 兜底读取）---
+  // v7（CHG-20260611-08 T-002）：implFullForFormat 退役——格式警告（emoji/表格/多 ARCHIVE）
+  // 全部基于 taskFullCached 检测（task.md 是唯一索引，implementation_plan 不再读取）。
   // 仅 core 读（跨会话提醒在 core group，renderCrossSessionAndExecution 消费 taskFullCached）。
   // artifact group：taskFullCached 已从 ARTIFACT_FILES 循环赋值（若 task.md 在列）。
   if (isCore && !taskFullCached && fs.existsSync(taskFp)) {
@@ -165,7 +159,6 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     // 活跃 CHG
     activeChangeSummaries,
     // 格式检查
-    implFullForFormat,
     // 提醒/桥接
     bridgeHint,
     nativePlanPath,

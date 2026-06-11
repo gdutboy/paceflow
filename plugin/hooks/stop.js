@@ -215,21 +215,20 @@ if (paceSignal === 'artifact') {
 
     if (change.category === 'inconsistent') {
       if (change.reason === 'index-missing') {
-        addWarning('repair', `${ownerPrefix}task.md 与 implementation_plan.md 活跃 CHG 集合不一致：${change.id} 必须同时存在。请派 artifact-writer 修复索引。`);
+        // v7：正常路径不可达（classifyChange 仅防卫空 entry），保守保留兜底文案。
+        addWarning('repair', `${ownerPrefix}${change.id} 索引状态异常（entry 缺失），请派 artifact-writer 修复 task.md 索引。`);
       } else if (change.reason === 'detail-missing') {
         addWarning('repair', `${ownerPrefix}${change.id} 的详情文件缺失（应为 changes/${change.slug}.md），请派 artifact-writer 修复。`);
-      } else if (change.reason === 'index-mismatch') {
-        addWarning('repair', `${ownerPrefix}${change.id} 索引状态不一致：task.md=[${change.taskCheckbox}]，implementation_plan.md=[${change.implCheckbox}]。请派 update-chg action=update-status 修复。`);
       } else if (change.reason === 'index-malformed') {
-        addWarning('repair', `${ownerPrefix}${change.id} 索引行格式损坏：task.md / implementation_plan.md 中的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。请派 artifact-writer 修复索引行边界。`);
+        addWarning('repair', `${ownerPrefix}${change.id} 索引行格式损坏：task.md 中的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。请派 artifact-writer 修复索引行边界。`);
       } else if (change.reason === 'index-completed-with-pending-tasks') {
         addWarning('execution', `${ownerPrefix}${change.id} 索引已是 [x]，但详情仍有 ${change.tasks.pending} 个未完成任务。请派 update-chg action=update-status 修复状态联动，或继续完成任务。`);
       } else if (change.reason === 'index-completed-status-mismatch') {
         addWarning('repair', `${ownerPrefix}${change.id} 索引已是 [x]，但详情 frontmatter status=${change.status || 'missing'}。请派 update-chg action=update-status 修复状态联动。`);
       } else if (change.reason === 'active-archived') {
-        addWarning('repair', `${ownerPrefix}${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer close-chg 或 archive-chg 做索引修复：从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。${FORMAT_SNIPPETS.closeOp}`);
+        addWarning('repair', `${ownerPrefix}${change.id} 详情已 archived，但索引仍在活跃区。请派 artifact-writer close-chg 或 archive-chg 做索引修复：从 task.md 活跃区删除该行，并移动到 ARCHIVE 下方。${FORMAT_SNIPPETS.closeOp}`);
       } else if (change.reason === 'active-cancelled') {
-        addWarning('repair', `${ownerPrefix}${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer archive-chg 做取消归档：保持详情 status=cancelled，不验证；从 task.md / implementation_plan.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
+        addWarning('repair', `${ownerPrefix}${change.id} 已取消或索引为 [-]，但仍在活跃区。请派 artifact-writer archive-chg 做取消归档：保持详情 status=cancelled，不验证；从 task.md 活跃区删除该行，并移动到 ARCHIVE 下方。`);
       } else if (change.reason === 'task-list-empty') {
         addWarning('repair', `${ownerPrefix}${change.id} 详情 status=${change.status}，但 ## 任务清单 中没有可识别的 T-NNN 任务行。请派 artifact-writer 修复 changes/${change.slug}.md 任务清单。`);
       } else {

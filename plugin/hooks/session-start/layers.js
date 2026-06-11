@@ -51,7 +51,6 @@ function changeSetSeqNum(seq) {
 // 未在表中的文件名回退到末尾（与 spec 同档之后），保证排序稳定不报错。
 const ARTIFACT_BLOCK_PRIORITY = [
   'task.md',
-  'implementation_plan.md',
   'corrections.md',
   'findings.md',
   'walkthrough.md',
@@ -166,7 +165,7 @@ function buildLayers(state, eventType, paceUtils, group) {
     for (const { block } of ordered) l3.push(block);
 
     // === 10. 格式合规警告（重构前 638-672）===
-    // R 审计发现 A 修正：renderFormatWarnings 依赖 found（artifact 文件）+ implFullForFormat（artifact 读），
+    // R 审计发现 A 修正：renderFormatWarnings 依赖 found（artifact 文件）+ taskFullCached（artifact 读），
     // 必须与数据同 group。T-003 误放 core 块致 core found 恒空、双 hook 后 artifact 块又不渲染 → 格式警告全 group 丢失。
     // 格式警告是重要提醒（不该被截），CHG-09 已留 l1head（head 永不截），本 CHG 不动。
     const formatWarn = renderFormatWarnings(state, filesRender.found, paceUtils);
@@ -366,11 +365,6 @@ function renderArtifactFiles(state, paceUtils) {
       if (findingsArchiveMissing) {
         output += `\n\n（⚠️ ${file} 缺少 <!-- ARCHIVE --> 标记，已按 impact 优先类内截断注入以防全文灌爆 context；请派 artifact-writer 修复双区结构）\n`;
       }
-    }
-
-    // implementation_plan.md 智能截断（重构前 559-586）。
-    if (file === 'implementation_plan.md') {
-      output = truncateImplPlan(output);
     }
 
     // corrections.md 类内截断（M3 T-002）：活跃区纠正记录最近 6 条 + 长尾指针。
@@ -575,36 +569,6 @@ function truncateFindingsByImpact(output) {
     pointer);
 }
 
-/** impl_plan 智能截断（重构前 559-586）：只注入 [/]/[ ] 索引+详情，跳过 [x]/[-]。 */
-function truncateImplPlan(output) {
-  const skipIds = new Set();
-  (output.match(/^- \[(?:x|-)\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/gm) || []).forEach(line => {
-    const id = line.match(/((?:CHG|HOTFIX)-\d{8}-\d{2})/);
-    if (id) skipIds.add(id[1]);
-  });
-  if (skipIds.size > 0) {
-    const lines = output.split('\n');
-    const result = [];
-    let skip = false;
-    for (const l of lines) {
-      const im = l.match(/^- \[.\] ((?:CHG|HOTFIX)-\d{8}-\d{2})/);
-      if (im && skipIds.has(im[1])) continue;
-      const dm = l.match(/^### ((?:CHG|HOTFIX)-\d{8}-\d{2})/);
-      if (dm) {
-        skip = skipIds.has(dm[1]);
-        if (skip) continue;
-      } else if (skip) {
-        if (/^(?:### |## |<!-- )/.test(l)) skip = false;
-        else continue;
-      }
-      result.push(l);
-    }
-    output = result.join('\n');
-    output = output.replace(/(^## 变更索引)/m, `（已省略 ${skipIds.size} 条已完成变更）\n\n$1`);
-  }
-  return output;
-}
-
 /**
  * corrections 类内截断（M3 T-002 / design §3.6）：
  *   活跃区纠正记录行（`- [[correction-...]]`）按 date 降序保留最近 6 条，
@@ -713,24 +677,6 @@ function foldForeignOwnedArtifactOutput(file, output, summaries) {
     const filtered = output.split('\n').filter(line => !lineReferencesChangeId(line, ids)).join('\n');
     return appendForeignFoldNote(filtered, ids.size);
   }
-  if (file === 'implementation_plan.md') {
-    const result = [];
-    let skipping = false;
-    for (const line of output.split('\n')) {
-      const detail = line.match(/^###\s+(?:\[\[)?((?:CHG|HOTFIX)-\d{8}-\d{2})(?:\|[^\]]*)?(?:\]\])?(?=[\s:|-]|$)/i);
-      if (detail && ids.has(detail[1].toUpperCase())) {
-        skipping = true;
-        continue;
-      }
-      if (skipping && /^(?:###\s+|##\s+|<!--\s*ARCHIVE\s*-->)/i.test(line)) {
-        skipping = false;
-      }
-      if (skipping) continue;
-      if (/^-\s+\[.\]/.test(line) && lineReferencesChangeId(line, ids)) continue;
-      result.push(line);
-    }
-    return appendForeignFoldNote(result.join('\n'), ids.size);
-  }
   return output;
 }
 
@@ -820,23 +766,18 @@ function renderFormatWarnings(state, found, paceUtils) {
   const { ARCHIVE_PATTERN, ARCHIVE_MARKER, FORMAT_SNIPPETS, detectLegacyImplFormat } = paceUtils;
   if (!(state.paceSignal && found.length > 0)) return '';
   const formatWarnings = [];
-  const implFull = state.implFullForFormat;
-  if (implFull) {
-    const implArchiveM = implFull.match(ARCHIVE_PATTERN);
-    const implActive = implArchiveM ? implFull.slice(0, implArchiveM.index) : implFull;
-    const { hasEmoji, hasTable } = detectLegacyImplFormat(implActive);
+  // v7（CHG-20260611-08 T-002）：emoji/表格格式检测从 implementation_plan.md 迁移到 task.md——
+  //   task.md 是唯一索引，格式不可解析会让写码门误判「无活跃 CHG」，检测语义必须保留。
+  if (state.taskFullCached) {
+    const taskArchiveM = state.taskFullCached.match(ARCHIVE_PATTERN);
+    const taskActive = taskArchiveM ? state.taskFullCached.slice(0, taskArchiveM.index) : state.taskFullCached;
+    const { hasEmoji, hasTable } = detectLegacyImplFormat(taskActive);
     if (hasEmoji) {
-      formatWarnings.push(`implementation_plan.md 使用了 emoji 状态标记，当前索引解析无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
+      formatWarnings.push(`task.md 使用了 emoji 状态标记，当前索引解析无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.taskEntry}`);
     }
     if (hasTable) {
-      formatWarnings.push(`implementation_plan.md 使用了表格格式，当前索引解析无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.implIndex}`);
+      formatWarnings.push(`task.md 使用了表格格式，当前索引解析无法识别。${FORMAT_SNIPPETS.formatRule}\n正确格式：${FORMAT_SNIPPETS.taskEntry}`);
     }
-    const archiveCount = (implFull.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
-    if (archiveCount > 1) {
-      formatWarnings.push(`implementation_plan.md 有 ${archiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），会导致活跃区识别错误。请删除多余的标记，只保留活跃区与归档区之间的那个`);
-    }
-  }
-  if (state.taskFullCached) {
     const taskArchiveCount = (state.taskFullCached.match(new RegExp(ARCHIVE_PATTERN.source, 'gm')) || []).length;
     if (taskArchiveCount > 1) {
       formatWarnings.push(`task.md 有 ${taskArchiveCount} 个 ${ARCHIVE_MARKER} 标记（应只有 1 个），会导致活跃区识别错误。请删除多余的标记，只保留活跃区与归档区之间的那个`);

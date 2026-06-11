@@ -4,8 +4,14 @@ const HOOKS_DIR = path.resolve(__dirname, '..');
 
 const PACE_VERSION = 'v6.7.1';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
-const ARTIFACT_FILES = ['spec.md', 'task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
-const MIGRATABLE_ARTIFACT_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md' && file !== 'corrections.md');
+// v7（CHG-20260611-08）：implementation_plan.md 退役出 artifact 集合——task.md 是唯一 CHG 索引。
+const ARTIFACT_FILES = ['spec.md', 'task.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
+// v5→v6 迁移文件集合（batch-archive-v5 专用）：v5 时代是双索引布局，implementation_plan.md
+// 必须参与迁移；与 v7 的 ARTIFACT_FILES（已退役 impl_plan）解耦，显式列出不再 filter 派生。
+const MIGRATABLE_ARTIFACT_FILES = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
+// 写保护集合（pre-tool-use / bash-guard / powershell-guard 共用）：impl_plan 虽退役出
+// ARTIFACT_FILES，但 tombstone 与未迁移存量仍受「主 session/Bash 不得直写」保护，故显式保留。
+const PROTECTED_ARTIFACTS = [...ARTIFACT_FILES.filter(f => f !== 'spec.md'), 'implementation_plan.md'];
 // 应保持 <!-- ARCHIVE --> 双区结构的文件（spec.md 无活跃/归档之分，排除）。
 // checkArchiveFormat 缺失检测（层1）与 session-start 注入兜底（层2）共用此集合。
 const ARCHIVE_REQUIRED_FILES = ARTIFACT_FILES.filter(file => file !== 'spec.md');
@@ -34,7 +40,7 @@ const RESERVE_ARTIFACT_ID_SCRIPT = path.resolve(HOOKS_DIR, 'reserve-artifact-id.
 const SYNC_PLAN_SCRIPT = path.resolve(HOOKS_DIR, 'sync-plan.js').replace(/\\/g, '/');
 const SET_ARTIFACT_ROOT_SCRIPT = path.resolve(HOOKS_DIR, 'set-artifact-root.js').replace(/\\/g, '/');
 const SET_PROJECT_ROOT_SCRIPT = path.resolve(HOOKS_DIR, 'set-project-root.js').replace(/\\/g, '/');
-const PACE_ARTIFACT_ROOT_CONTENT = 'spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**';
+const PACE_ARTIFACT_ROOT_CONTENT = 'spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**';
 
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
 const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
@@ -49,9 +55,7 @@ const SKILL_DIRS = [
 
 const FORMAT_SNIPPETS = {
   taskEntry: '- [ ] [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]（wikilink 用详情文件名全名 + |纯ID 别名；旧无 slug 文件用 [[chg-YYYYMMDD-NN]]）',
-  taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN-<slug>.md，并同步 task.md / implementation_plan.md 索引。',
-  implIndex: '- [/] [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]',
-  implDetail: 'v6 详情文件在 changes/chg-YYYYMMDD-NN.md；implementation_plan.md 只保留 wikilink 索引。',
+  taskGroup: '任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN-<slug>.md，并同步 task.md 索引。',
   approved: '<!-- APPROVED --> 位于 changes/<id>.md 的任务清单之后；approve/approve-and-start 都必须带 approval-confirmed、approval-source、approval-evidence',
   verified: '<!-- VERIFIED --> 紧邻 changes/<id>.md 内 <!-- APPROVED --> 下一行；主路径是验证结果已读取后 close-chg，暂不归档时才用 update-chg action=verify',
   reviewed: '<!-- REVIEWED --> 紧邻 changes/<id>.md 内 <!-- VERIFIED --> 下一行；R 阶段对抗审计跑过后由 close-chg 折叠写入（含 review-confirmed/review-source/review-findings），暂不归档时才用 update-chg action=review',
@@ -64,7 +68,7 @@ const FORMAT_SNIPPETS = {
   syncPlanHelper: `同步 plan = 桥接成功后运行 Bash: node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"`,
   setArtifactRootHelper: `选择 artifact root = 用户选择后运行 Bash: node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
   setProjectRootHelper: `声明独立 Project Root = 在子目录 cwd 运行 Bash: node "${SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
-  archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md / implementation_plan.md 的索引行移动到 ARCHIVE 下方',
+  archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md 的索引行移动到 ARCHIVE 下方',
   findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
   findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
   walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN-<slug>\\|chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |（表格内 wikilink 别名分隔符必须写 \\| 转义，否则裸 | 会切坏表格列）',
@@ -77,7 +81,6 @@ const SESSION_SCOPED_FLAGS = [
   'todowrite-used',
   'archive-reminded',
   'findings-reminded',
-  'impl-archive-reminded',
   'cli-refresh-done',
   'walkthrough-archive-reminded',
   'findings-archive-reminded',
@@ -104,6 +107,7 @@ module.exports = {
   CODE_EXTS,
   ARTIFACT_FILES,
   MIGRATABLE_ARTIFACT_FILES,
+  PROTECTED_ARTIFACTS,
   ARCHIVE_REQUIRED_FILES,
   ARCHIVE_MISSING_INJECT_LIMIT,
   VAULT_PATH,

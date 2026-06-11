@@ -234,7 +234,10 @@ module.exports = function createLockUtils(ctx) {
   function artifactResourceForRel(artifactRel) {
     const rel = String(artifactRel || '').replace(/\\/g, '/').replace(/^\/+/, '');
     if (!rel || rel === 'spec.md') return '';
-    if (rel === 'task.md' || rel === 'implementation_plan.md') return 'index:changes';
+    // v7（CHG-20260611-08）：双文件合并后只有 task.md 映射 index:changes。资源名不改——
+    // 旧版本并发 session 用同名锁同一文件，改名会使新旧两把锁互不互斥。
+    // impl_plan 不再映射（tombstone 受 PROTECTED 保护，artifact-writer 不再写它）。
+    if (rel === 'task.md') return 'index:changes';
     if (rel === 'findings.md' || rel === 'corrections.md' || rel === 'walkthrough.md') return `index:${rel}`;
     if (/^changes\/.+\.md$/i.test(rel)) return `detail:${rel}`;
     return '';
@@ -665,39 +668,11 @@ module.exports = function createLockUtils(ctx) {
   }
 
   function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
+    // v7（CHG-20260611-08）：双文件合并后 index:changes 单文件直接释放；index-transaction
+    // 双 touched 事务退役。保留函数名与签名（PostToolUse 等调用点零扰动）；
+    // 残留 .pace/index-transactions/ 目录由 W6 sweep 白名单继续清理。
     const rel = String(artifactRel || '').replace(/\\/g, '/');
-    if (rel !== 'task.md' && rel !== 'implementation_plan.md') {
-      return releaseArtifactResourceLock(cwd, artifactResourceForRel(rel), info);
-    }
-    const txPath = ownerScopedPath(cwd, 'index-transactions', info);
-    if (!txPath) return { released: false, reason: 'missing-owner' };
-    let tx = { touched: [] };
-    try { tx = JSON.parse(fs.readFileSync(txPath, 'utf8')); } catch(e) {}
-    const touched = new Set(Array.isArray(tx.touched) ? tx.touched : []);
-    touched.add(rel);
-    tx = { ...lockOwnerInfo(info), touched: [...touched].sort(), updatedAt: new Date().toISOString(), timestampMs: Date.now() };
-    try {
-      fs.mkdirSync(path.dirname(txPath), { recursive: true });
-      fs.writeFileSync(txPath, `${JSON.stringify(tx, null, 2)}\n`, 'utf8');
-    } catch(e) {}
-    if (touched.has('task.md') && touched.has('implementation_plan.md')) {
-      const release = releaseArtifactResourceLock(cwd, 'index:changes', info);
-      try { fs.unlinkSync(txPath); } catch(e) {}
-      return release;
-    }
-    return { released: false, reason: 'index-transaction-open', touched: [...touched].sort() };
-  }
-
-  function readArtifactIndexTransaction(cwd, info = {}) {
-    const txPath = ownerScopedPath(cwd, 'index-transactions', info);
-    if (!txPath) return { ok: false, path: '', touched: [], reason: 'missing-owner' };
-    try {
-      const parsed = JSON.parse(fs.readFileSync(txPath, 'utf8'));
-      const touched = Array.isArray(parsed.touched) ? parsed.touched : [];
-      return { ok: true, path: txPath, touched, raw: parsed };
-    } catch(e) {
-      return { ok: false, path: txPath, touched: [], reason: e.message || String(e) };
-    }
+    return releaseArtifactResourceLock(cwd, artifactResourceForRel(rel), info);
   }
 
   function scanMaxNumberInDir(dir, re) {
@@ -857,7 +832,6 @@ module.exports = function createLockUtils(ctx) {
     releaseArtifactResourcesForOwner,
     sweepStaleRuntimeOwners,
     markIndexChangesTouchedAndMaybeRelease,
-    readArtifactIndexTransaction,
     formatArtifactResourceLock,
     reserveArtifactId,
     reserveArtifactIds,
