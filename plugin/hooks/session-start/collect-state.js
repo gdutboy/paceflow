@@ -50,7 +50,7 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   // --- 活跃 CHG 摘要 + owner 富集（重构前 412-414 + enrichSummaryOwner 330-339）---
   // core 读：活跃 CHG 摘要归 core group（L0 渲染、跨会话提醒、执行上下文）。
   // artifact 也读：artifact 文件循环的 foldForeignOwnedArtifactOutput 需要 activeChangeSummaries
-  //   中的 foreign owner 信息来折叠 task.md/implementation_plan.md 中的 foreign CHG 索引行。
+  //   中的 foreign owner 信息来折叠 task.md 中的 foreign CHG 索引行。
   //   两个 group 都需要读，但 core 额外渲染摘要文本，artifact 仅用于折叠。
   const activeChangeSummaries = (paceSignal === 'artifact')
     ? summarizeActiveChanges(cwd).map(summary => enrichSummaryOwner(summary, cwd, hookInput, changeOwnerStatus))

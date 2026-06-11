@@ -443,8 +443,10 @@ const DROP_KEYS = {
 };
 // 主流程：collect 详情文件 → 逐文件 rewriteFrontmatter（删 DROP_KEYS、补缺 key 置 null、
 // schema-version → "7.0"、archived 无 archived-date 时从 walkthrough 回填）→ task.md 清 v5 尾巴
-// → impl_plan 写 tombstone → findings.md 重排 → correction 索引修复 → 全量 validateFrontmatterSchema
-// 验收（任一失败 → 还原备份并报错退出）→ 写 .pace/v7-migration-state → 输出报告
+// → impl_plan 写 tombstone → findings.md 重排 → correction 索引修复 → 删 .pace/index-transactions/
+// 残留目录（CHG-08 审计 P3-1：v7 不再产生新事务文件，旧文件仅靠 owner 释放路径清）
+// → 全量 validateFrontmatterSchema 验收（任一失败 → 还原备份并报错退出）
+// → 写 .pace/v7-migration-state → 输出报告
 ```
 
 实现要点（完整写出，零猜测）：frontmatter 重写用「逐行处理 `---` 块」保持正文字节不动；删除 key 行、缺 key 在 `schema-version` 行前插入 `<key>: null`；YAML 数组多行值（aliases/tags/parent-tasks 可能多行）需吃掉续行（行首空白+`- `）；tombstone 全文固定为 spec §2.1 模板；备份为整目录 copy（仅被改文件）。

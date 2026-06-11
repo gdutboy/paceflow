@@ -670,7 +670,8 @@ module.exports = function createLockUtils(ctx) {
   function markIndexChangesTouchedAndMaybeRelease(cwd, artifactRel, info = {}) {
     // v7（CHG-20260611-08）：双文件合并后 index:changes 单文件直接释放；index-transaction
     // 双 touched 事务退役。保留函数名与签名（PostToolUse 等调用点零扰动）；
-    // 残留 .pace/index-transactions/ 目录由 W6 sweep 白名单继续清理。
+    // 残留 .pace/index-transactions/ 旧文件由 releaseArtifactResourcesForOwner 在 owner
+    // 释放路径逐个清理（v7 不再产生新事务文件），整目录由 migrate-v7 一次性移除。
     const rel = String(artifactRel || '').replace(/\\/g, '/');
     return releaseArtifactResourceLock(cwd, artifactResourceForRel(rel), info);
   }

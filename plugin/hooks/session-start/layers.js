@@ -45,7 +45,7 @@ function changeSetSeqNum(seq) {
 
 // M3 §3.6：artifact 文件块在 l3（可截层）的注入优先级——packL3 从尾部按条 omit，
 // 故最高优先级排最前（最不易被截）、最低优先级排最后（最先 omit）。
-//   task.md / implementation_plan.md（定位信息，CHG/任务索引，最该保住）
+//   task.md（定位信息，CHG/任务唯一索引，最该保住）
 //   → corrections（纠正记录）→ findings（调研记录）→ walkthrough（工作记录）
 //   → spec（最稳定、可随时 Read，最先 omit）。
 // 未在表中的文件名回退到末尾（与 spec 同档之后），保证排序稳定不报错。
@@ -80,7 +80,7 @@ function sortArtifactBlocksByPriority(items) {
  *   - core：项目上下文 / 工作流入口 / compact 快照 / Native Plan / rootChoice / Artifact 目录 /
  *           活跃 CHG 摘要 / change-set 进度 / 格式合规警告 / 跨会话提醒 / 执行上下文 /
  *           Findings 过期提醒 / git 状态 / 相关讨论
- *   - artifact：spec / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md
+ *   - artifact：spec / task.md / walkthrough.md / findings.md / corrections.md
  * @returns {{ l1head: string[], l0: string[], l1: string[], l2: string[], l3: string[] }}
  *   - l1head: 项目上下文 + 工作流入口 + Artifact 目录 + 格式警告（注入顺序最前，head 永不截）
  *   - l0: 活跃 CHG 摘要 / change-set 进度 / 跨会话提醒 / 桥接 / 执行上下文（「我刚才在做」）

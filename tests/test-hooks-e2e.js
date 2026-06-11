@@ -6251,7 +6251,7 @@ test('15c. artifact-writer 顺序编辑索引时不提示瞬时不一致', () =>
   assert.ok(!r.stdout.includes('索引不一致'));
 });
 
-test('15d. 非 artifact-writer 索引不一致仍提示', () => {
+test('15d. v7: impl_plan 缺行不再产生跨索引不一致提示（旧双索引 warning 退役）', () => {
   const dir = makeV6Project('post-index-mismatch-direct', { implIndex: '' });
   const fp = path.join(dir, 'task.md');
   const r = runHook('post-tool-use.js', {
