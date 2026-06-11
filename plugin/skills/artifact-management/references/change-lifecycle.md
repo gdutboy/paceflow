@@ -93,7 +93,6 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 - [ ] 先运行并读取验证结果，再派 `verify` / `close-chg`
 - [ ] `changes/<id>.md` 所有任务为 `[x]` 或 `[-]`（最后任务可由 `close-chg complete-open-tasks=true` 收口）
 - [ ] frontmatter `status: completed`
-- [ ] `completed-date` 非 null
 - [ ] 已运行并阅读验证结果
 - [ ] `verified-date` 非 null
 - [ ] `<!-- VERIFIED -->` 存在且紧邻 `<!-- APPROVED -->`

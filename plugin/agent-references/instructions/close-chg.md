@@ -96,7 +96,7 @@ walkthrough-summary: <完成摘要>
   - Edit frontmatter：`status: completed`（v7 帧无 `completed-date` 字段，完成时刻由 `verified-date`/`reviewed-date` 承载）
   - Read + Edit `task.md`，对应活跃索引 checkbox 改为 `[x]`
 - 若 status 已是 `archived`：
-  - 不改 status / completed-date / archived-date
+  - 不改 status / archived-date
   - 继续执行索引归档一致性修复（若根索引仍在活跃区）
 
 ### 1.5 写入实施详情执行态记录
@@ -116,7 +116,7 @@ walkthrough-summary: <完成摘要>
 ### 2. 写入 V 阶段标记
 
 - 若尚未 verified：
-  - Edit frontmatter：`verified-date: <ISO 8601 datetime>`，置于 `completed-date` 与 `archived-date` 之间
+  - Edit frontmatter：`verified-date: <ISO 8601 datetime>`——只改既有 `verified-date: null` 行的值（7.0 帧该 key 恒在，见 spec §2.1 固定顺序）
   - Edit 详情正文：在 `<!-- APPROVED -->` 行之后紧邻插入 `<!-- VERIFIED -->`
   - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary> |`
 - 若已 verified：
