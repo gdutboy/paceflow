@@ -2,7 +2,7 @@
 name: pace-bridge
 effort: medium
 description: >
-  Use to bridge a confirmed Superpowers/native plan into PACEflow v6 CHG/HOTFIX
+  Use to bridge a confirmed Superpowers/native plan into PACEflow CHG/HOTFIX
   artifacts, create artifact-writer prompts, and mark the specific plan as synced.
 ---
 
@@ -29,19 +29,13 @@ pace-bridge 不直接 Edit `task.md`。桥接的唯一写入路径是派 `artifa
 - Claude Code 原生 plan 的文件名/会话名可能随版本变化；桥接只以 hook 提供的明确路径、文件内容和最近修改时间为依据，不凭文件名是否随机判断。
 - Project Root 是 PACEflow 管理边界；普通子目录默认继承最近父级 Project Root。若当前子目录确实是独立项目，先运行 hook 提示的 `set-project-root` helper（`--mode independent`），再选择 artifact root。
 - 若用户已经明确选择 artifact root，但配置尚未写入，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。helper 接受自身文档列出的参数，自动化用 `--cwd` 指定项目 cwd。
-- Helper 命令来源按以下顺序执行：
-  1. 如果 SessionStart / PreToolUse 已给出完整 `node ".../hooks/*.js"` 命令，直接复制那条命令。
-  2. 如果当前项目还没有 PACEflow 信号，但本 skill 已加载，使用 Claude Code 加载本 skill 时提供的 skill 根目录（本 `SKILL.md` 所在目录）作为 `<skill-root>`。按当前动作选择下面一条模板运行；这不是顺序执行清单：
+- Helper 命令来源顺序的权威定义见 Skill(paceflow:pace-workflow)「Helper 命令来源」（本节不再复制）。速记：优先复制 SessionStart / PreToolUse 给出的完整命令；无 hook 输出但本 skill 已加载时以 skill 根目录拼 fallback；不扫描 `~/.claude/plugins/cache` 猜版本。按当前动作选择下面一条模板运行；这不是顺序执行清单：
 
 ```bash
-node "<skill-root>/../../hooks/set-project-root.js" --mode independent
-node "<skill-root>/../../hooks/set-artifact-root.js" --choice local
-node "<skill-root>/../../hooks/set-artifact-root.js" --choice vault
+node "<skill-root>/../../hooks/set-artifact-root.js" --choice local|vault
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg
 node "<skill-root>/../../hooks/sync-plan.js" --plan "<已桥接的 plan 绝对路径>"
 ```
-
-  3. 如果当前上下文没有完整 hook 命令，也没有可用的 skill 根目录元数据，先触发/等待 hook 给出 helper 命令。helper 路径以 hook 命令或 skill 根目录为准，不扫描 `~/.claude/plugins/cache` 猜版本。
 
 ---
 
@@ -130,7 +124,7 @@ artifact-writer 逐块建 N 个 `changes/<id>.md`（各写 `change-set` + `chang
 
 派 `artifact-writer` 执行 `create-chg`。agent 会创建：
 - `changes/chg-yyyymmdd-nn.md`
-- `task.md` 活跃 wikilink 索引（v7 起唯一 CHG 索引）
+- `task.md` 活跃 wikilink 索引（唯一 CHG 索引）
 
 若没有先运行 helper，hook 会要求带 `reserved-id` / `reserved-file-prefix` 重派；把提示中的字段原样加入 Agent prompt 后重派。编号一律来自 helper 预留。
 

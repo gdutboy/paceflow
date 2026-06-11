@@ -8,7 +8,7 @@ description: >
 
 # Artifact 文件管理规则
 
-PACEflow v6 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
+PACEflow 是 agent-driven artifact workflow。主 session 不直接 Write/Edit artifact；需要创建、更新、批准、验证、归档、记录 finding/correction 时，派 `artifact-writer` 执行。
 
 `artifact_dir` 必须指向 hook 解析出的 artifact 根目录，只用于 PaceFlow artifacts：`spec.md` / `task.md` / `walkthrough.md` / `findings.md` / `corrections.md` / `changes/**`。
 
@@ -18,21 +18,13 @@ Project Root 是 PACEflow 管理边界；`local` artifact root 表示 Project Ro
 
 如果用户已明确选择 vault/local 或自定义 artifact 目录但 artifact-root 配置还不存在，正确做法是先运行 hook 提示的 `set-artifact-root` helper（`--choice vault`、`--choice local`，或 `--choice <绝对路径或相对 Project Root 路径>`），再从目标项目 cwd 运行 reserve helper。helper 会写入权威 runtime 配置位置。`.pace/artifact-root` 只由 `set-artifact-root` helper 写入；git worktree 与继承父 Project Root 的子目录走宿主项目共享位置。reserve helper 接受自身文档列出的参数；自动化用 `--cwd` 指定项目 cwd，其余 artifact/root/project 路径由 helper 自行解析。
 
-Helper 命令来源按以下顺序执行：
-
-1. 如果 SessionStart / PreToolUse 已给出完整 `node ".../hooks/*.js"` 命令，直接复制那条命令。
-2. 如果当前项目还没有 PACEflow 信号，但本 skill 已加载，使用 Claude Code 加载本 skill 时提供的 skill 根目录（本 `SKILL.md` 所在目录）作为 `<skill-root>`。按当前动作选择下面一条模板运行；这不是顺序执行清单：
+Helper 命令来源顺序的权威定义见 Skill(paceflow:pace-workflow)「Helper 命令来源」（本节不再复制）。速记：优先复制 SessionStart / PreToolUse 给出的完整命令；无 hook 输出但本 skill 已加载时以 skill 根目录拼 fallback（从 `references/` 阅读时仍以 skill 根目录为基准）；不扫描 `~/.claude/plugins/cache` 猜版本。按当前动作选择下面一条模板运行；这不是顺序执行清单：
 
 ```bash
-node "<skill-root>/../../hooks/set-project-root.js" --mode independent
-node "<skill-root>/../../hooks/set-artifact-root.js" --choice local
-node "<skill-root>/../../hooks/set-artifact-root.js" --choice vault
+node "<skill-root>/../../hooks/set-artifact-root.js" --choice local|vault
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation record-correction
 ```
-
-3. 如果从 `references/` 文件阅读说明，仍以 skill 根目录为基准，不以 `references/` 子目录为基准。
-4. 如果当前上下文没有完整 hook 命令，也没有可用的 skill 根目录元数据，先触发/等待 hook 给出 helper 命令。helper 路径以 hook 命令或 skill 根目录为准，不扫描 `~/.claude/plugins/cache` 猜版本。
 
 权威规范：
 - Agent prompt：`${CLAUDE_PLUGIN_ROOT}/agents/artifact-writer.md`
@@ -43,14 +35,14 @@ node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation record-correc
 
 ---
 
-## v6 文件模型
+## 文件模型
 
 Artifact root 文件：
 
 | 文件 | 用途 | 活跃区内容 |
 |------|------|------------|
 | `spec.md` | 项目元数据与技术栈 | 项目事实 |
-| `task.md` | CHG/HOTFIX 唯一索引（v7） | `[[chg-id]]` / `[[hotfix-id]]` 行 |
+| `task.md` | CHG/HOTFIX 唯一索引 | `[[chg-id]]` / `[[hotfix-id]]` 行 |
 | `walkthrough.md` | 完成记录索引 | 日期表格行 |
 | `findings.md` | finding 摘要索引 | `[[finding-id|title]]` 行 |
 | `corrections.md` | correction 摘要索引 | `[[correction-yyyy-mm-dd-nn-slug]]` 行 |
@@ -65,7 +57,7 @@ changes/
 └── corrections/correction-yyyy-mm-dd-nn-slug.md
 ```
 
-`task.md`、`walkthrough.md`、`findings.md`、`corrections.md` 只保留索引。任务清单、实施详情、工作记录、finding 详情、correction 详情都写入 `changes/**`。`implementation_plan.md` v7 起退役（存量为 tombstone，不再读写）。
+`task.md`、`walkthrough.md`、`findings.md`、`corrections.md` 只保留索引。任务清单、实施详情、工作记录、finding 详情、correction 详情都写入 `changes/**`。
 
 `spec.md` 是项目事实文件，不是 artifact-writer 管理对象。技术栈、依赖、配置、目录结构或编码约定变化时，由主 session 用 `Edit` 增量同步已有 `spec.md`。它不含 `ARCHIVE` / `APPROVED` / `VERIFIED` / `REVIEWED` 标记，也不被 `close-chg` 或 `archive-chg` 修改。
 
@@ -91,7 +83,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 | 批量创建一个 change-set 的 N 个 CHG | 先 reserve `--count N`，再一次 operation=`create-chg` batch（共享 `change-set` / `change-set-total` + N 个 `--- CHG i/N ---` 块） |
 | 仅批准 C 阶段，暂不开始 | operation=`update-chg`，target=`CHG-...`，action=`approve`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` |
 | 批准并开始首个任务 | operation=`update-chg`，target=`CHG-...`，action=`approve-and-start`，需要 `approval-confirmed: true` + `approval-source` + `approval-evidence` + `task-id` |
-| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status`，task-id=`T-NNN`；`new-status=[!]` 必须带 `status-reason` / `block-reason` / `pause-reason`；全任务 `[-]` 表示取消 |
+| 暂停/阻塞/跳过/跨 session 时更新任务状态 | operation=`update-chg`，target=`CHG-...`，section=`tasks`，action=`update-status`，task-id=`T-NNN`；`new-status=[!]` 必须带 `status-reason`；全任务 `[-]` 表示取消 |
 | 追加工作记录/实施说明 | operation=`update-chg`，target=`CHG-...`，section=`work-record` / `implementation`，action=`append` |
 | 只记录 V 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`verify` |
 | 只记录 R 阶段暂不归档 | operation=`update-chg`，target=`CHG-...`，action=`review` |
@@ -103,7 +95,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 `action=approve` 只完成 C 阶段，CHG 仍是 ready/deferred，不能据此写项目文件；只有 `approve-and-start` 或将任务恢复为 `[/]` 后才进入 E 阶段。`[!]` 表示 blocked/deferred：允许 Stop，但 Stop 会显示人可见提醒，恢复前不能继续写项目文件。
 
-Legacy v5 项目先按 hook 提示 dry-run/迁移或桥接到 v6，迁移后再在 v6 `changes/**` 写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
+Legacy v5 项目先按 hook 提示 dry-run/迁移或桥接，迁移后再在 `changes/**` 写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
 
 以下内容只由 `artifact-writer` 写入，主 session 通过派遣 agent 完成：
 - `<!-- APPROVED -->` / `<!-- VERIFIED -->` / `<!-- REVIEWED -->` 标记由 `update-chg` / `close-chg` 写入
@@ -323,25 +315,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 
 ## 状态映射
 
-| detail frontmatter `status` | 根索引 checkbox | 说明 |
-|-----------------------------|-----------------|------|
-| `planned` | `[ ]` | 已创建，未批准执行 |
-| `in-progress` | `[/]` | 已批准并开始执行 |
-| `completed` + 未 verified | `[x]` 活跃区 | 执行完成，V 阶段待验证 |
-| `completed` + verified 未 reviewed | `[x]` 活跃区 | 验证通过，R 阶段待审计 |
-| `completed` + verified + reviewed | `[x]` 活跃区 | 验证审计均通过，待归档 |
-| `archived` | `[x]` ARCHIVE 下方 | 已归档 |
-| `cancelled` | `[-]` ARCHIVE 下方 | 取消，不验证 |
-
-任务状态仍使用 `T-NNN`：
-
-| 标记 | 含义 |
-|------|------|
-| `[ ]` | 未开始 |
-| `[/]` | 进行中 |
-| `[x]` | 完成 |
-| `[!]` | 暂停/阻塞 |
-| `[-]` | 跳过 |
+状态→checkbox 完整映射（CHG 六维状态机 + finding 状态机）的权威定义见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §4（本节不再复制）。速记：CHG 级 `planned [ ]` → `in-progress [/]` → `completed [x]`（活跃区，V/R 证据在此阶段折叠）→ `archived [x]`（ARCHIVE 下方）；`cancelled [-]`（ARCHIVE 下方，不验证）。任务级 `T-NNN`：`[ ]` 未开始 / `[/]` 进行中 / `[x]` 完成 / `[!]` 暂停或阻塞 / `[-]` 跳过。
 
 ---
 
@@ -352,7 +326,7 @@ knowledge-link: [[note]] 或 project-scope: project-only
 - `FINDING-YYYY-MM-DD-slug`：详情在 `changes/findings/`。
 - `CORRECTION-YYYY-MM-DD-NN`：由 hook 在派 `record-correction` 前原子预留；frontmatter 稳定 ID；详情文件名和 wikilink 追加 slug，格式为 `changes/corrections/correction-yyyy-mm-dd-nn-slug.md`。先按 helper 命令来源运行 `reserve-artifact-id.js --operation record-correction`，再把 helper 输出的 `reserved-file-prefix` 原样写入 Agent prompt。
 
-编号一律来自 helper 预留；v7 的 `task.md` 只保留索引，无内嵌详情区可供推导。
+编号一律来自 helper 预留；`task.md` 只保留索引，无内嵌详情区可供推导。
 
 ---
 
@@ -392,88 +366,7 @@ node "<SessionStart/PreToolUse 输出的 reserve-artifact-id.js 绝对路径>" -
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation record-correction
 ```
 
-把 helper 输出放在 prompt 顶部：
-
-```text
-派 artifact-writer:
-artifact_dir: <helper 输出>
-operation: create-chg
-execution-context: <helper 输出>
-reserved-id: <helper 输出>
-reserved-file-prefix: <helper 输出（原样含 <slug>.md 占位）>
-title: <标题>
-tasks:
-  - T-001: <任务>
-background: <Why>
-scope: <What>
-technical-decision: <How>
-```
-
-批准：
-
-```text
-派 artifact-writer:
-artifact_dir: <SessionStart hook 提供的 artifact 目录>
-operation: update-chg
-target: CHG-YYYYMMDD-NN
-action: approve
-approval-confirmed: true
-approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
-approval-evidence: <用户原话或已确认方案摘要>
-```
-
-批准并开始：
-
-```text
-派 artifact-writer:
-artifact_dir: <SessionStart hook 提供的 artifact 目录>
-operation: update-chg
-target: CHG-YYYYMMDD-NN
-action: approve-and-start
-task-id: T-001
-approval-confirmed: true
-approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
-approval-evidence: <用户原话或已确认方案摘要>
-```
-
-只记录验证、暂不归档：
-
-```text
-派 artifact-writer:
-artifact_dir: <SessionStart hook 提供的 artifact 目录>
-operation: update-chg
-target: CHG-YYYYMMDD-NN
-action: verify
-verify-summary: <验证通过摘要>
-```
-
-归档：
-
-```text
-派 artifact-writer:
-artifact_dir: <SessionStart hook 提供的 artifact 目录>
-operation: archive-chg
-target: CHG-YYYYMMDD-NN
-walkthrough-summary: <完成摘要>
-```
-
-验证后收尾并归档：
-
-```text
-派 artifact-writer:
-artifact_dir: <SessionStart hook 提供的 artifact 目录>
-operation: close-chg
-target: CHG-YYYYMMDD-NN
-verification-confirmed: true
-complete-open-tasks: true
-review-confirmed: true
-review-source: manual | <所选 review agent 名>
-review-findings: <P0/P1/P2/P3 计数 + 各自处置 wikilink>
-verify-summary: <已运行并阅读的验证结果>
-implementation-notes:
-  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>
-walkthrough-summary: <完成摘要>
-```
+把 helper 输出放在 prompt 顶部，派遣字段按上方「最小字段模板」段组织——create / 批量创建 / 批准 / 批准并开始 / 恢复 / close / verify / review / archive / record 系全量模板见该段，本节不再复制。
 
 连续执行的 CHG 由收尾的 `close-chg` 统一收口多个 T-NNN。`close-chg` 折叠 VERIFIED + REVIEWED + 归档；R 审计本身是主 session 在派 close-chg 前编排的步骤（见 Skill(paceflow:pace-workflow) R 小节）。只要主 session 已运行并读取验证结果，`close-chg complete-open-tasks:true` 就是默认收口方式。
 

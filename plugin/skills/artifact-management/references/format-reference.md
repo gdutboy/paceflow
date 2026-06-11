@@ -1,6 +1,6 @@
 # Artifact 格式参考
 
-本文件是 `artifact-management` 的 v6 速查。完整 schema 以 `agent-references/artifact-writer-spec.md` 为准。
+本文件是 `artifact-management` 的格式速查。完整 schema 以 `agent-references/artifact-writer-spec.md` 为准。
 
 ---
 
@@ -24,9 +24,7 @@
 <!-- ARCHIVE -->
 ```
 
-（v7 起 `implementation_plan.md` 退役——task.md 是唯一 CHG 索引，存量文件由 migrate-v7 改写为 tombstone。）
-
-task.md 只存 wikilink 索引，不写 CHG 三级标题详情段。
+task.md 是唯一 CHG 索引，只存 wikilink 索引行，不写 CHG 三级标题详情段。
 
 ### walkthrough.md
 
@@ -135,9 +133,8 @@ schema-version: "7.0"
 | 错误格式 | 正确做法 |
 |---------|----------|
 | `task.md` 内写 CHG 三级标题详情 | 派 agent 写 `changes/<id>.md` |
-| 写 `implementation_plan.md`（v7 已退役） | 只写 task.md 单索引 |
 | 主 session 直接写 `<!-- APPROVED -->` | 派 `update-chg action=approve` 或 `approve-and-start`，并带 `approval-confirmed/source/evidence` |
 | 主 session 直接写 `<!-- VERIFIED -->` / `verified-date` | 验证通过后派 `close-chg complete-open-tasks:true`；暂不归档时才派 `update-chg action=verify` |
 | `findings.md` 写长详情 | 派 `record-finding` 写 `changes/findings/<id>.md` |
-| `findings.md` 内的旧 correction 区 | v6 使用 `corrections.md` + `changes/corrections/` |
+| `findings.md` 内的旧 correction 区 | 使用 `corrections.md` + `changes/corrections/` |
 | 归档时上移 `<!-- ARCHIVE -->` 包住详情 | 派 `close-chg` 或 `archive-chg` 移动索引行并更新详情 frontmatter |

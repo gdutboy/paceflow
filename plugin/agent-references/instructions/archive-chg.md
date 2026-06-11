@@ -26,19 +26,19 @@ walkthrough-summary: <完成摘要>
 0. 用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 解析 target → 详情文件路径
 2. 文件不存在 → `target-not-found`
-3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed`、`archived` 或 `cancelled`
+3. Read 详情文件 frontmatter，确认 `status` 当前为 `completed`、`archived` 或 `cancelled`
    - 若 `status=archived` → 进入 index-only repair：保留详情 frontmatter 原样，只检查/修复 task.md 归档位置，并补 walkthrough（若缺）
-   - 若 `status=cancelled` → 进入 cancelled archive-only：保留详情 frontmatter 原样（跳过验证检查；但 7.0 帧 `archived-date` 为 null 时填取消归档时刻——取消的归档时刻同样只有此字段承载），校验所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
+   - 若 `status=cancelled` → 进入 cancelled archive-only：保留详情 frontmatter 原样（跳过验证检查；`archived-date` 为 null 时填取消归档时刻——取消的归档时刻同样只有此字段承载），校验所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
    - 若 `status=planned` / `in-progress` → 报告 `format-violation: status not terminal`
-4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
+4. Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
    - 若 `status=cancelled` 但存在非 `[-]` 任务 → 报告 `format-violation: cancelled tasks not all skipped`
-5. **v6 V 阶段强制验证**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
+5. **V 阶段强制验证**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7 VERIFIED 标记规则）：
    - frontmatter `verified-date` 必须为非 null 值
    - 正文必须含 `<!-- VERIFIED -->` 标记
    - 任一缺失 → 报告 `format-violation: not verified`，提示主 session 在验证通过后派 `close-chg`，或先派 `update-chg action=verify`
    - 两者仅一者存在（不一致）→ 报告 `format-violation: verification state inconsistent`，提示派 `update-chg action=verify` 修复
-6. **v6 R 阶段强制审计**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7.1 REVIEWED 标记规则）：
+6. **R 阶段强制审计**（`status=cancelled` 跳过此步骤；详见 `${CLAUDE_PLUGIN_ROOT}/agent-references/artifact-writer-spec.md` §7.1 REVIEWED 标记规则）：
    - frontmatter `reviewed-date` 必须为非 null 值
    - 正文必须含 `<!-- REVIEWED -->` 标记
    - 任一缺失 → 报告 `format-violation: not reviewed`，提示主 session 编排对抗审计后派 `close-chg`，或先派 `update-chg action=review`
@@ -46,10 +46,10 @@ walkthrough-summary: <完成摘要>
 
 ## 操作步骤
 
-> **CRLF / stale-read / Edit 匹配失败处理**：修改 artifact 始终只用 `Edit` / `MultiEdit`。若 `Edit` 因换行符差异匹配失败，直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，立即重新 `Read` 目标 artifact，基于最新内容重试；这通常是并发 session 改了索引快照（属并发改动）。
+> **CRLF / stale-read / Edit 匹配失败处理**：权威定义见 `../artifact-writer-spec.md` §9.1（换行匹配失败直接重试 Edit；stale-read 先重新 Read 再重试）。
 
 0. **根索引结构预检**：
-   - Read `task.md`（v7 起唯一 CHG 索引）
+   - Read `task.md`（唯一 CHG 索引）
    - 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`
    - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`
 1. **更新详情 frontmatter**：
@@ -57,7 +57,7 @@ walkthrough-summary: <完成摘要>
    - 若 status 已是 `archived`：保留详情 frontmatter 原样，继续索引 repair
    - 若 status 是 `cancelled`：保留 `verified-date` / `reviewed-date` 维持 null（取消不验证），但 `archived-date: null` 时填取消归档时刻，继续索引归档
    - 否则 Edit 改 `status` → `archived`
-   - 若 `archived-date: null`，填 `<ISO 8601 datetime>`（v7 帧无 `completed-date` 字段）
+   - 若 `archived-date: null`，填 `<ISO 8601 datetime>`
 2. **task.md 索引行归档**（按"ARCHIVE 内容移动"两步 Edit）：
    - Read task.md
    - 找到 `- [x] [[chg-xxx]] ...` 行；若 status 是 `cancelled`，找到 `- [-] [[chg-xxx]] ...` 行

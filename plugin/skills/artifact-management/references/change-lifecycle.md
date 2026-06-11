@@ -1,6 +1,6 @@
 # 变更 ID 生命周期
 
-本文件是 PACEflow v6 的 CHG/HOTFIX 生命周期速查。完整操作步骤以 `agent-references/instructions/*.md` 为准。
+本文件是 CHG/HOTFIX 生命周期速查。完整操作步骤以 `agent-references/instructions/*.md` 为准；状态↔checkbox 映射的权威定义见 `agent-references/artifact-writer-spec.md` §4。
 
 ---
 
@@ -100,7 +100,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元。大计
 - [ ] `reviewed-date` 非 null
 - [ ] `<!-- REVIEWED -->` 存在且紧邻 `<!-- VERIFIED -->` 下一行
 - [ ] `walkthrough.md` 有当天索引行
-- [ ] 已派 `close-chg`（或已验证后派 `archive-chg`；cancelled 则派 `archive-chg` 做取消归档），根索引不再留在活跃区
+- [ ] 已派 `close-chg`（或已验证后派 `archive-chg`；cancelled 则派 `archive-chg` 做取消归档），根索引已移到 ARCHIVE 下方
 
 Stop hook 会阻止 completed 未 verified、verified 未归档、索引/详情不一致等状态。已 verified 但未 reviewed 时 Stop 同样拦截（warning 级软门，连阻数次后自动降级放行），要求先对本 CHG diff 跑 R 阶段对抗审计并落 `reviewed-date` + `<!-- REVIEWED -->`。
 

@@ -79,11 +79,11 @@ walkthrough-summary: <完成摘要>
 
 ## 操作步骤
 
-> **CRLF / stale-read / Edit 匹配失败处理**：修改 artifact 始终只用 `Edit` / `MultiEdit`。若 `Edit` 因换行符差异匹配失败，直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，说明其他 session 已改过文件快照（属并发改动）；立即重新 `Read` 目标 artifact，基于最新内容重试。
+> **CRLF / stale-read / Edit 匹配失败处理**：权威定义见 `../artifact-writer-spec.md` §9.1（换行匹配失败直接重试 Edit；stale-read 先重新 Read 再重试）。
 
 ### 0. 根索引结构预检
 
-在改详情 status / verified / archived 之前，先 Read `task.md`（v7 起唯一 CHG 索引）：
+在改详情 status / verified / archived 之前，先 Read `task.md`（唯一 CHG 索引）：
 
 - 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`，再继续后续步骤。
 - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`。
@@ -93,7 +93,7 @@ walkthrough-summary: <完成摘要>
 
 - 若 status 为 `planned` / `in-progress` / `completed`：
   - 确保所有 T-NNN 为 `[x]` 或 `[-]`
-  - Edit frontmatter：`status: completed`（v7 帧无 `completed-date` 字段，完成时刻由 `verified-date`/`reviewed-date` 承载）
+  - Edit frontmatter：`status: completed`
   - Read + Edit `task.md`，对应活跃索引 checkbox 改为 `[x]`
 - 若 status 已是 `archived`：
   - 不改 status / archived-date
@@ -116,7 +116,7 @@ walkthrough-summary: <完成摘要>
 ### 2. 写入 V 阶段标记
 
 - 若尚未 verified：
-  - Edit frontmatter：`verified-date: <ISO 8601 datetime>`——只改既有 `verified-date: null` 行的值（7.0 帧该 key 恒在，见 spec §2.1 固定顺序）
+  - Edit frontmatter：`verified-date: <ISO 8601 datetime>`——只改既有 `verified-date: null` 行的值（该 key 恒在，见 spec §2.1 固定顺序）
   - Edit 详情正文：在 `<!-- APPROVED -->` 行之后紧邻插入 `<!-- VERIFIED -->`
   - Edit `## 工作记录` 表格末尾追加：`| <YYYY-MM-DD> | 验证通过：<verify-summary> |`
 - 若已 verified：

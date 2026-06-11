@@ -27,8 +27,8 @@ technical-decision: <How>
 
 - `title`（必填）
 - `tasks`（必填，至少 1 个；推荐格式 `["任务描述", ...]`，artifact-writer 为当前 CHG/HOTFIX 分配 `T-001...`）
-- `type`（默认 change，可选 hotfix——只决定文件名前缀与 hashtag，7.0 帧无 type 字段）
-- `related-finding`（可选，wikilink——写入正文 `## 关联调研` 段，7.0 帧无此字段）
+- `type`（默认 change，可选 hotfix——决定文件名前缀与 hashtag）
+- `related-finding`（可选，wikilink——写入正文 `## 关联调研` 段）
 - `background` / `scope` / `technical-decision`（可选）
 - `execution-context`（可选但推荐，由 reserve helper 输出，例如 `[worktree:: main] [branch:: main]`）
 
@@ -46,7 +46,7 @@ technical-decision: <How>
 2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，保留该 CHG 内编号。任务编号始终是 CHG 局部的，编号来源限于本次输入顺序或输入自带的 `T-NNN`。
 3. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
 4. 按 title 生成描述性 slug（英文 kebab-case），用 reserved-file-prefix 拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 后 Write（详情文件结构见下，slug 规则见下方「文件名 slug」段）
-5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部；按下方"索引插入契约"组织替换片段。v7 起 task.md 是唯一 CHG 索引，不再写 implementation_plan.md）
+5. Read + Edit `task.md` 添加索引行（task.md 是唯一 CHG 索引；活跃任务区按时间倒序插入顶部，按下方"索引插入契约"组织替换片段）
 6. 基于 payload + Edit 成功 + hook 反馈做低成本验证；验证只依据这三项信号即可，仅当 hook 报告本次目标问题时才重新 Read 详情文件或索引文件
 
 资源约束（本操作只触达详情文件与 `task.md` 一个索引）：
@@ -65,7 +65,7 @@ technical-decision: <How>
 
 ## 文件名 slug（对称 finding/correction）
 
-`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。v7 帧无 `id` 字段（ID 由文件名唯一承载）；task.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名用大写 `HOTFIX-YYYYMMDD-NN` 或小写均可，显示简洁且 Obsidian 按文件名解析才不断链——alias 不参与 linkpath 解析，纯 ID wikilink 对带 slug 文件名是死链）。旧无 slug 文件（`chg-yyyymmdd-nn.md`）索引行保持 `[[chg-yyyymmdd-nn]]` 不迁移（全名=纯 ID 天然解析）。
+`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。CHG ID 由文件名唯一承载。task.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名大写 `HOTFIX-YYYYMMDD-NN` 或小写均可；Obsidian 按文件名解析 wikilink，写全名才能解析到详情文件）。无 slug 文件（`chg-yyyymmdd-nn.md`）的索引行直接用 `[[chg-yyyymmdd-nn]]`。
 
 ## 详情文件结构
 
@@ -113,7 +113,7 @@ technical-decision: <How>
 
 目标输出是：每条 CHG/HOTFIX 索引独占一行，且该行从行首 `- [` 开始，位于说明注释之后、`<!-- ARCHIVE -->` 之前。
 
-**插入锚点永远是 `<!-- ARCHIVE -->` 标记本身（插在它前面），绝不是任何已有索引行。** 即使活跃区当前为空、且 `<!-- ARCHIVE -->` 下方已有归档条目（`[x]` / `[-]`），新索引也必须插到 `<!-- ARCHIVE -->` **之前**的活跃区——绝不能插到第一个归档条目之前（那会落进归档区，导致代码写入门判定「无活跃 CHG」并 hard-deny，见 `finding-2026-06-07-create-chg-empty-active-archive-insert`）。因此 Edit 的 `old_string` 必须把 `<!-- ARCHIVE -->` 这一行包含进来作为锚点，而不是去匹配某条已有索引行。batch 创建多块时同理：每个块的索引都要插在 `<!-- ARCHIVE -->` 之前。
+**插入锚点永远是 `<!-- ARCHIVE -->` 标记本身（插在它前面），绝不是任何已有索引行。** 即使活跃区当前为空、且 `<!-- ARCHIVE -->` 下方已有归档条目（`[x]` / `[-]`），新索引也必须插到 `<!-- ARCHIVE -->` **之前**的活跃区——绝不能插到第一个归档条目之前（那会落进归档区，新 CHG 会被当作已归档）。因此 Edit 的 `old_string` 必须把 `<!-- ARCHIVE -->` 这一行包含进来作为锚点，而不是去匹配某条已有索引行。batch 创建多块时同理：每个块的索引都要插在 `<!-- ARCHIVE -->` 之前。
 
 <example>
 Read 到的空活跃区：
@@ -183,7 +183,7 @@ tasks:
 
 处理规范：
 
-1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（索引 wikilink 用全名 + `|` 纯 ID 别名，见「文件名 slug」段），frontmatter 把恒在的 `change-set: null` + `change-set-seq: null` 改为 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记；v7 两 key 恒在，batch 只改值不插行）；再写 task.md 一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
+1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（索引 wikilink 用全名 + `|` 纯 ID 别名，见「文件名 slug」段），frontmatter 把恒在的 `change-set: null` + `change-set-seq: null` 改为 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记；两 key 恒在，只改值不插行）；再写 task.md 一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
 2. `change-set-total` 只是 prompt 字段，用于校验块数，**不写入 frontmatter**；写入 frontmatter 的是 `change-set` + `change-set-seq`（两者均为 §2.1 可空字段，仅 batch 成员写入）。
 3. 全部块成功才报告 `SUCCESS`；中途某块失败 → 报告已成功建了哪些 CHG、失败在第几块及原因，未消费的 reserved-id 保留，由主 session 修正后重派剩余块（已建好的不重复创建）。
 4. hook（`agent-lifecycle-guard`）已对 batch 做确定性前置校验：缺块 / 某块缺 reserved-id·title·tasks / 块数与 `change-set-total` 不符 / 缺 `change-set` / reserved-id 与 hook 预留不匹配，都会在派遣前 DENY；agent 收到的 batch prompt 已通过结构校验。

@@ -49,7 +49,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## knowledge-link 输入归一
 
-用户简化输入与 corrections.md 索引行 meta 的转换规则（7.0 帧不承载这两个字段）：
+用户简化输入与 corrections.md 索引行 meta 的转换规则：
 
 | 用户输入 | 索引行 meta 输出 |
 |---------|-----------------|
@@ -73,7 +73,7 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 
 ## 详情文件结构
 
-**7.0 帧只有 `date` / `schema-version` 两个 key**（spec §2.3 封闭合同）：五个文本字段的完整内容写入正文对应段落（正文单源）；`knowledge-link`/`project-scope` 归一结果写入 corrections.md 索引行 `[knowledge::]` / `[scope::]` meta，不进 frontmatter。
+frontmatter 只含 `date` / `schema-version` 两个 key（spec §2.3 封闭合同）；五个文本字段的完整内容写入正文对应段落（正文单源），`knowledge-link`/`project-scope` 归一结果写入 corrections.md 索引行 `[knowledge::]` / `[scope::]` meta。
 
 ```markdown
 ---
@@ -120,5 +120,5 @@ record-correction 输入字段无显式 `title`，但详情文件 `# Correction:
 - correct-behavior < 20 字符 → `format-violation: correct-behavior too short`
 - knowledge-link 和 project-scope 都缺 → `missing-fields`
 - 派生 title 失败（wrong-behavior 全为标点/无实词）→ 报告 `format-violation: cannot derive title`
-- v6 项目但 corrections.md 缺失 → 用 spec §5.6.5 模板 Write 新建（不算错误）
+- corrections.md 缺失 → 用 spec §5.6.5 模板 Write 新建（不算错误）
 - `$ARTIFACT_DIR/changes` 不存在 → `not-pace-project`

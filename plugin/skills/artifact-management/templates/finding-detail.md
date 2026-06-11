@@ -1,5 +1,7 @@
 # Finding 详情模板
 
+正文段名为推荐结构：`record-finding` 的 `body` 是 opaque payload 原样落盘，段名可按 body 实际内容有所不同。
+
 ```markdown
 ---
 status: open
