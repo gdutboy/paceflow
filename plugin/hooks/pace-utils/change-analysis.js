@@ -225,6 +225,48 @@ module.exports = function createChangeAnalysis(ctx) {
     return v && v.toLowerCase() !== 'null' ? v : null;
   }
 
+  // v7 schema 封闭合同（CHG-20260611-09，spec §3.5）：key 集合恒定（缺失/多余都非法）+
+  // 阶段必填值非 null。字段恒在、未到阶段值为 null（与 hasNonNullVerifiedDate 等既有
+  // 双表示判定兼容，agent 只改值不插行）。仅对 schema-version "7.0" 的帧生效。
+  const SCHEMA_V7_KEYS = {
+    chg: ['status', 'date', 'change-set', 'change-set-seq', 'verified-date', 'reviewed-date', 'archived-date', 'parent-tasks', 'schema-version'],
+    finding: ['status', 'date', 'schema-version'],
+    correction: ['date', 'schema-version'],
+  };
+  const SCHEMA_V7_VALUE_REQUIRED = {
+    chg: { base: ['status', 'date', 'parent-tasks', 'schema-version'], archived: ['archived-date'], cancelled: ['archived-date'] },
+    finding: { base: ['status', 'date', 'schema-version'] },
+    correction: { base: ['date', 'schema-version'] },
+  };
+
+  /**
+   * 校验 7.0 帧是否符合封闭合同。
+   * @param {string} kind - chg | finding | correction（其他值不校验）。
+   * @param {string} status - 帧 status（阶段必填集选择用；correction 无 status 传 ''）。
+   * @param {object} frontmatter - parseFrontmatter 结果（扁平 string map）。
+   * @returns {{ok: boolean, missing: string[], unknown: string[], skipped?: string}}
+   *   missing 含两类：缺 key（标 `(missing-key)` 后缀）与必填值为 null/空。
+   */
+  function validateFrontmatterSchema(kind, status, frontmatter) {
+    const keys = SCHEMA_V7_KEYS[kind];
+    if (!keys) return { ok: true, missing: [], unknown: [] };
+    const fm = frontmatter || {};
+    if (normalizeFrontmatterStatus(fm['schema-version']) !== '7.0') {
+      return { ok: true, missing: [], unknown: [], skipped: 'non-7.0' };
+    }
+    const st = normalizeFrontmatterStatus(status);
+    const spec = SCHEMA_V7_VALUE_REQUIRED[kind];
+    const valueRequired = [...spec.base, ...((spec[st]) || [])];
+    const keySet = new Set(keys);
+    const present = Object.keys(fm);
+    const missing = [
+      ...keys.filter(k => !present.includes(k)).map(k => `${k}(missing-key)`),
+      ...valueRequired.filter(k => present.includes(k) && !frontmatterNullable(fm[k])),
+    ];
+    const unknown = present.filter(k => !keySet.has(k));
+    return { ok: missing.length === 0 && unknown.length === 0, missing, unknown };
+  }
+
   function classifyChange(entry) {
     const detail = entry && entry.detail;
     const fm = (detail && detail.frontmatter) || {};
@@ -370,6 +412,7 @@ module.exports = function createChangeAnalysis(ctx) {
     readChangeDetail,
     extractTaskSection,
     countDetailTasks,
+    validateFrontmatterSchema,
     classifyChange,
     getActiveChangeEntries,
     isChangeApproved,

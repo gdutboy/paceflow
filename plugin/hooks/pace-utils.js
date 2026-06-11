@@ -114,6 +114,7 @@ const {
   normalizeFrontmatterStatus,
   detectLegacyImplFormat,
   parseFrontmatter,
+  validateFrontmatterSchema,
   validateWalkthroughLinks,
   parseChangeIndex,
   readChangeDetail,
@@ -975,7 +976,7 @@ module.exports = {
   // 统计与检查
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
   normalizeFrontmatterStatus,
-  parseFrontmatter, normalizeChangeId, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
+  parseFrontmatter, validateFrontmatterSchema, normalizeChangeId, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, isChangeReviewed, summarizeActiveChanges, findActiveIndexBelowArchive,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, nativePlanMatchesProject, createLogger, logEntry, formatBridgeHint,

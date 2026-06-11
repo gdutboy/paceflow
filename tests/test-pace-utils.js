@@ -3342,6 +3342,63 @@ test('V7A-7: ARTIFACT_FILES 不含 impl_plan 但 PROTECTED_ARTIFACTS 显式保�
 });
 
 // ============================================================
+// V7B. schema 封闭合同——validateFrontmatterSchema（CHG-20260611-09 T-001）
+// ============================================================
+console.log('\n--- V7B: schema 封闭合同 ---');
+
+test('V7B-1: 7.0 CHG 帧完整合同通过（key 恒在 + 阶段必填非 null）', () => {
+  const fm = { status: 'in-progress', date: '2026-06-11', 'change-set': 'null', 'change-set-seq': 'null',
+    'verified-date': 'null', 'reviewed-date': 'null', 'archived-date': 'null',
+    'parent-tasks': '["[[x/task|task]]"]', 'schema-version': '"7.0"' };
+  const r = paceUtils.validateFrontmatterSchema('chg', 'in-progress', fm);
+  assert.ok(r.ok, 'V7B-1: ' + JSON.stringify(r));
+  assert.strictEqual(r.missing.length, 0);
+  assert.strictEqual(r.unknown.length, 0);
+});
+
+test('V7B-2: 缺 key 报 missing-key；archived 缺 archived-date 值报 missing-value', () => {
+  const base = { status: 'archived', date: '2026-06-11', 'change-set': 'null', 'change-set-seq': 'null',
+    'verified-date': '2026-06-11T10:00:00+08:00', 'reviewed-date': '2026-06-11T10:00:00+08:00',
+    'archived-date': 'null', 'parent-tasks': '["[[x/task|task]]"]', 'schema-version': '"7.0"' };
+  const r1 = paceUtils.validateFrontmatterSchema('chg', 'archived', base);
+  assert.ok(!r1.ok && r1.missing.includes('archived-date'), 'V7B-2a: archived 必填 archived-date 非 null');
+  const { date, ...noDate } = base;
+  const r2 = paceUtils.validateFrontmatterSchema('chg', 'archived', { ...noDate, 'archived-date': '2026-06-11T10:00:00+08:00' });
+  assert.ok(!r2.ok && r2.missing.some(m => m.includes('date')), 'V7B-2b: 缺 date key 报 missing');
+});
+
+test('V7B-3: 多余 key 报 unknown（aliases 复发场景）', () => {
+  const fm = { status: 'in-progress', date: '2026-06-11', 'change-set': 'null', 'change-set-seq': 'null',
+    'verified-date': 'null', 'reviewed-date': 'null', 'archived-date': 'null',
+    'parent-tasks': '["[[x/task|task]]"]', 'schema-version': '"7.0"', aliases: '[]' };
+  const r = paceUtils.validateFrontmatterSchema('chg', 'in-progress', fm);
+  assert.ok(!r.ok && r.unknown.includes('aliases'), 'V7B-3: 封闭合同拒绝多余字段');
+});
+
+test('V7B-4: 6.0 文件跳过校验（合同只对 7.0 生效）', () => {
+  const fm = { 'chg-id': 'CHG-20260611-01', status: 'in-progress', aliases: '[]', 'schema-version': '"6.0"' };
+  const r = paceUtils.validateFrontmatterSchema('chg', 'in-progress', fm);
+  assert.ok(r.ok && r.skipped === 'non-7.0', 'V7B-4: 6.0 存量零误报');
+});
+
+test('V7B-5: finding/correction kind 各自合同', () => {
+  const fOk = paceUtils.validateFrontmatterSchema('finding', 'open',
+    { status: 'open', date: '2026-06-11', 'schema-version': '"7.0"' });
+  assert.ok(fOk.ok, 'V7B-5a: finding 三字段合同通过');
+  const fBad = paceUtils.validateFrontmatterSchema('finding', 'open',
+    { status: 'open', date: '2026-06-11', 'schema-version': '"7.0"', impact: 'P1' });
+  assert.ok(!fBad.ok && fBad.unknown.includes('impact'), 'V7B-5b: finding 帧 impact 已删（索引行权威）');
+  const cOk = paceUtils.validateFrontmatterSchema('correction', '',
+    { date: '2026-06-11', 'schema-version': '"7.0"' });
+  assert.ok(cOk.ok, 'V7B-5c: correction 两字段合同通过');
+  const cBad = paceUtils.validateFrontmatterSchema('correction', '',
+    { date: '2026-06-11', 'schema-version': '"7.0"', 'trigger-quote': 'x' });
+  assert.ok(!cBad.ok && cBad.unknown.includes('trigger-quote'), 'V7B-5d: correction 五文本字段降正文单源');
+  const unknownKind = paceUtils.validateFrontmatterSchema('other', '', { 'schema-version': '"7.0"' });
+  assert.ok(unknownKind.ok, 'V7B-5e: 未知 kind 不校验');
+});
+
+// ============================================================
 // 汇总 + 清理
 // ============================================================
 t.cleanup();
