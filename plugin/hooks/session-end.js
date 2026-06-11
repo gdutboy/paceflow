@@ -14,10 +14,13 @@ paceUtils.withStdinParsed((stdin) => {
     const cwd = paceUtils.resolveProjectCwd();
     if (!paceUtils.isPaceProject(cwd) || !stdin.sessionId) return;
     const detached = paceUtils.detachChangeOwnersForSession(cwd, { sessionId: stdin.sessionId });
-    if (detached.length > 0) {
+    // CHG-20260611-03：session 级 pause 随 session 结束自动失效。
+    const pauseCleared = paceUtils.clearSessionPause(cwd, stdin.sessionId);
+    if (detached.length > 0 || pauseCleared) {
       log(paceUtils.logEntry('SessionEnd', 'DETACH_OWNERS', {
         proj: paceUtils.getProjectName(cwd),
-        changes: detached.join(','),
+        changes: detached.join(',') || '-',
+        pause_cleared: pauseCleared ? '1' : '0',
       }));
     }
   } catch (e) {

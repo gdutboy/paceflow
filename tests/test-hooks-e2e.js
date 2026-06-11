@@ -7374,6 +7374,90 @@ test('PAUSE-CLI-2. --session <id> 显式传参可替代 env', () => {
   assert.ok(fs.existsSync(path.join(dir, '.pace', 'paused-sid-explicit')));
 });
 
+function seedSessionPause(dir, sid) {
+  const runtime = path.join(dir, '.pace');
+  fs.mkdirSync(runtime, { recursive: true });
+  fs.writeFileSync(path.join(runtime, `paused-${sid}`), JSON.stringify({ sessionId: sid, timestampMs: Date.now() }) + '\n', 'utf8');
+}
+
+test('PAUSE-E2E-1. paused session 写码不被流程门拦（无活跃 CHG 也放行）', () => {
+  const dir = makeV6Project('pause-code-skip', { indexMark: null, detail: false });
+  seedSessionPause(dir, 'sid-paused');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-paused',
+      tool_name: 'Write',
+      tool_input: { file_path: path.join(dir, 'hello.js'), content: 'console.log(1);\n' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'), 'paused session 写码应放行：' + r.stdout);
+});
+
+test('PAUSE-E2E-2. paused session：Stop 不拦未完成 CHG，输出 paused 提醒', () => {
+  const dir = makeV6Project('pause-stop-skip', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-paused', agentId: 'agent-x', state: 'active',
+    cwd: dir, stateDir: dir, worktree: 'main', branch: 'main',
+  });
+  seedSessionPause(dir, 'sid-paused');
+  const r = runHook('stop.js', { cwd: dir, stdin: { session_id: 'sid-paused' } });
+  assert.strictEqual(r.code, 0, 'paused 的 Stop 不应阻断：' + r.stderr);
+  assert.ok(r.stdout.includes('/paceflow:resume'), '应有 paused 提醒：' + r.stdout);
+});
+
+test('PAUSE-E2E-3. paused 不免 artifact 完整性门：主 session 直接 Edit task.md 仍 deny', () => {
+  const dir = makeV6Project('pause-artifact-gate-keep');
+  seedSessionPause(dir, 'sid-paused');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-paused',
+      tool_name: 'Edit',
+      tool_input: { file_path: path.join(dir, 'task.md'), old_string: 'x', new_string: 'y' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'artifact 完整性门不受 pause 影响：' + r.stdout);
+});
+
+test('PAUSE-E2E-4. 隔离：A paused 不影响 B（B 写码照常被门拦）', () => {
+  const dir = makeV6Project('pause-isolation', { indexMark: null, detail: false });
+  seedSessionPause(dir, 'sid-a');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-b',
+      tool_name: 'Write',
+      tool_input: { file_path: path.join(dir, 'hello.js'), content: 'console.log(1);\n' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'B 不应被 A 的 pause 放行：' + r.stdout);
+});
+
+test('PAUSE-E2E-5. SessionEnd 清除本 session pause 标志', () => {
+  const dir = makeV6Project('pause-session-end-clear');
+  seedSessionPause(dir, 'sid-ending');
+  seedSessionPause(dir, 'sid-other');
+  const r = runHook('session-end.js', { cwd: dir, stdin: { session_id: 'sid-ending' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'paused-sid-ending')), '本 session 标志应清除');
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'paused-sid-other')), '他 session 标志保留');
+});
+
+test('PAUSE-E2E-6. 新 session startup 不清他人 pause 标志（不入 W4 前缀清理）', () => {
+  const dir = makeV6Project('pause-startup-survive');
+  seedSessionPause(dir, 'sid-other');
+  const r = runHook('session-start.js', { cwd: dir, stdin: { session_id: 'sid-new', source: 'startup' }, args: ['--group', 'core'] });
+  assert.strictEqual(r.code, 0);
+  assert.ok(fs.existsSync(path.join(dir, '.pace', 'paused-sid-other')), '他 session 的 pause 标志不应被 startup 清除');
+});
+
 test('B2. plugin.json 声明三个独立命令文件（HOTFIX-20260610-02 拆分）', () => {
   // 插件 command 一律 /<plugin>:<command> 命名空间形态（官方规则，无 alias 机制）；
   // 单文件 paceflow.md 会变成重复的 /paceflow:paceflow，拆三文件得到 /paceflow:enable|disable|status。

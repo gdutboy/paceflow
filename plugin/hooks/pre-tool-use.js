@@ -1394,6 +1394,13 @@ paceUtils.withStdinParsed((stdin) => {
       );
     }
 
+    // CHG-20260611-03：session 级 pause——免除下方流程门（写码门/索引结构/批准门），
+    // 不免上方 artifact 完整性门（marker gate / DENY_DIRECT_ARTIFACT_EDIT / Bash artifact 防护）。
+    if (paceUtils.isSessionPaused(cwd, stdin.sessionId)) {
+      log(projectLogEntry('PreToolUse', 'SKIP_SESSION_PAUSED', { proj, tool: toolName, dur: Date.now() - t0 }));
+      return;
+    }
+
     const ownerStatusById = new Map(actionableEntries.map(e => [e.id, paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId)]));
     const currentOwnedActionableEntries = actionableEntries.filter(e => {
       const ownerStatus = ownerStatusById.get(e.id);

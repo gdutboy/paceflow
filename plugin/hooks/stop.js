@@ -148,6 +148,19 @@ const backgroundTasks = activeBackgroundTasks(stdin);
 const hasBackgroundTasks = backgroundTasks.length > 0;
 log(projectLogEntry('Stop', 'ENTRY', { proj }));
 
+// CHG-20260611-03：session 级 pause——本 session 跳过全部 Stop gate，仅留一条人可见提醒。
+// 仅用户经 /paceflow:pause 启用；artifact 完整性门在 PreToolUse 层保留，不受影响。
+if (paceUtils.isSessionPaused(cwd, stdin.sessionId)) {
+  log(projectLogEntry('Stop', 'SKIP_SESSION_PAUSED', { proj }));
+  emitAllowedStopReminders({
+    deferredReminders: ['本 session 已 pause PACEflow（流程门跳过中）；恢复运行 /paceflow:resume。'],
+    backgroundReminders: [],
+    backgroundTasks: [],
+    t0: Date.now(),
+  });
+  process.exit(0);
+}
+
 // I-opt-4: 直接使用 ARTIFACT_FILES（消除无意义别名）
 const artDir = getArtifactDir(cwd);
 const existing = ARTIFACT_FILES.filter(f => fs.existsSync(path.join(artDir, f)));
