@@ -694,6 +694,28 @@ test('SL-40. 活跃 CHG 摘要 status 渲染去引号（C2 cosmetic 归一）', 
   assert.ok(!l0.includes('status="in-progress"'), '不再渲染原始引号');
 });
 
+// --- 41/42. CHG-20260611-02：sibling 三态进折叠集合 + detached 接手提示 ---
+test('SL-41. isForeignSummary 纳入 sibling 三态（注入折叠面）', () => {
+  const layersMod = require('../plugin/hooks/session-start/layers.js');
+  for (const d of ['sibling-fresh', 'sibling-detached', 'sibling-stale', 'foreign-fresh', 'foreign-stale']) {
+    assert.strictEqual(layersMod.isForeignSummary({ ownerDisposition: d }), true, `${d} 应进折叠集合`);
+  }
+  for (const d of ['current', 'current-worktree', 'unknown', 'closed']) {
+    assert.strictEqual(layersMod.isForeignSummary({ ownerDisposition: d }), false, `${d} 不应折叠`);
+  }
+});
+
+test('SL-42. sibling-detached 摘要行含「原 session 已关闭，可接手」提示', () => {
+  const state = makeActiveState({ activeChangeSummaries: [{
+    id: 'CHG-20260611-91', category: 'running', status: 'in-progress',
+    ownerDisposition: 'sibling-detached', ownerWorktree: 'main', ownerBranch: 'master', ownerState: 'detached',
+    taskCheckbox: '/', implCheckbox: '/', pending: 1, approved: true, verified: false, reviewed: false,
+    path: '/tmp/fixture-project/changes/chg-20260611-91.md', changeSet: '', changeSetSeq: '',
+  }]});
+  const l0 = buildLayers(state, 'startup', paceUtils, 'core').l0.join('\n');
+  assert.ok(l0.includes('原 session 已关闭，可接手'), 'detached 摘要应含接手提示：' + l0);
+});
+
 process.on('exit', () => {
   t.cleanup();
   console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);

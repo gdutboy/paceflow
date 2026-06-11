@@ -676,7 +676,10 @@ function truncateSpec(output) {
 // --- foreign owner 折叠（重构前 349-401）---
 
 function isForeignSummary(summary) {
-  return summary.ownerDisposition === 'foreign-fresh' || summary.ownerDisposition === 'foreign-stale';
+  // CHG-20260611-02：sibling 三态（同目录其他 session 的 CHG）同样折叠任务本体——
+  // B 不该被注入引导执行 A 的任务。
+  const d = String(summary.ownerDisposition || '');
+  return d === 'foreign-fresh' || d === 'foreign-stale' || d.startsWith('sibling-');
 }
 
 function foreignOwnedSummariesForInjection(summaries) {
@@ -696,7 +699,7 @@ function lineReferencesChangeId(line, ids) {
 
 function appendForeignFoldNote(output, count) {
   if (count <= 0) return output;
-  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要。优先回到原 worktree/session；接手必须有用户明确指令与证据。）\n`;
+  return `${output.trimEnd()}\n\n（已折叠 ${count} 个其他 worktree/session owner 的 CHG；见下方 owner 摘要。同目录其他 session 正在执行的 CHG 请勿接手；接手必须有用户明确指令与证据（owner-takeover 三字段）。）\n`;
 }
 
 function foldForeignOwnedArtifactOutput(file, output, summaries) {
@@ -735,6 +738,8 @@ function ownerDisplay(summary) {
   if (summary.ownerWorktree) parts.push(`worktree=${summary.ownerWorktree}`);
   if (summary.ownerBranch) parts.push(`branch=${summary.ownerBranch}`);
   if (summary.ownerState) parts.push(`state=${summary.ownerState}`);
+  // CHG-20260611-02：detached 即原 session 正常关闭，提示可经用户确认接手。
+  if (summary.ownerDisposition === 'sibling-detached') parts.push('（原 session 已关闭，可接手）');
   return parts.join(' ');
 }
 

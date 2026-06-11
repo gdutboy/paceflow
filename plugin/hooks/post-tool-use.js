@@ -208,7 +208,9 @@ paceUtils.withStdinParsed((stdin) => {
       for (const entry of entries) {
         if (!entry.detail || entry.detail.missing) continue;
         const ownerStatus = paceUtils.changeOwnerStatus(cwd, entry.id, stdin.sessionId);
-        if (ownerStatus.disposition === 'foreign-fresh') continue;
+        // CHG-20260611-02：sibling-fresh 对齐 foreign-fresh 跳过催办（B 不收 A 的 CHG 的
+        // verify/review/archive 催办）；sibling-detached/stale 不跳过（B 是潜在接手者）。
+        if (['foreign-fresh', 'sibling-fresh'].includes(ownerStatus.disposition)) continue;
         const status = (entry.detail.frontmatter.status || '').replace(/^["']|["']$/g, '');
         const tasks = countDetailTasks(entry.detail.content);
         if ((entry.taskCheckbox === 'x' || entry.implCheckbox === 'x') && !['completed', 'archived'].includes(status)) {
