@@ -5,7 +5,7 @@ allowed-tools: Bash, Read
 
 # /paceflow:status
 
-用户运行了 `/paceflow:status`。运行 Bash：`node "${CLAUDE_PLUGIN_ROOT}/hooks/set-activation.js" --status --cwd "<当前项目 cwd 绝对路径>"`，把状态原样转述给用户（enabled / disabled / inactive 与对应下一步提示）。
+用户运行了 `/paceflow:status`。运行 Bash：`node "${CLAUDE_PLUGIN_ROOT}/hooks/set-activation.js" --status --cwd "<当前项目 cwd 绝对路径>"`，把状态原样转述给用户（enabled / disabled / inactive、本 session 是否 paused，与对应下一步提示）。
 
 ## 规则
 

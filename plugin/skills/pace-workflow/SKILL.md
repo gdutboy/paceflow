@@ -60,6 +60,8 @@ node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg
 
 被 PACE deny 拦住时，正确做法是走 PACE 流程（建 CHG / approve-and-start），**不是 disable 绕过**。`/paceflow:disable`（即 `set-activation --disable`）停用整个项目的 PACEflow，只在用户**明确表达「不想用 PACE 管理本项目」**时执行；AI **不得为绕过单次 deny 自主 disable**。若判断用户可能想停用但用户未明说，先用 AskUserQuestion 确认，不自作主张。用户主动运行 `/paceflow:disable` 时直接执行，不再额外确认。
 
+`/paceflow:pause`（即 `set-activation --pause`）是 session 级对应物：仅本 session 暂停流程门、artifact 完整性门保留、session 结束自动失效。防滥用约束同上且更严——AI 不得为绕过单次 deny 自行 pause，仅用户明确表达「本 session 不想要 PACEflow 约束」时执行；恢复用 `/paceflow:resume`。
+
 参考：Superpowers/native plan 桥接细节见 [references/superpowers-integration.md](references/superpowers-integration.md)。
 
 ---

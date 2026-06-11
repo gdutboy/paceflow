@@ -10,5 +10,5 @@
   "license": "MIT",
   "keywords": ["workflow", "pace", "hooks", "planning", "artifacts"],
   "agents": ["./agents/artifact-writer.md"],
-  "commands": ["./commands/enable.md", "./commands/disable.md", "./commands/status.md"]
+  "commands": ["./commands/enable.md", "./commands/disable.md", "./commands/status.md", "./commands/pause.md", "./commands/resume.md"]
 }

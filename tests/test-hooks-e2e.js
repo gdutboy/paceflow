@@ -7458,6 +7458,22 @@ test('PAUSE-E2E-6. 新 session startup 不清他人 pause 标志（不入 W4 前
   assert.ok(fs.existsSync(path.join(dir, '.pace', 'paused-sid-other')), '他 session 的 pause 标志不应被 startup 清除');
 });
 
+test('PAUSE-CMD-1. plugin.json 声明 pause/resume 命令 + 命令文件调对应子命令含防滥用约束（CHG-20260611-03）', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+  for (const f of ['./commands/pause.md', './commands/resume.md']) {
+    assert.ok(manifest.commands.includes(f), `commands 应含 ${f}`);
+  }
+  const cmdDir = path.join(__dirname, '..', 'plugin', 'commands');
+  const pause = fs.readFileSync(path.join(cmdDir, 'pause.md'), 'utf8');
+  assert.match(pause, /set-activation\.js" --pause/, 'pause.md 应调 --pause');
+  assert.match(pause, /不得为绕过|绕过单次 deny/, 'pause.md 应含防滥用约束（对称 disable §5.1 不变量 2）');
+  assert.match(pause, /artifact-writer/, 'pause.md 应说明完整性门保留');
+  const resume = fs.readFileSync(path.join(cmdDir, 'resume.md'), 'utf8');
+  assert.match(resume, /set-activation\.js" --resume/, 'resume.md 应调 --resume');
+  const status = fs.readFileSync(path.join(cmdDir, 'status.md'), 'utf8');
+  assert.match(status, /paused|pause/, 'status.md 应提及 paused 状态');
+});
+
 test('B2. plugin.json 声明三个独立命令文件（HOTFIX-20260610-02 拆分）', () => {
   // 插件 command 一律 /<plugin>:<command> 命名空间形态（官方规则，无 alias 机制）；
   // 单文件 paceflow.md 会变成重复的 /paceflow:paceflow，拆三文件得到 /paceflow:enable|disable|status。
