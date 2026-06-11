@@ -105,7 +105,11 @@ function getActiveChangeEntries(cwd) {
 3. 删除 `taskCheckbox !== implCheckbox → 'index-mismatch'` 分支
 4. 所有双 checkbox 条件简化为只看 `taskCheckbox`（**共 7 处**：`'x'` 三处 L266/L269/L279、`'/'` 两处 L272/L280、`'-'` 一处 L277、`'!'` 一处 L278；以 `grep -n implCheckbox` 清零为收口标准，不按计数核对）
 5. base 对象删除 `implCheckbox` 字段
-6. **同 commit 删除误伤分支**：`pre-tool-use.js:1435-1447` 整段（`const mismatched = actionableEntries.filter(e => !e.task || !e.impl);` 起到该分支 `return;` 止）；`post-tool-use.js:189-195`（`const mismatched = ...` 与 `v6 索引不一致` warning 段）
+6. **同 commit 删除误伤分支（三处，缺一即 broken commit）**：
+   - `pre-tool-use.js:1435-1447` 整段（`const mismatched = actionableEntries.filter(e => !e.task || !e.impl);` 起到该分支 `return;` 止）
+   - `pre-tool-use.js:1490` 连续执行判定 `e.taskCheckbox === '/' && e.implCheckbox === '/'` 改 `e.taskCheckbox === '/'`（implCheckbox 恒 undefined 会使条件恒 false → 写码门全堵）
+   - `post-tool-use.js:189-195`（`const mismatched = ...` 与 `v6 索引不一致` warning 段）
+   - 无误伤但同步清理：`pre-tool-use.js:1350`（marks filter(Boolean) 容忍 undefined）、`:1462`（or 条件降级安全）、`:1503`（显示串删 `impl=` 段）——以 `grep -n implCheckbox plugin/hooks/pre-tool-use.js` 清零为收口
 
 - [ ] **Step 4: 跑测试**——V7A 通过；既有用例中构造双索引 fixture 的会继续过（task.md 仍是输入）、断言 index-mismatch/index-missing/INDEX_MISMATCH deny 的会红，**在本 task 内一并改语义**：grep `index-mismatch\|index-missing\|INDEX_MISMATCH\|implCheckbox` 定位 test-pace-utils.js 与 test-hooks-e2e.js 内所有相关断言，按新语义改写（双索引不一致用例改为「仅 task.md 权威」或删除）。
 
@@ -141,6 +145,7 @@ Expected: 全绿（A1 触碰了 hook 文件，e2e 必须在本 task 内过，不
 2. `post-tool-use.js:249` 修复提示文案 `读取 task.md / implementation_plan.md 对应索引` 改 `读取 task.md 对应索引`
 3. `stop.js:216-224`：删除 `index-missing`、`index-mismatch` 两个 reason 分支（A1 后不可达死代码）；`index-malformed`/`active-archived`/`active-cancelled` 分支文案中 `task.md / implementation_plan.md` 改 `task.md`
 4. `collect-state.js:82` 删除 impl_plan readFull 行及其下游格式检查引用
+4b. `change-analysis.js:83` `walkthroughContextForChange` 的 `for (const file of ['task.md', 'implementation_plan.md'])` 改 `['task.md']`；`:150` 文案「应与 task.md / implementation_plan.md 索引行一致」改「应与 task.md 索引行一致」
 5. `layers.js`：54 行 ARTIFACT_BLOCK_PRIORITY 数组移除 `'implementation_plan.md'`；371-372/716 截断特殊处理删除；829-836 格式警告中 impl_plan 分支删除
 6. 全文件 grep 验证：`grep -rn "implementation_plan" plugin/hooks/*.js plugin/hooks/session-start/*.js` 剩余命中只允许：pace-utils.js v5 检测（335-370 区）、constants.js DOC 字符串（PACE_ARTIFACT_ROOT_CONTENT，本 task 不动）、locks.js（A3 处理）、pre-tool-use.js PROTECTED 相关（A3 处理）
 
