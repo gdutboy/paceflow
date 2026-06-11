@@ -375,12 +375,18 @@ schema-version: "7.0"
 
 ## CHG-D：规范单源化——指针化 + 同义收敛 + 测试锁
 
-### Task D1: 指针化（按 spec §4.1 权威位置矩阵）
+### Task D1: 目标态 framing 全发布面重写 + 指针化（按 spec §4.1 权威位置矩阵）
+
+> **范围扩充（2026-06-11 用户裁定，correction-2026-06-11-01）**：CHG-10 文案被用户揪出 19 处「变更态 diff」反模式——且明确这只是肉眼抽样，instruction/spec/SKILL/reference/agent.md 全发布面都含此类问题。D1 第 0 步先做 framing 系统性重写，再做指针化（同批文件一次改完；否则单源化会把错误 framing 固化进权威源）。执行依据：`changes/corrections/correction-2026-06-11-01-release-surface-prompt-diff-not-target-contract.md` + vault `knowledge/claude-prompting-principles.md` §四应用清单。
 
 **Files:**
-- Modify: `plugin/skills/artifact-management/SKILL.md`（内部两份 close-chg 模板 L198+L461 → 保一删一改指针）、`plugin/skills/*/SKILL.md` helper 命令来源 4 步（保 pace-workflow，其余 3 个改指针）、`plugin/skills/artifact-management/references/{format-reference,change-lifecycle}.md` 状态映射表（改指针指 spec §4.1）、各 instruction CRLF/stale-read 块（spec 立单节，instruction 改一行指针）
+- Modify: `plugin/agents/artifact-writer.md`、`plugin/agent-references/artifact-writer-spec.md`、`plugin/agent-references/instructions/*.md`（8 个）、`plugin/skills/*/SKILL.md`（4 个）+ references、`plugin/skills/artifact-management/templates/*.md`、`plugin/commands/*.md`（指针化部分同原计划：SKILL 内两份 close-chg 模板保一删一、helper 命令来源 4 步保 pace-workflow、状态映射表指针指 spec §4.1、CRLF 块 spec 立单节）
 
-- [ ] **Step 1**: 逐项执行矩阵。每项指针格式统一：`> 权威定义见 <文件>（本节不再复制，避免漂移）`+ 保留一行最小语义提示。**本步同时在 spec schema 表下方加机器可读注释行**（D2 的 V7D-3 测试解析用）：`<!-- schema-keys: chg = status,date,change-set,change-set-seq,verified-date,reviewed-date,archived-date,parent-tasks,schema-version | finding = status,date,schema-version | correction = date,schema-version -->`
+- [ ] **Step 0: 目标态 framing 系统性重写**（全发布面，非仅 19 处抽样）：
+  1. 机械扫描定位候选：`grep -rn "不再\|已退役\|无此字段\|无 .* 字段\|tombstone\|7\.0 帧无\|v7 起\|v6\|6\.0 时代\|审计.*裁定" plugin/agents plugin/agent-references plugin/skills plugin/commands`——命中处逐个判定（合法白名单：migrate 工具自身文档、v5 检测语境）
+  2. 逐文件人工通读（grep 抓不到的维护者向机理论述、历史掌故、设计 rationale）
+  3. 重写规则：①impl_plan/已删字段的一切提及删除（封闭列表即完整定义）；②输入字段保留正向去向、删负向尾巴；③机理论述压缩为纯规则一句话，论述本体移 docs/ 维护材料；④顺带按 Fable 5「too prescriptive degrades quality」原则收缩过度规定段落；⑤guard deny 文案激进措辞（CRITICAL/MUST 类）改普通措辞
+- [ ] **Step 1**: 逐项执行指针化矩阵。每项指针格式统一：`> 权威定义见 <文件>`+ 保留一行最小语义提示。**本步同时在 spec schema 表下方加机器可读注释行**（D2 的 V7D-3 测试解析用）：`<!-- schema-keys: chg = status,date,change-set,change-set-seq,verified-date,reviewed-date,archived-date,parent-tasks,schema-version | finding = status,date,schema-version | correction = date,schema-version -->`
 - [ ] **Step 2**: D1 同义收敛——guard 中 `status-reason|block-reason|pause-reason` 三者任一放行的逻辑**不动**（宽容期）；所有文档（SKILL/instruction/spec）统一只写 `status-reason`：grep `block-reason\|pause-reason` 在 plugin/ 下的文档命中全部改 `status-reason`（guard JS 代码命中保留）。
 - [ ] **Step 3**: D2 措辞——`templates/finding-detail.md` 段名注释加「推荐结构，record-finding body 为 opaque payload 时段名可异」。
 - [ ] **Step 4: Commit** `git commit -m "refactor(v7): 规范单源化指针化 + status-reason 收敛（CHG-D T-001）"`
