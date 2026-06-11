@@ -83,19 +83,18 @@ walkthrough-summary: <完成摘要>
 
 ### 0. 根索引结构预检
 
-在改详情 status / verified / archived 之前，先 Read `task.md` 与 `implementation_plan.md`：
+在改详情 status / verified / archived 之前，先 Read `task.md`（v7 起唯一 CHG 索引）：
 
 - 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`，再继续后续步骤。
 - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`。
-- 顺序约束：先在本步确认两个根索引均可归档（标记存在或已补、目标索引行可定位），再进入后续修改详情 `status: archived` 的步骤。
+- 顺序约束：先在本步确认根索引可归档（标记存在或已补、目标索引行可定位），再进入后续修改详情 `status: archived` 的步骤。
 
 ### 1. 完成状态联动
 
 - 若 status 为 `planned` / `in-progress` / `completed`：
   - 确保所有 T-NNN 为 `[x]` 或 `[-]`
-  - Edit frontmatter：`status: completed`
-  - 若 `completed-date: null`，填 `<date '+%Y-%m-%dT%H:%M:%S+08:00'>`
-  - Read + Edit `task.md` 和 `implementation_plan.md`，对应活跃索引 checkbox 改为 `[x]`
+  - Edit frontmatter：`status: completed`（v7 帧无 `completed-date` 字段，完成时刻由 `verified-date`/`reviewed-date` 承载）
+  - Read + Edit `task.md`，对应活跃索引 checkbox 改为 `[x]`
 - 若 status 已是 `archived`：
   - 不改 status / completed-date / archived-date
   - 继续执行索引归档一致性修复（若根索引仍在活跃区）
@@ -146,10 +145,9 @@ walkthrough-summary: <完成摘要>
   - 若活跃区存在目标索引行：删除活跃区该行，并插入到 `<!-- ARCHIVE -->` 下方，checkbox 必须为 `[x]`
   - 若活跃区没有、ARCHIVE 下方已有目标索引行：视为幂等
   - 两处都没有 → `format-violation: index row not found`
-- Read `implementation_plan.md` 同上
 - Read `walkthrough.md`
   - `<slug>` 取目标详情文件名去掉 `.md` 后的完整 stem；wikilink 写 `[[<stem>|<纯ID小写>]]`——带 slug 文件如 `chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix.md` 对应 `[[chg-20260610-06-activation-signal-tighten-dual-entry-lock-fix|chg-20260610-06]]`，旧无 slug 文件如 `chg-20260511-02.md` 对应 `[[chg-20260511-02]]`（stem 来源是文件名，与标题无关）。
-  - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
+  - 从 `task.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
   - 若今日或历史已有包含 `[[<stem>` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加；若该行缺少索引行已有的执行上下文，则 Edit 该行补齐。
   - 否则在 `## 最近工作` 表头与分隔行的下一行**插入为第一条**（最新在顶，prepend）：`| <YYYY-MM-DD> | [[<stem>\|<纯ID小写>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`——**表格内别名分隔符必须写 `\|` 转义**（裸 `|` 会切坏表格列）。没有上下文时省略 `[worktree:: ...] [branch:: ...]`；旧无 slug 文件 stem=纯ID，直接 `[[<stem>]]` 无别名无需转义。
   - 若 `## 最近工作` 下尚无表头，先写入表头 `| 日期 | 完成内容 | 关联变更 |` 与分隔行 `| --- | --- | --- |`，再把上面的表格行作为表头下第一条写入（见 `artifact-writer-spec.md` §5.3）。

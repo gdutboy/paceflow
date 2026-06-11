@@ -27,8 +27,8 @@ walkthrough-summary: <完成摘要>
 1. 解析 target → 详情文件路径
 2. 文件不存在 → `target-not-found`
 3. v6: Read 详情文件 frontmatter，确认 `status` 当前为 `completed`、`archived` 或 `cancelled`
-   - 若 `status=archived` → 进入 index-only repair：保留详情 frontmatter 原样，只检查/修复 task.md 与 implementation_plan.md 归档位置，并补 walkthrough（若缺）
-   - 若 `status=cancelled` → 进入 cancelled archive-only：保留详情 frontmatter 原样（跳过验证检查），校验所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
+   - 若 `status=archived` → 进入 index-only repair：保留详情 frontmatter 原样，只检查/修复 task.md 归档位置，并补 walkthrough（若缺）
+   - 若 `status=cancelled` → 进入 cancelled archive-only：保留详情 frontmatter 原样（跳过验证检查；但 7.0 帧 `archived-date` 为 null 时填取消归档时刻——取消的归档时刻同样只有此字段承载），校验所有任务均为 `[-]`，并把 `[-]` 索引行移动到 ARCHIVE 下方
    - 若 `status=planned` / `in-progress` → 报告 `format-violation: status not terminal`
 4. v6: Read 详情文件 `## 任务清单` 段，确认所有任务都是 `[x]` 或 `[-]`
    - 若有 `[/]` 或 `[ ]` 任务 → 报告 `format-violation: tasks not done` + 列出未完成任务
@@ -49,26 +49,24 @@ walkthrough-summary: <完成摘要>
 > **CRLF / stale-read / Edit 匹配失败处理**：修改 artifact 始终只用 `Edit` / `MultiEdit`。若 `Edit` 因换行符差异匹配失败，直接重试同一个 `Edit`；PreToolUse hook 会在 `Edit` / `MultiEdit` 前将 artifact 的 CRLF 机械归一化为 LF。若工具报 `File has been modified since read`，立即重新 `Read` 目标 artifact，基于最新内容重试；这通常是并发 session 改了索引快照（属并发改动）。
 
 0. **根索引结构预检**：
-   - Read `task.md` 与 `implementation_plan.md`
+   - Read `task.md`（v7 起唯一 CHG 索引）
    - 若缺 `<!-- ARCHIVE -->`，但文件中存在目标 CHG/HOTFIX 活跃索引行：先在文件末尾补一个独占行 `<!-- ARCHIVE -->`
    - 若缺 `<!-- ARCHIVE -->` 且找不到目标索引行：报告 `format-violation: archive marker missing`
 1. **更新详情 frontmatter**：
    - Read changes/chg-xxx.md
    - 若 status 已是 `archived`：保留详情 frontmatter 原样，继续索引 repair
-   - 若 status 是 `cancelled`：保留详情 frontmatter 原样（含 `archived-date` / `verified-date` / `reviewed-date` 维持 null），继续索引归档
+   - 若 status 是 `cancelled`：保留 `verified-date` / `reviewed-date` 维持 null（取消不验证），但 `archived-date: null` 时填取消归档时刻，继续索引归档
    - 否则 Edit 改 `status` → `archived`
-   - 若 `archived-date: null`，填 `<ISO 8601 datetime>`
-   - 若 `completed-date` 仍为 null（兜底场景）→ 填同一 ISO 8601 datetime
+   - 若 `archived-date: null`，填 `<ISO 8601 datetime>`（v7 帧无 `completed-date` 字段）
 2. **task.md 索引行归档**（按"ARCHIVE 内容移动"两步 Edit）：
    - Read task.md
    - 找到 `- [x] [[chg-xxx]] ...` 行；若 status 是 `cancelled`，找到 `- [-] [[chg-xxx]] ...` 行
    - Edit 1：从活跃区删除该行
    - Edit 2：在 `<!-- ARCHIVE -->` 下方插入同一终态索引行（`[x]` 或 `[-]`，其余 wikilink / 标题 / 元数据原样保留）
-3. **implementation_plan.md 索引行归档**：同 task.md
-4. **walkthrough.md 添加完成索引行**：
+3. **walkthrough.md 添加完成索引行**：
    - Read walkthrough.md
    - `<stem>` 取目标详情文件名去掉 `.md` 后的完整 stem；wikilink 写 `[[<stem>|<纯ID小写>]]`——带 slug 文件如 `chg-20260610-06-activation-signal-tighten.md` 对应 `[[chg-20260610-06-activation-signal-tighten|chg-20260610-06]]`，旧无 slug 文件如 `chg-20260511-02.md` 对应 `[[chg-20260511-02]]`（stem 来源是文件名，与标题无关；与 `close-chg.md` §3 / `artifact-writer-spec.md` §5.3 同一规则）。
-   - 从 `task.md` 或 `implementation_plan.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
+   - 从 `task.md` 的目标索引行提取执行上下文（如 `[worktree:: smoke] [branch:: feature-x]`）；若存在，walkthrough 完成内容末尾必须保留同一组上下文。上下文只写 `[worktree:: ...] [branch:: ...]` 这类人读字段；session id、owner state、lock 信息留在 `.pace/`。
    - 若已有包含 `[[<stem>` 且关联变更列为 `<CHG-ID>` 的 walkthrough 行：不重复追加；若该行缺少索引行已有的执行上下文，则 Edit 该行补齐。
    - 在"## 最近工作"表头与分隔行的下一行**插入为第一条**（最新在顶，prepend）：`| <YYYY-MM-DD> | [[<stem>\|<纯ID小写>]] <walkthrough-summary> [worktree:: <name>] [branch:: <branch>] | <CHG-ID> |`——**表格内别名分隔符必须写 `\|` 转义**（裸 `|` 会切坏表格列）。没有上下文时省略 `[worktree:: ...] [branch:: ...]`；旧无 slug 文件 stem=纯ID，直接 `[[<stem>]]` 无别名无需转义。
    - 若 `## 最近工作` 下尚无表头，先写入表头 `| 日期 | 完成内容 | 关联变更 |` 与分隔行 `| --- | --- | --- |`，再把上面的表格行作为表头下第一条写入（见 `artifact-writer-spec.md` §5.3）。

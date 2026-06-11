@@ -46,11 +46,10 @@ technical-decision: <How>
 2. 为当前 CHG/HOTFIX 分配局部任务 ID：按输入顺序生成 `T-001...T-NNN`；若迁移/测试输入已显式带 `T-NNN:`，保留该 CHG 内编号。任务编号始终是 CHG 局部的，编号来源限于本次输入顺序或输入自带的 `T-NNN`。
 3. 写入前生成并自检详情文件 payload（frontmatter 顺序、任务清单、4 段结构）
 4. 按 title 生成描述性 slug（英文 kebab-case），用 reserved-file-prefix 拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 后 Write（详情文件结构见下，slug 规则见下方「文件名 slug」段）
-5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部；按下方"索引插入契约"组织替换片段）
-6. Read + Edit `implementation_plan.md` 添加索引行（变更索引区；按下方"索引插入契约"组织替换片段）
-7. 基于 payload + Edit 成功 + hook 反馈做低成本验证；验证只依据这三项信号即可，仅当 hook 报告本次目标问题时才重新 Read 详情文件或两个索引文件
+5. Read + Edit `task.md` 添加索引行（活跃任务区，按时间倒序插入顶部；按下方"索引插入契约"组织替换片段。v7 起 task.md 是唯一 CHG 索引，不再写 implementation_plan.md）
+6. 基于 payload + Edit 成功 + hook 反馈做低成本验证；验证只依据这三项信号即可，仅当 hook 报告本次目标问题时才重新 Read 详情文件或索引文件
 
-资源约束（本操作只触达详情文件与 `task.md` / `implementation_plan.md` 两个索引）：
+资源约束（本操作只触达详情文件与 `task.md` 一个索引）：
 - 读取范围限于上述目标文件，`walkthrough.md` / `findings.md` / `corrections.md` 与 `~/.claude` 均不在本操作范围内
 - 报告中的体量描述基于已掌握的 payload，无需运行 `wc` / `du` 统计大小或行数
 
@@ -66,7 +65,7 @@ technical-decision: <How>
 
 ## 文件名 slug（对称 finding/correction）
 
-`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。frontmatter `id` 保持**纯 ID 不带 slug**；task.md / implementation_plan.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名用大写 `HOTFIX-YYYYMMDD-NN` 或小写均可，显示简洁且 Obsidian 按文件名解析才不断链——alias 不参与 linkpath 解析，纯 ID wikilink 对带 slug 文件名是死链）。旧无 slug 文件（`chg-yyyymmdd-nn.md`）索引行保持 `[[chg-yyyymmdd-nn]]` 不迁移（全名=纯 ID 天然解析）。
+`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。v7 帧无 `id` 字段（ID 由文件名唯一承载）；task.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名用大写 `HOTFIX-YYYYMMDD-NN` 或小写均可，显示简洁且 Obsidian 按文件名解析才不断链——alias 不参与 linkpath 解析，纯 ID wikilink 对带 slug 文件名是死链）。旧无 slug 文件（`chg-yyyymmdd-nn.md`）索引行保持 `[[chg-yyyymmdd-nn]]` 不迁移（全名=纯 ID 天然解析）。
 
 ## 详情文件结构
 
@@ -156,7 +155,7 @@ new_string:
 
 刚创建的 CHG 默认状态 `[ ]`（planned），详情文件 **不包含** `<!-- APPROVED -->` 标记。
 
-若 prompt 包含 `execution-context`，task.md 与 implementation_plan.md 的索引行必须保留其中的 `[worktree:: ...] [branch:: ...]` 字段，方便多 worktree 并发时人读区分。artifact 索引只写 `[worktree:: ...] [branch:: ...]` 这类人读上下文；session id、lock、owner state 等运行态只写 `.pace/`。
+若 prompt 包含 `execution-context`，task.md 的索引行必须保留其中的 `[worktree:: ...] [branch:: ...]` 字段，方便多 worktree 并发时人读区分。artifact 索引只写 `[worktree:: ...] [branch:: ...]` 这类人读上下文；session id、lock、owner state 等运行态只写 `.pace/`。
 
 ## batch 模式（一次创建多个 CHG）
 
@@ -184,7 +183,7 @@ tasks:
 
 处理规范：
 
-1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（frontmatter `id` 仍纯 ID；索引 wikilink 用全名 + `|` 纯 ID 别名，见「文件名 slug」段），frontmatter 在 `type` 之后插入 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记）；再写 task.md / implementation_plan.md 各一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
+1. 逐块独立执行单 CHG 创建流程：每块按该块 title 生成 slug 写 `changes/<id>-<slug>.md`（索引 wikilink 用全名 + `|` 纯 ID 别名，见「文件名 slug」段），frontmatter 把恒在的 `change-set: null` + `change-set-seq: null` 改为 `change-set: <变更集名>` + `change-set-seq: i/N`（i 取自该块 `--- CHG i/N ---` 标记；v7 两 key 恒在，batch 只改值不插行）；再写 task.md 一行活跃区索引（**每个块的索引都插在 `<!-- ARCHIVE -->` 之前**，见上方「索引插入契约」）。
 2. `change-set-total` 只是 prompt 字段，用于校验块数，**不写入 frontmatter**；写入 frontmatter 的是 `change-set` + `change-set-seq`（两者均为 §2.1 可空字段，仅 batch 成员写入）。
 3. 全部块成功才报告 `SUCCESS`；中途某块失败 → 报告已成功建了哪些 CHG、失败在第几块及原因，未消费的 reserved-id 保留，由主 session 修正后重派剩余块（已建好的不重复创建）。
 4. hook（`agent-lifecycle-guard`）已对 batch 做确定性前置校验：缺块 / 某块缺 reserved-id·title·tasks / 块数与 `change-set-total` 不符 / 缺 `change-set` / reserved-id 与 hook 预留不匹配，都会在派遣前 DENY；agent 收到的 batch prompt 已通过结构校验。
