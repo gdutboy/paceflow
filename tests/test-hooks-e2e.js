@@ -7555,6 +7555,20 @@ test('IN2. 发布面 4 bug 快修断言（CHG-20260611-07）', () => {
   }
 });
 
+test('SOFT-2. manifest 软信号项目注入提问层且文案为 Skill 调用指令（CHG-20260611-05）', () => {
+  // cc-wechat 野外盲区端到端复刻：src/ 布局 + package.json → 提问层注入；
+  // 文案是 AI 行为指令（Skill 调用）而非「引导用户手打命令」（多一轮往返）。
+  const dir = makeTmpDir('soft-manifest-inject');
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'index.ts'), '// code in src\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{}\n', 'utf8');
+  const r = runHook('session-start.js', { cwd: dir, stdin: { session_id: 'sid-soft', source: 'startup' }, args: ['--group', 'core'] });
+  assert.strictEqual(r.code, 0);
+  assert.match(r.stdout, /PACEflow 启用询问/, 'manifest 软信号应注入提问层');
+  assert.match(r.stdout, /Skill\(paceflow:enable\)/, '「启用」选项应为 Skill 调用指令');
+  assert.match(r.stdout, /Skill\(paceflow:disable\)/, '「暂不」选项应为 Skill 调用指令');
+});
+
 // ============================================================
 // CHG-20260611-02：SessionEnd 降级 detached + 心跳 revive
 // ============================================================
