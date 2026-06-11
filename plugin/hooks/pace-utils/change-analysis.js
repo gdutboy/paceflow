@@ -419,6 +419,7 @@ module.exports = function createChangeAnalysis(ctx) {
     extractTaskSection,
     countDetailTasks,
     validateFrontmatterSchema,
+    SCHEMA_V7_KEYS,
     classifyChange,
     getActiveChangeEntries,
     isChangeApproved,
