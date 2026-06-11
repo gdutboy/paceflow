@@ -523,10 +523,12 @@ module.exports = function createLockUtils(ctx) {
     return writeChangeOwner(cwd, changeId, { ...info, state: 'closed', operation: info.operation || current.operation || 'close' });
   }
 
-  function touchChangeOwnersForSession(cwd, info = {}) {
+  // 本 session owner 记录的通用改写骨架：sessionId 匹配 + state 过滤（fromStates 为 null 时仅排除
+  // closed，对齐 touch 旧语义）后，刷新执行上下文与 timestampMs 并应用 patch。touch/detach/revive 共用。
+  function _rewriteChangeOwnersForSession(cwd, info = {}, { fromStates = null, patch = {} } = {}) {
     const sid = ctx.normalizeSessionId(info.sessionId || info.session_id || ctx.currentSessionId());
     if (!sid) return [];
-    const states = Array.isArray(info.states) && info.states.length > 0 ? new Set(info.states) : null;
+    const states = Array.isArray(fromStates) && fromStates.length > 0 ? new Set(fromStates) : null;
     const dir = getChangeOwnerDir(cwd);
     let files = [];
     try { files = fs.readdirSync(dir); } catch(e) { return []; }
@@ -551,6 +553,7 @@ module.exports = function createLockUtils(ctx) {
         executionContext: context.text,
         updatedAt: new Date(now).toISOString(),
         timestampMs: now,
+        ...patch,
       };
       try {
         fs.writeFileSync(fp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
@@ -558,6 +561,24 @@ module.exports = function createLockUtils(ctx) {
       } catch(e) {}
     }
     return touched;
+  }
+
+  function touchChangeOwnersForSession(cwd, info = {}) {
+    const states = Array.isArray(info.states) && info.states.length > 0 ? info.states : null;
+    return _rewriteChangeOwnersForSession(cwd, info, { fromStates: states, patch: {} });
+  }
+
+  // CHG-20260611-02：SessionEnd 把本 session 持有的活跃 owner 记录降级 detached（原 session 已
+  // 正常关闭、CHG 待接手）；crash 不触发 SessionEnd 时由 CHANGE_OWNER_TTL_MS 转 sibling-stale 兜底。
+  // detach 刷新 timestampMs 即 W6 sweep 30min 窗口起点（两段式接手窗口，spec §3.2）。
+  function detachChangeOwnersForSession(cwd, info = {}) {
+    return _rewriteChangeOwnersForSession(cwd, info, { fromStates: ['active', 'closing'], patch: { state: 'detached' } });
+  }
+
+  // CHG-20260611-02：同 session resume 后心跳把本 session 的 detached 记录升回 active——否则
+  // state 停留 detached 会让 sibling 误判「可接手」，在原 session 活跃时抢走 CHG（spec §3.2）。
+  function reviveDetachedChangeOwnersForSession(cwd, info = {}) {
+    return _rewriteChangeOwnersForSession(cwd, info, { fromStates: ['detached'], patch: { state: 'active' } });
   }
 
   function changeOwnerStatus(cwd, changeId, sessionId = ctx.currentSessionId()) {
@@ -809,6 +830,8 @@ module.exports = function createLockUtils(ctx) {
     writeChangeOwner,
     markChangeOwnerClosed,
     touchChangeOwnersForSession,
+    detachChangeOwnersForSession,
+    reviveDetachedChangeOwnersForSession,
     changeOwnerStatus,
     ownerTakeoverConfirmed,
     acquireJsonLock,

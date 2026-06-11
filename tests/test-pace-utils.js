@@ -1756,6 +1756,31 @@ test('SIB-5. 同 session 与 foreign 行为不回归（CHG-20260611-02）', () =
   assert.strictEqual(changeOwnerStatus(dir, 'CHG-20260611-95', 'sid-b').disposition, 'foreign-fresh');
 });
 
+test('SIB-6. detachChangeOwnersForSession 只降级本 session 非 closed 记录（CHG-20260611-02）', () => {
+  const dir = makeTmpDir('sibling-detach');
+  const mine = writeChangeOwner(dir, 'CHG-20260611-96', { sessionId: 'sid-a', operation: 'update-chg', state: 'active' });
+  const closed = writeChangeOwner(dir, 'CHG-20260611-97', { sessionId: 'sid-a', operation: 'close-chg', state: 'closed' });
+  const others = writeChangeOwner(dir, 'CHG-20260611-98', { sessionId: 'sid-b', operation: 'update-chg', state: 'active' });
+  const before = JSON.parse(fs.readFileSync(mine.path, 'utf8')).timestampMs;
+  const detached = paceUtils.detachChangeOwnersForSession(dir, { sessionId: 'sid-a' });
+  assert.deepStrictEqual(detached, ['CHG-20260611-96'], '只降级本 session 的活跃记录');
+  const after = JSON.parse(fs.readFileSync(mine.path, 'utf8'));
+  assert.strictEqual(after.state, 'detached');
+  assert.ok(after.timestampMs >= before, 'detach 刷新 timestampMs（W6 sweep 30min 窗口起点）');
+  assert.strictEqual(JSON.parse(fs.readFileSync(closed.path, 'utf8')).state, 'closed', 'closed 不被 detach');
+  assert.strictEqual(JSON.parse(fs.readFileSync(others.path, 'utf8')).state, 'active', '他 session 不动');
+});
+
+test('SIB-7. reviveDetachedChangeOwnersForSession 把本 session detached 升回 active', () => {
+  const dir = makeTmpDir('sibling-revive');
+  const mine = writeChangeOwner(dir, 'CHG-20260611-96', { sessionId: 'sid-a', operation: 'update-chg', state: 'detached' });
+  const others = writeChangeOwner(dir, 'CHG-20260611-97', { sessionId: 'sid-b', operation: 'update-chg', state: 'detached' });
+  const revived = paceUtils.reviveDetachedChangeOwnersForSession(dir, { sessionId: 'sid-a' });
+  assert.deepStrictEqual(revived, ['CHG-20260611-96'], '只升级本 session 的 detached 记录');
+  assert.strictEqual(JSON.parse(fs.readFileSync(mine.path, 'utf8')).state, 'active');
+  assert.strictEqual(JSON.parse(fs.readFileSync(others.path, 'utf8')).state, 'detached', '他 session 不动');
+});
+
 test('artifact-root=vault 且 vault env 缺失时返回配置错误', () => {
   const dir = makeTmpDir('vault-choice-missing-env-utils');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });

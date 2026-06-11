@@ -161,6 +161,8 @@ const {
   writeChangeOwner,
   markChangeOwnerClosed,
   touchChangeOwnersForSession,
+  detachChangeOwnersForSession,
+  reviveDetachedChangeOwnersForSession,
   changeOwnerStatus,
   ownerTakeoverConfirmed,
   acquireJsonLock,
@@ -952,7 +954,7 @@ module.exports = {
   markIndexChangesTouchedAndMaybeRelease, readArtifactIndexTransaction, formatArtifactResourceLock,
   reserveArtifactId, reserveArtifactIds, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservation, clearArtifactReservationForRel, reservationMatchesArtifactRel,
   isArtifactRuntimeControlPath, operationFromAgentPrompt, changeIdFromAgentPrompt, explicitChangeTargetFromAgentPrompt,
-  getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, touchChangeOwnersForSession, changeOwnerStatus, ownerTakeoverConfirmed,
+  getChangeOwnerPath, readChangeOwner, writeChangeOwner, markChangeOwnerClosed, touchChangeOwnersForSession, detachChangeOwnersForSession, reviveDetachedChangeOwnersForSession, changeOwnerStatus, ownerTakeoverConfirmed,
   artifactRootConfigError, artifactRootChoiceNeeded, artifactRootChoiceMessage, artifactDirRuntimeHint, appendArtifactDirHint, ensureProjectInfra,
   // 文件读写
   readActive, readFull, checkArchiveFormat, createTemplates, normalizeLineEndings, hasNonNullVerifiedDate, hasNonNullReviewedDate,
