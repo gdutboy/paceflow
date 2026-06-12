@@ -30,6 +30,7 @@ const {
   validateFrontmatterSchema,
   SCHEMA_V7_KEYS,
   ARCHIVE_MARKER,
+  ARCHIVE_PATTERN,
 } = paceUtils;
 
 // 6.0 → 7.0 删除字段清单（按帧 kind）
@@ -58,18 +59,35 @@ const HYGIENE_STRAY_DOCS = [
 ];
 
 function parseArgs(argv) {
-  const args = { cwd: '', dryRun: false, hygiene: false };
+  const args = { cwd: '', dryRun: false, hygiene: false, restore: '' };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--cwd') args.cwd = argv[++i] || '';
     else if (argv[i] === '--dry-run') args.dryRun = true;
     else if (argv[i] === '--hygiene') args.hygiene = true;
+    else if (argv[i] === '--restore') args.restore = argv[++i] || '';
   }
   if (!args.cwd) {
-    console.error('用法：node migrate-v7.js --cwd <项目目录> [--dry-run] [--hygiene]');
+    console.error('用法：node migrate-v7.js --cwd <项目目录> [--dry-run] [--hygiene] [--restore <备份目录>]');
     process.exit(1);
   }
   args.cwd = path.resolve(args.cwd);
   return args;
+}
+
+/** 从备份目录整体还原被改文件（spec §6.4：执行失败可整体还原） */
+function restoreFromBackup(backupDir, artDir) {
+  const restored = [];
+  const walk = (d) => {
+    for (const name of fs.readdirSync(d)) {
+      const p = path.join(d, name);
+      if (fs.statSync(p).isDirectory()) { walk(p); continue; }
+      const rel = path.relative(backupDir, p);
+      fs.writeFileSync(path.join(artDir, rel), fs.readFileSync(p));
+      restored.push(rel);
+    }
+  };
+  walk(backupDir);
+  return restored;
 }
 
 function kindForDetailFile(relPath) {
@@ -153,19 +171,23 @@ function rewriteFrontmatter(content, kind, backfillDate) {
   return { content: rebuilt + content.slice(m[0].length), dropped, added, backfill };
 }
 
-/** task.md：删除「## v5 历史归档」段到文件尾 */
+/** task.md：删除「## v5 历史归档」段（行首锚定，防正文提及同字样误切）到文件尾 */
 function stripV5Tail(content) {
-  const idx = content.indexOf('## v5 历史归档');
-  if (idx === -1) return content;
-  return content.slice(0, idx).replace(/\n+$/, '\n');
+  const m = content.match(/^## v5 历史归档\s*$/m);
+  if (!m) return content;
+  return content.slice(0, m.index).replace(/\n+$/, '\n');
 }
 
-/** findings.md：活跃区 [x]/[-] 索引行移 ARCHIVE 下方（保相对顺序）+ 表头补 [change::] */
+/**
+ * findings.md：活跃区 [x]/[-] 索引行移 ARCHIVE 下方（保相对顺序）+ 表头补 [change::]。
+ * 边界定位必须用 ARCHIVE_PATTERN（独占行锚定，与 readActive 同判据）——finding summary
+ * 文本可能含字面 <!-- ARCHIVE -->，indexOf 会误切在行内文本上把索引行切碎。
+ */
 function reorderFindingsIndex(content) {
-  const markerIdx = content.indexOf(ARCHIVE_MARKER);
-  if (markerIdx === -1) return content;
-  let head = content.slice(0, markerIdx);
-  let tail = content.slice(markerIdx);
+  const m = content.match(ARCHIVE_PATTERN);
+  if (!m) return content;
+  let head = content.slice(0, m.index);
+  let tail = content.slice(m.index);
   const moved = [];
   head = head.split('\n').filter((line) => {
     if (/^- \[[x-]\] \[\[finding-/.test(line)) { moved.push(line); return false; }
@@ -175,8 +197,9 @@ function reorderFindingsIndex(content) {
     head = head.replace(/<!-- 格式：[^>]*-->/, FINDINGS_HEADER_COMMENT);
   }
   if (moved.length > 0) {
-    // slice 拼接（不走 String.replace——moved 行含 $ 时会被当替换模式损坏）
-    const at = tail.indexOf(ARCHIVE_MARKER) + ARCHIVE_MARKER.length;
+    // slice 拼接（不走 String.replace——moved 行含 $ 时会被当替换模式损坏）；
+    // tail 以独占行 marker 开头，插入点在 marker 行文本之后。
+    const at = m[0].length;
     tail = `${tail.slice(0, at)}\n\n${moved.join('\n')}${tail.slice(at)}`;
   }
   return head + tail;
@@ -215,6 +238,17 @@ function main() {
   if (!fs.existsSync(path.join(artDir, 'changes'))) {
     console.error(`目标不是 PACEflow 项目（无 changes/）：${artDir}`);
     process.exit(1);
+  }
+
+  if (args.restore) {
+    const backupDir = path.resolve(args.restore);
+    if (!fs.existsSync(backupDir)) {
+      console.error(`备份目录不存在：${backupDir}`);
+      process.exit(1);
+    }
+    const restored = restoreFromBackup(backupDir, artDir);
+    console.log(`已从备份还原 ${restored.length} 个文件：\n  ${restored.join('\n  ')}`);
+    return;
   }
 
   const todayDate = new Date();
