@@ -3181,6 +3181,45 @@ test('spec.md project-summary 与 knowledge summary 语义分离', () => {
   assert.ok(knowledge.includes('项目元描述'));
 });
 
+test('V7F-1: detectNewerSchemaData——8.0 活跃帧检出，7.0/6.0 不误报', () => {
+  const dir = makeTmpDir('newer-schema-active');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'task.md'),
+    '# 项目任务追踪\n\n## 活跃任务\n\n- [/] [[chg-20270101-01|chg-20270101-01]] 未来变更 #change\n\n<!-- ARCHIVE -->\n');
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20270101-01.md'),
+    '---\nstatus: in-progress\nschema-version: "8.0"\n---\n\n## 任务清单\n\n- [/] T-001 x\n');
+  const r = paceUtils.detectNewerSchemaData(dir);
+  assert.strictEqual(r.detected, true, '8.0 帧（引号形态）应检出');
+  assert.strictEqual(r.maxVersion, 8);
+  // 7.0 帧不误报
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20270101-01.md'),
+    '---\nstatus: in-progress\nschema-version: "7.0"\n---\n\n## 任务清单\n\n- [/] T-001 x\n');
+  assert.strictEqual(paceUtils.detectNewerSchemaData(dir).detected, false, '7.0 帧不触发');
+  // 6.0 存量不误报
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20270101-01.md'),
+    '---\nstatus: in-progress\nschema-version: 6.0\n---\n\n## 任务清单\n\n- [/] T-001 x\n');
+  assert.strictEqual(paceUtils.detectNewerSchemaData(dir).detected, false, '6.0 帧不触发');
+});
+
+test('V7F-2: detectNewerSchemaData——活跃区为空时补扫 changes/ 最近详情帧（未来索引格式不可解析场景）', () => {
+  const dir = makeTmpDir('newer-schema-fallback');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  // 活跃区空（v8 可能改了索引行格式，v7 解析不出 entries）+ changes/ 内 8.0 帧
+  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n\n<!-- ARCHIVE -->\n');
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20270101-01-future.md'),
+    '---\nstatus: in-progress\nschema-version: 8.0\n---\n\n正文\n');
+  const r = paceUtils.detectNewerSchemaData(dir);
+  assert.strictEqual(r.detected, true, '活跃区空时应补扫 changes/ 检出 8.0');
+  // 全 7.0 时补扫不误报
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20270101-01-future.md'),
+    '---\nstatus: archived\nschema-version: "7.0"\n---\n\n正文\n');
+  assert.strictEqual(paceUtils.detectNewerSchemaData(dir).detected, false);
+  // changes/ 不存在 → fail-open false
+  const dir2 = makeTmpDir('newer-schema-nochanges');
+  fs.writeFileSync(path.join(dir2, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n\n<!-- ARCHIVE -->\n');
+  assert.strictEqual(paceUtils.detectNewerSchemaData(dir2).detected, false);
+});
+
 test('CHG-20260612-02: v5 迁移面退役锁——batch-archive-v5 与 MIGRATABLE 常量不得回潮', () => {
   const repoRoot = path.join(__dirname, '..');
   assert.ok(!fs.existsSync(path.join(repoRoot, 'plugin', 'migrate', 'batch-archive-v5.js')), 'batch-archive-v5.js 已退役，不应随发布面 ship');

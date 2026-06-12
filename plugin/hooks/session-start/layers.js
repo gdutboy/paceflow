@@ -850,6 +850,12 @@ function renderCrossSessionAndExecution(state, paceUtils) {
       pushLog(state, logEntry('SessionStart', 'V7_MIGRATE_HINT', { cwd: state.cwd }));
     }
 
+    // 前向兼容提示（CHG-20260612-04）：数据 schema 比本插件新，流程门让位中。
+    if (state.newerSchemaData) {
+      blocks.push(`\n=== 插件升级提示 ===\n检测到 artifact schema ${state.newerSchemaData.maxVersion} 高于当前插件支持的 7.0：流程门已让位（不拦截），但本插件无法正确管理该数据。请升级 PACEflow 插件并 reload 全部 session（含其他 worktree）。\n\n`);
+      pushLog(state, logEntry('SessionStart', 'NEWER_SCHEMA_HINT', { cwd: state.cwd }));
+    }
+
     // 执行上下文（重构前 708-753）。
     const currentCategories = new Set(['running']);
     const currentSessionSummaries = state.activeChangeSummaries.filter(s => !isForeignSummary(s));

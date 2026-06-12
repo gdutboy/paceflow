@@ -146,6 +146,14 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     unmigratedV6Layout = { script: paceUtils.MIGRATE_V7_SCRIPT, cwd };
   }
 
+  // 前向兼容提示（CHG-20260612-04）：数据 schema 比本插件新——流程门已让位，
+  // session 开局即提示升级，避免用户在软化模式下长期工作而不自知。
+  let newerSchemaData = null;
+  if (isCore && paceSignal === 'artifact') {
+    const ns = paceUtils.detectNewerSchemaData(cwd);
+    if (ns.detected) newerSchemaData = { maxVersion: ns.maxVersion };
+  }
+
   return {
     cwd,
     eventType,
@@ -176,6 +184,7 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
     softSignal,
     // v7 未迁移布局提示（CHG-20260611-12 T-002）
     unmigratedV6Layout,
+    newerSchemaData,
     // git
     git,
     // 相关讨论

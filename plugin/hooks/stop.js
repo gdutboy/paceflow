@@ -180,6 +180,17 @@ if (paceSignal === 'artifact') {
   // sort 只重排展示顺序、不改集合；Stop 的 warnings/deny/pass 与 completionPending/foreignOwnedIds 累加均与顺序无关，行为等价。
   classifiedEntries.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
+  // 前向兼容 guard（CHG-20260612-04）：数据 schema 比本 hook 新 → Stop 的全部 PACE 检查
+  // 让位（exit 0 + 升级提示），与 pre-tool-use 流程门让位对称——防 v7→v8 升级窗口 brick 重演。
+  {
+    const newerSchema = paceUtils.detectNewerSchemaData(cwd, classifiedEntries);
+    if (newerSchema.detected) {
+      process.stdout.write(JSON.stringify({ systemMessage: `PACEflow: 检测到 artifact schema ${newerSchema.maxVersion} 高于当前插件支持的 7.0，Stop 检查已让位。请升级 PACEflow 插件并 reload 全部 session（含其他 worktree）。` }) + '\n');
+      log(projectLogEntry('Stop', 'PASS_NEWER_SCHEMA', { proj, max_version: newerSchema.maxVersion }));
+      process.exit(0);
+    }
+  }
+
   let completionPending = 0;
   let requiresWalkthrough = false;
   // CS-FOREIGN: 记录 foreign-owner 成员，供下方 change-set 成组提醒跳过（与本循环 foreign 跳过对称）。

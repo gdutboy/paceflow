@@ -7883,6 +7883,53 @@ test('D1. hardDeny 路径（teammate 删 artifact）同样带逃生口', () => {
 // ============================================================
 // V7E: 未迁移布局检测与提示（CHG-20260611-12 T-002）
 // ============================================================
+console.log('\n--- V7F: schema 前向兼容 guard（newer-data 软化）---');
+
+// 8.0 帧 fixture：planned 未批准——7.0 下写码本该被 C 门 deny，正是「让位」的判别场景
+const futureDetail = [
+  '---', 'status: planned', 'date: 2026-07-01', 'change-set: null', 'change-set-seq: null',
+  'verified-date: null', 'reviewed-date: null', 'archived-date: null', 'parent-tasks: "[[t]]"',
+  'schema-version: "8.0"', '---', '', '## 任务清单', '', '- [ ] T-001 future', '',
+].join('\n');
+
+test('V7F-3. 8.0 帧项目写码 → 流程门让位（放行 + 升级提示），7.0 同形态仍 deny', () => {
+  const dir = makeV6Project('v7f-newer-soften', { indexMark: '[ ]', implIndex: '', detail: futureDetail });
+  const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir), env: { PACE_VAULT_PATH: '' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'), '8.0 数据下流程门必须让位');
+  assert.ok(r.stdout.includes('高于当前插件支持的 7.0'), '应注入升级提示');
+  assert.ok(r.stdout.includes('reload 全部 session'), '提示应含 reload 指引');
+  // 对照：同形态 7.0 帧（planned 未批准）写码仍走 C 门 deny——guard 不污染既有行为
+  const ctl = makeV6Project('v7f-control-70', { indexMark: '[ ]', implIndex: '', detail: futureDetail.replace('schema-version: "8.0"', 'schema-version: "7.0"') });
+  const rc = runHook('pre-tool-use.js', { cwd: ctl, stdin: codeEditStdin(ctl), env: { PACE_VAULT_PATH: '' } });
+  assert.ok(rc.stdout.includes('"deny"'), '7.0 帧同形态仍被既有流程门拦截');
+});
+
+test('V7F-4. 8.0 帧项目 Stop → 让位（exit 0 + systemMessage 升级提示）', () => {
+  const dir = makeV6Project('v7f-newer-stop', { indexMark: '[/]', implIndex: '', detail: futureDetail.replace('status: planned', 'status: in-progress') });
+  const r = runHook('stop.js', { cwd: dir, stdin: { stop_hook_active: false }, env: { PACE_VAULT_PATH: '' } });
+  assert.strictEqual(r.code, 0, '8.0 数据下 Stop 不阻断');
+  assert.ok(r.stdout.includes('高于当前插件支持的 7.0'), 'systemMessage 应含升级提示');
+});
+
+test('V7F-5. 8.0 帧项目主 session 直写 task.md → 写保护不软化（仍 deny）', () => {
+  const dir = makeV6Project('v7f-newer-protect', { indexMark: '[ ]', implIndex: '', detail: futureDetail });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-v7f', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'task.md'), old_string: 'a', new_string: 'b' } },
+    env: { PACE_VAULT_PATH: '' },
+  });
+  assert.ok(r.stdout.includes('"deny"'), 'artifact 写保护语义与 schema 版本无关，不让位');
+});
+
+test('V7F-6. 8.0 帧项目 SessionStart core → 注入插件升级提示段', () => {
+  const dir = makeV6Project('v7f-newer-sessionstart', { indexMark: '[ ]', implIndex: '', detail: futureDetail });
+  const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, env: { PACE_VAULT_PATH: '' } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('插件升级提示'), '应注入升级提示段');
+  assert.ok(r.stdout.includes('高于当前插件支持的 7.0'));
+});
+
 console.log('\n--- V7E: 未迁移布局提示 ---');
 
 test('V7E-9. impl_plan 含活跃 CHG 索引行 → SessionStart 注入 migrate-v7 完整命令', () => {

@@ -115,6 +115,7 @@ const {
   parseFrontmatter,
   validateFrontmatterSchema,
   SCHEMA_V7_KEYS,
+  detectNewerSchemaData,
   validateWalkthroughLinks,
   parseChangeIndex,
   readChangeDetail,
@@ -961,7 +962,7 @@ module.exports = {
   // 统计与检查
   countByStatus, extractOpenKeys, normalizeFindingKey, detectLegacyImplFormat,
   normalizeFrontmatterStatus,
-  parseFrontmatter, validateFrontmatterSchema, SCHEMA_V7_KEYS, normalizeChangeId, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
+  parseFrontmatter, validateFrontmatterSchema, SCHEMA_V7_KEYS, detectNewerSchemaData, normalizeChangeId, detailPathForId, slugForChangeId, validateWalkthroughLinks, parseChangeIndex, readChangeDetail, extractTaskSection,
   countDetailTasks, classifyChange, getActiveChangeEntries, isChangeApproved, isChangeVerified, isChangeReviewed, summarizeActiveChanges, findActiveIndexBelowArchive,
   // 外部集成
   scanRelatedNotes, getNativePlanPath, nativePlanMatchesProject, createLogger, logEntry, formatBridgeHint,

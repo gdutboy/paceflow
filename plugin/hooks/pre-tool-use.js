@@ -1391,6 +1391,19 @@ paceUtils.withStdinParsed((stdin) => {
       return;
     }
 
+    // 前向兼容 guard（CHG-20260612-04）：数据 schema 比本 hook 新 → 下方全部流程门
+    // （索引结构/批准/执行/无活跃 CHG）让位为软提示——hook 对看不懂的数据没有裁判权。
+    // 位置在 artifact 完整性门（marker / 直写 / pause）之后：写保护语义与 schema 版本无关，不软化。
+    {
+      const newerSchema = paceUtils.detectNewerSchemaData(cwd, activeEntriesAll);
+      if (newerSchema.detected) {
+        const ctx = `检测到 artifact schema ${newerSchema.maxVersion} 高于当前插件支持的 7.0，流程门已让位（本次操作放行）。本插件无法正确管理该数据：请升级 PACEflow 插件，并 reload 全部 session（含其他 worktree）。`;
+        process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: ctx } }));
+        log(projectLogEntry('PreToolUse', `PASS_NEWER_SCHEMA${teammateTag}`, { proj, tool: toolName, max_version: newerSchema.maxVersion, dur: Date.now() - t0 }));
+        return;
+      }
+    }
+
     const ownerStatusById = new Map(actionableEntries.map(e => [e.id, paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId)]));
     const currentOwnedActionableEntries = actionableEntries.filter(e => {
       const ownerStatus = ownerStatusById.get(e.id);

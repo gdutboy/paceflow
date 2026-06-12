@@ -267,6 +267,47 @@ module.exports = function createChangeAnalysis(ctx) {
     return { ok: missing.length === 0 && unknown.length === 0, missing, unknown };
   }
 
+  // 前向兼容 guard（CHG-20260612-04）：数据 schema 比 hook 认识的新时，hook 对该数据的
+  // 一切流程判断（索引解析/状态机/必填集）都不可信——流程门必须让位为软提示，否则就是
+  // v6→v7 升级窗口 brick 的重演（旧 hook 对新数据 deny 级锁死，实测见 README §v6 用户升级到 v7）。
+  const SCHEMA_KNOWN_MAX = 7.0;
+
+  /**
+   * 检测项目数据中是否存在高于当前 hook 支持上限（7.0）的 schema 帧。
+   * 性能形态：优先复用调用方已加载的活跃 entries（零额外 IO）；仅当活跃 entries 为空时
+   * 补扫 changes/ 顶层最近 10 个详情帧头部——未来版本可能改索引行格式致活跃解析为空，
+   * 此时唯有直接看帧才能发现 newer 数据。读失败一律视为非 newer（fail-open 到既有门控）。
+   * @param {string} cwd - 项目目录
+   * @param {Array} [entries] - 调用方已加载的活跃 entries（含 detail.frontmatter），省略则自行加载
+   * @returns {{detected: boolean, maxVersion: number|null}}
+   */
+  function detectNewerSchemaData(cwd, entries) {
+    try {
+      const list = Array.isArray(entries) ? entries : getActiveChangeEntries(cwd);
+      let maxV = 0;
+      for (const e of list) {
+        const raw = e && e.detail && e.detail.frontmatter && e.detail.frontmatter['schema-version'];
+        const v = parseFloat(normalizeFrontmatterStatus(raw));
+        if (v > maxV) maxV = v;
+      }
+      if (list.length === 0) {
+        const dir = path.join(ctx.getArtifactDir(cwd), 'changes');
+        const files = fs.readdirSync(dir)
+          .filter(f => /^(chg|hotfix)-/i.test(f) && f.endsWith('.md'))
+          .sort().reverse().slice(0, 10);
+        for (const f of files) {
+          const head = fs.readFileSync(path.join(dir, f), 'utf8').slice(0, 400);
+          const m = head.match(/^schema-version:\s*(.+?)\s*$/m);
+          const v = m ? parseFloat(String(m[1]).replace(/['"]/g, '')) : 0;
+          if (v > maxV) maxV = v;
+        }
+      }
+      return { detected: maxV > SCHEMA_KNOWN_MAX, maxVersion: maxV > SCHEMA_KNOWN_MAX ? maxV : null };
+    } catch (e) {
+      return { detected: false, maxVersion: null };
+    }
+  }
+
   function classifyChange(entry) {
     const detail = entry && entry.detail;
     const fm = (detail && detail.frontmatter) || {};
@@ -420,6 +461,7 @@ module.exports = function createChangeAnalysis(ctx) {
     countDetailTasks,
     validateFrontmatterSchema,
     SCHEMA_V7_KEYS,
+    detectNewerSchemaData,
     classifyChange,
     getActiveChangeEntries,
     isChangeApproved,
