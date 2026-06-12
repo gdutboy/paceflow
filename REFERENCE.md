@@ -33,7 +33,7 @@ PACEflow 的运行边界使用以下术语：
 |------|------|
 | Current CWD | Claude Code 当前打开目录，可能是 Project Root，也可能是其子目录 |
 | Project Root | PACEflow 管理的项目边界；`.pace` 运行态、CHG owner、Stop 检查和 `local` artifact root 归属这里 |
-| Artifact Root | `spec.md / task.md / implementation_plan.md / walkthrough.md / findings.md / corrections.md / changes/**` 的存放目录 |
+| Artifact Root | `spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**` 的存放目录 |
 
 普通子目录默认继承最近的父级 PACEflow Project Root。真实 git worktree 仍共享宿主 Project Root。只有当前子目录确实是独立项目时，运行：
 
@@ -51,7 +51,6 @@ node "<plugin>/hooks/set-project-root.js" --mode independent
 projects/<project>/
 ├── spec.md
 ├── task.md
-├── implementation_plan.md
 ├── walkthrough.md
 ├── findings.md
 ├── corrections.md
@@ -70,7 +69,7 @@ projects/<project>/
 
 | 操作 | 用途 |
 |------|------|
-| `create-chg` | 创建 `changes/<id>.md`，同步 `task.md` / `implementation_plan.md` 索引 |
+| `create-chg` | 创建 `changes/<id>.md`，同步 `task.md` 索引 |
 | `update-chg action=approve` | C 阶段批准，写 `<!-- APPROVED -->` |
 | `update-chg action=approve-and-start` | 用户已批准后插入 `APPROVED`、标记首个 T-NNN `[/]`、推 `in-progress` |
 | `update-chg action=update-status` | 更新 T-NNN 状态，联动 frontmatter 与根索引 |

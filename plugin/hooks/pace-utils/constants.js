@@ -2,7 +2,7 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v6.7.1';
+const PACE_VERSION = 'v7.0.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 // v7（CHG-20260611-08）：implementation_plan.md 退役出 artifact 集合——task.md 是唯一 CHG 索引。
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
