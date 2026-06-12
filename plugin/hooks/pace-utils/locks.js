@@ -740,7 +740,9 @@ module.exports = function createLockUtils(ctx) {
       const kind = inferChangeKindFromPrompt(info.prompt);
       const dateCompact = ctx.todayISO().replace(/-/g, '');
       const lower = kind.toLowerCase();
-      const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes'), new RegExp(`^${lower}-${dateCompact}-(\\d{2})\\.md$`, 'i'));
+      // R-47（HOTFIX-20260612-01）：文件名自 slug 改造后是 chg-DATE-NN-<slug>.md 形态，
+      //   可选 slug 段必须计入 existingMax，否则 counter 丢失（fresh clone/换机）时安全网失效重发同 ID。
+      const existingMax = scanMaxNumberInDir(path.join(artDir, 'changes'), new RegExp(`^${lower}-${dateCompact}-(\\d{2})(?:-[a-z0-9][a-z0-9-]*)?\\.md$`, 'i'));
       const seq = nextSequenceNumbers(cwd, `${lower}-${dateCompact}`, existingMax, n);
       if (!seq.ok) return { reserved: false, reason: seq.reason, lock: seq.lock, operation, reservations: [] };
       const reservations = seq.numbers.map((num) => {

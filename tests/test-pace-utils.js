@@ -1045,6 +1045,34 @@ test('reserveArtifactId 为 create-chg 原子分配 CHG 编号并写 reservation
   assert.ok(second.id.endsWith('-02'));
 });
 
+test('R-47: counter 缺失时 existingMax 识别带 slug 的 CHG/HOTFIX 文件名，不重发同 ID', () => {
+  const dir = makeTmpDir('reservation-slug-existingmax');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  // 与 todayISO 同口径（Asia/Shanghai），避免凌晨跨日断言漂移
+  const dateCompact = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace(/-/g, '');
+  // 混合形态：带 slug（HOTFIX-20260610-01 后的常态）+ 无 slug 旧格式并存
+  fs.writeFileSync(path.join(dir, 'changes', `chg-${dateCompact}-01-some-feature-slug.md`), '---\nstatus: planned\n---\n');
+  fs.writeFileSync(path.join(dir, 'changes', `chg-${dateCompact}-02.md`), '---\nstatus: planned\n---\n');
+  const chg = reserveArtifactId(dir, {
+    sessionId: 'sid-slug-max',
+    artifactDir: dir,
+    operation: 'create-chg',
+    prompt: 'operation: create-chg',
+  });
+  assert.strictEqual(chg.reserved, true);
+  assert.strictEqual(chg.id, `CHG-${dateCompact}-03`, 'existingMax 必须扫到带 slug 文件取 max+1，而非重发 -01');
+  // HOTFIX 分支同款缺陷同款修复：带 slug 的 hotfix 文件也计入 existingMax
+  fs.writeFileSync(path.join(dir, 'changes', `hotfix-${dateCompact}-01-urgent-fix.md`), '---\nstatus: planned\n---\n');
+  const hf = reserveArtifactId(dir, {
+    sessionId: 'sid-slug-max-hf',
+    artifactDir: dir,
+    operation: 'create-chg',
+    prompt: 'operation: create-chg\ntype: hotfix',
+  });
+  assert.strictEqual(hf.reserved, true);
+  assert.strictEqual(hf.id, `HOTFIX-${dateCompact}-02`, 'HOTFIX 分支同样识别带 slug 文件名');
+});
+
 test('同一 session 多个 reservation 可按目标文件精确匹配', () => {
   const dir = makeTmpDir('reservation-same-session');
   fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
