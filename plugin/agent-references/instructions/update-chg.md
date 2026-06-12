@@ -9,6 +9,18 @@
 
 ## Correct Prompt Examples
 
+仅批准，暂不开始：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-chg
+target: CHG-YYYYMMDD-NN
+action: approve
+approval-confirmed: true
+approval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan
+approval-evidence: <用户原话或已确认方案摘要>
+```
+
 批准并开始：
 
 ```text
