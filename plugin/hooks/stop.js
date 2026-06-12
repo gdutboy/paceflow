@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, classifyChange, v5MigrationPromptMessage } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, classifyChange } = paceUtils;
 
 const LOG = path.join(__dirname, 'pace-hooks.log');
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -356,12 +356,9 @@ if (paceSignal === 'artifact') {
   }
 
 } else if (taskActive) {
-  const legacyPrompt = v5MigrationPromptMessage(cwd);
-  if (legacyPrompt) {
-    addWarning('user-action', legacyPrompt);
-  } else {
-    log(projectLogEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'task-md-without-v5-signature' }));
-  }
+  // v5 布局或无 changes/ 的 task.md 活跃内容不再阻断 Stop（CHG-20260612-02）：
+  // 布局提示由 SessionStart / PostToolUse 一句性承载，Stop 只记录。
+  log(projectLogEntry('Stop', 'SOFT_WARN', { proj, signal: paceSignal, reason: 'task-active-without-changes-dir' }));
 
 } else if (existing.length > 0) {
   // task.md 不存在，但有其他 artifact → 不完整

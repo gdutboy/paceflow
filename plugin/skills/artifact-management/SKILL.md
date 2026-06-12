@@ -95,7 +95,7 @@ CHG/HOTFIX 是连续执行、可验证、可关闭的最小变更单元，不是
 
 `action=approve` 只完成 C 阶段，CHG 仍是 ready/deferred，不能据此写项目文件；只有 `approve-and-start` 或将任务恢复为 `[/]` 后才进入 E 阶段。`[!]` 表示 blocked/deferred：允许 Stop，但 Stop 会显示人可见提醒，恢复前不能继续写项目文件。
 
-Legacy v5 项目先按 hook 提示 dry-run/迁移或桥接，迁移后再在 `changes/**` 写详情。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
+v5 时代布局（task.md 含活跃详情、无 changes/）的项目直接按当前流程派 create-chg——首次创建即建出 `changes/**`，v5 存量保持原样不迁移。Git worktree 场景下 artifact root 与 `.pace` 运行态使用宿主项目共享位置；普通子目录默认继承最近父级 Project Root；普通项目文件仍写当前 worktree/cwd。
 
 以下内容只由 `artifact-writer` 写入，主 session 通过派遣 agent 完成：
 - `<!-- APPROVED -->` / `<!-- VERIFIED -->` / `<!-- REVIEWED -->` 标记由 `update-chg` / `close-chg` 写入

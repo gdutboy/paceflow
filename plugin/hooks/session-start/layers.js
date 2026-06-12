@@ -285,8 +285,12 @@ function renderWorkflowEntry(state, eventType, paceUtils) {
     `独立子项目 helper: node "${paceUtils.SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
     `预留编号 helper: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg`,
     'reserve helper 从当前项目 cwd 和 .pace/artifact-root 自动解析 artifact_dir；自动化场景用 --cwd 指定项目 cwd 即可。',
-    '',
   ];
+  // v5 布局一句性提示（CHG-20260612-02）：不催办迁移、不门控；首个 create-chg 建出 changes/ 后自动消失。
+  if (v5MigrationInfo.detected) {
+    lines.push(`v5 布局提示: 检测到 v5 时代 artifact 布局（${v5MigrationInfo.files.join(', ')} 含活跃详情、无 changes/）。新变更按当前合同写入——task.md 仅追加索引行，详情在 changes/<id>.md；v5 存量保持原样，不自动迁移。`);
+  }
+  lines.push('');
   return lines.join('\n') + '\n';
 }
 

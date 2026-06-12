@@ -6,9 +6,6 @@ const PACE_VERSION = 'v7.0.0';
 const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
 // v7（CHG-20260611-08）：implementation_plan.md 退役出 artifact 集合——task.md 是唯一 CHG 索引。
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
-// v5→v6 迁移文件集合（batch-archive-v5 专用）：v5 时代是双索引布局，implementation_plan.md
-// 必须参与迁移；与 v7 的 ARTIFACT_FILES（已退役 impl_plan）解耦，显式列出不再 filter 派生。
-const MIGRATABLE_ARTIFACT_FILES = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
 // 写保护集合（pre-tool-use / bash-guard / powershell-guard 共用）：impl_plan 虽退役出
 // ARTIFACT_FILES，但 tombstone 与未迁移存量仍受「主 session/Bash 不得直写」保护，故显式保留。
 const PROTECTED_ARTIFACTS = [...ARTIFACT_FILES.filter(f => f !== 'spec.md'), 'implementation_plan.md'];
@@ -22,7 +19,6 @@ const ARCHIVE_MISSING_INJECT_LIMIT = Math.max(2000, Number(process.env.PACE_ARCH
 const VAULT_PATH = process.env.PACE_VAULT_PATH || '';
 const ARTIFACT_ROOT_CHOICE_FILE = 'artifact-root';
 const PROJECT_ROOT_FILE = 'project-root';
-const V5_MIGRATION_STATE_FILE = 'v5-migration-state';
 const ARTIFACT_WRITER_LOCK_FILE = 'artifact-writer.lock';
 const ARTIFACT_WRITER_LOCK_TTL_MS = Number(process.env.PACE_ARTIFACT_LOCK_TTL_MS || 30 * 60 * 1000);
 const ARTIFACT_RESOURCE_LOCK_TTL_MS = Math.max(1000, Number(process.env.PACE_ARTIFACT_RESOURCE_LOCK_TTL_MS || 5 * 60 * 1000) || 5 * 60 * 1000);
@@ -86,6 +82,7 @@ const SESSION_SCOPED_FLAGS = [
   'walkthrough-archive-reminded',
   'findings-archive-reminded',
   'v7-migrate-reminded',
+  'v5-layout-noticed',
 ];
 
 const SESSION_SCOPED_FLAG_PREFIXES = [
@@ -108,14 +105,12 @@ module.exports = {
   PACE_VERSION,
   CODE_EXTS,
   ARTIFACT_FILES,
-  MIGRATABLE_ARTIFACT_FILES,
   PROTECTED_ARTIFACTS,
   ARCHIVE_REQUIRED_FILES,
   ARCHIVE_MISSING_INJECT_LIMIT,
   VAULT_PATH,
   ARTIFACT_ROOT_CHOICE_FILE,
   PROJECT_ROOT_FILE,
-  V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE,
   ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS,

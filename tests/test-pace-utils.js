@@ -12,10 +12,9 @@ const bashGuard = require('../plugin/hooks/pre-tool-use/bash-guard');
 const powershellGuard = require('../plugin/hooks/pre-tool-use/powershell-guard');
 const lifecycleGuard = require('../plugin/hooks/pre-tool-use/agent-lifecycle-guard');
 const subagentStop = require('../plugin/hooks/subagent-stop');
-const batchArchiveV5 = require('../plugin/migrate/batch-archive-v5');
 const createPlanUtils = require('../plugin/hooks/pace-utils/plans');
 const createLockUtils = require('../plugin/hooks/pace-utils/locks');
-const { isPaceProject, detectSoftSignal, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, MIGRATABLE_ARTIFACT_FILES, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5MigrationPromptMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
+const { isPaceProject, detectSoftSignal, daysSinceISODate, countByStatus, readActive, checkArchiveFormat, RESERVE_ARTIFACT_ID_SCRIPT, SYNC_PLAN_SCRIPT, SET_ARTIFACT_ROOT_SCRIPT, SET_PROJECT_ROOT_SCRIPT, getArtifactDir, _clearArtifactDirCache, getProjectName, getProjectNameCandidates, resolveEffectiveProjectRoot, resolveToolFilePath, isArtifactRelativePath, artifactRelativePathForFile, executionContextForCwd, getProjectStateDir, getProjectRuntimeDir, getArtifactRootChoicePath, readArtifactRootChoice, getConfiguredArtifactDir, artifactRootChoiceNeeded, artifactRootChoiceMessage, getV5MigrationInfo, v5LayoutNoticeMessage, parseHookStdin, logEntry, normalizeChangeId, detailPathForId, slugForChangeId, readArtifactWriterLock, artifactWriterLockMatches, getArtifactWriterLockPath, artifactResourceForRel, getArtifactResourceLockPath, acquireArtifactResourceLock, readArtifactResourceLock, releaseArtifactResourceLock, markIndexChangesTouchedAndMaybeRelease, reserveArtifactId, readArtifactReservation, findArtifactReservationForRel, clearArtifactReservationForRel, isArtifactRuntimeControlPath, createTemplates, writeChangeOwner, readChangeOwner, touchChangeOwnersForSession, changeOwnerStatus, hasBridgeCandidatePlanFiles, listBridgeCandidatePlanFiles, parseFrontmatter } = paceUtils;
 
 // I-23: 公共测试工具（消除重复的 test/makeTmpDir/cleanup 定义）
 const { createTestRunner } = require('./test-utils');
@@ -64,18 +63,21 @@ test('英文最小 v5 task+implementation checkbox → legacy', () => {
   assert.strictEqual(isPaceProject(dir), 'legacy');
   const info = getV5MigrationInfo(dir);
   assert.strictEqual(info.detected, true);
-  assert.strictEqual(info.needsPrompt, true);
   assert.deepStrictEqual(info.files, ['task.md', 'implementation_plan.md']);
 });
 
-test('createTemplates 在可能 legacy v5 目录中 fail-closed 且不创建 changes', () => {
-  const dir = makeTmpDir('legacy-v5-template-deny');
+test('CHG-20260612-02: v5 目录 createTemplates 正常创建（迁移门控退役，不再 fail-closed）', () => {
+  const dir = makeTmpDir('legacy-v5-template-pass');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy v5 active item\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] Legacy v5 implementation item\n', 'utf8');
-  assert.throws(() => createTemplates(dir), /旧 v5 PACE artifact|legacy v5/i);
-  assert.strictEqual(fs.existsSync(path.join(dir, 'changes')), false);
+  createTemplates(dir);
+  assert.strictEqual(fs.existsSync(path.join(dir, 'changes')), true, 'v5 目录应可直接建出 changes/（新内容按当前合同写入）');
+  // 既有 v5 task.md 不被模板覆盖
+  assert.ok(fs.readFileSync(path.join(dir, 'task.md'), 'utf8').includes('Legacy v5 active item'));
+  // changes/ 出现后 v5 布局判定自然消失（提示自动收敛）
+  assert.strictEqual(getV5MigrationInfo(dir).detected, false);
 });
 
 test('有 .pace/disabled + task.md → false（豁免优先）', () => {
@@ -668,15 +670,16 @@ test('A05: agent-lifecycle-guard operation/action 行带尾随文字仍强制必
   assert.strictEqual(deny('operation: close-chg\ntarget: CHG-20260101-01\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0\nimplementation-notes: T-001 改 hello.js\nwalkthrough-summary: done'), '', '完整 close-chg 放行（回归）');
 });
 
-test('A06: v5 ignored 后 v5MigrationPromptMessage 抑制（修 Stop 死锁）', () => {
-  const dir = makeTmpDir('a06-v5-ignored');
+test('CHG-20260612-02: v5LayoutNoticeMessage——detected 即一句提示，changes/ 出现后消失', () => {
+  const dir = makeTmpDir('v5-layout-notice');
   fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy v5 item\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] Legacy v5 impl\n', 'utf8');
-  assert.ok(paceUtils.v5MigrationPromptMessage(dir), 'v5 detected + needsPrompt 应返回迁移提示');
-  const statePath = paceUtils.getV5MigrationInfo(dir).statePath;
-  fs.mkdirSync(path.dirname(statePath), { recursive: true });
-  fs.writeFileSync(statePath, 'ignored\n', 'utf8');
-  assert.strictEqual(paceUtils.v5MigrationPromptMessage(dir), '', 'ignored 后抑制提示');
+  const msg = v5LayoutNoticeMessage(dir);
+  assert.ok(msg.includes('v5 时代 artifact 布局'), 'detected 应返回布局提示');
+  assert.ok(msg.includes('不自动迁移'), '提示应声明不自动迁移');
+  assert.ok(!/batch-archive|dry-run|AskUserQuestion|v5-migration-state/.test(msg), '提示不应再引用已退役的迁移工具/状态机');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  assert.strictEqual(v5LayoutNoticeMessage(dir), '', 'changes/ 出现后提示消失');
 });
 
 test('A07: 大写 [X] 索引行不污染 classifyChange', () => {
@@ -706,84 +709,6 @@ test('PSP-02: inferCloseTarget operation/target 同源（不跨 candidate 借 ta
   assert.strictEqual(diff.reason, 'missing-target');
   // 无 close/archive operation → missing-operation
   assert.strictEqual(ict({ lastMessage: 'CHG-20260202-02 完成', raw: {} }).reason, 'missing-operation');
-});
-
-// ============================================================
-// CHG-C v5 迁移闭环（MIGV5-03/TM-01 transformV5Body）
-// ============================================================
-console.log('\n--- CHG-C transformV5Body ---');
-
-test('MIGV5-03/TM-01: transformV5Body frontmatter 检测排除 block scalar 缩进与主题分隔线', () => {
-  const tv = batchArchiveV5.transformV5Body;
-  // TM-01：frontmatter 内 block scalar 缩进的 --- 不应被误判为 frontmatter 结束
-  const blockScalar = '---\nsummary: |\n  line1\n  ---\n  line2\nkey: val\n---\n\n# 标题\n正文\n';
-  const out1 = tv(blockScalar);
-  assert.ok(out1.includes('## (v5 历史) 标题'), 'block scalar 缩进 --- 不应截断 frontmatter（标题应在正文区降级）');
-  // MIGV5-03：开头主题分隔线 ---（无 YAML key）不应被当 frontmatter
-  const hrule = '---\n\n# 真正的标题\n正文内容\n---\n更多\n';
-  const out2 = tv(hrule);
-  assert.ok(!out2.includes('### v5 原始 frontmatter'), '开头主题分隔线不应被当 frontmatter');
-  // 回归：正常 frontmatter 正确识别
-  const normal = '---\nsummary: x\nstatus: active\n---\n\n# 任务\n内容\n';
-  const out3 = tv(normal);
-  assert.ok(out3.includes('### v5 原始 frontmatter'), '正常 frontmatter 应识别');
-  assert.ok(out3.includes('summary: x'), 'frontmatter 内容保留');
-  assert.ok(out3.includes('## (v5 历史) 任务'), 'H1 降级');
-});
-
-test('MIGV5-01: --force 无 backup 且目标已 v6 时拒绝迁移，防销毁原始数据', () => {
-  const dir = makeTmpDir('migv5-force-protect');
-  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
-  // 模拟已迁移的 v6 task.md（含 v5 历史归档标志），且无 .v5-backup
-  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n\n<!-- ARCHIVE -->\n\n## v5 历史归档\n旧内容\n', 'utf8');
-  assert.throws(() => batchArchiveV5.archiveV5(dir, false, true), /已是迁移后的 v6|销毁/);
-});
-
-test('MIGV5-02: 阶段一失败时零写盘（两阶段原子性）', () => {
-  const dir = makeTmpDir('migv5-stage1-atomic');
-  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] item\n', 'utf8');
-  fs.writeFileSync(path.join(dir, 'findings.md'), '# 调研记录\n\n- [ ] f\n', 'utf8');
-  // findings.md.v5-backup 是目录 + force → 阶段一 readFileSync(目录) 抛错，整体中止
-  fs.mkdirSync(path.join(dir, 'findings.md.v5-backup'), { recursive: true });
-  assert.throws(() => batchArchiveV5.archiveV5(dir, false, true));
-  // 阶段一失败 → 未写任何 backup、未建 changes/（零写盘）
-  assert.ok(!fs.existsSync(path.join(dir, 'task.md.v5-backup')), '阶段一失败不应已写 task.md backup');
-  assert.ok(!fs.existsSync(path.join(dir, 'changes')), '阶段一失败不应已建 changes/');
-});
-
-test('MIGV5-02-REG: force+hasBackup 阶段二失败回滚还原【调用前真实状态】而非原始 v5 备份', () => {
-  const dir = makeTmpDir('migv5-02-reg');
-  // 每个 migratable artifact：当前内容=调用前真实状态（CURRENT），.v5-backup=原始 v5（ORIGINAL）——二者不同是本回归关键
-  const v5Files = ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md'];
-  for (const f of v5Files) {
-    fs.writeFileSync(path.join(dir, f), `# ${f}\n\n调用前真实状态 CURRENT_${f}\n`, 'utf8');
-    fs.writeFileSync(path.join(dir, `${f}.v5-backup`), `# ${f}\n\n原始 v5 备份 ORIGINAL_${f}\n`, 'utf8');
-  }
-  // 注入阶段二写失败：findings.md（plan 末位）改成目录 → 阶段二 writeFileSync(目录) 抛 EISDIR，触发回滚前面已写的 task/impl/walkthrough
-  fs.rmSync(path.join(dir, 'findings.md'));
-  fs.mkdirSync(path.join(dir, 'findings.md'));
-  assert.throws(() => batchArchiveV5.archiveV5(dir, false, true), /回滚|失败/);
-  // force+hasBackup 时 sourcePath=backup，p.original 是原始 v5；回滚 before 若用 p.original 会把 task.md 写成原始 v5（保真度回归）
-  const taskAfter = fs.readFileSync(path.join(dir, 'task.md'), 'utf8');
-  assert.ok(taskAfter.includes('CURRENT_task.md'), '回滚应还原 task.md 调用前真实状态');
-  assert.ok(!taskAfter.includes('ORIGINAL_task.md'), 'force+hasBackup 回滚不应还原成原始 v5 备份内容');
-});
-
-test('A03: 迁移成功写 migrated state，回滚后 v5 可被重新检测', () => {
-  const dir = makeTmpDir('migv5-a03-state');
-  fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] item\n', 'utf8');
-  fs.writeFileSync(path.join(dir, 'implementation_plan.md'), '# Implementation Plan\n\n- [ ] impl\n', 'utf8');
-  batchArchiveV5.archiveV5(dir, false, false);
-  const info = paceUtils.getV5MigrationInfo(dir);
-  assert.strictEqual(info.state, 'migrated', '迁移成功应写 migrated state');
-  // 模拟按回滚指引回滚：恢复文件 + 删 changes/ + 删 state
-  for (const f of ['task.md', 'implementation_plan.md']) {
-    const bp = path.join(dir, `${f}.v5-backup`);
-    if (fs.existsSync(bp)) fs.copyFileSync(bp, path.join(dir, f));
-  }
-  fs.rmSync(path.join(dir, 'changes'), { recursive: true, force: true });
-  fs.rmSync(info.statePath, { force: true });
-  assert.strictEqual(paceUtils.getV5MigrationInfo(dir).detected, true, '回滚后 v5 应可被重新检测（不再落入盲区）');
 });
 
 test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
@@ -1256,33 +1181,18 @@ test('helper 脚本常量使用绝对当前 runtime 路径', () => {
   assert.ok(SYNC_PLAN_SCRIPT.endsWith('/plugin/hooks/sync-plan.js'));
 });
 
-test('检测到 legacy v5 artifact → 不先询问 artifact root，而是迁移提示', () => {
+test('检测到 v5 布局 → 不询问 artifact root，提示语为一句性布局提示', () => {
   const dir = makeTmpDir('gad-legacy-migration');
   fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n');
   assert.strictEqual(artifactRootChoiceNeeded(dir), false);
   assert.strictEqual(getArtifactDir(dir), dir);
   const info = getV5MigrationInfo(dir);
   assert.strictEqual(info.detected, true);
-  assert.strictEqual(info.needsPrompt, true);
   assert.deepStrictEqual(info.files, ['task.md']);
-  const msg = v5MigrationPromptMessage(dir);
-  assert.ok(msg.includes('AskUserQuestion'));
-  assert.ok(msg.includes('--dry-run'));
-  assert.ok(msg.includes('请先用 AskUserQuestion 询问用户是否迁移'));
-  assert.ok(msg.includes('必须再次使用 AskUserQuestion'));
-  assert.ok(msg.includes('重试被阻止的原始工具调用'));
-  assert.ok(msg.includes('v5-migration-state'));
-});
-
-test('v5-migration-state=ignored → 检测 legacy 但不重复要求迁移选择', () => {
-  const dir = makeTmpDir('gad-legacy-ignored');
-  fs.writeFileSync(path.join(dir, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n');
-  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.pace', 'v5-migration-state'), 'ignored\n', 'utf8');
-  const info = getV5MigrationInfo(dir);
-  assert.strictEqual(info.detected, true);
-  assert.strictEqual(info.needsPrompt, false);
-  assert.strictEqual(info.state, 'ignored');
+  const msg = v5LayoutNoticeMessage(dir);
+  assert.ok(msg.includes('v5 时代 artifact 布局'));
+  assert.ok(msg.includes('task.md'));
+  assert.ok(!/batch-archive|dry-run|AskUserQuestion/.test(msg), '一句性提示不应引导迁移交互');
 });
 
 test('已有 changes 或已有选择 → 不需要 artifact root 选择', () => {
@@ -3271,12 +3181,10 @@ test('spec.md project-summary 与 knowledge summary 语义分离', () => {
   assert.ok(knowledge.includes('项目元描述'));
 });
 
-test('v5 migration script 使用共享 artifact 常量', () => {
-  assert.deepStrictEqual(MIGRATABLE_ARTIFACT_FILES, ['task.md', 'implementation_plan.md', 'walkthrough.md', 'findings.md']);
+test('CHG-20260612-02: v5 迁移面退役锁——batch-archive-v5 与 MIGRATABLE 常量不得回潮', () => {
   const repoRoot = path.join(__dirname, '..');
-  const script = fs.readFileSync(path.join(repoRoot, 'plugin', 'migrate', 'batch-archive-v5.js'), 'utf8');
-  assert.ok(script.includes('MIGRATABLE_ARTIFACT_FILES'), '迁移脚本应引用 pace-utils 导出的迁移文件列表');
-  assert.ok(!/const\s+ARTIFACT_FILES\s*=\s*\[/.test(script), '迁移脚本不得硬编码 ARTIFACT_FILES 数组');
+  assert.ok(!fs.existsSync(path.join(repoRoot, 'plugin', 'migrate', 'batch-archive-v5.js')), 'batch-archive-v5.js 已退役，不应随发布面 ship');
+  assert.strictEqual(paceUtils.MIGRATABLE_ARTIFACT_FILES, undefined, 'MIGRATABLE_ARTIFACT_FILES 已随 v5 迁移退役');
 });
 
 // ============================================================

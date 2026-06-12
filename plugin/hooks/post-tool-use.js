@@ -116,7 +116,6 @@ paceUtils.withStdinParsed((stdin) => {
   }
   const runtimeConfigPaths = [
     paceUtils.getArtifactRootChoicePath(cwd),
-    paceUtils.getV5MigrationStatePath(cwd),
   ];
   const isRuntimeConfigEdit = runtimeConfigPaths.some(fp => normalizedFile === paceUtils.normalizePath(fp));
   if (isRuntimeConfigEdit) {
@@ -257,7 +256,8 @@ paceUtils.withStdinParsed((stdin) => {
       }
     }
   } else if (taskActive) {
-    warnings.push(`检测到 legacy task.md 活跃内容，但当前项目没有 changes/ v6 详情目录。PACEflow v6 不继续兼容 v5 活跃流程；请先运行 migrate/batch-archive-v5.js 迁移，或派 artifact-writer create-chg 桥接为 changes/<id>.md + wikilink 索引。PostToolUse 不再校验或修复 v5 活跃详情格式。迁移或桥接后仍需重试被阻止的原始代码写入；不要把迁移本身报告为代码任务完成。`);
+    // v5 布局只提示一句（session 级一次），不再校验/引导迁移（CHG-20260612-02）。
+    warnOnce('v5-layout-noticed', paceUtils.v5LayoutNoticeMessage(cwd) || '检测到 task.md 活跃内容但无 changes/ 详情目录；新变更请走 create-chg 建立 changes/<id>.md + 索引行。');
   } else if (isFileMutationTool && isCodeFile) {
     // task.md 不存在时，只对代码写入提示，避免无关文档编辑被 PACE 提醒打扰。
     // CHG-A A1：'superpowers' 半边已删（isPaceProject 不再返回该值）；野外软信号项目（fallbackSignal=false）

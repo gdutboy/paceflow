@@ -24,14 +24,12 @@ const {
   PACE_VERSION,
   CODE_EXTS,
   ARTIFACT_FILES,
-  MIGRATABLE_ARTIFACT_FILES,
   PROTECTED_ARTIFACTS,
   ARCHIVE_REQUIRED_FILES,
   ARCHIVE_MISSING_INJECT_LIMIT,
   VAULT_PATH,
   ARTIFACT_ROOT_CHOICE_FILE,
   PROJECT_ROOT_FILE,
-  V5_MIGRATION_STATE_FILE,
   ARTIFACT_WRITER_LOCK_FILE,
   ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS,
@@ -264,10 +262,6 @@ function projectRootMarkerDenyReason(cwd, extra = '') {
   return lines.join('\n');
 }
 
-function getV5MigrationStatePath(cwd) {
-  return path.join(getProjectRuntimeDir(cwd), V5_MIGRATION_STATE_FILE);
-}
-
 function normalizeArtifactRootChoice(choice) {
   let raw = String(choice || '').slice(0, ARTIFACT_ROOT_CHOICE_MAX_CHARS).trim();
   if (!raw) return '';
@@ -283,10 +277,6 @@ function readArtifactRootChoice(cwd) {
   const envChoice = process.env.PACE_ARTIFACT_ROOT || process.env.PACEFLOW_ARTIFACT_ROOT || '';
   if (String(envChoice).trim()) return normalizeArtifactRootChoice(envChoice);
   try { return normalizeArtifactRootChoice(fs.readFileSync(getArtifactRootChoicePath(cwd), 'utf8')); } catch(e) { return ''; }
-}
-
-function readV5MigrationState(cwd) {
-  try { return String(fs.readFileSync(getV5MigrationStatePath(cwd), 'utf8')).trim().toLowerCase(); } catch(e) { return ''; }
 }
 
 function artifactDirFromChoice(cwd, choice) {
@@ -397,43 +387,24 @@ function getLegacyV5ArtifactDir(cwd) {
   return null;
 }
 
+// v5 布局检测（CHG-20260612-02）：只产出布局事实供一句性提示与 W11 守卫消费，
+// 不再承载迁移状态机（state/needsPrompt 随 v5 迁移路径退役）。
 function getV5MigrationInfo(cwd) {
   const dir = getLegacyV5ArtifactDir(cwd);
-  const state = readV5MigrationState(cwd);
-  const files = dir ? legacyV5FilesInDir(dir) : [];
-  const suppressed = ['ignored', 'declined', 'migrated'].includes(state);
   return {
     detected: !!dir,
-    needsPrompt: !!dir && !suppressed,
     dir: dir || '',
-    files,
-    state,
-    statePath: getV5MigrationStatePath(cwd),
-    scriptPath: path.resolve(__dirname, '..', 'migrate', 'batch-archive-v5.js'),
+    files: dir ? legacyV5FilesInDir(dir) : [],
   };
 }
 
-function v5MigrationPromptMessage(cwd) {
+function v5LayoutNoticeMessage(cwd) {
   const info = getV5MigrationInfo(cwd);
-  // A06：仅 detected 不足以提示——ignored/declined/migrated（needsPrompt=false）必须抑制，
-  // 否则用户选 ignored 后 detected 仍 true，Stop 每次硬阻断死锁。
-  if (!info.detected || !info.needsPrompt) return '';
-  const script = info.scriptPath.replace(/\\/g, '/');
-  const artifactDir = info.dir.replace(/\\/g, '/');
+  if (!info.detected) return '';
   return [
-    '检测到旧 v5 PACE artifact，但当前 artifact 根目录没有 changes/ v6 详情目录。',
-    `PaceFlow artifact 根目录（legacy v5）: ${displayDir(info.dir)}`,
-    `检测到文件: ${info.files.join(', ')}`,
-    '请先用 AskUserQuestion 询问用户是否迁移、忽略旧 artifact，或取消本次操作；若前一个工具调用被 hook 阻止，目标文件尚未修改。',
-    '推荐迁移流程：先 dry-run，展示摘要并再次确认后再正式迁移。',
-    'dry-run 命令：',
-    `node "${script}" "${artifactDir}" --dry-run`,
-    'dry-run 完成后，必须再次使用 AskUserQuestion 展示摘要并取得用户确认。',
-    '确认后正式迁移命令：',
-    `node "${script}" "${artifactDir}"`,
-    `忽略旧 artifact 时写入 ${getV5MigrationStatePath(cwd)}，内容为纯文本 ignored。`,
-    '禁止在用户确认前创建 changes/、懒创建 v6 模板或派 artifact-writer create-chg。',
-    '处理完成后重新走 v6 P-A-C（必要时派 artifact-writer create-chg），并重试被阻止的原始工具调用；不要把迁移本身当作原始任务完成。'
+    `检测到 v5 时代 artifact 布局（${displayDir(info.dir)}：${info.files.join(', ')} 含活跃详情、无 changes/ 目录）。`,
+    'PACEflow 当前架构：新变更按当前合同写入——task.md 仅追加索引行，详情在 changes/<id>.md（首个 create-chg 会建出 changes/，此提示随之消失）。',
+    'v5 存量内容保持原样，不自动迁移；如需保留历史，可手动归档到 <!-- ARCHIVE --> 下方。'
   ].join('\n');
 }
 
@@ -749,10 +720,6 @@ function createTemplates(cwd) {
   if (configError) throw new Error(configError.message);
   const TEMPLATES_DIR = path.join(__dirname, 'templates');
   const artDir = getArtifactDir(cwd);
-  const migrationInfo = getV5MigrationInfo(cwd);
-  if (migrationInfo.needsPrompt) {
-    throw new Error(v5MigrationPromptMessage(cwd));
-  }
   // 确保目标目录存在（vault 模式下可能尚未创建）
   try { fs.mkdirSync(artDir, { recursive: true }); } catch(e) {}
   for (const sub of ['changes', 'changes/findings', 'changes/corrections']) {
@@ -959,7 +926,7 @@ function scanRelatedNotes(projectName) {
 // I-04: 多行格式按功能分组，便于 diff 审阅
 module.exports = {
   // 常量
-  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, MIGRATABLE_ARTIFACT_FILES, PROTECTED_ARTIFACTS, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, PROJECT_ROOT_FILE, V5_MIGRATION_STATE_FILE,
+  PACE_VERSION, CODE_EXTS, ARTIFACT_FILES, PROTECTED_ARTIFACTS, VAULT_PATH, ARTIFACT_ROOT_CHOICE_FILE, PROJECT_ROOT_FILE,
   ARTIFACT_WRITER_LOCK_FILE, ARTIFACT_WRITER_LOCK_TTL_MS,
   ARTIFACT_RESOURCE_LOCK_TTL_MS, ARTIFACT_RESOURCE_LOCK_WAIT_MS, CHANGE_OWNER_TTL_MS, SESSION_PAUSE_TTL_MS,
   ARTIFACT_SEQUENCE_LOCK_TTL_MS, ARTIFACT_SEQUENCE_LOCK_WAIT_MS, PLAN_SYNC_LOCK_TTL_MS, PLAN_SYNC_LOCK_WAIT_MS,
@@ -975,7 +942,7 @@ module.exports = {
   getArtifactDir, _clearArtifactDirCache, resolveEffectiveProjectRoot, getProjectStateDir, getProjectRuntimeDir,
   getArtifactRootChoicePath, getProjectRootMarkerPath, normalizeArtifactRootChoice, readArtifactRootChoice, getConfiguredArtifactDir,
   isLocalArtifactRootChoicePath, localArtifactRootChoiceDenyReason, isProjectRootMarkerPath, projectRootMarkerDenyReason,
-  getV5MigrationStatePath, readV5MigrationState, getLegacyV5ArtifactDir, getV5MigrationInfo, v5MigrationPromptMessage,
+  getLegacyV5ArtifactDir, getV5MigrationInfo, v5LayoutNoticeMessage,
   getArtifactWriterLockPath, readArtifactWriterLock,
   artifactWriterLockMatches,
   artifactResourceForRel, getArtifactResourceLockPath, readArtifactResourceLock,

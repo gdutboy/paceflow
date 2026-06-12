@@ -157,12 +157,6 @@ function main() {
     fail(args.cwd, 'DENY_ARTIFACT_ROOT_CHOICE', paceUtils.artifactRootChoiceMessage(args.cwd));
     return;
   }
-  const migrationInfo = paceUtils.getV5MigrationInfo(args.cwd);
-  if (migrationInfo.needsPrompt) {
-    fail(args.cwd, 'DENY_V5_MIGRATION', paceUtils.v5MigrationPromptMessage(args.cwd), { artifact_dir: paceUtils.displayDir(migrationInfo.dir) });
-    return;
-  }
-
   const artDir = paceUtils.getArtifactDir(args.cwd);
   try { paceUtils.ensureProjectInfra(args.cwd); } catch(e) {}
   try { paceUtils.createTemplates(args.cwd); } catch(e) {
