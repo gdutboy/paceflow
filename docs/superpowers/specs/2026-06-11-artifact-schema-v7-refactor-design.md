@@ -52,6 +52,9 @@
 
 tombstone 保留 `<!-- ARCHIVE -->` 标记的原因：cache 未升级的旧 hook 的 ARCHIVE 双区结构检测（`checkArchiveFormat`，`ARCHIVE_REQUIRED_FILES` 路径）静默通过。旧 session 并发时旧 hook 的跨索引一致性校验最坏产生软 repair warning（task.md 活跃集 vs tombstone 空集不一致），不 deny、不 brick。
 
+> [!CAUTION]
+> **勘误（historical，2026-06-12 CHG-20260611-13 真跑证伪）**：上段「最坏软 warning、不 deny、不 brick」论证错误。实测旧 6.7.1 cache hook 的跨索引校验（`DENY_V6_INDEX_MISMATCH`，活跃 CHG 必须同时存在于 task.md 与 implementation_plan.md 活跃区）对已迁移布局是 **deny 级**——拦截一切项目文件写入并叠加 Stop 阻断，且其 deny 文案引导的「修复索引」方向恰是撤销迁移。正确结论与升级顺序铁律见 README §「v6 用户升级到 v7」。
+
 ### 2.2 hook 读端改动（CHG-A）
 
 按附录 A 盘点逐处处置：
@@ -197,7 +200,7 @@ SessionStart（collect-state）检测「impl_plan 存在且含活跃索引行（
 1. plugin 整包分发，hook 与 agent 同版本到达，无包内混搭——「新旧并存」唯一形态是「新 hook vs 未迁移存量数据」与「旧版本并发 session」。
 2. 删除的 frontmatter 字段新旧 hook 都不读；`schema-version` 校验只查存在性不查值——migrate 后旧 hook 照常工作。
 3. 未迁移布局下 7.0 读端只认 task.md，impl_plan 漂移无机械后果（§2.4）。
-4. 旧版本并发 session 读 tombstone：ARCHIVE 标记在，结构检测过；跨索引校验最坏软 warning（§2.1）。
+4. ~~旧版本并发 session 读 tombstone：ARCHIVE 标记在，结构检测过；跨索引校验最坏软 warning（§2.1）~~ **勘误（historical）**：已被真跑证伪——旧 hook 跨索引校验对 tombstone 布局是 deny 级 brick，见 §2.1 勘误框。
 5. migrate 用户触发 + dry-run + 自动备份 + 确定性验收（§5）。
 
 ### 6.2 测试策略
@@ -223,7 +226,7 @@ SessionStart（collect-state）检测「impl_plan 存在且含活跃索引行（
 
 - 单 CHG 内 TDD + 全量基线绿才进下一个；任何 CHG 发现设计级缺口即停，回本 spec 修订。
 - migrate 有自动备份 + dry-run，本 vault 执行失败可整体还原。
-- 发布后 cache 生效面问题沿用既有「push 后 reload + dogfood」流程；v7.0.0 出问题可回 v6.7.1 tag（marketplace 用户侧 schema 7.0 文件对旧 hook 兼容，见 §6.1.2，降级不 brick）。
+- 发布后 cache 生效面问题沿用既有「push 后 reload + dogfood」流程。~~v7.0.0 出问题可回 v6.7.1 tag（…降级不 brick）~~ **勘误（historical）**：数据已迁移（impl_plan tombstone）后回 6.x 即触发旧 hook 跨索引 deny 级 brick（§2.1 勘误框）；如确需降级，必须先 `migrate-v7.js --restore <备份目录>` 还原数据再降级插件。
 
 ---
 
