@@ -157,7 +157,7 @@ paceUtils.withStdinParsed((stdin) => {
             warnings.push(`${filePath} 不符合 v7 schema 合同：缺失 ${schemaCheck.missing.join(', ') || '无'}；多余 ${schemaCheck.unknown.join(', ') || '无'}。7.0 字段集见 artifact-writer-spec.md schema 表，请在当前 turn 修复 frontmatter。`);
           }
         }
-        if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}\.md$/i.test(artifactRel || '')) {
+        if (/^changes\/(?:chg|hotfix)-\d{8}-\d{2}(?:-[a-z0-9][a-z0-9-]*)?\.md$/i.test(artifactRel || '')) {
           if (!fm.status) warnings.push(`${filePath} 缺少 frontmatter status。`);
           if (!('verified-date' in fm)) {
             warnings.push(`${filePath} 缺少 frontmatter verified-date。`);

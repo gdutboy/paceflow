@@ -162,7 +162,7 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 ### 1. create-chg
 **必填**：`title` / `tasks`
 **可选**：`type` / `related-finding` / `background` / `scope` / `technical-decision`
-**batch（一次建多个 CHG）**：prompt 含 `change-set` + `change-set-total` + N 个 `--- CHG i/N ---` 块时，逐块独立创建——每块 frontmatter 在 `type` 后写 `change-set` + `change-set-seq: i/N`，每块索引都插在 `<!-- ARCHIVE -->` 之前；全部成功才 SUCCESS，中途失败报告已建哪些 + 失败在第几块、保留未消费 reserved-id。详见 create-chg.md「batch 模式」。
+**batch（一次建多个 CHG）**：prompt 含 `change-set` + `change-set-total` + N 个 `--- CHG i/N ---` 块时，逐块独立创建——每块 frontmatter 按 9 key 固定顺序在 `date` 后写 `change-set` + `change-set-seq: i/N`（key 恒在、只改值不插无关行），每块索引都插在 `<!-- ARCHIVE -->` 之前；全部成功才 SUCCESS，中途失败报告已建哪些 + 失败在第几块、保留未消费 reserved-id。详见 create-chg.md「batch 模式」。
 
 ### 2. update-chg
 
@@ -280,6 +280,8 @@ review-confirmed: true
 review-source: manual | <所选 review agent 名>
 review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>
 verify-summary: <已运行并读取的验证结果>
+implementation-notes:
+  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>
 walkthrough-summary: <完成摘要>
 ```
 
@@ -350,6 +352,19 @@ trigger-scenario: <触发场景>
 root-cause: <根因>
 knowledge-link: [[note]] 或 project-scope: project-only
 ```
+
+### update-finding
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-finding
+target: finding-yyyy-mm-dd-slug
+status: accepted                     （可选枚举：open | investigating | accepted | rejected | merged | blocked）
+change-link: [[chg-yyyymmdd-nn]]     （可选，与 accepted 搭配表示由该变更处置；带 slug 详情文件写 [[<stem>|chg-yyyymmdd-nn]]，旧无 slug 文件用纯 ID）
+rejection-reason: <status=rejected 时必填，≥10 字符；won't-fix 走此路径，不带 change-link>
+append: <可选，原样追加到详情正文末尾的 Markdown>
+```
+（至少提供 `status` / `change-link` / `append` 之一）
 
 ### update-index
 

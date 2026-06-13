@@ -39,7 +39,7 @@ technical-decision: <How>
 
 ## 操作步骤
 
-> **报告标题强制**：最终输出的第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无说明文字、无空行）。`report_title_strict` 会机械检查，标题不匹配即 FAIL。
+> **报告标题强制**：最终输出的第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无说明文字、无空行）。`report_title_strict` 会机械检查，标题不匹配即 FAIL。权威定义见 `artifact-writer-spec.md` §10。
 
 0. 前置检查：先校验必填字段；缺字段 → 报告 `missing-fields` 并停止（不写文件）。再用 `test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING` 判断 base changes 目录；`MISSING` 时报告 `not-pace-project` 并停止，不写任何文件（base `changes/` 由项目初始化负责创建）。目录存在性以该 `test -d` 结果为准。
 1. 计算 chg-id（详见下方"CHG-ID 推算"段）
@@ -65,7 +65,7 @@ technical-decision: <How>
 
 ## 文件名 slug（对称 finding/correction）
 
-`reserved-file-prefix` 形如 `changes/chg-yyyymmdd-nn-`（末尾 `-`）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文），拼成 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。CHG ID 由文件名唯一承载。task.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名大写 `HOTFIX-YYYYMMDD-NN` 或小写均可；Obsidian 按文件名解析 wikilink，写全名才能解析到详情文件）。无 slug 文件（`chg-yyyymmdd-nn.md`）的索引行直接用 `[[chg-yyyymmdd-nn]]`。
+`reserved-file-prefix` 由 helper 原样输出，形如 `changes/chg-yyyymmdd-nn-<slug>.md`（含字面 `<slug>.md` 占位，与上方 prompt 字段说明一致）。你按 title 生成英文 kebab-case slug（中文 title 语义概括为英文）替换 `<slug>`，得到 `changes/chg-yyyymmdd-nn-<slug>.md` 作为详情文件名。CHG ID 由文件名唯一承载。task.md 索引行与 walkthrough.md 的 wikilink 用**文件名全名 + `|` 纯 ID 别名**：`[[chg-yyyymmdd-nn-<slug>|chg-yyyymmdd-nn]]`（HOTFIX 别名大写 `HOTFIX-YYYYMMDD-NN` 或小写均可；Obsidian 按文件名解析 wikilink，写全名才能解析到详情文件）。无 slug 文件（`chg-yyyymmdd-nn.md`）的索引行直接用 `[[chg-yyyymmdd-nn]]`。
 
 ## 详情文件结构
 

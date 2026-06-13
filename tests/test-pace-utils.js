@@ -3373,6 +3373,41 @@ test('V7B-5: finding/correction kind 各自合同', () => {
   assert.ok(unknownKind.ok, 'V7B-5e: 未知 kind 不校验');
 });
 
+test('V7B-6: archived 帧必须三 date 齐全（R-06a 对齐 spec §4.1 状态机表）；cancelled 豁免', () => {
+  const full = { status: 'archived', date: '2026-06-11', 'change-set': 'null', 'change-set-seq': 'null',
+    'verified-date': '2026-06-11T10:00:00+08:00', 'reviewed-date': '2026-06-11T10:00:00+08:00',
+    'archived-date': '2026-06-11T10:00:00+08:00', 'parent-tasks': '["[[x/task|task]]"]', 'schema-version': '"7.0"' };
+  assert.ok(paceUtils.validateFrontmatterSchema('chg', 'archived', full).ok, 'V7B-6a: 三 date 齐全的 archived 通过');
+  const rV = paceUtils.validateFrontmatterSchema('chg', 'archived', { ...full, 'verified-date': 'null' });
+  assert.ok(!rV.ok && rV.missing.includes('verified-date'), 'V7B-6b: archived 缺 verified-date 值报 missing');
+  const rR = paceUtils.validateFrontmatterSchema('chg', 'archived', { ...full, 'reviewed-date': 'null' });
+  assert.ok(!rR.ok && rR.missing.includes('reviewed-date'), 'V7B-6c: archived 缺 reviewed-date 值报 missing');
+  // cancelled 帧不验证不审计（spec §4.1）：verified/reviewed-date 为 null 仍通过
+  const cancelled = { ...full, status: 'cancelled', 'verified-date': 'null', 'reviewed-date': 'null' };
+  assert.ok(paceUtils.validateFrontmatterSchema('chg', 'cancelled', cancelled).ok, 'V7B-6d: cancelled 帧 verified/reviewed null 豁免');
+  // 6.0 archived 帧整体跳过（零误报回归）
+  const v6 = { status: 'archived', 'schema-version': '"6.0"', 'verified-date': 'null', 'reviewed-date': 'null' };
+  assert.strictEqual(paceUtils.validateFrontmatterSchema('chg', 'archived', v6).skipped, 'non-7.0', 'V7B-6e: 6.0 archived 零误报');
+});
+
+test('V7B-7: change-set / change-set-seq 成对不变量（R-11：半空对报 violation）', () => {
+  const base = { status: 'in-progress', date: '2026-06-11',
+    'verified-date': 'null', 'reviewed-date': 'null', 'archived-date': 'null',
+    'parent-tasks': '["[[x/task|task]]"]', 'schema-version': '"7.0"' };
+  assert.ok(paceUtils.validateFrontmatterSchema('chg', 'in-progress',
+    { ...base, 'change-set': 'null', 'change-set-seq': 'null' }).ok, 'V7B-7a: 双 null 单 CHG 通过');
+  assert.ok(paceUtils.validateFrontmatterSchema('chg', 'in-progress',
+    { ...base, 'change-set': 'wave3', 'change-set-seq': '"1/2"' }).ok, 'V7B-7b: 双非 null batch 成员通过');
+  const rA = paceUtils.validateFrontmatterSchema('chg', 'in-progress',
+    { ...base, 'change-set': 'wave3', 'change-set-seq': 'null' });
+  assert.ok(!rA.ok && rA.missing.some(m => m.includes('change-set-seq')), 'V7B-7c: 半空对（有 change-set 缺 seq）报 violation');
+  const rB = paceUtils.validateFrontmatterSchema('chg', 'in-progress',
+    { ...base, 'change-set': 'null', 'change-set-seq': '"1/2"' });
+  assert.ok(!rB.ok && rB.missing.some(m => m.includes('change-set') && !m.includes('seq')), 'V7B-7d: 半空对（缺 change-set 有 seq）报 violation');
+  const v6 = { ...base, 'schema-version': '"6.0"', 'change-set': 'wave3', 'change-set-seq': 'null' };
+  assert.strictEqual(paceUtils.validateFrontmatterSchema('chg', 'in-progress', v6).skipped, 'non-7.0', 'V7B-7e: 6.0 半空对零误报');
+});
+
 // ============================================================
 // V7C. 发布面模板与 7.0 合同一致性（CHG-20260611-10 T-003）
 // ============================================================

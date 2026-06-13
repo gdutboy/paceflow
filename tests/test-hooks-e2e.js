@@ -6166,6 +6166,18 @@ test('15a0b. v6 VERIFIED 标记存在但 verified-date 占位 → warning', () =
   assert.ok(r.stdout.includes('占位 null/空'));
 });
 
+test('15a0c. R-06b：带 slug 文件名 VERIFIED 标记但 verified-date 占位 → warning（兜底正则适配 slug）', () => {
+  const detail = chgDetail({ id: 'CHG-20260504-03' })
+    .replace('verified-date: null', 'verified-date: ""')
+    .replace('<!-- APPROVED -->', '<!-- APPROVED -->\n<!-- VERIFIED -->');
+  const dir = makeV6Project('post-schema-slug-verified');
+  const fp = path.join(dir, 'changes', 'chg-20260504-03-some-slug.md');
+  fs.writeFileSync(fp, detail, 'utf8');
+  const r = runHook('post-tool-use.js', { cwd: dir, stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: 'a', new_string: 'b' } } });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('占位 null/空'), 'R-06b: 带 slug 文件名（HOTFIX-20260610-01 后全部带 slug）的占位检测应生效，正则不能只匹配无 slug 旧格式');
+});
+
 test('15a. PostToolUse 对 artifact-writer 合法 C/V 标志写入不报直接写入', () => {
   const dir = makeV6Project('post-marker-agent');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');

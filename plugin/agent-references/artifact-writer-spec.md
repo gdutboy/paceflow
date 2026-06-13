@@ -231,7 +231,7 @@ wikilink 同 §5.1 全名 + 纯 ID 别名，但**表格内别名分隔符必须�
 
 ## 摘要索引
 
-<!-- 格式：- [状态] [[finding-id|title]] — summary #finding [date::] [impact::] -->
+<!-- 格式：- [状态] [[finding-id|title]] — summary #finding [date::] [impact::] [change::] -->
 
 
 <!-- ARCHIVE -->

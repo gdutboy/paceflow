@@ -54,7 +54,7 @@ walkthrough-summary: <完成摘要>
 
 主路径：一个连续 CHG 的代码写完后，主 session 先运行验证并读取结果；验证通过后直接派 `close-chg verification-confirmed: true complete-open-tasks: true`。即使详情中仍有 `[ ]` / `[/]` 的 T-NNN，只要这些任务已经在本轮执行并由验证覆盖，也由 close-chg 统一收口。逐个 `update-status [x]` + `update-chg action=verify` + 归档的拆分路径，仅在用户明确要求暂不归档或需要跨 session 留存进度时使用。
 
-> **报告标题强制**：最终报告第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无自然语言、无空行、无说明前缀）。失败、幂等、部分修复场景同样适用。
+> **报告标题强制**：最终报告第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题前直接进入该行（无自然语言、无空行、无说明前缀）。失败、幂等、部分修复场景同样适用。权威定义见 `artifact-writer-spec.md` §10。
 > **全局对话样式豁免**：最终报告自成一体，第一个字符是 `#`；时间戳、Insight 块、固定结尾语等主 session / CLAUDE.md 样式均不进入本报告。
 
 ## 前置检查

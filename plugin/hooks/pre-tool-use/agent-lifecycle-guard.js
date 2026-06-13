@@ -314,7 +314,7 @@ function artifactWriterCreateChgHint(artDir) {
     'operation: create-chg',
     'execution-context: <helper 输出>',
     'reserved-id: <helper 输出或 hook deny 输出>',
-    'reserved-file: <helper 输出或 hook deny 输出>',
+    'reserved-file-prefix: <helper 输出或 hook deny 输出>',
     'title: <变更标题>',
     'tasks:',
     '- T-001: <首个任务>',

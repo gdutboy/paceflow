@@ -83,7 +83,7 @@ review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/r
 
 ## 操作步骤
 
-> **报告标题强制**：所有 action（append / replace / update-status / approve / approve-and-start / verify / review）完成后，报告第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题作为独立单行（见 `agents/artifact-writer.md` §报告格式）。失败、幂等、部分修复场景同样适用。
+> **报告标题强制**：所有 action（append / replace / update-status / approve / approve-and-start / verify / review）完成后，报告第一行字面是 `## artifact-writer 报告`，第一个字符为 `#`，标题作为独立单行。失败、幂等、部分修复场景同样适用。权威定义见 `artifact-writer-spec.md` §10。
 > **全局对话样式豁免**：最终报告自成一体，第一行直接是 `## artifact-writer 报告`；时间戳、Insight 块、固定结尾语等主 session / CLAUDE.md 样式均不进入本报告。
 > **错误码层级**：`operation=update-chg` 已识别时，非法 `action` 属于字段值非法，报告 `format-violation`。`out-of-scope` 的适用范围仅限未知 operation（如 `delete-chg`）。
 

@@ -265,6 +265,26 @@ root-cause: <根因>
 knowledge-link: [[note]] 或 project-scope: project-only
 ```
 
+更新已存在 finding（状态流转 / 回链 / 追加正文，record-finding 的对称操作）：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-finding
+target: finding-yyyy-mm-dd-slug
+status: accepted              （枚举 open | investigating | accepted | rejected | merged | blocked；至少给 status / change-link / append 之一）
+change-link: [[chg-yyyymmdd-nn]]   （可选，与 accepted 搭配表示由该变更处置；won't-fix 用 status: rejected + rejection-reason 不带 change-link）
+append: <可选，原样追加到详情正文末尾的 Markdown>
+```
+
+重排 findings.md / corrections.md 活跃区索引（按 date 降序，新→旧）：
+
+```text
+artifact_dir: <hook 解析出的 artifact 目录>
+operation: update-index
+target: findings.md | corrections.md
+action: reorder
+```
+
 ---
 
 ## 标记位置

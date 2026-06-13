@@ -234,7 +234,7 @@ module.exports = function createChangeAnalysis(ctx) {
     correction: ['date', 'schema-version'],
   };
   const SCHEMA_V7_VALUE_REQUIRED = {
-    chg: { base: ['status', 'date', 'parent-tasks', 'schema-version'], archived: ['archived-date'], cancelled: ['archived-date'] },
+    chg: { base: ['status', 'date', 'parent-tasks', 'schema-version'], archived: ['archived-date', 'verified-date', 'reviewed-date'], cancelled: ['archived-date'] },
     finding: { base: ['status', 'date', 'schema-version'] },
     correction: { base: ['date', 'schema-version'] },
   };
@@ -264,6 +264,13 @@ module.exports = function createChangeAnalysis(ctx) {
       ...valueRequired.filter(k => present.includes(k) && !frontmatterNullable(fm[k])),
     ];
     const unknown = present.filter(k => !keySet.has(k));
+    // R-11：change-set / change-set-seq 成对不变量（仅 chg，两 key 都 present 时）——
+    // 半空对（一有值一 null/占位）破坏 batch 聚合排序，报 violation。
+    if (kind === 'chg' && present.includes('change-set') && present.includes('change-set-seq')) {
+      const csHas = !!frontmatterNullable(fm['change-set']);
+      const seqHas = !!frontmatterNullable(fm['change-set-seq']);
+      if (csHas !== seqHas) missing.push(csHas ? 'change-set-seq(pair-empty)' : 'change-set(pair-empty)');
+    }
     return { ok: missing.length === 0 && unknown.length === 0, missing, unknown };
   }
 

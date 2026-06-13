@@ -315,7 +315,7 @@ paceflow/
 │   │   ├── set-activation.js         #     enable/disable/pause/resume/status 状态 helper
 │   │   ├── print-session-context.js  #     SessionStart 注入预览 helper（只读）
 │   │   ├── sync-plan.js              #     plan bridge 同步 helper
-│   │   └── templates/                #     6 个 artifact 模板 + 1 个 knowledge 参考模板
+│   │   └── templates/                #     5 个 artifact 模板 + 1 个 knowledge 参考模板
 │   ├── skills/                       #   4 个用户 Skill
 │   │   ├── pace-workflow/            #     PACE 核心流程
 │   │   ├── pace-bridge/              #     Superpowers 桥接
