@@ -255,6 +255,26 @@ test('V7E-1c: 零缩进块序列删 key 不留孤儿行（R-34）', () => {
   assert.ok(!/^- change$/m.test(fm), 'R-34: 删 tags 后零缩进序列项 `- change` 不残留 frontmatter');
 });
 
+test('V7E-1d: 未知参数 fail-fast——--dryrun 误拼不得静默执行真迁移（codex P1）', () => {
+  const dir = buildFixture('v7e-unknown-arg');
+  const before = snapshotAll(dir);
+  let failed = false;
+  try { runMigrate(dir, ['--dryrun']); } catch (e) { failed = true; }
+  assert.ok(failed, 'P1: 未知参数 --dryrun 应非零退出 fail-fast（修复前被静默忽略→执行真迁移）');
+  assert.deepStrictEqual(snapshotAll(dir), before, '未知参数不得写盘（无迁移副作用）');
+  assert.ok(!fs.existsSync(path.join(dir, '.pace', 'v7-migration-state')), '未知参数不得写 v7-migration-state');
+});
+
+test('V7E-1e: 取值型 flag 缺值 fail-fast——--restore 末尾缺值不静默降级为真迁移（codex P3）', () => {
+  const dir = buildFixture('v7e-restore-missing');
+  const before = snapshotAll(dir);
+  // 修复前 --restore 末尾缺值 args.restore='' → if(args.restore) 假 → 执行真迁移
+  let failed = false;
+  try { runMigrate(dir, ['--restore']); } catch (e) { failed = true; }
+  assert.ok(failed, 'P3: --restore 缺值应 fail-fast，不静默降级为真迁移');
+  assert.deepStrictEqual(snapshotAll(dir), before, '--restore 缺值不得写盘');
+});
+
 test('V7E-2: 执行后全部详情 frontmatter 过 7.0 封闭合同', () => {
   const dir = buildFixture('v7e-contract');
   runMigrate(dir);

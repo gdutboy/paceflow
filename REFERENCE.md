@@ -1,4 +1,4 @@
-# PACEflow v7.2.0 参考手册
+# PACEflow v7.2.1 参考手册
 
 > 最后更新：2026-06-13
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify-Review)
@@ -82,7 +82,7 @@ projects/<project>/
 | `record-finding` | 写 `changes/findings/<id>.md` + `findings.md` 摘要索引 |
 | `record-correction` | 写 `changes/corrections/<id>.md` + `corrections.md` 摘要索引 |
 
-主 session 禁止直接写 `APPROVED`、`VERIFIED`、`verified-date`、`REVIEWED`、`reviewed-date`，也禁止在 task/impl 中写内嵌详情。
+主 session 禁止直接写 `APPROVED`、`VERIFIED`、`verified-date`、`REVIEWED`、`reviewed-date`，也禁止在索引文件（`task.md`）中写内嵌详情。
 
 ## 3.1 batch create CHG（变更集批量创建）
 

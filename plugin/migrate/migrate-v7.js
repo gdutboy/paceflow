@@ -60,11 +60,29 @@ const HYGIENE_STRAY_DOCS = [
 
 function parseArgs(argv) {
   const args = { cwd: '', dryRun: false, hygiene: false, restore: '' };
+  const unknown = [];
   for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === '--cwd') args.cwd = argv[++i] || '';
+    // 取值型 flag（--cwd/--restore）取值前 peek 下一 token，是 flag 或缺失则视为缺值进 unknown（fail-fast），
+    // 否则 --cwd --dryrun 会把 --dryrun 吞作 cwd 值、--restore 末尾缺值静默降级为真迁移（codex P3）
+    if (argv[i] === '--cwd') {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) unknown.push(argv[i]);
+      else args.cwd = argv[++i];
+    }
     else if (argv[i] === '--dry-run') args.dryRun = true;
     else if (argv[i] === '--hygiene') args.hygiene = true;
-    else if (argv[i] === '--restore') args.restore = argv[++i] || '';
+    else if (argv[i] === '--restore') {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) unknown.push(argv[i]);
+      else args.restore = argv[++i];
+    }
+    else unknown.push(argv[i]);
+  }
+  // codex P1：未知参数 fail-fast——否则 --dryrun 误拼（少一个连字符）被静默忽略致执行真迁移（用户以为 dry-run 预览）
+  if (unknown.length > 0) {
+    console.error(`未知参数：${unknown.join(', ')}`);
+    console.error('用法：node migrate-v7.js --cwd <项目目录> [--dry-run] [--hygiene] [--restore <备份目录>]');
+    process.exit(1);
   }
   if (!args.cwd) {
     console.error('用法：node migrate-v7.js --cwd <项目目录> [--dry-run] [--hygiene] [--restore <备份目录>]');

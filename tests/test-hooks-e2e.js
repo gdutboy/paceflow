@@ -3139,6 +3139,16 @@ test('9hc-helper4a4. set-artifact-root --cwd 末尾缺值 → fail-closed（H-01
   assert.notStrictEqual(r.code, 0, '--cwd 缺值应 fail-closed');
 });
 
+test('9hc-helper4e. set-project-root --cwd/--mode 缺值 → fail-closed 不写 .pace（codex H-01 对称）', () => {
+  const dir = makeTmpDir('set-project-root-missing-value');
+  // bug：--cwd 用 argv[++i] 无条件吞下一 token，把 --mode 当 cwd 值写到 ./--mode/.pace
+  const r1 = spawnSync('node', [SET_PROJECT_ROOT_HELPER, '--cwd', '--mode', 'independent'], { cwd: dir, encoding: 'utf8' });
+  assert.notStrictEqual(r1.status, 0, '--cwd 缺值（吞 --mode flag）应 fail-closed（exit≠0）');
+  assert.ok(!fs.existsSync(path.join(dir, '--mode', '.pace')), '不应把 --mode 当路径写 ./--mode/.pace');
+  const r2 = spawnSync('node', [SET_PROJECT_ROOT_HELPER, '--mode'], { cwd: dir, encoding: 'utf8' });
+  assert.notStrictEqual(r2.status, 0, '--mode 末尾缺值应 fail-closed');
+});
+
 test('9hc-helper4a2. 继承子目录 set-artifact-root 写父 Project Root runtime', () => {
   const root = makeTmpDir('set-root-helper-subdir-parent');
   const child = path.join(root, 'packages', 'api');
@@ -7940,6 +7950,21 @@ test('V7F-6. 8.0 帧项目 SessionStart core → 注入插件升级提示段', (
   assert.strictEqual(r.code, 0);
   assert.ok(r.stdout.includes('插件升级提示'), '应注入升级提示段');
   assert.ok(r.stdout.includes('高于当前插件支持的 7.0'));
+});
+
+test('V7F-7. 8.0 帧项目派 artifact-writer → deny 升级提示（不走 7.0 lifecycle 裁判，codex P2）', () => {
+  const dir = makeV6Project('v7f-newer-agent', { indexMark: '[/]', implIndex: '', detail: futureDetail.replace('status: planned', 'status: in-progress') });
+  // 不完整 close-chg prompt（缺 verification-confirmed 等）——7.0 下走 lifecycle deny「缺少必填字段」
+  const prompt = `artifact_dir: ${dir.replace(/\\/g, '/')}/\noperation: close-chg\ntarget: CHG-20260504-01`;
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-v7f-agent', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'close', prompt } },
+    env: { PACE_VAULT_PATH: '' },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'P2: 8.0 artifact-writer 派遣应 deny（7.x writer 会用 7.0 逻辑写坏新数据，与 V7F-5 写保护一致）');
+  assert.ok(r.stdout.includes('高于当前插件支持的 7.0'), 'P2: deny 文案应是升级提示');
+  assert.ok(!r.stdout.includes('缺少必填字段'), 'P2: 不走 7.0 lifecycle 校验裁判新数据');
 });
 
 console.log('\n--- V7E: 未迁移布局提示 ---');

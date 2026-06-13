@@ -386,6 +386,19 @@ paceUtils.withStdinParsed((stdin) => {
       );
     }
     if (isAgentTool(toolName)) {
+      // codex P2：artifact-writer Agent 派遣路径的 newer-schema 让位——8.0 数据不派旧 artifact-writer
+      // 管理（会走 7.0 artifact-dir/lifecycle/base 裁判或创建 v7 模板写坏新数据）。与 V7F-5 直写写保护
+      // 一致：artifact 写入对看不懂的 schema 不软化，deny 并提示升级 reload；位置在 lifecycle/base 校验之前。
+      if (isArtifactWriterAgentTool(stdin)) {
+        const newerSchema = paceUtils.detectNewerSchemaData(cwd);
+        if (newerSchema.detected) {
+          const reason = `检测到 artifact schema ${newerSchema.maxVersion} 高于当前插件支持的 7.0，不能派当前 artifact-writer 管理该数据（会用 7.0 逻辑裁判或创建模板写坏新数据）。请升级 PACEflow 插件并 reload 全部 session（含其他 worktree）后再派 artifact-writer。`;
+          const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
+          process.stdout.write(JSON.stringify(output));
+          log(projectLogEntry('PreToolUse', `DENY_AGENT_NEWER_SCHEMA${teammateTag}`, { proj, max_version: newerSchema.maxVersion, dur: Date.now() - t0 }));
+          return;
+        }
+      }
       if (isArtifactWriterAgentTool(stdin) && needsArtifactRootChoice) {
         const output = denyOrHint(artifactRootChoiceReason);
         process.stdout.write(JSON.stringify(output));

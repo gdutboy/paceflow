@@ -9,15 +9,20 @@ const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
-  const args = { mode: '', cwd: '', help: false, unknown: [] };
+  const args = { mode: '', cwd: '', help: false, unknown: [], missingValue: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
       args.help = true;
     } else if (arg === '--mode' || arg === '-m') {
-      args.mode = String(argv[++i] || '');
+      // H-01：取值前 peek 下一 token，是另一个 flag 或缺失则视为缺值，不吞 flag、不静默写损坏配置
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) { args.missingValue.push(arg); }
+      else { args.mode = String(argv[++i]); }
     } else if (arg === '--cwd') {
-      args.cwd = String(argv[++i] || '');
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('-')) { args.missingValue.push(arg); }
+      else { args.cwd = String(argv[++i]); }
     } else if (arg.startsWith('-')) {
       args.unknown.push(arg);
     } else if (!args.mode) {
@@ -49,6 +54,10 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(`${usage()}\n`);
+    return;
+  }
+  if (args.missingValue.length > 0) {
+    fail(args.cwd, 'DENY_MISSING_VALUE', `set-project-root 参数缺值：${args.missingValue.join(', ')} 后未跟有效值（下一项是 flag 或缺失）。\n不吞 flag、不在错误目录写 .pace；请补全值。\n\n${usage()}`, { missing: args.missingValue.join(',') });
     return;
   }
   if (args.unknown.length > 0) {

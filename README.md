@@ -137,7 +137,7 @@ node "$PLUGIN_DIR/hooks/set-project-root.js" --mode independent
 ```
 brainstorming（需求探索 + 方案设计）
   → writing-plans（生成实施计划）
-      → pace-bridge（派 artifact writer 创建 v6 CHG）
+      → pace-bridge（派 artifact writer 创建 CHG）
       → auto-APPROVED（设计阶段已参与决策，跳过重复审批）
         → 选择执行策略（串行 / 并行 agent / TDD）
 ```
@@ -146,7 +146,7 @@ brainstorming（需求探索 + 方案设计）
 
 ### Claude Code `/plan` 桥接
 
-原生支持 Claude Code 的 `/plan` 模式——计划文件自动检测，pace-bridge skill 一键转换为 PACE v6 CHG（`changes/<id>.md` + task/impl 索引）。Compact 后计划丢失？自动恢复提醒。
+原生支持 Claude Code 的 `/plan` 模式——计划文件自动检测，pace-bridge skill 一键转换为 PACE CHG（`changes/<id>.md` + `task.md` 单索引）。Compact 后计划丢失？自动恢复提醒。
 
 ### 智能上下文管理
 
@@ -413,6 +413,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v7.2.1 | 2026-06-13 | **codex v7.2.0 审计补遗（helper fail-fast + schema guard 路径完整性 + 文档/合规）**：codex 对 v7.2.0 独立审计补出原 77 条严格审计漏掉的 5 条——**P1** migrate-v7 未知参数 fail-fast（`--dryrun` 误拼少一连字符不再被静默忽略致执行真迁移）+ `--cwd`/`--restore` 缺值 fail-fast；**P2** schema 前向兼容 guard 覆盖 artifact-writer Agent 派遣路径（8.0 数据 deny + 升级提示，不走 7.0 lifecycle 裁判/模板创建写坏新数据，补 CHG-04 guard 缺口）；**P2/P3** set-project-root `--cwd`/`--mode` 缺值 fail-closed（复用 set-artifact-root H-01 missingValue 对称）；**P3** README/REFERENCE 当前功能段 v6 CHG/task-impl 双索引口径修正（G-doc 漏网）+ 补 LICENSE（MIT 正文，对齐 plugin.json 声明）。3 TDD 红→绿（V7E-1d/9hc-helper4e/V7F-7）+ opus 对抗审计（确认 Agent deny 非 brick、钉死 deny 断言、补 --restore 缺值）→ test-pace-utils 275、test-hooks-e2e 392、test-migrate-v7 16、test-session-layers 42、test-agent-tests-helpers 9 |
 | v7.2.0 | 2026-06-13 | **v7 严格审计修复二/三/四批（七组 findings 全部清零，v7-audit-fix-wave2/3/4）**：**G-legacy / G-doc**——hook 运行时 24+ 处 v6 自称 + 已退役「索引事务」deny 文案改版本无关措辞、correction「仅本项目」标注 4 处发布面对齐 `[scope::]`；README/REFERENCE 按 v7 运行时同步（激活模型重写为强/软信号两层、5 个用户命令文档、PreCompact 快照退役、8→9 类 hook + SessionEnd、发布检查 schema-version 6.0→7.0、索引完整性三门→两门）。**G-template / G-schema**——agent.md close-chg 补 `implementation-notes` 消 guard deny 漂移、update-finding/update-index 补正向模板、删 implementation_plan.md 死模板；archived 必填集补 verified/reviewed-date 对齐 §4.1 状态机表（cancelled 豁免）、post-tool-use 兜底正则适配带 slug 文件名、change-set/change-set-seq 成对不变量校验。**G-migrate / G-test / G-spec**——migrate-v7 status 判定剥引号使含引号 status 野外 v6 vault 可迁移（消除整库 exit=1）+ 续行正则补零缩进块序列；新增 V7D-4 锁 agent.md 6 个正向模板块（mutation 实测漂移即红，修 V7D overclaim）+ V7C-2 引用 SCHEMA_V7_KEYS 代码常量 + runner async fail-fast；set-activation 未知参数报错首句补全。5 条 TDD 红→绿（V7B-6/V7B-7/15a0c/V7E-1b/1c）+ V7D-4 mutation 实测 + opus/manual 对抗审计 + 低价值 P3 按可达性降级备案 → test-pace-utils 275、test-hooks-e2e 390、test-session-layers 42、test-agent-tests-helpers 9、test-migrate-v7 14 |
 | v7.1.0 | 2026-06-13 | **v7 严格审计修复第一波（v7-audit-fix-wave1，77 条 findings 经对抗验证后的 P1 级收口）**：**v5 迁移路径退役**——v5 deny/fail 门控全部撤除（写码门/agent 派遣门/reserve/Stop），batch-archive-v5.js 与 v5-migration-state 三态机制删除，检测降级为一句布局提示（首个 create-chg 建出 changes/ 后自动消失），v5 项目新内容直接走当前合同；**v6→v7 升级指引**——README 新增升级章节（先升级 reload 全部 session 再迁数据的顺序铁律、兼容不对称警告、锁死恢复三路径），spec 兼容论证三处 historical 勘误；**schema 前向兼容 guard**——数据 schema 高于 hook 支持上限时流程门让位为升级提示（pre-tool-use/Stop/SessionStart 三面对称、写保护不软化），v7→v8 升级窗口不再 brick；**reserve 重复发号修复**（HOTFIX）——existingMax 适配带 slug 文件名，counter 丢失（fresh clone/换机）不再同日重发同 ID。mutation 红绿闭环验证测试判别力；剩余 P2/P3 已全部入库为 7 条分组 finding 待批次消化 → test-pace-utils 272、test-hooks-e2e 389、test-migrate-v7 12、test-session-layers 42、test-agent-tests-helpers 9 |
 | v7.0.0 | 2026-06-12 | **v7 大重构（artifact-schema-v7-refactor change-set 6 CHG）**：**单索引**——`task.md` 是唯一 CHG 索引，`implementation_plan.md` 退役（存量由 migrate-v7 改写为 tombstone），跨索引一致性校验与 `.pace/index-transactions` 双写事务随之退役；**7.0 封闭合同**——CHG 帧 9 key / finding 帧 3 key / correction 帧 2 key，「敲定字段必须存在，不写入即非法」（缺失/多余都报 format-violation；key 恒在、未到阶段值为 null），`validateFrontmatterSchema` 三层确定性接线（agent 写盘即时打回 / Stop 兜底 / SessionStart 渲染）；**发布面目标态重写**——agent.md/spec/instructions/SKILL 全发布面按「目标态合同非变更态 diff」重写 + 规范单源化指针化（操作模板/状态映射/helper 来源/CRLF 块各立单源）+ V7D 三组一致性测试锁（漏改即红灯）；**migrate-v7.js**——frontmatter 瘦身/tombstone/索引卫生（findings 三态重排、corrections [scope::] 修正）/dry-run 预览/执行前备份/验收失败还原/--restore 整体还原/--hygiene 卫生，SessionStart 检测未迁移布局注入迁移命令 + PostToolUse 催办一次。真实 vault 121 文件迁移验收 100% 通过；每 CHG opus 对抗审计（验收 skip 假绿 P1、行内 ARCHIVE 文本误切 P0 等真跑前后拦截修复）→ test-pace-utils 275、test-migrate-v7 12、test-hooks-e2e 391、test-session-layers 42、test-agent-tests-helpers 9 |
@@ -497,4 +498,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v7.2.0 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify-Review)
+**版本**: v7.2.1 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify-Review)

@@ -2952,7 +2952,8 @@ test('plugin runtime root 不包含开发资料', () => {
   const repoRoot = path.join(__dirname, '..');
   const pluginRoot = path.join(repoRoot, 'plugin');
   // CHG-B B2：commands/ 为 plugin slash command 发布面（plugin.json "commands" 声明），加入白名单。
-  const allowedTopLevel = new Set(['.claude-plugin', 'agent-references', 'agents', 'commands', 'hooks', 'migrate', 'skills']);
+  // codex 审计补遗：LICENSE 是发布合规文件（plugin.json 声明 MIT），随 marketplace 打包 ./plugin，加入白名单。
+  const allowedTopLevel = new Set(['.claude-plugin', 'agent-references', 'agents', 'commands', 'hooks', 'migrate', 'skills', 'LICENSE']);
   for (const name of fs.readdirSync(pluginRoot)) {
     assert.ok(allowedTopLevel.has(name), `plugin runtime 顶层不应包含 ${name}`);
   }
