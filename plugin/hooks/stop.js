@@ -363,7 +363,7 @@ if (paceSignal === 'artifact') {
   } catch(e) {}
 
   if (lastMessage && COMPLETION_PHRASES.test(lastMessage) && completionPending > 0) {
-    addWarning('execution', `AI 声称完成，但 v6 详情文件中仍有 ${completionPending} 个未完成任务。请继续执行、明确暂停/阻塞，或用 update-chg action=update-status 标记 [-] 跳过；若验证已通过并准备收尾，可派 close-chg complete-open-tasks: true。`);
+    addWarning('execution', `AI 声称完成，但详情文件中仍有 ${completionPending} 个未完成任务。请继续执行、明确暂停/阻塞，或用 update-chg action=update-status 标记 [-] 跳过；若验证已通过并准备收尾，可派 close-chg complete-open-tasks: true。`);
   }
 
 } else if (taskActive) {

@@ -490,7 +490,7 @@ function fsRead(file) {
 
 function bashArtifactRuntimeControlDenyReason(command) {
   return [
-    '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
+    '禁止使用 Bash 修改 PaceFlow artifact 写入控制运行态。锁、编号计数与 reservation 只能由 hook 创建/释放。',
     '如果看到写入繁忙，请等待当前 artifact 写入完成后重试；不要用 Bash 删除或改写 PaceFlow 运行态文件。',
     `被拦截的命令：${String(command || '').slice(0, 500)}`
   ].join('\n');

@@ -160,7 +160,7 @@ function main() {
   const artDir = paceUtils.getArtifactDir(args.cwd);
   try { paceUtils.ensureProjectInfra(args.cwd); } catch(e) {}
   try { paceUtils.createTemplates(args.cwd); } catch(e) {
-    fail(args.cwd, 'DENY_TEMPLATE_CREATE', `PACE hook 无法在 artifact_dir 创建完整 v6 Artifact 基础结构：${paceUtils.displayDir(artDir)}\n底层错误：${e.message || String(e)}`, { artifact_dir: paceUtils.displayDir(artDir) });
+    fail(args.cwd, 'DENY_TEMPLATE_CREATE', `PACE hook 无法在 artifact_dir 创建完整 Artifact 基础结构：${paceUtils.displayDir(artDir)}\n底层错误：${e.message || String(e)}`, { artifact_dir: paceUtils.displayDir(artDir) });
     return;
   }
 

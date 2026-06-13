@@ -158,7 +158,7 @@ module.exports = function createChangeAnalysis(ctx) {
     const entries = [];
     // HOTFIX-20260610-01：wikilink 支持带 slug 全名（chg-yyyymmdd-nn-<slug>）+ 可选 |别名。
     //   组 2 捕获纯 ID 部分（id 推导用），组 3 捕获可选 slug 段（slug 字段拼出文件 stem 全名，
-    //   供 task/impl 跨索引 join 与 changes/<slug>.md 路径提示）。旧纯 ID 形态（无 slug 段）继续兼容。
+    //   供 task.md 索引解析与 changes/<slug>.md 路径提示）。旧纯 ID 形态（无 slug 段）继续兼容。
     const lineRe = /^- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(-[a-z0-9][a-z0-9-]*)?(?:\|[^\]]+)?\]\]\s*(.*)$/i;
     const malformedRe = /^(.+)- \[([ x\/!\-])\]\s+\[\[((?:chg|hotfix)-\d{8}-\d{2})(-[a-z0-9][a-z0-9-]*)?(?:\|[^\]]+)?\]\]\s*(.*)$/i;
     for (const line of String(activeText || '').split(/\r?\n/)) {

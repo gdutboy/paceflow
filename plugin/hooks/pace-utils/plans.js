@@ -205,7 +205,7 @@ module.exports = function createPlanUtils(ctx) {
     const planFiles = listBridgeCandidatePlanFiles(cwd);
     if (planFiles.length === 0) return null;
     const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');
-    const bridgeSteps = `调用 Skill(paceflow:pace-bridge)，按该 skill 读取计划、创建 v6 CHG、必要时 approve-and-start；bridge 成功后运行 plan 同步 helper：node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"。`;
+    const bridgeSteps = `调用 Skill(paceflow:pace-bridge)，按该 skill 读取计划、创建 CHG、必要时 approve-and-start；bridge 成功后运行 plan 同步 helper：node "${SYNC_PLAN_SCRIPT}" --plan "<已桥接 plan 绝对路径>"。`;
     return { fileList, bridgeSteps };
   }
 

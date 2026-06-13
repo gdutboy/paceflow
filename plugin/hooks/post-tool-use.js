@@ -191,7 +191,7 @@ paceUtils.withStdinParsed((stdin) => {
       const setReviewedDate = paceUtils.hasNonNullReviewedDate(mutationText) &&
         !paceUtils.hasNonNullReviewedDate(oldString || '');
       if ((addedApproved || addedVerified || setVerifiedDate || addedReviewed || setReviewedDate) && !paceUtils.isArtifactWriterAgentType(stdin.agentType)) {
-        warnings.push(`检测到 C/V/R 阶段标志被直接写入 ${path.basename(filePath)}。v6 唯一路径是 artifact-writer 的对应批准/验证/审计/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`);
+        warnings.push(`检测到 C/V/R 阶段标志被直接写入 ${path.basename(filePath)}。唯一路径是 artifact-writer 的对应批准/验证/审计/收尾操作，字段格式见 Skill(paceflow:artifact-management)。`);
       }
     }
 
@@ -236,7 +236,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     // FC-01：纳入 Write 创建路径（content），record-correction 新建 correction 用 Write 提供 content、newString 为空
     if (artifactRel && /^changes\/corrections\/.+\.md$/i.test(artifactRel) && (newString || content)) {
-      warnings.push('检测到 correction 详情变更。请确认已同步写入 knowledge/ 或在 corrections.md 索引标注 [knowledge:: project-only]。');
+      warnings.push('检测到 correction 详情变更。请确认已同步写入 knowledge/（索引标注 [knowledge:: [[note]]]），或在 corrections.md 索引标注 [scope:: project-only]。');
     }
     if (artifactRel === 'walkthrough.md') {
       const walkthroughIssues = paceUtils.validateWalkthroughLinks(cwd);
@@ -247,7 +247,7 @@ paceUtils.withStdinParsed((stdin) => {
         const ids = changeIdsFromMessages(walkthroughIssues);
         const target = ids.length > 0 ? ids.join(', ') : 'walkthrough.md';
         const reason = [
-          `PACEflow PostToolUse 终态修复：你刚写入的 walkthrough.md 仍不符合 v6 完成记录规范（${target}）。`,
+          `PACEflow PostToolUse 终态修复：你刚写入的 walkthrough.md 仍不符合完成记录规范（${target}）。`,
           ...walkthroughIssues.map((issue, idx) => `[${idx + 1}] ${issue}`),
           '请在当前 turn 继续修复，不要结束 artifact-writer 报告：读取 task.md 对应索引与 changes/<id>.md，补齐正确 wikilink 和 [worktree:: ...] [branch:: ...] 上下文；修复后再报告。',
           '不要改用 Bash、临时脚本或主 session 直接改 artifact。'
@@ -264,7 +264,7 @@ paceUtils.withStdinParsed((stdin) => {
     //   的提示措辞改指向 /paceflow:enable（显式启用为主，与 pre-tool-use 软提醒对称）。
     const fallbackSignal = isPaceProject(cwd);
     if (fallbackSignal === 'manual') {
-      warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在；写代码或派 artifact-writer 前请先创建 v6 CHG。${FORMAT_SNIPPETS.skillRef}`);
+      warnings.push(`检测到 PACE 激活信号（${fallbackSignal}）但 task.md 不存在；写代码或派 artifact-writer 前请先创建 CHG。${FORMAT_SNIPPETS.skillRef}`);
     } else {
       const codeCount = countCodeFiles(cwd);
       if (codeCount >= 3) {

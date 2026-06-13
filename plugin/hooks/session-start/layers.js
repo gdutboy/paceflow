@@ -301,7 +301,7 @@ function renderNativePlanReminder(state, eventType) {
   if (!planPath) return '';
   return `\n=== Native Plan 桥接提醒 ===\n`
     + `检测到未桥接的原生计划文件：${planPath}\n`
-    + '请调用 Skill(paceflow:pace-bridge)，按该 skill 桥接为 v6 CHG 并记录同步标记。\n\n';
+    + '请调用 Skill(paceflow:pace-bridge)，按该 skill 桥接为 CHG 并记录同步标记。\n\n';
 }
 
 /** Artifact 目录 section（重构前 writeArtifactDirSection 315-327 的输出部分）。
@@ -914,7 +914,7 @@ function renderCrossSessionAndExecution(state, paceUtils) {
       }));
     }
     if (detailPending > 0) {
-      blocks.push(`\n=== CHG 执行上下文 ===\nv6 任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN；继续前先 Read 对应 changes/<id>.md。Claude 任务面板只是工作记忆，按需要使用。\n\n`);
+      blocks.push(`\n=== CHG 执行上下文 ===\n任务权威是 changes/<id>.md 的 ## 任务清单；task.md 只是 CHG 索引。\n当前执行中的 CHG 有 ${detailPending} 个未完成 T-NNN；继续前先 Read 对应 changes/<id>.md。Claude 任务面板只是工作记忆，按需要使用。\n\n`);
     } else if (hasCompleted) {
       blocks.push(`\n=== CHG 执行上下文 ===\n活跃索引中有已完成/跳过变更待 close-chg；archive-chg 仅用于已 verified 的单独归档修复。\n\n`);
     } else if (hasIndexPending && state.paceSignal === 'artifact') {

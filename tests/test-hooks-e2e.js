@@ -1156,7 +1156,7 @@ test('8b. 当前 session owner 的 in-progress 非代码写入放行并注入 CH
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
-  assert.ok(r.stdout.includes('当前 v6 活跃变更'));
+  assert.ok(r.stdout.includes('当前活跃变更'));
 });
 
 test('8c. foreign fresh owner 不阻断当前 session 普通非代码写入', () => {
@@ -2222,7 +2222,7 @@ test('9ha3. local 模式 worktree 写宿主普通代码文件不触发 PACE C/E 
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('"deny"'));
-  assert.ok(!r.stdout.includes('v6 项目没有活跃 CHG/HOTFIX'));
+  assert.ok(!r.stdout.includes('本项目没有活跃 CHG/HOTFIX'));
   assert.ok(r.stdout.includes('当前 cwd 是 worktree'));
   assert.ok(r.stdout.includes('仅用于 PaceFlow artifacts'));
 });

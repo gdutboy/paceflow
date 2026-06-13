@@ -114,7 +114,6 @@ Read + Edit 整个 section 替换为 content
      - 全部为 `[x]` 或 `[-]` 且至少一个 `[x]` → Edit frontmatter `status` → `completed`
      - 仍有 `[/]` 但 frontmatter `status: planned` → Edit frontmatter `status` → `in-progress`
      - 否则 frontmatter 不变
-     - **datetime 格式强制**：`YYYY-MM-DDTHH:mm:ss+08:00`，三段齐全——日期 + 时间 + 时区（如 `2026-05-03T03:05:13+08:00`）。用 `Bash: date -Iseconds` 或 `date '+%Y-%m-%dT%H:%M:%S+08:00'` 生成即可满足该格式
   4. **根索引 checkbox 联动**（frontmatter status 变化或暂停/恢复时必执行）：
      - 若 `new-status=[!]`，根索引 checkbox 改为 `[!]`
      - 若 `new-status=[/]` 且根索引当前为 `[!]`，根索引 checkbox 改回 `[/]`

@@ -1,4 +1,4 @@
-// PreToolUse hook：多信号三级触发 + 懒创建模板 + C 阶段批准 + E 阶段 impl_plan [/] 检查
+// PreToolUse hook：多信号三级触发 + 懒创建模板 + C 阶段批准 + E 阶段就绪检查
 const fs = require('fs');
 const path = require('path');
 let paceUtils;
@@ -141,7 +141,7 @@ function getArtifactRelIfRelevant(toolName, paceSignal, artDir, filePath) {
 
 function monitorArtifactRuntimeControlDenyReason(command) {
   return [
-    '禁止使用 Monitor 修改 PaceFlow artifact 写入控制运行态。锁、编号计数、reservation 与索引事务只能由 hook 创建/释放。',
+    '禁止使用 Monitor 修改 PaceFlow artifact 写入控制运行态。锁、编号计数与 reservation 只能由 hook 创建/释放。',
     '如果需要观察日志或测试输出，请让 Monitor 执行只读命令；不要用 Monitor 删除或改写 PaceFlow 运行态文件。',
     `被拦截的命令：${String(command || '').slice(0, 500)}`
   ].join('\n');
@@ -463,7 +463,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (ensured.missingAfter.length > 0) {
           paceUtils.clearArtifactReservation(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
           const errorLine = ensured.error ? `\n底层错误：${ensured.error}` : '';
-          const reason = `PACE hook 无法在 artifact_dir 创建完整 v6 Artifact 基础结构：${displayDir(artDir)}\n仍缺失：${ensured.missingAfter.join(', ')}${errorLine}\n请检查路径/权限后重试；禁止让 artifact-writer 自行创建 base changes/ 或根索引模板。`;
+          const reason = `PACE hook 无法在 artifact_dir 创建完整 Artifact 基础结构：${displayDir(artDir)}\n仍缺失：${ensured.missingAfter.join(', ')}${errorLine}\n请检查路径/权限后重试；禁止让 artifact-writer 自行创建 base changes/ 或根索引模板。`;
           const output = {
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
@@ -945,7 +945,7 @@ paceUtils.withStdinParsed((stdin) => {
   }
   if (isFileMutationTool(toolName) && paceUtils.isArtifactRuntimeControlPath(cwd, filePath)) {
     return hardDeny(
-      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数、reservation 与索引事务只能由 hook 管理；不要手写或删除运行态文件。`,
+      `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数与 reservation 只能由 hook 管理；不要手写或删除运行态文件。`,
       'DENY_ARTIFACT_RUNTIME_CONTROL',
       {
         file: filePath,
@@ -1423,7 +1423,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (malformed.length > 0) {
         const ids = malformed.map(e => e.id).join(', ');
         const reason = [
-          `v6 索引行格式损坏：${ids} 的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。`,
+          `索引行格式损坏：${ids} 的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。`,
           '请派 artifact-writer 修复索引行边界；修复后再继续写项目文件。'
         ].join('\n');
         const output = denyOrHint(reason, { hardInTeammate: true });
@@ -1435,7 +1435,7 @@ paceUtils.withStdinParsed((stdin) => {
       const missingDetails = actionableEntries.filter(e => !e.detail || e.detail.missing);
       if (missingDetails.length > 0) {
         const ids = missingDetails.map(e => e.id).join(', ');
-        const reason = `v6 详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。`;
+        const reason = `详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。`;
         const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -1452,8 +1452,8 @@ paceUtils.withStdinParsed((stdin) => {
           ? `\n（另有 ${siblingHeld} 个活跃 CHG 由同目录其他 session 持有，不计入本 session：接手需用户确认并在 artifact 操作带 owner-takeover 三字段；本 session 独立工作请先 create-chg。）`
           : '';
         const reason = (doneEntries.length > 0
-          ? `v6 项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
-          : `v6 项目没有活跃 CHG/HOTFIX。请先创建 v6 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`) + siblingHint;
+          ? `本项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
+          : `本项目没有活跃 CHG/HOTFIX。请先创建 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`) + siblingHint;
         const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
@@ -1463,7 +1463,7 @@ paceUtils.withStdinParsed((stdin) => {
       const approvedEntries = gatedEntries.filter(e => isChangeApproved(e.detail));
       if (approvedEntries.length === 0) {
         const ids = gatedEntries.map(e => e.id).join(', ');
-        const reason = `v6 C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
+        const reason = `C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -1477,7 +1477,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
-        const reason = `v6 E 阶段未就绪：${ids} 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。`;
+        const reason = `E 阶段未就绪：${ids} 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。`;
         const output = denyOrHint(reason, { hardInTeammate: true });
         process.stdout.write(JSON.stringify(output));
         log(projectLogEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
@@ -1489,8 +1489,8 @@ paceUtils.withStdinParsed((stdin) => {
         .map(s => `- ${s.id} status=${s.status} task=${s.taskCheckbox} pending=${s.pending} approved=${s.approved} verified=${s.verified} reviewed=${s.reviewed} path=${s.path}`)
         .join('\n');
       const additionalContext = hostNonArtifactWriteNote
-        ? `当前 v6 活跃变更：\n${summaries}\n\n${hostNonArtifactWriteNote}`
-        : `当前 v6 活跃变更：\n${summaries}`;
+        ? `当前活跃变更：\n${summaries}\n\n${hostNonArtifactWriteNote}`
+        : `当前活跃变更：\n${summaries}`;
       const output = {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -1533,9 +1533,9 @@ paceUtils.withStdinParsed((stdin) => {
         try { createdFiles = createTemplates(cwd); } catch(e) {}
       }
       const createdMsg = createdFiles.length > 0
-        ? `已自动创建 v6 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
+        ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
         : `${artifactRootHint}。`;
-      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 v6 CHG 并记录同步标记；桥接完成后再重试本次代码写入。`;
+      const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 CHG 并记录同步标记；桥接完成后再重试本次代码写入。`;
       const output = denyOrHint(reason);
       process.stdout.write(JSON.stringify(output));
       log(projectLogEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
@@ -1580,7 +1580,7 @@ paceUtils.withStdinParsed((stdin) => {
         } else {
           reason = `${createdMsg}检测到 PACE 项目（${paceSignal}）但 task.md 中无活跃任务。`;
           reason += hasUnsyncedPlanFiles(cwd)
-            ? `检测到未同步的 Superpowers 计划文件，请调用 paceflow:pace-bridge：Read plan → 派 artifact-writer create-chg 创建 v6 CHG 后再写代码。`
+            ? `检测到未同步的 Superpowers 计划文件，请调用 paceflow:pace-bridge：Read plan → 派 artifact-writer create-chg 创建 CHG 后再写代码。`
             : `请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\n${artifactWriterCreateChgHint(artDir)}\ntask.md 格式：${FORMAT_SNIPPETS.taskGroup}\n索引行格式：${FORMAT_SNIPPETS.taskEntry}\n任务状态：${FORMAT_SNIPPETS.statusHelp}\n变更状态：${FORMAT_SNIPPETS.changeStatusHelp}`;
         }
       } else {

@@ -63,7 +63,7 @@ finding 详情写在 `changes/findings/<id>.md`。
 
 ## 索引
 
-- [[correction-2026-05-04-01-install-path]] 混淆 plugin install 与本地 install.js [date:: 2026-05-04] [knowledge:: project-only]
+- [[correction-2026-05-04-01-install-path]] 混淆 plugin install 与本地 install.js [date:: 2026-05-04] [scope:: project-only]
 
 <!-- ARCHIVE -->
 ```
