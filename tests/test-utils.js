@@ -30,7 +30,8 @@ function createTestRunner(prefix = 'pace-test') {
   /** 运行单个测试 */
   ctx.test = function(name, fn) {
     try {
-      fn();
+      const r = fn();
+      if (r && typeof r.then === 'function') throw new Error('async 测试 fn 返回 Promise——runner 不 await，断言可能静默丢失；改为同步断言（R-46）');
       ctx.passed++;
       console.log(`  PASS: ${name}`);
     } catch(e) {

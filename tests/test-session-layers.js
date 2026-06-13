@@ -718,6 +718,6 @@ test('SL-42. sibling-detached 摘要行含「原 session 已关闭，可接手�
 
 process.on('exit', () => {
   t.cleanup();
-  console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
+  console.log(`\n${t.failed === 0 ? '✅' : '❌'} ${t.passed}/${t.passed + t.failed} tests passed`);
   if (t.failed > 0) process.exitCode = 1;
 });

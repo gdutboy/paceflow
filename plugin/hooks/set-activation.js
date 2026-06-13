@@ -237,7 +237,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(`${usage()}\n`); return; }
   if (args.unknown.length > 0) {
-    fail(args.cwd, 'DENY_UNKNOWN_OPTION', `set-activation 不支持参数：${args.unknown.join(', ')}。\n只支持 --enable / --disable / --status / --cwd。\n\n${usage()}`, { options: args.unknown.join(',') });
+    fail(args.cwd, 'DENY_UNKNOWN_OPTION', `set-activation 不支持参数：${args.unknown.join(', ')}。\n只支持 --enable / --disable / --pause / --resume / --status / --cwd / --session。\n\n${usage()}`, { options: args.unknown.join(',') });
     return;
   }
   if (!args.action) {

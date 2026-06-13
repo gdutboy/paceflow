@@ -359,9 +359,8 @@ knowledge-link: [[note]] 或 project-scope: project-only
 artifact_dir: <hook 解析出的 artifact 目录>
 operation: update-finding
 target: finding-yyyy-mm-dd-slug
-status: accepted                     （可选枚举：open | investigating | accepted | rejected | merged | blocked）
+status: accepted                     （枚举 open | investigating | accepted | rejected | merged | blocked；status=rejected 须另带 rejection-reason ≥10 字符，won't-fix 走此路径不带 change-link）
 change-link: [[chg-yyyymmdd-nn]]     （可选，与 accepted 搭配表示由该变更处置；带 slug 详情文件写 [[<stem>|chg-yyyymmdd-nn]]，旧无 slug 文件用纯 ID）
-rejection-reason: <status=rejected 时必填，≥10 字符；won't-fix 走此路径，不带 change-link>
 append: <可选，原样追加到详情正文末尾的 Markdown>
 ```
 （至少提供 `status` / `change-link` / `append` 之一）

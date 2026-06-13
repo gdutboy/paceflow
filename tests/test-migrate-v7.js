@@ -234,6 +234,27 @@ test('V7E-1: dry-run 零写入 + 报告含将删字段统计', () => {
   assert.match(out, /chg-id/, '报告应含将删字段统计');
 });
 
+test('V7E-1b: 含引号 status（status: "archived"）触发 archived-date 回填（R-33 引号归一）', () => {
+  const dir = buildFixture('v7e-quoted-status');
+  const quoted = CHG_OLD.replace('status: archived', 'status: "archived"');
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20250101-01.md'), quoted);
+  // 修复前：引号致 rewriteFrontmatter :162 判 false → archived-date 不回填 → 验收 missing → runMigrate throw(exit=1)
+  runMigrate(dir);
+  const migrated = fs.readFileSync(path.join(dir, 'changes', 'chg-20250101-01.md'), 'utf8');
+  assert.match(migrated, /^archived-date: 20\d\d-\d\d-\d\dT/m, 'R-33: 含引号 archived status 应回填 archived-date');
+});
+
+test('V7E-1c: 零缩进块序列删 key 不留孤儿行（R-34）', () => {
+  const dir = buildFixture('v7e-zero-indent-seq');
+  // tags 改零缩进块序列形态（外部工具改写形态），删 tags 后不应留 `- change` 孤儿行
+  const zeroIndent = CHG_OLD.replace('tags:\n  - change', 'tags:\n- change');
+  fs.writeFileSync(path.join(dir, 'changes', 'chg-20250101-01.md'), zeroIndent);
+  runMigrate(dir);
+  const migrated = fs.readFileSync(path.join(dir, 'changes', 'chg-20250101-01.md'), 'utf8');
+  const fm = migrated.match(/^---\n([\s\S]*?)\n---/)[1];
+  assert.ok(!/^- change$/m.test(fm), 'R-34: 删 tags 后零缩进序列项 `- change` 不残留 frontmatter');
+});
+
 test('V7E-2: 执行后全部详情 frontmatter 过 7.0 封闭合同', () => {
   const dir = buildFixture('v7e-contract');
   runMigrate(dir);

@@ -157,6 +157,6 @@ test('claude-output-to-report convert 支持 stream-json tool_use 计数与 FAIL
 
 process.on('exit', () => {
   t.cleanup();
-  console.log(`\n✅ ${t.passed}/${t.passed + t.failed} tests passed`);
+  console.log(`\n${t.failed === 0 ? '✅' : '❌'} ${t.passed}/${t.passed + t.failed} tests passed`);
   if (t.failed > 0) process.exitCode = 1;
 });

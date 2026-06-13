@@ -135,14 +135,16 @@ function rewriteFrontmatter(content, kind, backfillDate) {
     const keyMatch = line.match(/^([A-Za-z][\w-]*):/);
     if (!keyMatch) { keep.push(line); i++; continue; }
     const key = keyMatch[1];
-    // 吃掉该 key 的多行续行（行首空白开头的非空行）
+    // 吃掉该 key 的多行续行（行首空白开头的非空行，或零缩进块序列项 `- item`——
+    // 否则删 key 时零缩进序列项变孤儿行残留破坏 frontmatter，R-34）
     let end = i + 1;
-    while (end < fmLines.length && /^\s+\S/.test(fmLines[end])) end++;
+    while (end < fmLines.length && /^(\s+\S|-\s)/.test(fmLines[end])) end++;
     if (drop.has(key)) {
       dropped.push(key);
     } else {
       seen.add(key);
-      if (key === 'status') status = line.slice(line.indexOf(':') + 1).trim();
+      // status 值剥引号后再判定（与 :273 main() 同款），否则 status: "archived" 含引号致 archived/cancelled 回填不触发
+      if (key === 'status') status = line.slice(line.indexOf(':') + 1).trim().replace(/"/g, '');
       if (key === 'schema-version') {
         keep.push('schema-version: "7.0"');
       } else {
