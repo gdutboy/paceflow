@@ -424,10 +424,21 @@ function powershellArtifactDenyReason(command) {
   ].join('\n');
 }
 
+// PowerShell 命令是否会改 artifact 文件（redirect/Out-File / 内嵌写脚本 / mutating cmdlet 引用 artifact）。
+// CHG-20260615-01（structure-backlog 1.4）：与 bashCommandMutatesArtifact 对称抽出，pre-tool-use PS 分支
+// 改调此命名谓词（PS 链比 bash 少 shell-wrapped 项，是本就不同的栈，保各自独立）。
+function powershellCommandMutatesArtifact(command, cwd, artDir) {
+  return powershellCommandRedirectsToArtifact(command, cwd, artDir) ||
+    powershellCommandEmbedsArtifactWriteScript(command, cwd, artDir) ||
+    (powershellCommandLooksMutating(command) &&
+      powershellCommandReferencesArtifact(command, cwd, artDir));
+}
+
 module.exports = {
   powershellCommandLooksMutating,
   powershellCommandRedirectsToArtifact,
   powershellCommandEmbedsArtifactWriteScript,
+  powershellCommandMutatesArtifact,
   powershellCommandMutatesArtifactRuntimeControl,
   powershellCommandMutatesLocalArtifactRootChoice,
   powershellCommandMutatesProjectRootMarker,

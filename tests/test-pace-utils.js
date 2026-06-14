@@ -564,6 +564,16 @@ test('bash-guard BG-03: 单引号字面后的重定向到 artifact 不漏检', (
   assert.ok(bashGuard.bashCommandRedirectsToArtifact('echo x > task.md', dir, dir), '普通 redirect（回归）');
 });
 
+test('bash-guard 1.4-dedup: bashCommandMutatesArtifact 组合谓词链（Bash/Monitor 共用，消内联重复，CHG-20260615-01）', () => {
+  const dir = makeTmpDir('bg-mutates');
+  const mut = (cmd) => bashGuard.bashCommandMutatesArtifact(cmd, dir, dir);
+  assert.ok(mut('echo x > task.md'), 'redirect 写 artifact');
+  assert.ok(mut("bash -c 'echo x > task.md'"), 'shell wrapper redirect');
+  assert.ok(mut('rm task.md'), 'mutating 动词引用 artifact');
+  assert.ok(!mut('cat task.md'), '只读 cat 不误判');
+  assert.ok(!mut('grep x task.md'), '只读 grep 不误判');
+});
+
 // ============================================================
 // powershell-guard 识别层修复（CHG-20260604-01 T-003：PSG-01~04 + A08）
 // ============================================================
@@ -595,6 +605,15 @@ test('powershell-guard A08: ri 别名删 runtime-control 锁被拦截', () => {
   assert.ok(mut('Remove-Item .pace/artifact-writer.lock'), 'Remove-Item 锁（回归）');
   assert.ok(mut('ri .pace/artifact-writer.lock'), 'ri 删锁（A08）');
   assert.ok(mut('& Remove-Item .pace/locks/x'), '& 前缀删锁（PSG-01）');
+});
+
+test('powershell-guard 1.4-dedup: powershellCommandMutatesArtifact 组合谓词链（CHG-20260615-01）', () => {
+  const dir = makeTmpDir('psg-mutates');
+  const mut = (cmd) => powershellGuard.powershellCommandMutatesArtifact(cmd, dir, dir);
+  assert.ok(mut('Set-Content task.md "x"'), 'Set-Content 写 artifact');
+  assert.ok(mut('echo x > task.md'), 'PS redirect 写 artifact');
+  assert.ok(mut('Remove-Item task.md'), 'Remove-Item 引用 artifact');
+  assert.ok(!mut('Get-Content task.md'), '只读 Get-Content 不误判');
 });
 
 test('powershell-guard PSG-03: 反引号转义路径仍匹配 artifact', () => {

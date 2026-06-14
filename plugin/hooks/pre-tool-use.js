@@ -45,25 +45,19 @@ const proj = getProjectName(cwd);
 const projectLogEntry = (hook, action, fields = {}) => paceUtils.projectLogEntry(cwd, hook, action, fields);
 const {
   bashCommandLooksMutating,
-  bashCommandRedirectsToArtifact,
-  bashShellCommandRedirectsToArtifact,
-  bashCommandEmbedsArtifactWriteScript,
+  bashCommandMutatesArtifact,
   bashCommandMutatesArtifactRuntimeControl,
   bashCommandMutatesLocalArtifactRootChoice,
   bashCommandMutatesProjectRootMarker,
-  bashCommandReferencesArtifact,
-  bashShellCommandReferencesArtifact,
   bashArtifactRuntimeControlDenyReason,
   bashArtifactDenyReason,
 } = require('./pre-tool-use/bash-guard');
 const {
   powershellCommandLooksMutating,
-  powershellCommandRedirectsToArtifact,
-  powershellCommandEmbedsArtifactWriteScript,
+  powershellCommandMutatesArtifact,
   powershellCommandMutatesArtifactRuntimeControl,
   powershellCommandMutatesLocalArtifactRootChoice,
   powershellCommandMutatesProjectRootMarker,
-  powershellCommandReferencesArtifact,
   powershellArtifactRuntimeControlDenyReason,
   powershellArtifactDenyReason,
 } = require('./pre-tool-use/powershell-guard');
@@ -749,11 +743,7 @@ paceUtils.withStdinParsed((stdin) => {
           runtime: paceUtils.getProjectRuntimeDir(cwd),
         });
       }
-      const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
-        bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
-        bashCommandEmbedsArtifactWriteScript(bashCommand, cwd, artDir) ||
-        (bashCommandLooksMutating(bashCommand) &&
-          (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
+      const mutatesArtifact = bashCommandMutatesArtifact(bashCommand, cwd, artDir);
       if (mutatesArtifact) {
         const reason = bashArtifactDenyReason(bashCommand);
         emitDeny(`DENY_BASH_ARTIFACT${teammateTag}`, reason, {
@@ -772,10 +762,7 @@ paceUtils.withStdinParsed((stdin) => {
           runtime: paceUtils.getProjectRuntimeDir(cwd),
         });
       }
-      const mutatesArtifact = powershellCommandRedirectsToArtifact(powershellCommand, cwd, artDir) ||
-        powershellCommandEmbedsArtifactWriteScript(powershellCommand, cwd, artDir) ||
-        (powershellCommandLooksMutating(powershellCommand) &&
-          powershellCommandReferencesArtifact(powershellCommand, cwd, artDir));
+      const mutatesArtifact = powershellCommandMutatesArtifact(powershellCommand, cwd, artDir);
       if (mutatesArtifact) {
         const reason = powershellArtifactDenyReason(powershellCommand);
         emitDeny(`DENY_POWERSHELL_ARTIFACT${teammateTag}`, reason, {
@@ -794,11 +781,7 @@ paceUtils.withStdinParsed((stdin) => {
           runtime: paceUtils.getProjectRuntimeDir(cwd),
         });
       }
-      const mutatesArtifact = bashCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
-        bashShellCommandRedirectsToArtifact(bashCommand, cwd, artDir) ||
-        bashCommandEmbedsArtifactWriteScript(bashCommand, cwd, artDir) ||
-        (bashCommandLooksMutating(bashCommand) &&
-          (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
+      const mutatesArtifact = bashCommandMutatesArtifact(bashCommand, cwd, artDir);
       if (mutatesArtifact) {
         const reason = monitorArtifactDenyReason(bashCommand);
         emitDeny(`DENY_MONITOR_ARTIFACT${teammateTag}`, reason, {

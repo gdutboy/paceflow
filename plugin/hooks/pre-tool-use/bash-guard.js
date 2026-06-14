@@ -335,6 +335,17 @@ function bashCommandMutatesArtifactRuntimeControl(command, cwd) {
       (bashCommandReferencesArtifactRuntimeControl(command, cwd) || bashShellCommandReferencesArtifactRuntimeControl(command, cwd)));
 }
 
+// Bash 命令是否会改 artifact 文件（redirect / shell-wrapped redirect / 内嵌写脚本 / mutating 动词引用 artifact）。
+// CHG-20260615-01（structure-backlog 1.4）：Bash 与 Monitor 工具分支原各内联同一条 4 项谓词链、靠人工同步，
+// 抽此命名谓词供两者共用，消除漂移风险（Monitor 经 bashCommand 复用 bash 识别栈）。
+function bashCommandMutatesArtifact(command, cwd, artDir) {
+  return bashCommandRedirectsToArtifact(command, cwd, artDir) ||
+    bashShellCommandRedirectsToArtifact(command, cwd, artDir) ||
+    bashCommandEmbedsArtifactWriteScript(command, cwd, artDir) ||
+    (bashCommandLooksMutating(command) &&
+      (bashCommandReferencesArtifact(command, cwd, artDir) || bashShellCommandReferencesArtifact(command, cwd, artDir)));
+}
+
 function bashPathLooksLocalArtifactRootChoice(target, cwd) {
   const raw = String(target || '').trim().replace(/\\/g, '/').replace(/^['"]|['"]$/g, '');
   if (!raw || /^&\d+$/.test(raw)) return false;
@@ -513,6 +524,7 @@ module.exports = {
   bashCommandRedirectsToArtifact,
   bashShellCommandRedirectsToArtifact,
   bashCommandEmbedsArtifactWriteScript,
+  bashCommandMutatesArtifact,
   bashCommandMutatesArtifactRuntimeControl,
   bashCommandMutatesLocalArtifactRootChoice,
   bashCommandMutatesProjectRootMarker,
