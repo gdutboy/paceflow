@@ -3,20 +3,21 @@
 
 const path = require('path');
 const paceUtils = require('./pace-utils');
+const { flagValue } = require('./pace-utils/cli-args');
 
 const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
-  const args = { plan: '', cwd: '', help: false };
+  const args = { plan: '', cwd: '', help: false, missingValue: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
       args.help = true;
     } else if (arg === '--plan' || arg === '-p') {
-      args.plan = String(argv[++i] || '');
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.plan = v; i++; }
     } else if (arg === '--cwd') {
-      args.cwd = String(argv[++i] || '');
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.cwd = v; i++; }
     } else if (!args.plan && !arg.startsWith('-')) {
       args.plan = String(arg || '');
     }
@@ -44,6 +45,10 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(`${usage()}\n`);
+    return;
+  }
+  if (args.missingValue.length > 0) {
+    fail(args.cwd, 'DENY_MISSING_VALUE', `sync-plan 参数缺值：${args.missingValue.join(', ')} 后未跟有效值（下一项是 flag 或缺失）。\n不吞后续 flag、不静默回落空值；请补全值后重试。\n\n${usage()}`, { missing: args.missingValue.join(',') });
     return;
   }
   if (!args.plan) {

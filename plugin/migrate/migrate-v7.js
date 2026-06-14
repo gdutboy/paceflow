@@ -52,12 +52,6 @@ ${ARCHIVE_MARKER}
 
 const FINDINGS_HEADER_COMMENT = '<!-- 格式：- [状态] [[finding-id|title]] — summary #finding [date::] [impact::] [change::] -->';
 
-// 本 vault 专属卫生（--hygiene）：游离 v5 文档移 _archive/
-const HYGIENE_STRAY_DOCS = [
-  'audit-prompt.md', 'paceflow-complete-flow.md', 'paceflow-flow-ascii.md',
-  'ticket12.md', 'ticket14.md', 'ticket18.md', 'ticket24.md',
-];
-
 function parseArgs(argv) {
   const args = { cwd: '', dryRun: false, hygiene: false, restore: '' };
   const unknown = [];
@@ -384,7 +378,6 @@ function main() {
   // 卫生（本 vault 专属，可选）
   if (args.hygiene) {
     const removed = [];
-    const movedDocs = [];
     const sweep = (d) => {
       for (const name of fs.readdirSync(d)) {
         const p = path.join(d, name);
@@ -393,16 +386,7 @@ function main() {
       }
     };
     sweep(artDir);
-    const archiveDir = path.join(artDir, '_archive');
-    for (const name of HYGIENE_STRAY_DOCS) {
-      const p = path.join(artDir, name);
-      if (fs.existsSync(p)) {
-        fs.mkdirSync(archiveDir, { recursive: true });
-        fs.renameSync(p, path.join(archiveDir, name));
-        movedDocs.push(name);
-      }
-    }
-    console.log(`卫生：删除备份 ${removed.length} 个（${removed.join('、') || '无'}）；游离文档移 _archive/ ${movedDocs.length} 个（${movedDocs.join('、') || '无'}）`);
+    console.log(`卫生：删除备份 ${removed.length} 个（${removed.join('、') || '无'}）`);
   }
 
   const statePath = path.join(runtimeDir, 'v7-migration-state');

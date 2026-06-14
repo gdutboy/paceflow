@@ -670,6 +670,50 @@ test('A05: agent-lifecycle-guard operation/action 行带尾随文字仍强制必
   assert.strictEqual(deny('operation: close-chg\ntarget: CHG-20260101-01\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0\nimplementation-notes: T-001 改 hello.js\nwalkthrough-summary: done'), '', '完整 close-chg 放行（回归）');
 });
 
+test('V7G-1: V/R 偏序确定性门——verify 要求已 APPROVED、review 要求已 VERIFIED、close 要求已 APPROVED', () => {
+  const deny = lifecycleGuard.agentLifecyclePromptDenyReason;
+  const dir = makeTmpDir('v7g-vr-order');
+  const chgDir = path.join(dir, 'changes');
+  fs.mkdirSync(chgDir, { recursive: true });
+  const writeChg = (markers, verifiedDate) => fs.writeFileSync(path.join(chgDir, 'chg-20260614-09.md'),
+    `---\nchg-id: CHG-20260614-09\nstatus: in-progress\ntype: change\nschema-version: "7.0"\nverified-date: ${verifiedDate || 'null'}\nreviewed-date: null\n---\n\n## 任务清单\n\n- [/] T-001 task${markers}\n\n## 实施详情\n`, 'utf8');
+  const verifyPrompt = 'operation: update-chg\naction: verify\ntarget: CHG-20260614-09\nverify-summary: ok';
+  const reviewPrompt = 'operation: update-chg\naction: review\ntarget: CHG-20260614-09\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0';
+  const closePrompt = 'operation: close-chg\ntarget: CHG-20260614-09\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0\nimplementation-notes: T-001 改 x.js\nwalkthrough-summary: done';
+
+  // 未 APPROVED：verify / close 应 deny（偏序门）
+  writeChg('', null);
+  assert.ok(deny(verifyPrompt, dir).includes('APPROVED'), '未 APPROVED 的 verify 应 deny');
+  assert.ok(deny(closePrompt, dir).includes('APPROVED'), '未 APPROVED 的 close 应 deny');
+
+  // 已 APPROVED 未 VERIFIED：verify 放行、review deny、close 放行（反向不误伤）
+  writeChg('\n\n<!-- APPROVED -->', null);
+  assert.strictEqual(deny(verifyPrompt, dir), '', '已 APPROVED 的 verify 放行');
+  assert.ok(deny(reviewPrompt, dir).includes('VERIFIED'), '未 VERIFIED 的 review 应 deny');
+  assert.strictEqual(deny(closePrompt, dir), '', '已 APPROVED 的完整 close 放行');
+
+  // 已 APPROVED 且 VERIFIED：review 放行
+  writeChg('\n\n<!-- APPROVED -->\n<!-- VERIFIED -->', '2026-06-14T01:00:00+08:00');
+  assert.strictEqual(deny(reviewPrompt, dir), '', '已 VERIFIED 的 review 放行');
+});
+
+test('V7G-2: 偏序门 fail-open——detail 读不到时不加新 deny（不误伤路径异常的合法操作）', () => {
+  const deny = lifecycleGuard.agentLifecyclePromptDenyReason;
+  const closePrompt = 'operation: close-chg\ntarget: CHG-20260614-09\nverification-confirmed: true\ncomplete-open-tasks: true\nverify-summary: ok\nreview-confirmed: true\nreview-source: manual\nreview-findings: 0\nimplementation-notes: T-001 改 x.js\nwalkthrough-summary: done';
+  assert.strictEqual(deny(closePrompt), '', 'artDir 缺失时完整 close 放行（fail-open）');
+  const dir = makeTmpDir('v7g-failopen');
+  assert.strictEqual(deny(closePrompt, dir), '', 'detail 不存在时完整 close 放行（fail-open）');
+});
+
+test('V7G-3: unknown-operation 白名单 hard-deny——未知 operation deny、8 类合法 operation 放行', () => {
+  const deny = lifecycleGuard.agentLifecyclePromptDenyReason;
+  assert.ok(/delete-chg/.test(deny('operation: delete-chg\ntarget: CHG-20260101-01')), 'delete-chg 未知 operation 应 deny 并点名');
+  assert.ok(deny('operation: merge-chg\ntarget: CHG-20260101-01') !== '', 'merge-chg 未知 operation 应 deny');
+  assert.strictEqual(deny('operation: record-finding\ntitle: x\nsummary: y\ntype: observation\nimpact: P3\nbody: z'), '', 'record-finding 放行（白名单不误伤）');
+  assert.strictEqual(deny('operation: update-finding\ntarget: finding-2026-01-01-x\nstatus: accepted'), '', 'update-finding 放行');
+  assert.strictEqual(deny('operation: update-index\ntarget: findings.md\naction: reorder'), '', 'update-index 放行');
+});
+
 test('CHG-20260612-02: v5LayoutNoticeMessage——detected 即一句提示，changes/ 出现后消失', () => {
   const dir = makeTmpDir('v5-layout-notice');
   fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy v5 item\n', 'utf8');
@@ -1635,9 +1679,11 @@ test('sweepStaleRuntimeOwners: 清理超 TTL 的 change-owner/reservation 保留
   });
   const fresh = lockUtils.writeChangeOwner(dir, 'CHG-20260605-81', { sessionId: 'sid-sweep', operation: 'create-chg', state: 'active' });
   const stale = lockUtils.writeChangeOwner(dir, 'CHG-20260605-82', { sessionId: 'sid-old', operation: 'create-chg', state: 'active' });
-  // 把 stale owner 的 mtime 改到 2 小时前（超 30min TTL）
-  const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
-  fs.utimesSync(stale.path, old, old);
+  // 把 stale owner 的内部 timestampMs 改到 2 小时前（超 30min TTL）——sweep 现按内部 timestampMs 判 stale
+  // （非文件 mtime，与 jsonLockIsStale/changeOwnerStatus 一致，CHG-20260614-02 T-001）。
+  const staleData = JSON.parse(fs.readFileSync(stale.path, 'utf8'));
+  staleData.timestampMs = Date.now() - 2 * 60 * 60 * 1000;
+  fs.writeFileSync(stale.path, `${JSON.stringify(staleData, null, 2)}\n`, 'utf8');
   const swept = lockUtils.sweepStaleRuntimeOwners(dir);
   assert.ok(!fs.existsSync(stale.path), 'stale change-owner（2h，超 TTL）被清理，遏制无界增长');
   assert.ok(fs.existsSync(fresh.path), 'fresh change-owner 保留');
@@ -3372,6 +3418,44 @@ test('V7B-5: finding/correction kind 各自合同', () => {
   assert.ok(!cBad.ok && cBad.unknown.includes('trigger-quote'), 'V7B-5d: correction 五文本字段降正文单源');
   const unknownKind = paceUtils.validateFrontmatterSchema('other', '', { 'schema-version': '"7.0"' });
   assert.ok(unknownKind.ok, 'V7B-5e: 未知 kind 不校验');
+});
+
+test('V7B-8: status 枚举校验——typo/未知 status 不退化 base-only（CHG-20260614-03 T-001）', () => {
+  const chgFrame = (status) => ({ status, date: '2026-06-11', 'change-set': 'null', 'change-set-seq': 'null',
+    'verified-date': 'null', 'reviewed-date': 'null', 'archived-date': 'null',
+    'parent-tasks': '["[[x/task|task]]"]', 'schema-version': '"7.0"' });
+  // typo 'archive'（漏 d）：旧行为 spec[st]=undefined 退化 base-only、archived-date 不必填、全 null 通过；新行为枚举 deny
+  const typo = paceUtils.validateFrontmatterSchema('chg', 'archive', chgFrame('archive'));
+  assert.ok(!typo.ok, 'V7B-8a: typo status archive 应 deny');
+  assert.ok(typo.missing.some(m => /unknown-value/.test(m)), 'V7B-8b: 报 status unknown-value：' + JSON.stringify(typo.missing));
+  // 合法 chg status 全部不误伤（反向）
+  for (const s of ['planned', 'in-progress', 'completed']) {
+    assert.ok(paceUtils.validateFrontmatterSchema('chg', s, chgFrame(s)).ok, `V7B-8c: 合法 chg status ${s} 放行`);
+  }
+  // finding typo + 合法
+  const fTypo = paceUtils.validateFrontmatterSchema('finding', 'acepted', { status: 'acepted', date: '2026-06-11', 'schema-version': '"7.0"' });
+  assert.ok(!fTypo.ok && fTypo.missing.some(m => /unknown-value/.test(m)), 'V7B-8d: finding typo status deny');
+  for (const s of ['open', 'investigating', 'accepted', 'rejected', 'merged', 'blocked']) {
+    assert.ok(paceUtils.validateFrontmatterSchema('finding', s, { status: s, date: '2026-06-11', 'schema-version': '"7.0"' }).ok, `V7B-8e: 合法 finding status ${s} 放行`);
+  }
+  // correction 无 status 字段——不受枚举影响（回归）
+  assert.ok(paceUtils.validateFrontmatterSchema('correction', '', { date: '2026-06-11', 'schema-version': '"7.0"' }).ok, 'V7B-8f: correction 无 status 不受枚举校验');
+});
+
+test('V7G-4: hasNonNull*Date 对齐 parseFrontmatter——无 whole-doc fallback + 块内 last-wins（CHG-20260614-03 T-002）', () => {
+  // 重复 key（首真次 null）：last-wins → null → false（与 parseFrontmatter 一致）
+  const dup = '---\nverified-date: 2026-06-14T10:00:00+08:00\nverified-date: null\n---\n\n正文\n';
+  assert.strictEqual(paceUtils.hasNonNullVerifiedDate(dup), false, '重复 verified-date last-wins 取 null → false');
+  assert.strictEqual(parseFrontmatter(dup)['verified-date'], 'null', '与 parseFrontmatter last-wins 一致');
+  // verified-date 只在正文（无 frontmatter）：无 whole-doc fallback → false
+  assert.strictEqual(paceUtils.hasNonNullVerifiedDate('# 标题\n\nverified-date: 2026-06-14T10:00:00+08:00\n'), false, '正文 verified-date 不触发 whole-doc fallback');
+  // frontmatter 前有空行（非文首）：parseFrontmatter 返回 {} → hasNonNull 也 false
+  assert.strictEqual(paceUtils.hasNonNullVerifiedDate('\n---\nverified-date: 2026-06-14T10:00:00+08:00\n---\n'), false, '非文首 frontmatter 与 parseFrontmatter 一致返 false');
+  // 反向回归：正常 frontmatter 有效 → true（不过度修正）
+  const ok = '---\nverified-date: 2026-06-14T10:00:00+08:00\nreviewed-date: 2026-06-14T11:00:00+08:00\n---\n';
+  assert.strictEqual(paceUtils.hasNonNullVerifiedDate(ok), true, '正常 verified-date → true');
+  assert.strictEqual(paceUtils.hasNonNullReviewedDate(ok), true, '正常 reviewed-date → true');
+  assert.strictEqual(paceUtils.hasNonNullVerifiedDate('---\nverified-date: null\n---\n'), false, 'null → false');
 });
 
 test('V7B-6: archived 帧必须三 date 齐全（R-06a 对齐 spec §4.1 状态机表）；cancelled 豁免', () => {

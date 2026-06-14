@@ -4,12 +4,13 @@
 const fs = require('fs');
 const path = require('path');
 const paceUtils = require('./pace-utils');
+const { flagValue } = require('./pace-utils/cli-args');
 
 const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
-  const args = { operation: '', type: '', cwd: '', sessionId: '', newReservation: false, count: null, help: false, unknown: [] };
+  const args = { operation: '', type: '', cwd: '', sessionId: '', newReservation: false, count: null, help: false, unknown: [], missingValue: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
@@ -17,13 +18,13 @@ function parseArgs(argv) {
     } else if (arg === '--new') {
       args.newReservation = true;
     } else if (arg === '--operation' || arg === '-o') {
-      args.operation = String(argv[++i] || '');
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.operation = v; i++; }
     } else if (arg === '--type' || arg === '--kind') {
-      args.type = String(argv[++i] || '');
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.type = v; i++; }
     } else if (arg === '--cwd') {
-      args.cwd = String(argv[++i] || '');
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.cwd = v; i++; }
     } else if (arg === '--session-id') {
-      args.sessionId = String(argv[++i] || '');
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.sessionId = v; i++; }
     } else if (arg === '--count') {
       // 用哨兵区分「未传 --count」(null) 与「--count 缺值/取到空」('')，后者也要 fail-closed
       args.count = i + 1 < argv.length ? String(argv[++i]) : '';
@@ -115,6 +116,10 @@ function main() {
   }
   if (args.unknown.length > 0) {
     fail(args.cwd, 'DENY_UNKNOWN_OPTION', `reserve-artifact-id 不支持参数：${args.unknown.join(', ')}。\n本 helper 从目标项目 cwd 和 .pace/artifact-root 配置解析 artifact_dir；不要传 --artifact-dir / --artifact-root / --project-dir。\n请在目标项目 cwd 中运行；自动化场景只可用 --cwd 明确项目 cwd。\n\n${usage()}`, { options: args.unknown.join(',') });
+    return;
+  }
+  if (args.missingValue.length > 0) {
+    fail(args.cwd, 'DENY_MISSING_VALUE', `reserve-artifact-id 参数缺值：${args.missingValue.join(', ')} 后未跟有效值（下一项是 flag 或缺失）。\n不吞后续 flag、不静默回落空值；请补全值后重试。\n\n${usage()}`, { missing: args.missingValue.join(',') });
     return;
   }
   if (!['create-chg', 'record-correction'].includes(args.operation)) {

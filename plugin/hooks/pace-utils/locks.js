@@ -435,11 +435,22 @@ module.exports = function createLockUtils(ctx) {
       for (const file of files) {
         if (!file.endsWith('.json')) continue;
         const fp = path.join(dir, file);
-        let mtimeMs = 0;
-        try { mtimeMs = fs.statSync(fp).mtimeMs; } catch(e) { continue; }
-        let closed = false;
-        try { closed = JSON.parse(fs.readFileSync(fp, 'utf8')).state === 'closed'; } catch(e) {}
-        if (closed || (now - mtimeMs > ttlMs)) {
+        let parsed = null;
+        try { parsed = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch(e) {}
+        const closed = !!parsed && parsed.state === 'closed';
+        // CHG-20260614-02 T-001：staleness 用 owner 内部 timestampMs（与 jsonLockIsStale/changeOwnerStatus 一致），
+        // 不用文件 mtime——避免活跃 session 持有的 owner（内部 timestampMs 已被 heartbeat 刷新）因 mtime 静止被误清。
+        // 内部 timestampMs 缺失（异常记录）回退文件 mtime，仍能清理孤儿。
+        const ts = parsed ? (Number(parsed.timestampMs || parsed.timestamp_ms || 0) || 0) : 0;
+        let stale;
+        if (ts) {
+          stale = now - ts > ttlMs;
+        } else {
+          let mtimeMs = 0;
+          try { mtimeMs = fs.statSync(fp).mtimeMs; } catch(e) { continue; }
+          stale = now - mtimeMs > ttlMs;
+        }
+        if (closed || stale) {
           try { fs.unlinkSync(fp); swept.push(fp); } catch(e) {}
         }
       }

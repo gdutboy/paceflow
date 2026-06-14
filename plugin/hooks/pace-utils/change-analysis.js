@@ -238,6 +238,12 @@ module.exports = function createChangeAnalysis(ctx) {
     finding: { base: ['status', 'date', 'schema-version'] },
     correction: { base: ['date', 'schema-version'] },
   };
+  // CHG-20260614-03 T-001：各 kind 合法 status 枚举。status typo/未知值不得静默退化为 base-only（Bug#5）。
+  // correction 无 status 字段（见 SCHEMA_V7_KEYS.correction），不参与枚举校验。
+  const SCHEMA_V7_STATUS_ENUM = {
+    chg: ['planned', 'in-progress', 'completed', 'archived', 'cancelled'],
+    finding: ['open', 'investigating', 'accepted', 'rejected', 'merged', 'blocked'],
+  };
 
   /**
    * 校验 7.0 帧是否符合封闭合同。
@@ -263,6 +269,12 @@ module.exports = function createChangeAnalysis(ctx) {
       ...keys.filter(k => !present.includes(k)).map(k => `${k}(missing-key)`),
       ...valueRequired.filter(k => present.includes(k) && !frontmatterNullable(fm[k])),
     ];
+    // T-001：status 枚举校验——值非空但不在该 kind 合法枚举内即非法（typo 不退化 base-only）。
+    // 空/null status 由上方 valueRequired（status 在 base）已捕获，此处只判非空无效值。
+    const statusEnum = SCHEMA_V7_STATUS_ENUM[kind];
+    if (statusEnum && st && !statusEnum.includes(st)) {
+      missing.push(`status(unknown-value:${st})`);
+    }
     const unknown = present.filter(k => !keySet.has(k));
     // R-11：change-set / change-set-seq 成对不变量（仅 chg，两 key 都 present 时）——
     // 半空对（一有值一 null/占位）破坏 batch 聚合排序，报 violation。

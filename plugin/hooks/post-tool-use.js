@@ -80,7 +80,8 @@ paceUtils.withStdinParsed((stdin) => {
     paceUtils.reviveDetachedChangeOwnersForSession(cwd, { sessionId: stdin.sessionId });
     const touched = paceUtils.touchChangeOwnersForSession(cwd, {
       sessionId: stdin.sessionId,
-      states: ['active', 'closing'],
+      // CHG-20260614-02 T-001：刷新本 session 所有非-detached/非-closed owner（detached 故意 aging 作 takeover 窗口，不刷）。
+      states: ['active', 'closing', 'backlog', 'ready', 'blocked'],
     });
     if (touched.length > 0) {
       log(projectLogEntry('PostToolUse', 'CHANGE_OWNER_HEARTBEAT', {

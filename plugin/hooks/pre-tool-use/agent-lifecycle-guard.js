@@ -1,4 +1,5 @@
 // Artifact-writer Agent prompt/lifecycle helpers for PreToolUse.
+const fs = require('fs');
 const paceUtils = require('../pace-utils');
 
 const {
@@ -7,6 +8,26 @@ const {
   FORMAT_SNIPPETS,
   RESERVE_ARTIFACT_ID_SCRIPT,
 } = paceUtils;
+
+// V7G T-002：artifact-writer 受支持的 8 类 operation 白名单（白名单外即 out-of-scope，hard-deny）。
+const KNOWN_OPERATIONS = new Set([
+  'create-chg', 'update-chg', 'close-chg', 'archive-chg',
+  'record-finding', 'record-correction', 'update-finding', 'update-index',
+]);
+
+// V7G T-001：从 artDir 直接读 CHG 详情用于 V/R 偏序门（artDir 已在 guard 上下文，免再传 cwd）。
+// 读不到 / 路径异常返回 null → 调用方按 fail-open 不加新 deny，不误伤路径异常的合法操作。
+function readDetailFromArtDir(artDir, id) {
+  if (!artDir || !id) return null;
+  const fp = paceUtils.detailPathForId(artDir, id);
+  if (!fp) return null;
+  try {
+    const content = fs.readFileSync(fp, 'utf8');
+    return { path: fp, content, frontmatter: paceUtils.parseFrontmatter(content) };
+  } catch (e) {
+    return null;
+  }
+}
 
 function isArtifactWriterAgentTool(stdin) {
   return paceUtils.isArtifactWriterAgentType(stdin.toolInput.subagent_type || stdin.toolInput.subagentType);
@@ -428,6 +449,15 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     ].join('\n');
   }
 
+  if (!KNOWN_OPERATIONS.has(operation)) {
+    return [
+      `派 artifact-writer 时 operation「${operation}」不在受支持的 8 类指令内。`,
+      FORMAT_SNIPPETS.skillRef,
+      '受支持的 operation：create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction / update-finding / update-index。',
+      '请用其中之一重派；artifact-writer 不执行白名单外的指令。',
+    ].join('\n');
+  }
+
   if (operation === 'create-chg') {
     const batch = parseBatchBlocks(text);
     const totalRaw = promptFieldValue(text, 'change-set-total');
@@ -527,14 +557,25 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
     ].join('\n');
   }
 
-  if (mentionsVerifyOnly && !promptHasNonEmptyField(text, 'verify-summary')) {
-    return [
-      '派 artifact-writer 执行 update-chg action=verify 时缺少必填字段：verify-summary。',
-      FORMAT_SNIPPETS.skillRef,
-      '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
-      '请重派同一个 agent，并使用完整 prompt 顶部模板：',
-      promptTemplateForOperation({ prompt, artDir, operation, action })
-    ].join('\n');
+  if (mentionsVerifyOnly) {
+    if (!promptHasNonEmptyField(text, 'verify-summary')) {
+      return [
+        '派 artifact-writer 执行 update-chg action=verify 时缺少必填字段：verify-summary。',
+        FORMAT_SNIPPETS.skillRef,
+        '验证是确认边界：主 session 必须先运行验证命令并读取结果，确认通过后才允许写 VERIFIED。',
+        '请重派同一个 agent，并使用完整 prompt 顶部模板：',
+        promptTemplateForOperation({ prompt, artDir, operation, action })
+      ].join('\n');
+    }
+    // V7G T-001：偏序——verify 写 VERIFIED 要求 CHG 已 APPROVED
+    const detail = readDetailFromArtDir(artDir, paceUtils.explicitChangeTargetFromAgentPrompt(text));
+    if (detail && !paceUtils.isChangeApproved(detail)) {
+      return [
+        '派 artifact-writer 执行 update-chg action=verify，但目标 CHG 尚未 APPROVED（无 <!-- APPROVED --> 标记）。',
+        FORMAT_SNIPPETS.skillRef,
+        '偏序约束：VERIFIED 必须建立在 APPROVED 之上。请先 approve-and-start 让 CHG 进入 in-progress + APPROVED，再 verify。',
+      ].join('\n');
+    }
   }
 
   if (mentionsReviewOnly) {
@@ -549,6 +590,15 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
         '审计是确认边界：主 session 必须先编排对抗审计、路由 findings，确认审计跑过后才允许写 REVIEWED；agent 以 review-confirmed 为唯一依据，不自行判断。',
         '请重派同一个 agent，并使用完整 prompt 顶部模板：',
         promptTemplateForOperation({ prompt, artDir, operation, action })
+      ].join('\n');
+    }
+    // V7G T-001：偏序——review 写 REVIEWED 要求 CHG 已 VERIFIED
+    const detail = readDetailFromArtDir(artDir, paceUtils.explicitChangeTargetFromAgentPrompt(text));
+    if (detail && !paceUtils.isChangeVerified(detail)) {
+      return [
+        '派 artifact-writer 执行 update-chg action=review，但目标 CHG 尚未 VERIFIED（verified-date 为 null 或无 <!-- VERIFIED --> 标记）。',
+        FORMAT_SNIPPETS.skillRef,
+        '偏序约束：REVIEWED 必须建立在 VERIFIED 之上。请先完成验证（verify 或 close 写入 VERIFIED）再 review。',
       ].join('\n');
     }
   }
@@ -574,6 +624,15 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
         '请重派同一个 agent，并使用完整 prompt 顶部模板：',
         promptTemplateForOperation({ prompt, artDir, operation: 'close-chg' })
       ].filter(Boolean).join('\n');
+    }
+    // V7G T-001：偏序——close 折叠 VERIFIED+REVIEWED+归档，要求 CHG 已 APPROVED
+    const detail = readDetailFromArtDir(artDir, paceUtils.explicitChangeTargetFromAgentPrompt(text));
+    if (detail && !paceUtils.isChangeApproved(detail)) {
+      return [
+        '派 artifact-writer 执行 close-chg，但目标 CHG 尚未 APPROVED（无 <!-- APPROVED --> 标记）。',
+        FORMAT_SNIPPETS.skillRef,
+        'close-chg 折叠 VERIFIED + REVIEWED + 归档，必须建立在 APPROVED 之上。请先 approve-and-start 再 close。',
+      ].join('\n');
     }
   }
 

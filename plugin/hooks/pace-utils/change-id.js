@@ -39,8 +39,16 @@ function slugForChangeId(id) {
   return '';
 }
 
+// detailPathForId 的逆：从 CHG 详情 artifact rel（changes/chg|hotfix-yyyymmdd-nn[-slug].md）反解稳定 ID。
+// 正则与 marker-guard.isChangeDetailArtifactRel 同口径（slug 段可选）；非 CHG 详情路径返回 ''。
+function changeIdFromArtifactRel(rel) {
+  const m = String(rel || '').match(/^changes\/((?:chg|hotfix)-\d{8}-\d{2})(?:-[^/]+)?\.md$/i);
+  return m ? normalizeChangeId(m[1]) : '';
+}
+
 module.exports = {
   normalizeChangeId,
   detailPathForId,
   slugForChangeId,
+  changeIdFromArtifactRel,
 };

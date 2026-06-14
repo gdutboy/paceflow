@@ -235,7 +235,8 @@ paceUtils.withStdinParsed((stdin) => {
     paceUtils.reviveDetachedChangeOwnersForSession(cwd, { sessionId: stdin.sessionId });
     const touched = paceUtils.touchChangeOwnersForSession(cwd, {
       sessionId: stdin.sessionId,
-      states: ['active', 'closing'],
+      // CHG-20260614-02 T-001：刷新本 session 所有非-detached/非-closed owner（detached 故意 aging 作 takeover 窗口，不刷）。
+      states: ['active', 'closing', 'backlog', 'ready', 'blocked'],
     });
     if (touched.length > 0) {
       log(projectLogEntry('PreToolUse', 'CHANGE_OWNER_HEARTBEAT', {
@@ -988,6 +989,24 @@ paceUtils.withStdinParsed((stdin) => {
   if (artifactRelForMutation) {
     if (isArtifactWriterAgent(stdin)) {
       if (isChangeDetailArtifactRel(artifactRelForMutation)) {
+        // CHG-20260614-02 T-002：写盘 owner 复核——闭合 dispatch→write 判定割裂。已 takeover 的 CHG 在 dispatch 时
+        // owner 已改写为当前 session（→current 放行）；仍为 foreign/sibling-fresh 即此 CHG 非本次派发目标、未接手，
+        // artifact-writer 越权改他人活跃 CHG 详情，deny（与派发门同构，不依赖资源锁只防并发不防越权）。
+        const writeOwnerChangeId = paceUtils.changeIdFromArtifactRel(artifactRelForMutation);
+        if (writeOwnerChangeId) {
+          const writeOwner = paceUtils.changeOwnerStatus(cwd, writeOwnerChangeId, stdin.sessionId);
+          if (writeOwner.disposition === 'foreign-fresh' || writeOwner.disposition === 'sibling-fresh') {
+            const reason = [
+              `禁止写入由其他活跃 session 持有的 CHG 详情：${artifactRelForMutation}（owner disposition: ${writeOwner.disposition}）。`,
+              '该 CHG 不是本次 artifact-writer 派发的目标，也未经 owner-takeover 三字段握手接手。',
+              '请只修改本次派发目标 CHG 的详情；如确需接手该 CHG，先在 Agent 派发时带 takeover 三字段。',
+            ].join('\n');
+            const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
+            process.stdout.write(JSON.stringify(output));
+            log(projectLogEntry('PreToolUse', 'DENY_WRITE_FOREIGN_OWNER', { proj, target: writeOwnerChangeId, artifact: artifactRelForMutation, disposition: writeOwner.disposition, dur: Date.now() - t0 }));
+            return;
+          }
+        }
         const mutationText = [content, newString].filter(Boolean).join('\n');
         if (/^status:\s*archived\s*$/mi.test(mutationText)) {
           // v7（CHG-20260611-08）：归档前置只检 task.md 双区结构（唯一索引）。

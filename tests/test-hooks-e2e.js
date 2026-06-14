@@ -1136,6 +1136,55 @@ test('8a2. artifact-writer 写普通项目文件不能绕过 C 阶段', () => {
   assert.ok(r.stdout.includes('C 阶段未完成'));
 });
 
+test('V7H-1. sweepStaleRuntimeOwners 用内部 timestampMs 判 stale（非文件 mtime）（CHG-20260614-02 T-001）', () => {
+  const pu = require('../plugin/hooks/pace-utils');
+  const dir = makeV6Project('v7h-sweep-internal-ts');
+  const now = Date.now();
+  // 内部 timestampMs 已 stale（40min）但文件刚写 mtime≈now（fresh）——旧实现按 mtime 不清，新实现按内部 ts 清
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-x', timestampMs: now - 40 * 60 * 1000 });
+  seedChangeOwner(dir, 'CHG-20260504-02', { sessionId: 'sid-x', timestampMs: now });
+  const swept = pu.sweepStaleRuntimeOwners(dir, { now });
+  assert.ok(swept.some(p => /chg-20260504-01/.test(p)), '内部 timestampMs stale 的 owner 被清（非文件 mtime）');
+  assert.ok(!swept.some(p => /chg-20260504-02/.test(p)), '内部 timestampMs fresh 的 owner 保留');
+});
+
+test('V7H-2. heartbeat states 扩到 blocked——活跃 session 的 blocked owner 被刷新不误清（CHG-20260614-02 T-001）', () => {
+  const dir = makeV6Project('v7h-heartbeat-blocked');
+  const old = Date.now() - 40 * 60 * 1000;
+  const ownerFp = seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-live', state: 'blocked', timestampMs: old });
+  runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-live', tool_name: 'Edit',
+      tool_input: { file_path: path.join(dir, 'src.js'), old_string: 'a', new_string: 'b' } },
+  });
+  const owner = JSON.parse(fs.readFileSync(ownerFp, 'utf8'));
+  assert.ok(owner.timestampMs > old, 'blocked owner 的 timestampMs 被 heartbeat 刷新（不再被 sweep 误清）');
+});
+
+test('V7H-3. 写盘 owner 复核——artifact-writer Edit foreign-owned CHG 详情 → DENY（CHG-20260614-02 T-002）', () => {
+  const dir = makeV6Project('v7h-write-foreign');
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-foreign', agentId: 'agent-foreign', state: 'active', timestampMs: Date.now() });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-mine', agent_id: 'agent-mine', agent_type: 'paceflow:artifact-writer', tool_name: 'Edit',
+      tool_input: { file_path: path.join(dir, 'changes', 'chg-20260504-01.md'), old_string: '# 测试变更', new_string: '# 测试变更 x' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'foreign owner 的 CHG 详情写入应 deny');
+});
+
+test('V7H-4. 写盘 owner 复核——artifact-writer Edit 自己 session 的 CHG 详情 → 放行（不误伤）（CHG-20260614-02 T-002）', () => {
+  const dir = makeV6Project('v7h-write-own');
+  seedChangeOwner(dir, 'CHG-20260504-01', { sessionId: 'sid-mine', agentId: 'agent-mine', state: 'active', timestampMs: Date.now() });
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-mine', agent_id: 'agent-mine', agent_type: 'paceflow:artifact-writer', tool_name: 'Edit',
+      tool_input: { file_path: path.join(dir, 'changes', 'chg-20260504-01.md'), old_string: '# 测试变更', new_string: '# 测试变更 x' } },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('"deny"'), '自己 session 的 CHG 详情写入放行');
+});
+
 test('8b. 当前 session owner 的 in-progress 非代码写入放行并注入 CHG 摘要', () => {
   const dir = makeV6Project('ptu-current-owner-non-code-pass');
   seedChangeOwner(dir, 'CHG-20260504-01', {
@@ -2655,6 +2704,44 @@ test('9hc-helper1a. reserve-artifact-id helper 遇到未知参数 fail-fast', ()
   assert.ok(helper.stdout.includes('不支持参数：--project-dir, --artifact-root'));
   assert.ok(helper.stdout.includes('不要传 --artifact-dir / --artifact-root / --project-dir'));
   assert.ok(helper.stdout.includes('只可用 --cwd'));
+});
+
+test('9hc-helper1c. reserve --cwd 吞掉后续 flag → fail-closed 不预留（CHG-20260614-04 peek 下沉）', () => {
+  const dir = makeV6Project('agent-reserve-cwd-eats-flag', { withIndex: false, detail: false });
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--cwd', '--operation', 'create-chg'], // --cwd 缺值会吞 --operation
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-cwd-eats' },
+  });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('缺值'), 'reserve --cwd 吞 flag 应报缺值（非吞下 --operation 静默 resolve）');
+  assert.ok(!helper.stdout.includes('reserved-id:'), '缺值必须 fail-closed 不预留');
+});
+
+test('9hc-helper1d. reserve --operation 末尾缺值 → fail-closed（CHG-20260614-04 peek 下沉）', () => {
+  const dir = makeV6Project('agent-reserve-op-missing', { withIndex: false, detail: false });
+  const helper = runReserveHelper({
+    cwd: dir,
+    args: ['--operation'], // 末尾缺值
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-reserve-op-missing' },
+  });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('缺值'), 'reserve --operation 末尾缺值应报缺值');
+  assert.ok(!helper.stdout.includes('reserved-id:'));
+});
+
+test('9hc-syncplan-mv1. sync-plan --cwd 吞掉后续 flag → fail-closed（CHG-20260614-04 peek 下沉）', () => {
+  const dir = makeV6Project('syncplan-cwd-eats-flag', { withIndex: false, detail: false });
+  const helper = runSyncPlanHelper({ cwd: dir, args: ['--cwd', '--plan', 'x.md'] });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('缺值'), 'sync-plan --cwd 吞 flag 应报缺值（非吞下 --plan 静默 resolve）');
+});
+
+test('9hc-syncplan-mv2. sync-plan --plan 末尾缺值 → fail-closed（CHG-20260614-04 peek 下沉）', () => {
+  const dir = makeV6Project('syncplan-plan-missing', { withIndex: false, detail: false });
+  const helper = runSyncPlanHelper({ cwd: dir, args: ['--plan'] });
+  assert.strictEqual(helper.code, 2);
+  assert.ok(helper.stdout.includes('缺值'), 'sync-plan --plan 末尾缺值应报缺值');
 });
 
 test('9hc-helper1b. reserve-artifact-id helper 在最小 v5 fixture 中不创建 changes', () => {
@@ -4672,8 +4759,8 @@ test('9hc4r. close-chg 缺 review-confirmed → DENY（审计门）', () => {
   assert.ok(r.stdout.includes('review-confirmed'));
 });
 
-test('9hc-review1. update-chg action=review 带齐三字段 → 放行', () => {
-  const dir = makeV6Project('agent-review-ok');
+test('9hc-review1. update-chg action=review 带齐三字段 + CHG 已 VERIFIED → 放行', () => {
+  const dir = makeV6Project('agent-review-ok', { detail: chgDetail({ verified: true }) });
   const r = runHook('pre-tool-use.js', {
     cwd: dir,
     stdin: {
@@ -4718,6 +4805,31 @@ test('9hc-review2. update-chg action=review 缺 review-confirmed → DENY', () =
   });
   assert.ok(r.stdout.includes('"deny"'));
   assert.ok(r.stdout.includes('review-confirmed'));
+});
+
+test('9hc-review3. update-chg action=review 但 CHG 未 VERIFIED → DENY（V/R 偏序门）', () => {
+  const dir = makeV6Project('agent-review-unverified'); // chgDetail 默认 approved 但未 verified
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Review unverified CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action: review',
+          'review-confirmed: true',
+          'review-source: manual',
+          'review-findings: P0/P1/P2/P3 = 0/0/0/0',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.ok(r.stdout.includes('"deny"'), '未 VERIFIED 的 review 应 deny');
+  assert.ok(r.stdout.includes('VERIFIED'), 'deny 文案应点明偏序约束');
 });
 
 test('9hc4b. update/close/archive 必须显式 target，不能从正文 CHG-ID 推断 owner', () => {
