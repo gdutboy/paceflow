@@ -85,26 +85,36 @@ function uniqueChangeIdFromText(text) {
   return ids.length === 1 ? ids[0] : '';
 }
 
-function inferCloseTarget(stdin) {
-  const candidates = [
-    stdin.toolInput && stdin.toolInput.prompt,
-    stdin.raw && stdin.raw.tool_input && stdin.raw.tool_input.prompt,
-    stdin.raw && stdin.raw.prompt,
-    stdin.raw && stdin.raw.agent_prompt,
-    stdin.lastMessage,
-    ...readTranscriptStrings(stdin.agentTranscriptPath),
-  ].filter(Boolean);
-
-  // PSP-02：operation 与 target 必须同源——target 只从产出 close-chg/archive-chg 的同一 candidate
-  // 取（显式 target 或唯一 CHG ID），不再遍历其他 candidate 借 target，避免 operation 在 prompt、
-  // target 在 transcript/lastMessage 指向另一个 CHG 时关错 change-owner。同源无 target 时降级 SKIP。
-  for (const text of candidates) {
+// PSP-02：operation 与 target 必须同源——target 只从产出 close-chg/archive-chg 的同一 candidate
+// 取（显式 target 或唯一 CHG ID），不遍历其他 candidate 借 target，避免 operation 在 prompt、
+// target 在 transcript/lastMessage 指向另一个 CHG 时关错 change-owner。同源无 target 时降级 SKIP。
+// 命中返回 {operation,target,reason}（target 可空=missing-target）；无 close/archive operation 返回 null。
+function matchCloseTargetFromCandidates(candidates) {
+  for (const text of candidates.filter(Boolean)) {
     const operation = paceUtils.operationFromAgentPrompt(text);
     if (operation !== 'close-chg' && operation !== 'archive-chg') continue;
     const target = paceUtils.explicitChangeTargetFromAgentPrompt(text) || uniqueChangeIdFromText(text);
     if (target) return { operation, target, reason: '' };
     return { operation, target: '', reason: 'missing-target' };
   }
+  return null;
+}
+
+function inferCloseTarget(stdin) {
+  // 先试廉价 candidate（stdin 已解析字段），命中 close/archive operation 即返回——避免每次
+  // SubagentStop 都无谓读 transcript（readTranscriptStrings 可达 200KB 磁盘 I/O）。廉价 candidate 顺序
+  // 与原合并数组前 5 项一致，故同源命中优先级不变；仅把 transcript 读取推迟到廉价全 miss 时。
+  const cheap = matchCloseTargetFromCandidates([
+    stdin.toolInput && stdin.toolInput.prompt,
+    stdin.raw && stdin.raw.tool_input && stdin.raw.tool_input.prompt,
+    stdin.raw && stdin.raw.prompt,
+    stdin.raw && stdin.raw.agent_prompt,
+    stdin.lastMessage,
+  ]);
+  if (cheap) return cheap;
+  // 廉价 candidate 全不含 close/archive operation 时，才惰性读 transcript 兜底。
+  const fromTranscript = matchCloseTargetFromCandidates(readTranscriptStrings(stdin.agentTranscriptPath));
+  if (fromTranscript) return fromTranscript;
   return { operation: '', target: '', reason: 'missing-operation' };
 }
 

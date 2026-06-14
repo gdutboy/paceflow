@@ -87,7 +87,7 @@ function collectState(cwd, eventType, paceSignal, artDir, paceUtils, extra) {
   // 仅 core 读（Superpowers 桥接提醒在 core group）。
   let bridgeHint = null;
   if (isCore && paceSignal) {
-    try { bridgeHint = formatBridgeHint(cwd, artDir); } catch (e) { bridgeHint = null; }
+    try { bridgeHint = formatBridgeHint(cwd); } catch (e) { bridgeHint = null; }
   }
 
   // --- native plan 路径（重构前 266 / 211-214）---

@@ -7,7 +7,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, CODE_EXTS, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified, isChangeReviewed } = paceUtils;
+const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, CODE_EXTS, VAULT_PATH, getArtifactDir, getProjectName, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified, isChangeReviewed } = paceUtils;
 
 const LOG = paceUtils.defaultLogPath();
 // W-8: 使用共享日志轮转函数

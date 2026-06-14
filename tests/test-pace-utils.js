@@ -755,6 +755,48 @@ test('PSP-02: inferCloseTarget operation/target 同源（不跨 candidate 借 ta
   assert.strictEqual(ict({ lastMessage: 'CHG-20260202-02 完成', raw: {} }).reason, 'missing-operation');
 });
 
+test('SST-LAZY: inferCloseTarget 廉价 candidate 命中时不读 transcript（lazy，避免无谓 200KB I/O）', () => {
+  const ict = subagentStop.inferCloseTarget;
+  const tdir = makeTmpDir('sst-lazy-hit');
+  const tpath = path.join(tdir, 'transcript.jsonl');
+  // transcript 里放一个不同的 close target——验证廉价 candidate 命中时既不读盘也不借它
+  fs.writeFileSync(tpath, JSON.stringify({ text: 'operation: close-chg\ntarget: CHG-20269999-99' }) + '\n', 'utf8');
+  const origStat = fs.statSync;
+  let transcriptRead = false;
+  fs.statSync = function(p, ...rest) {
+    if (p === tpath) transcriptRead = true;
+    return origStat.call(fs, p, ...rest);
+  };
+  try {
+    // 廉价 candidate（toolInput.prompt）已含 close-chg + 同源 target → 不应触碰 transcript
+    const r = ict({
+      toolInput: { prompt: 'operation: close-chg\ntarget: CHG-20260101-01' },
+      agentTranscriptPath: tpath,
+      raw: {},
+    });
+    assert.strictEqual(r.operation, 'close-chg');
+    assert.strictEqual(r.target, 'CHG-20260101-01');
+    assert.strictEqual(transcriptRead, false, '廉价 candidate 命中时不应读 transcript');
+  } finally {
+    fs.statSync = origStat;
+  }
+});
+
+test('SST-LAZY-FALLBACK: 廉价 candidate 无 close operation 时仍读 transcript 兜底', () => {
+  const ict = subagentStop.inferCloseTarget;
+  const tdir = makeTmpDir('sst-lazy-fb');
+  const tpath = path.join(tdir, 'transcript.jsonl');
+  fs.writeFileSync(tpath, JSON.stringify({ text: 'operation: close-chg\ntarget: CHG-20260303-03' }) + '\n', 'utf8');
+  // 廉价 candidate 全不含 close/archive operation → 惰性读 transcript 兜底仍生效
+  const r = ict({
+    toolInput: { prompt: '随便聊聊，无 operation 字段' },
+    agentTranscriptPath: tpath,
+    raw: {},
+  });
+  assert.strictEqual(r.operation, 'close-chg');
+  assert.strictEqual(r.target, 'CHG-20260303-03', 'transcript 兜底仍生效');
+});
+
 test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
   const dir = makeTmpDir('change-id-helpers');
   assert.strictEqual(normalizeChangeId(' chg-20260514-01 '), 'CHG-20260514-01');

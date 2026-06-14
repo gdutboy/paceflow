@@ -8409,6 +8409,95 @@ test('GOLDEN structural: emitDeny \u5355\u51fa\u53e3\u6536\u655b + DENY_REASONS 
   console.log(`  [GOLDEN] \u7ed3\u6784: DENY_REASONS ${tableKeys.size} \u9879\uff1bemitDeny \u6536\u655b ${emitted.size} \u51fa\u53e3\u5168\u5728\u8868\uff1bcensus ${census.length} \u5168\u8986\u76d6\uff1b\u624b\u5199 deny \u51fa\u53e3\u6536\u655b\u81f3 ${denyOutlets}`);
 });
 
+// 结构完整性 part 2（CHG-20260614-17 T-004，codex P3-3）：逐项锁 DENY_REASONS 53 个 action 的
+// {escapeHatch, dirHint, teammateMode} 三元组。此前结构测试只验 code 在表内 + 出口=2，不验表值；
+// 行为 golden 只锁 33 个可达出口，剩余 deferred action 若富化位（escapeHatch/dirHint/teammateMode）
+// 被写反，两道现有守护都可能仍绿。EXPECTED_DENY_META 是表值 golden——flip 任一位即红，强制维护者
+// 改富化时同步确认（DENY_DIRECT_ARTIFACT_EDIT 的 dirHint:true 例外亦在锁内）。
+const EXPECTED_DENY_META = {
+  // 流程门 soft（denyOrHint 无 hardInTeammate）——4
+  DENY_AGENT_ARTIFACT_ROOT_CHOICE: 'true|true|soft',
+  DENY_ARTIFACT_ROOT_CHOICE: 'true|true|soft',
+  DENY_NATIVE_PLAN: 'true|true|soft',
+  DENY: 'true|true|soft',
+  // 流程门/完整性 hard-note（denyOrHint hardInTeammate:true）——8
+  DENY_BASH_ARTIFACT: 'true|true|hard-note',
+  DENY_POWERSHELL_ARTIFACT: 'true|true|hard-note',
+  DENY_MONITOR_ARTIFACT: 'true|true|hard-note',
+  DENY_V6_INDEX_MALFORMED: 'true|true|hard-note',
+  DENY_V6_DETAIL_MISSING: 'true|true|hard-note',
+  DENY_V6_NO_ACTIVE: 'true|true|hard-note',
+  DENY_V6_C_PHASE: 'true|true|hard-note',
+  DENY_V6_E_PHASE: 'true|true|hard-note',
+  // hardDeny（escapeHatch only, teammate hard）——19（DENY_DIRECT_ARTIFACT_EDIT dirHint:true 例外）
+  DENY_BAD_STDIN: 'true|false|hard',
+  DENY_ARTIFACT_ROOT_CONFIG: 'true|false|hard',
+  DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE: 'true|false|hard',
+  DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE: 'true|false|hard',
+  DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE: 'true|false|hard',
+  DENY_BASH_PROJECT_ROOT_MARKER: 'true|false|hard',
+  DENY_POWERSHELL_PROJECT_ROOT_MARKER: 'true|false|hard',
+  DENY_MONITOR_PROJECT_ROOT_MARKER: 'true|false|hard',
+  DENY_BASH_ARTIFACT_RUNTIME: 'true|false|hard',
+  DENY_POWERSHELL_ARTIFACT_RUNTIME: 'true|false|hard',
+  DENY_MONITOR_ARTIFACT_RUNTIME: 'true|false|hard',
+  DENY_BAD_TOOL: 'true|false|hard',
+  DENY_MISSING_FILE_PATH: 'true|false|hard',
+  DENY_LOCAL_ARTIFACT_ROOT_CHOICE: 'true|false|hard',
+  DENY_PROJECT_ROOT_MARKER: 'true|false|hard',
+  DENY_ARTIFACT_RUNTIME_CONTROL: 'true|false|hard',
+  DENY_DIRECT_ARTIFACT_WRITE: 'true|false|hard',
+  DENY_DIRECT_ARTIFACT_EDIT: 'true|true|hard',
+  DENY_V6_MARKER: 'true|false|hard',
+  // raw（无富化, teammate hard）——22
+  DENY_AGENT_NEWER_SCHEMA: 'false|false|hard',
+  DENY_AGENT_ARTIFACT_DIR: 'false|false|hard',
+  DENY_AGENT_LIFECYCLE_PROMPT: 'false|false|hard',
+  DENY_AGENT_LEGACY_ARTIFACT_LOCK: 'false|false|hard',
+  DENY_AGENT_ARTIFACT_BASE: 'false|false|hard',
+  DENY_AGENT_BATCH_RESERVED_MISMATCH: 'false|false|hard',
+  DENY_AGENT_ID_RESERVATION: 'false|false|hard',
+  DENY_AGENT_RESERVED_PROMPT_REQUIRED: 'false|false|hard',
+  DENY_AGENT_RESERVED_PROMPT_MISMATCH: 'false|false|hard',
+  DENY_AGENT_TARGET_REQUIRED: 'false|false|hard',
+  DENY_AGENT_CHANGE_OWNER: 'false|false|hard',
+  DENY_AGENT_CHANGE_OWNER_STALE: 'false|false|hard',
+  DENY_WRITE_FOREIGN_OWNER: 'false|false|hard',
+  DENY_ARCHIVE_WITHOUT_INDEX_MARKER: 'false|false|hard',
+  DENY_ARTIFACT_STATUS_INVALID: 'false|false|hard',
+  DENY_ARTIFACT_RESERVATION_MISSING: 'false|false|hard',
+  DENY_ARTIFACT_RESERVATION_MISMATCH: 'false|false|hard',
+  DENY_ARTIFACT_RESOURCE_LOCK: 'false|false|hard',
+  DENY_ARTIFACT_CONCURRENT_WRITE: 'false|false|hard',
+  DENY_REDIRECT: 'false|false|hard',
+  DENY_WRITE_EXISTING_ARTIFACT: 'false|false|hard',
+  DENY_WRITE_ARTIFACT: 'false|false|hard',
+};
+
+test('GOLDEN structural: DENY_REASONS 53 项 {escapeHatch,dirHint,teammateMode} 三元组逐项锁', () => {
+  const src = fs.readFileSync(path.join(HOOKS_DIR, 'pre-tool-use.js'), 'utf8');
+  const tableStart = src.indexOf('const DENY_REASONS = {');
+  const tableEnd = src.indexOf('\nfunction isArtifactWriterAgent');
+  assert.ok(tableStart >= 0 && tableEnd > tableStart, 'DENY_REASONS 表块定位失败');
+  const tableBlock = src.slice(tableStart, tableEnd);
+  // 解析实际表三元组（字符类含 0-9：action code 含数字如 DENY_V6_C_PHASE）
+  const actual = {};
+  for (const m of tableBlock.matchAll(/^ {2}(DENY[A-Z0-9_]*):\s*\{\s*category:\s*'[^']+',\s*escapeHatch:\s*(true|false),\s*dirHint:\s*(true|false),\s*teammateMode:\s*'([^']+)'/gm)) {
+    actual[m[1]] = `${m[2]}|${m[3]}|${m[4]}`;
+  }
+  // 数量一致（防解析漏行 / 表增删未同步期望）
+  assert.strictEqual(Object.keys(actual).length, 53, `DENY_REASONS 应解析 53 项，实际 ${Object.keys(actual).length}`);
+  assert.strictEqual(Object.keys(EXPECTED_DENY_META).length, 53, 'EXPECTED_DENY_META 应 53 项');
+  // 键集双向一致（新增/删除 action 须同步期望表）
+  for (const code of Object.keys(EXPECTED_DENY_META)) assert.ok(code in actual, `EXPECTED 有 ${code} 但实际表缺`);
+  for (const code of Object.keys(actual)) assert.ok(code in EXPECTED_DENY_META, `实际表有 ${code} 但 EXPECTED 缺（新增 action 须同步期望表）`);
+  // 逐项三元组锁
+  for (const [code, expected] of Object.entries(EXPECTED_DENY_META)) {
+    assert.strictEqual(actual[code], expected, `${code} 三元组漂移：期望 escapeHatch|dirHint|teammateMode=${expected}，实际 ${actual[code]}`);
+  }
+  console.log(`  [GOLDEN] 表值: DENY_REASONS 53 项 {escapeHatch,dirHint,teammateMode} 逐项锁（DIRECT_ARTIFACT_EDIT dirHint:true 例外已锁）`);
+});
+
 cleanupAll();
 
 const total = t.passed + t.failed;

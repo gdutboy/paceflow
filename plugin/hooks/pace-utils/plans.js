@@ -201,7 +201,7 @@ module.exports = function createPlanUtils(ctx) {
     return false;
   }
 
-  function formatBridgeHint(cwd, artDir) {
+  function formatBridgeHint(cwd) {
     const planFiles = listBridgeCandidatePlanFiles(cwd);
     if (planFiles.length === 0) return null;
     const fileList = planFiles.slice(0, 3).map(p => `${p.dir}/${p.name}`).join(', ');

@@ -8,16 +8,30 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-// git whitespace 检查：工作树未提交改动 + 已提交未推送区间（@{upstream}..HEAD）。
-// 后者 catch「已 commit 但无区间检查漏掉」的 EOF 空行/trailing-space（CHG-20260614-16，codex v7.2.3 P3：
-// v7.2.3 提交含 EOF 空行，无区间 git diff --check 在干净 worktree 下查不到）；无 upstream 跟踪时跳过区间。
+// 纯函数：给定 upstream 与 releaseBase，决定要跑 `git diff --check <range>` 的区间列表（工作树未提交
+// diff 总是先单独跑、不在此列）。抽出便于自测「PACE_RELEASE_BASE 置位增区间、未置位行为不变」而不 shell
+// out git。upstream 区间 catch 已提交未推送的 whitespace；releaseBase 区间 catch post-push/远端干净检出
+// 场景——push 后 @{upstream}..HEAD=0，upstream 区间查不到已推送的整段 release whitespace（codex v7.2.5 #3）。
+function whitespaceCheckRanges(upstream, releaseBase) {
+  const ranges = [];
+  if (upstream) ranges.push(`${upstream}..HEAD`);
+  const base = releaseBase ? String(releaseBase).trim() : '';
+  if (base) ranges.push(`${base}..HEAD`);
+  return ranges;
+}
+
+// git whitespace 检查：工作树未提交改动 + 已提交未推送区间（@{upstream}..HEAD）+ 可选 release 区间
+// （PACE_RELEASE_BASE..HEAD）。区间集中由 whitespaceCheckRanges 决定；无 upstream 跟踪时跳过 upstream 区间。
+// 发布流程用 `PACE_RELEASE_BASE=<上版 commit> node tests/run-all.js` 显式覆盖整段 release 区间。
 // 任一 whitespace 错误 → execFileSync 抛错 → runSuites 判失败。
 function gitWhitespaceCheck(cwd) {
   execFileSync('git', ['diff', '--check'], { cwd, stdio: 'pipe' });
   let upstream = null;
   try { upstream = execFileSync('git', ['rev-parse', '--abbrev-ref', '@{upstream}'], { cwd, stdio: 'pipe' }).toString().trim(); }
   catch (e) { upstream = null; }
-  if (upstream) execFileSync('git', ['diff', '--check', `${upstream}..HEAD`], { cwd, stdio: 'pipe' });
+  for (const range of whitespaceCheckRanges(upstream, process.env.PACE_RELEASE_BASE)) {
+    execFileSync('git', ['diff', '--check', range], { cwd, stdio: 'pipe' });
+  }
   return true;
 }
 
@@ -87,4 +101,4 @@ if (require.main === module) {
   process.exit(exitCode);
 }
 
-module.exports = { runSuites, filterSuites, SUITES };
+module.exports = { runSuites, filterSuites, SUITES, whitespaceCheckRanges };
