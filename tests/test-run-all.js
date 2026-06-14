@@ -42,6 +42,19 @@ test('RUN-4: PACE_TEST_FILTER 按名子串筛选，空值返回全部', () => {
   assert.strictEqual(filterSuites(SUITES, '').length, SUITES.length, '空 filter 返回全部套件');
 });
 
+test('RUN-5: runSuites 支持 run 函数条目（git-diff-check 区间检查改用 fn，CHG-20260614-16）', () => {
+  const { runSuites } = require('./run-all');
+  const { exitCode, results } = runSuites([
+    { name: 'fn-pass', run: () => true },
+    { name: 'fn-fail', run: () => false },
+    { name: 'fn-throw', run: () => { throw new Error('whitespace error'); } },
+  ], { quiet: true });
+  assert.strictEqual(exitCode, 1, 'run 返回 false 或抛错应使整体非零');
+  assert.strictEqual(results.find((r) => r.name === 'fn-pass').ok, true, 'run 返回 true → ok');
+  assert.strictEqual(results.find((r) => r.name === 'fn-fail').ok, false, 'run 返回 false → ok=false');
+  assert.strictEqual(results.find((r) => r.name === 'fn-throw').ok, false, 'run 抛错（whitespace 检查失败）→ ok=false');
+});
+
 t.cleanup();
 const total = t.passed + t.failed;
 console.log(`\n${t.failed === 0 ? '✅' : '❌'} ${t.passed}/${total} tests passed`);

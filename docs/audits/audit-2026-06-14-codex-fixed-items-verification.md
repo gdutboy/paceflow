@@ -123,4 +123,3 @@
 
 1. `.gitignore` 缺 `tests/run-all.js` / `tests/test-run-all.js` 例外。
 2. 本地修复尚未提交，远端 v7.2.2 仍不包含日志隔离、run-all、agent-tests helper schema-version 检测。
-

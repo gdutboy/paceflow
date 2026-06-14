@@ -8,6 +8,19 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+// git whitespace 检查：工作树未提交改动 + 已提交未推送区间（@{upstream}..HEAD）。
+// 后者 catch「已 commit 但无区间检查漏掉」的 EOF 空行/trailing-space（CHG-20260614-16，codex v7.2.3 P3：
+// v7.2.3 提交含 EOF 空行，无区间 git diff --check 在干净 worktree 下查不到）；无 upstream 跟踪时跳过区间。
+// 任一 whitespace 错误 → execFileSync 抛错 → runSuites 判失败。
+function gitWhitespaceCheck(cwd) {
+  execFileSync('git', ['diff', '--check'], { cwd, stdio: 'pipe' });
+  let upstream = null;
+  try { upstream = execFileSync('git', ['rev-parse', '--abbrev-ref', '@{upstream}'], { cwd, stdio: 'pipe' }).toString().trim(); }
+  catch (e) { upstream = null; }
+  if (upstream) execFileSync('git', ['diff', '--check', `${upstream}..HEAD`], { cwd, stdio: 'pipe' });
+  return true;
+}
+
 // 核心套件清单。run-all-self 是聚合器自测，喂 fake 子命令、不递归跑 run-all 本身。
 const SUITES = [
   { name: 'pace-utils', cmd: process.execPath, args: ['tests/test-pace-utils.js'] },
@@ -17,7 +30,7 @@ const SUITES = [
   { name: 'agent-helpers', cmd: process.execPath, args: ['tests/test-agent-tests-helpers.js'] },
   { name: 'run-all-self', cmd: process.execPath, args: ['tests/test-run-all.js'] },
   { name: 'plugin-validate', cmd: 'claude', args: ['plugin', 'validate', './plugin'] },
-  { name: 'git-diff-check', cmd: 'git', args: ['diff', '--check'] },
+  { name: 'git-diff-check', run: gitWhitespaceCheck },
 ];
 
 /**
@@ -45,9 +58,13 @@ function runSuites(suites, opts = {}) {
     const t0 = Date.now();
     let ok = true;
     try {
-      execFileSync(s.cmd, s.args, { cwd, stdio: quiet ? 'pipe' : 'inherit' });
+      if (typeof s.run === 'function') {
+        ok = s.run(cwd, quiet) !== false; // run 函数：返回 false 或抛错即失败（如 git-diff-check 区间检查）
+      } else {
+        execFileSync(s.cmd, s.args, { cwd, stdio: quiet ? 'pipe' : 'inherit' });
+      }
     } catch (e) {
-      ok = false; // 子进程非零退出 / 命令不存在 → 标记失败，继续跑完其余套件
+      ok = false; // 子进程非零退出 / run 抛错 / 命令不存在 → 标记失败，继续跑完其余套件
     }
     const ms = Date.now() - t0;
     results.push({ name: s.name, ok, ms });

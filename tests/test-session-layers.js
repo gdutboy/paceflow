@@ -412,15 +412,18 @@ test('SL-18. findings 截断指针在列表末尾不割裂 P0/P1 + impact 优先
 
 // --- T-002 H/#3：corrections 截断指针末尾 + 新→旧 ---
 test('SL-19. corrections 截断保留新→旧 + 指针在末尾不在顶部（H/#3 修复）', () => {
-  const corr = Array.from({ length: 8 }, (_, i) =>
-    `- [[correction-2026-06-0${i + 1}-01-x]] 纠正 ${i} [date:: 2026-06-0${i + 1}]`).join('\n');
+  // 35 条触发 CORRECTION_KEEP=30 截断（CHG-20260614-15 cap 从 6 提到 30，fixture 同步加到 >30）。
+  const corr = Array.from({ length: 35 }, (_, i) => {
+    const dd = String(i + 1).padStart(2, '0');
+    return `- [[correction-2026-06-${dd}-01-x]] 纠正 ${i} [date:: 2026-06-${dd}]`;
+  }).join('\n');
   const state = makeActiveState({ artifactFiles: [
     { file: 'corrections.md', full: `# Corrections 索引\n\n## 活跃记录\n\n${corr}\n` },
   ]});
   const { l3 } = buildLayers(state, 'startup', paceUtils, 'artifact');
   const block = l3.find(b => b.includes('=== corrections.md ===')) || '';
   const recLines = block.split('\n').filter(l => /^- \[\[correction/.test(l));
-  assert.ok(recLines[0].includes('2026-06-08'), `首条应是最近 06-08（新→旧，实际 ${recLines[0]}）`);
+  assert.ok(recLines[0].includes('2026-06-35'), `首条应是最近 06-35（新→旧，实际 ${recLines[0]}）`);
   const listLines = block.split('\n').filter(l => /^- \[\[correction/.test(l) || l.includes('另有'));
   assert.ok(listLines[listLines.length - 1].includes('另有'), '指针在列表末尾');
   assert.ok(!listLines[0].includes('另有'), '指针不在顶部（H 修复）');
@@ -629,22 +632,50 @@ test('SL-33. startup/compact 相关知识+thoughts 注入数量逐项相等（N1
   assert.strictEqual(startupThink, 3, 'startup thoughts 名额 3');
 });
 
-// --- 34. M2：walkthrough 索引表保留最近 10 行（WALK_KEEP 回 10，对齐 design L0）---
-test('SL-34. walkthrough 注入保留最近 10 条索引行（M2 WALK_KEEP=10）', () => {
-  // 12 行（date 递增），断言保留最近 10 行（第3..第12）+ 省略指针报「已省略 2 条」。
+// --- 34. walkthrough 索引表保留最近 5 行（WALK_KEEP=5，CHG-20260614-15 从 10 降，背景 5 条够）+ fresh/compact 双事件 ---
+test('SL-34. walkthrough 注入保留最近 5 条索引行（WALK_KEEP=5）+ startup/compact 双事件同样截断', () => {
+  // 12 行（date 递增），断言保留最近 5 行（第8..第12）+ 省略指针报「已省略 7 条」。
   const rows = Array.from({ length: 12 }, (_, i) => {
     const d = String(i + 1).padStart(2, '0');
     return `| 2026-06-${d} | 第${i + 1}条 | CHG-x |`;
   }).join('\n');
   const walk = `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n\n<!-- ARCHIVE -->\n`;
   const state = makeActiveState({ artifactFiles: [{ file: 'walkthrough.md', full: walk }] });
-  const layers = buildLayers(state, 'startup', paceUtils, 'artifact');
-  const text = [...layers.l1head, ...layers.l3].join('\n');
-  // 保留最近 10 条：第12..第3 在，第2/第1 被省略。尾空格锚定单元格——「第12条 」不会误含「第2条 」、
-  //   「第11条 」不会误含「第1条 」（中间隔位），避免 plan 草拟里 `第2条|`（无空格）永不匹配的误绿。
-  assert.ok(text.includes('第12条 ') && text.includes('第3条 '), '最近 10 条应保留（第12..第3）');
-  assert.ok(!text.includes('第2条 ') && !text.includes('第1条 '), '第1/第2 条应被省略（超出 10 条）');
-  assert.ok(text.includes('已省略 2 条旧记录'), '省略指针应报「已省略 2 条」（12-10）');
+  // 截断由 group==='artifact' 门控、非 eventType，故 startup 与 compact 双事件都应生效。
+  for (const ev of ['startup', 'compact']) {
+    const layers = buildLayers(state, ev, paceUtils, 'artifact');
+    const text = [...layers.l1head, ...layers.l3].join('\n');
+    // 保留最近 5 条：第12..第8 在，第7..第1 被省略。尾空格锚定单元格防子串误匹配（「第12条 」不含「第2条 」）。
+    assert.ok(text.includes('第12条 ') && text.includes('第8条 '), `[${ev}] 最近 5 条应保留（第12..第8）`);
+    assert.ok(!text.includes('第7条 ') && !text.includes('第1条 '), `[${ev}] 第1..第7 条应被省略（超出 5 条）`);
+    assert.ok(text.includes('已省略 7 条旧记录'), `[${ev}] 省略指针应报「已省略 7 条」（12-5）`);
+  }
+});
+
+// --- CORR：corrections 注入 cap 提到 30（CHG-20260614-15，过去错误高价值、尽量全量）+ fresh/compact 双事件 ---
+test('SL-CORR-1. corrections cap=30：≤30 条全显示无指针 / >30 保留最新 30 + 指针（startup/compact 双事件）', () => {
+  const mkCorr = (n) => {
+    const recs = Array.from({ length: n }, (_, i) => {
+      const dd = String(i + 1).padStart(2, '0');
+      return `- [[correction-2026-06-${dd}-01-slug${i + 1}]] 纠正记录${i + 1} [date:: 2026-06-${dd}]`;
+    }).join('\n');
+    return `# Corrections 索引\n\n## 活跃记录\n\n${recs}\n\n<!-- ARCHIVE -->\n`;
+  };
+  for (const ev of ['startup', 'compact']) {
+    // ≤30：8 条全显示、无省略指针
+    const s8 = makeActiveState({ artifactFiles: [{ file: 'corrections.md', full: mkCorr(8) }] });
+    const L8 = buildLayers(s8, ev, paceUtils, 'artifact');
+    const t8 = [...L8.l1head, ...L8.l3].join('\n');
+    assert.ok(t8.includes('slug1]]') && t8.includes('slug8]]'), `[${ev}] ≤30 应全显示（8 条全在）`);
+    assert.ok(!t8.includes('更早纠正记录'), `[${ev}] ≤30 不应有省略指针`);
+    // >30：32 条 → 保留最新 30（第32..第3），省略第1/第2，指针「另有 2 条」
+    const s32 = makeActiveState({ artifactFiles: [{ file: 'corrections.md', full: mkCorr(32) }] });
+    const L32 = buildLayers(s32, ev, paceUtils, 'artifact');
+    const t32 = [...L32.l1head, ...L32.l3].join('\n');
+    assert.ok(t32.includes('slug32]]') && t32.includes('slug3]]'), `[${ev}] >30 应保留最新 30（含第32/第3）`);
+    assert.ok(!t32.includes('slug1]]') && !t32.includes('slug2]]'), `[${ev}] >30 最旧 2 条应省略`);
+    assert.ok(t32.includes('另有 2 条更早纠正记录'), `[${ev}] >30 指针应报「另有 2 条」`);
+  }
 });
 
 // --- 35/36. M1：renderGit 渲染脏文件数 + ahead/behind（design §5 A2）。Git 段在 buildLayers l1 层。---

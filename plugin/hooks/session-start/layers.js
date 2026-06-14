@@ -389,8 +389,8 @@ function renderArtifactFiles(state, paceUtils) {
 
 /** walkthrough 索引表截断：保留最近 10 行 + 删除 v6 永不触发的详情段落处理（重构前 449-503；M2 回 10 对齐 design L0）。 */
 function truncateWalkthrough(output) {
-  // 索引表截断：保留表头 + 最近 10 行数据行（M2：design L0 规定 10 条，从 M3 的 3 回归 10）。
-  const WALK_KEEP = 10;
+  // 索引表截断：保留表头 + 最近 5 行数据行（CHG-20260614-15：从 10 降到 5，了解背景 5 条够；walkthrough 是 L3 rank-3 低优先）。
+  const WALK_KEEP = 5;
   const dataRe = /^\| \d{4}-\d{2}-\d{2} \|/gm;
   const dataRows = [];
   let m;
@@ -582,6 +582,9 @@ function truncateFindingsByImpact(output) {
  * @returns {string} 截断后的文本
  */
 function truncateCorrections(output) {
+  // 纠正记录是「避免重犯」最高价值提醒（rank-1 L3 高优先），cap 提到 30（CHG-20260614-15）≈ 实际全量，
+  //   极端规模优雅降级为「30 条 + 指针」，避免彻底去 cap 时单块超 L3 预算被 packL3 整块 omit。
+  const CORRECTION_KEEP = 30;
   const lines = output.split('\n');
   const recs = [];
   for (let i = 0; i < lines.length; i++) {
@@ -591,13 +594,13 @@ function truncateCorrections(output) {
     recs.push({ i, date: dateM ? dateM[1] : '', text: lines[i] });
   }
   if (recs.length === 0) return output;
-  // 保留最近 6 条（date 降序选择，同 date 保持原序）。
+  // 保留最近 CORRECTION_KEEP 条（date 降序选择，同 date 保持原序）。
   const keepSet = new Set(recs
     .map((r, k) => ({ r, k }))
     .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.k - b.k)
-    .slice(0, 6)
+    .slice(0, CORRECTION_KEEP)
     .map(({ r }) => r.i));
-  const omitted = recs.length > 6 ? recs.length - 6 : 0;
+  const omitted = recs.length > CORRECTION_KEEP ? recs.length - CORRECTION_KEEP : 0;
   const pointer = omitted > 0 ? `（另有 ${omitted} 条更早纠正记录，避免重犯请 Read corrections.md）` : '';
   // 输出 date 降序（新→旧，#3）；指针追加列表末尾（不在顶部——审查 H：旧版指针插首个 drop 行=最老记录=文件头）。
   //   即使无省略也重排，统一修正旧→新展示。

@@ -683,12 +683,12 @@ test('2e. SessionStart walkthrough 截断保留最近日期记录', () => {
   fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n<!-- ARCHIVE -->\n`, 'utf8');
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
   assert.strictEqual(r.code, 0);
-  // 12 行 → 保留最近 10 行（05-12..05-03），省略最旧 2（05-02、05-01）。
+  // 12 行 → 保留最近 5 行（05-12..05-08），省略最旧 7（05-07..05-01）（CHG-20260614-15 WALK_KEEP 10→5）。
   assert.ok(r.stdout.includes('| 2026-05-12 | smoke 12 | CHG-20260504-01 |'));
-  assert.ok(r.stdout.includes('| 2026-05-03 | smoke 03 | CHG-20260504-01 |'), '最近 10 之一 05-03 应保留');
-  assert.ok(!r.stdout.includes('| 2026-05-02 | smoke 02 | CHG-20260504-01 |'), '第 11 新及更旧应被省略');
+  assert.ok(r.stdout.includes('| 2026-05-08 | smoke 08 | CHG-20260504-01 |'), '最近 5 之一 05-08 应保留');
+  assert.ok(!r.stdout.includes('| 2026-05-07 | smoke 07 | CHG-20260504-01 |'), '第 6 新及更旧应被省略');
   assert.ok(!r.stdout.includes('| 2026-05-01 | smoke 01 | CHG-20260504-01 |'));
-  assert.ok(r.stdout.includes('已省略 2 条旧记录'), '应附「已省略 2 条旧记录」长尾指针');
+  assert.ok(r.stdout.includes('已省略 7 条旧记录'), '应附「已省略 7 条旧记录」长尾指针');
   assert.ok(r.stdout.indexOf('2026-05-12') < r.stdout.indexOf('2026-05-11'));
 });
 
@@ -739,9 +739,10 @@ test('2e3. SessionStart walkthrough 表格截断同日多条保留最新（prepe
   fs.writeFileSync(path.join(dir, 'walkthrough.md'), `# 工作记录\n\n## 最近工作\n\n| 日期 | 完成内容 | 关联变更 |\n| --- | --- | --- |\n${rows}\n<!-- ARCHIVE -->\n`, 'utf8');
   const r = runHook('session-start.js', { cwd: dir, stdin: { type: 'startup' }, args: ['--group', 'artifact'] });
   assert.strictEqual(r.code, 0);
-  // M2：11 条同日 → 保留最新 10（smoke 11..02，prepend index0~9），省略最旧 1（smoke 01）。
+  // 11 条同日 → 保留最新 5（smoke 11..07，prepend index0~4），省略最旧 6（smoke 06..01）（CHG-20260614-15 WALK_KEEP 10→5）。
   assert.ok(r.stdout.includes('smoke 11'), '最新条目 smoke 11（prepend index0）必须保留');
-  assert.ok(r.stdout.includes('smoke 02'), '最新 10 条之一 smoke 02 应保留');
+  assert.ok(r.stdout.includes('smoke 07'), '最新 5 条之一 smoke 07 应保留');
+  assert.ok(!r.stdout.includes('smoke 06'), '第 6 新及更旧应被省略');
   assert.ok(!r.stdout.includes('smoke 01'), '最旧条目 smoke 01 应被省略');
 });
 

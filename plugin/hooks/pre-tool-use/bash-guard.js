@@ -142,7 +142,10 @@ function isPaceflowValidationScriptTarget(target, cwd) {
   } catch(e) {
     return false;
   }
-  if (!['tests/test-pace-utils.js', 'tests/test-hooks-e2e.js'].includes(rel)) return false;
+  // 覆盖 paceflow 仓库 tests/ 下全部 .js（含 agent-tests/ 子目录），由下方 plugin.json name==='paceflow'
+  // gate 限定只在 paceflow 仓库本身生效——根治「硬编码白名单漏新增/未列测试文件」类 over-block：
+  // 含 artifact fixture 的测试脚本（如 test-session-layers）原会被 bashCommandEmbedsArtifactWriteScript 误拦（HOTFIX-20260614-01）。
+  if (!(rel.startsWith('tests/') && rel.endsWith('.js'))) return false;
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
     return manifest && manifest.name === 'paceflow';

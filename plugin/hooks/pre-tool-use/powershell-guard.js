@@ -158,7 +158,9 @@ function isPaceflowValidationScriptTarget(target, cwd) {
   } catch(e) {
     return false;
   }
-  if (!['tests/test-pace-utils.js', 'tests/test-hooks-e2e.js'].includes(rel)) return false;
+  // 覆盖 paceflow 仓库 tests/ 下全部 .js（含 agent-tests/ 子目录），由下方 plugin.json name==='paceflow'
+  // gate 限定只在 paceflow 仓库本身生效——与 bash-guard 对称放宽，消「两侧 guard 移植不对称」（HOTFIX-20260614-01）。
+  if (!(rel.startsWith('tests/') && rel.endsWith('.js'))) return false;
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
     return manifest && manifest.name === 'paceflow';
