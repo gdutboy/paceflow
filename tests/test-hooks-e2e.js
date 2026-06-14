@@ -8136,6 +8136,279 @@ test('V7E-11. 未迁移布局下 artifact 写盘 → PostToolUse 催办一次（
   assert.ok(!r2.stdout.includes('migrate-v7.js'), '同 session 第二次不重复催办（flag 去重）');
 });
 
+// ============================================================================
+// \u9ec4\u91d1\u57fa\u7ebf\u9501\uff08CHG-20260614-13 T-001\uff09\uff1adeny \u51fa\u53e3\u5168\u6587 characterization \u5feb\u7167
+// ----------------------------------------------------------------------------
+// \u76ee\u7684\uff1aemitDeny \u91cd\u6784\u524d\u56fa\u5316\u6bcf\u4e2a deny \u51fa\u53e3\u7684 permissionDecisionReason \u5168\u6587 + decision
+//   \u7c7b\u578b\uff08deny / context \u8f6f\u5316 / other\uff09\uff0c\u91cd\u6784\u540e\u9010\u5b57 match\u3002
+// \u9632\u81ea\u6307\uff08\u8bb0\u5fc6 equivalence-lock-verify-against-original\uff09\uff1a\u672c\u5feb\u7167\u5bf9\u3010\u5f53\u524d\u672a\u91cd\u6784 HEAD\u3011
+//   \u751f\u6210\uff08UPDATE_GOLDEN=1\uff09\uff0c\u662f characterization\u2014\u2014\u5bf9\u539f\u7248\u5373\u7eff\uff1bemitDeny \u82e5\u6539\u4e86\u4efb\u4f55 deny
+//   \u6587\u6848/\u5bcc\u5316/teammate \u5206\u652f\uff0c\u672c\u6d4b\u8bd5\u7acb\u5373\u7ea2\u3002
+// \u8def\u5f84\u5f52\u4e00\uff1afixture tmp / vault / repo \u8def\u5f84\u66ff\u6362\u4e3a <DIR>/<VAULT>/<HOOKS>/<REPO>\uff0c\u4fdd\u5feb\u7167\u7a33\u5b9a\u3002
+// \u66f4\u65b0\u57fa\u7ebf\uff1aUPDATE_GOLDEN=1 node tests/test-hooks-e2e.js\uff08\u4ec5\u5728\u3010\u6545\u610f\u3011\u6539 deny \u884c\u4e3a\u65f6\u8dd1\uff09\u3002
+console.log('\n--- GOLDEN: deny \u51fa\u53e3\u5168\u6587\u57fa\u7ebf\u9501\uff08CHG-20260614-13\uff09---');
+
+const GOLDEN_SNAPSHOT_PATH = path.join(__dirname, 'golden', 'deny-outlets.snapshot.json');
+const GOLDEN_UPDATE = process.env.UPDATE_GOLDEN === '1';
+const GOLDEN_REPO_ROOT = path.resolve(__dirname, '..');
+const GOLDEN_TEAM_ENV = { CLAUDE_CODE_TEAM_NAME: 'golden-exec-team' };
+
+// \u5f52\u4e00\u6240\u6709\u6613\u53d8\u5185\u5bb9\uff0c\u4fdd\u5feb\u7167\u8de8\u673a/\u8de8\u6b21/\u8de8\u5929\u7a33\u5b9a\u3002\u957f\u4e32\u5148\u4e8e\u77ed\u4e32\u66ff\u6362\uff08HOOKS_DIR \u5728 REPO_ROOT \u4e0b\uff09\u3002
+// today() \u5f52\u4e00\u9632 native-plan \u6587\u6848\u91cc\u7684\u8ba1\u5212\u6587\u4ef6\u65e5\u671f\uff08${today()}-feature.md\uff09\u6b21\u65e5\u6f02\u79fb\u3002
+function goldenNormalize(text, dir) {
+  let s = String(text);
+  if (dir) s = s.split(dir).join('<DIR>');
+  s = s.split(_vaultTmpDir).join('<VAULT>');
+  s = s.split(HOOKS_DIR).join('<HOOKS>');
+  s = s.split(GOLDEN_REPO_ROOT).join('<REPO>');
+  s = s.split(today()).join('<TODAY>');
+  s = s.split(today().replace(/-/g, '')).join('<TODAYC>'); // reserved-id 紧凑日期 CHG-YYYYMMDD-NN
+  return s;
+}
+
+// \u9a71\u52a8\u771f hook\uff0c\u5f52\u4e00\u540e\u62bd\u51fa {decision, text}\u3002deny\u2192permissionDecisionReason\uff1b\u8f6f\u5316\u2192additionalContext\u3002
+function goldenCapture({ cwd, stdin, env = {}, normDir }) {
+  const r = runHook('pre-tool-use.js', { cwd, stdin, env });
+  let out;
+  try { out = JSON.parse(r.stdout); } catch(e) { return { decision: 'PARSE_ERROR', text: goldenNormalize(r.stdout, normDir || cwd) }; }
+  const hso = (out && out.hookSpecificOutput) || {};
+  if (hso.permissionDecision === 'deny') return { decision: 'deny', text: goldenNormalize(hso.permissionDecisionReason, normDir || cwd) };
+  if (typeof hso.additionalContext === 'string') return { decision: 'context', text: goldenNormalize(hso.additionalContext, normDir || cwd) };
+  return { decision: 'other', text: goldenNormalize(JSON.stringify(out), normDir || cwd) };
+}
+
+// native-plan \u6865\u63a5\u95e8 fixture\uff08\u4eff 9ab7\uff1amanual \u5f3a\u4fe1\u53f7 + artifact-root \u5df2\u914d + current-native-plan\uff09\u3002
+function goldenNativePlanDir(label) {
+  const dir = makeTmpDir(label);
+  fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+  const planFile = path.join(dir, 'docs', 'plans', `${today()}-feature.md`);
+  fs.writeFileSync(planFile, '# Plan\n');
+  fs.writeFileSync(path.join(dir, '.pace', 'current-native-plan'), planFile, 'utf8');
+  return dir;
+}
+
+// \u6bcf\u4e2a label \u552f\u4e00 \u2192 \u6784\u9020 fixture + \u8fd4\u56de capture \u7ed3\u679c\u3002label \u547d\u540d\uff1a<\u7ec4>_<\u51fa\u53e3>__<\u53d8\u4f53>\u3002
+// Phase 1\uff1a\u6d41\u7a0b\u95e8\u7ec4\uff08denyOrHint 7 \u51fa\u53e3 \u00d7 main/teammate\uff09\u3002
+const GOLDEN_CASES = {
+  'FLOW_NO_ACTIVE__main': () => { const d = makeV6Project('golden-no-active', { withIndex: false, detail: false }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d) }); },
+  'FLOW_NO_ACTIVE__teammate': () => { const d = makeV6Project('golden-no-active-tm', { withIndex: false, detail: false }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d), env: GOLDEN_TEAM_ENV }); },
+
+  'FLOW_C_PHASE__main': () => { const d = makeV6Project('golden-c-phase', { indexMark: '[ ]', detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }) }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d) }); },
+  'FLOW_C_PHASE__teammate': () => { const d = makeV6Project('golden-c-phase-tm', { indexMark: '[ ]', detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }) }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d), env: GOLDEN_TEAM_ENV }); },
+
+  'FLOW_E_PHASE__main': () => { const d = makeV6Project('golden-e-phase', { indexMark: '[ ]', detail: chgDetail({ status: 'planned', task: '[ ]', approved: true }) }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d) }); },
+  'FLOW_E_PHASE__teammate': () => { const d = makeV6Project('golden-e-phase-tm', { indexMark: '[ ]', detail: chgDetail({ status: 'planned', task: '[ ]', approved: true }) }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d), env: GOLDEN_TEAM_ENV }); },
+
+  'FLOW_INDEX_MALFORMED__main': () => {
+    const d = makeV6Project('golden-malformed', { indexMark: '[ ]', detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }) });
+    const malformed = '<!-- \u6ce8\u91ca -->- [ ] [[chg-20260504-01]] \u6d4b\u8bd5\u53d8\u66f4 #change [tasks:: T-001]\n';
+    fs.writeFileSync(path.join(d, 'task.md'), `# \u9879\u76ee\u4efb\u52a1\u8ffd\u8e2a\n\n## \u6d3b\u8dc3\u4efb\u52a1\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+    fs.writeFileSync(path.join(d, 'implementation_plan.md'), `# \u5b9e\u65bd\u8ba1\u5212\n\n## \u53d8\u66f4\u7d22\u5f15\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+    return goldenCapture({ cwd: d, stdin: codeEditStdin(d) });
+  },
+  'FLOW_INDEX_MALFORMED__teammate': () => {
+    const d = makeV6Project('golden-malformed-tm', { indexMark: '[ ]', detail: chgDetail({ status: 'planned', task: '[ ]', approved: false }) });
+    const malformed = '<!-- \u6ce8\u91ca -->- [ ] [[chg-20260504-01]] \u6d4b\u8bd5\u53d8\u66f4 #change [tasks:: T-001]\n';
+    fs.writeFileSync(path.join(d, 'task.md'), `# \u9879\u76ee\u4efb\u52a1\u8ffd\u8e2a\n\n## \u6d3b\u8dc3\u4efb\u52a1\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+    fs.writeFileSync(path.join(d, 'implementation_plan.md'), `# \u5b9e\u65bd\u8ba1\u5212\n\n## \u53d8\u66f4\u7d22\u5f15\n\n${malformed}\n<!-- ARCHIVE -->\n`, 'utf8');
+    return goldenCapture({ cwd: d, stdin: codeEditStdin(d), env: GOLDEN_TEAM_ENV });
+  },
+
+  'FLOW_DETAIL_MISSING__main': () => { const d = makeV6Project('golden-detail-missing', { indexMark: '[ ]', detail: false }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d) }); },
+  'FLOW_DETAIL_MISSING__teammate': () => { const d = makeV6Project('golden-detail-missing-tm', { indexMark: '[ ]', detail: false }); return goldenCapture({ cwd: d, stdin: codeEditStdin(d), env: GOLDEN_TEAM_ENV }); },
+
+  'FLOW_NATIVE_PLAN__main': () => { const d = goldenNativePlanDir('golden-native-plan'); return goldenCapture({ cwd: d, stdin: codeEditStdin(d) }); },
+  'FLOW_NATIVE_PLAN__teammate': () => { const d = goldenNativePlanDir('golden-native-plan-tm'); return goldenCapture({ cwd: d, stdin: codeEditStdin(d), env: GOLDEN_TEAM_ENV }); },
+
+  // Phase 2：fail-closed（hardDeny）——坏 stdin / 未知工具 / 缺 file_path。
+  'FAILCLOSED_BAD_STDIN': () => { const d = makeV6Project('golden-bad-stdin'); return goldenCapture({ cwd: d, stdin: 'not-json-at-all' }); },
+  'FAILCLOSED_BAD_TOOL': () => { const d = makeV6Project('golden-bad-tool'); return goldenCapture({ cwd: d, stdin: { tool_name: 'Glob', tool_input: {} } }); },
+  'FAILCLOSED_MISSING_FILE_PATH': () => { const d = makeV6Project('golden-missing-fp'); return goldenCapture({ cwd: d, stdin: { tool_name: 'Write', tool_input: {} } }); },
+
+  // Phase 2：直写/marker 门（hardDeny）——主 session 直接改 artifact。
+  'HARDDENY_DIRECT_WRITE': () => { const d = makeV6Project('golden-direct-write'); return goldenCapture({ cwd: d, stdin: { tool_name: 'Write', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), content: 'x' } } }); },
+  'HARDDENY_DIRECT_EDIT': () => { const d = makeV6Project('golden-direct-edit'); return goldenCapture({ cwd: d, stdin: { tool_name: 'Edit', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), old_string: '# 测试变更', new_string: '# 测试变更X' } } }); },
+  'HARDDENY_V6_MARKER__main': () => { const d = makeV6Project('golden-marker'); return goldenCapture({ cwd: d, stdin: { agent_id: 'a-m', tool_name: 'Edit', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), old_string: '<!-- APPROVED -->', new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->' } } }); },
+  'HARDDENY_V6_MARKER__teammate': () => { const d = makeV6Project('golden-marker-tm'); return goldenCapture({ cwd: d, env: GOLDEN_TEAM_ENV, stdin: { agent_id: 'a-m', agent_type: 'code-reviewer', tool_name: 'Edit', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), old_string: '<!-- APPROVED -->', new_string: '<!-- APPROVED -->\n<!-- VERIFIED -->' } } }); },
+
+  // Phase 2：agent 派发 raw——artifact-writer Agent 派发各校验出口。
+  'AGENT_TARGET_REQUIRED': () => {
+    const d = makeV6Project('golden-agent-target');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-target', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: [`artifact_dir: ${d.replace(/\\/g, '/')}/`, 'operation: update-chg', 'action: update-status', 'task-id: T-001', 'status: in-progress', '正文提到 CHG-20260504-01 但无 target 字段。'].join('\n') } } });
+  },
+  'AGENT_ARTIFACT_DIR': () => {
+    const d = makeV6Project('golden-agent-dir');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-dir', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: ['artifact_dir: /wrong/path/not/the/artdir/', 'operation: create-chg', 'title: 测试'].join('\n') } } });
+  },
+  'AGENT_LIFECYCLE_PROMPT': () => {
+    const d = makeV6Project('golden-agent-lifecycle');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-life', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: [`artifact_dir: ${d.replace(/\\/g, '/')}/`, 'operation: update-chg', 'target: CHG-20260504-01', 'action: approve'].join('\n') } } });
+  },
+  'AGENT_NEWER_SCHEMA': () => {
+    const d = makeV6Project('golden-agent-newer');
+    const newer = chgDetail({ approved: false }).replace('schema-version: "6.0"', 'schema-version: "8.0"');
+    fs.writeFileSync(path.join(d, 'changes', 'chg-20260504-01.md'), newer, 'utf8');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-newer', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: [`artifact_dir: ${d.replace(/\\/g, '/')}/`, 'operation: update-chg', 'target: CHG-20260504-01', 'action: verify'].join('\n') } } });
+  },
+  'AGENT_CHANGE_OWNER': () => {
+    const d = makeV6Project('golden-agent-owner');
+    seedChangeOwner(d, 'CHG-20260504-01', { sessionId: 'sid-foreign-owner', agentId: 'agent-foreign', state: 'active', worktree: 'worktree-a', branch: 'branch-a' });
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-owner', tool_name: 'Agent', tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: [`artifact_dir: ${d.replace(/\\/g, '/')}/`, 'operation: update-chg', 'target: CHG-20260504-01', 'action: update-status', 'task-id: T-001', 'new-status: [/]'].join('\n') } } });
+  },
+
+  // Phase 2：artifact 写入完整性 raw——artifact-writer 写盘各校验出口。
+  'RAW_STATUS_INVALID': () => {
+    const d = makeV6Project('golden-status-invalid');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-si', agent_id: 'aw-si', agent_type: 'paceflow:artifact-writer', tool_name: 'Write', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-77.md'), content: '---\nstatus: bogus\nschema-version: "7.0"\n---\n# x\n' } } });
+  },
+  'RAW_WRITE_EXISTING': () => {
+    const d = makeV6Project('golden-write-existing');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-we', agent_id: 'aw-we', agent_type: 'paceflow:artifact-writer', tool_name: 'Write', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), content: chgDetail() } } });
+  },
+
+  // Phase 3：Bash 改 artifact 文件（denyOrHint hard-note）——补齐 teammate hard-note 命令族。
+  'CMD_BASH_ARTIFACT__main': () => { const d = makeV6Project('golden-bash-art'); return goldenCapture({ cwd: d, stdin: { tool_name: 'Bash', tool_input: { command: `sed -i 's/a/b/' ${d.replace(/\\/g, '/')}/task.md` } } }); },
+  'CMD_BASH_ARTIFACT__teammate': () => { const d = makeV6Project('golden-bash-art-tm'); return goldenCapture({ cwd: d, env: GOLDEN_TEAM_ENV, stdin: { tool_name: 'Bash', tool_input: { command: `sed -i 's/a/b/' ${d.replace(/\\/g, '/')}/task.md` } } }); },
+
+  // Phase 3：多信号弱门 DENY（denyOrHint soft）——补齐 teammate soft 模式（非流程引导也软化的弱信号门）。
+  'SOFT_SIGNAL_DENY__main': () => {
+    const d = makeTmpDir('golden-soft-signal');
+    fs.writeFileSync(path.join(d, '.pace-enabled'), '');
+    fs.mkdirSync(path.join(d, '.pace'), { recursive: true });
+    fs.writeFileSync(path.join(d, '.pace', 'artifact-root'), 'local\n', 'utf8');
+    return goldenCapture({ cwd: d, stdin: codeEditStdin(d) });
+  },
+  'SOFT_SIGNAL_DENY__teammate': () => {
+    const d = makeTmpDir('golden-soft-signal-tm');
+    fs.writeFileSync(path.join(d, '.pace-enabled'), '');
+    fs.mkdirSync(path.join(d, '.pace'), { recursive: true });
+    fs.writeFileSync(path.join(d, '.pace', 'artifact-root'), 'local\n', 'utf8');
+    return goldenCapture({ cwd: d, env: GOLDEN_TEAM_ENV, stdin: codeEditStdin(d) });
+  },
+
+  // Phase 3：更多 artifact 写入完整性 raw。
+  'RAW_ARCHIVE_WITHOUT_INDEX_MARKER': () => {
+    const d = makeV6Project('golden-archive-no-marker');
+    fs.writeFileSync(path.join(d, 'task.md'), '# 项目任务追踪\n\n## 活跃任务\n\n- [/] [[chg-20260504-01]] 测试变更 #change [tasks:: T-001]\n', 'utf8'); // 去掉 <!-- ARCHIVE -->
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-arch', agent_id: 'aw-arch', agent_type: 'paceflow:artifact-writer', tool_name: 'Edit', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), old_string: 'status: in-progress', new_string: 'status: archived' } } });
+  },
+  'RAW_WRITE_FOREIGN_OWNER': () => {
+    const d = makeV6Project('golden-foreign-owner');
+    seedChangeOwner(d, 'CHG-20260504-01', { sessionId: 'sid-foreign-w', agentId: 'agent-foreign-w', state: 'active', worktree: 'worktree-a', branch: 'branch-a' });
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-mine-w', agent_id: 'aw-mine-w', agent_type: 'paceflow:artifact-writer', tool_name: 'Edit', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-01.md'), old_string: '# 测试变更', new_string: '# 测试变更Z' } } });
+  },
+  'RAW_RESERVATION_MISSING': () => {
+    const d = makeV6Project('golden-reservation-missing');
+    return goldenCapture({ cwd: d, stdin: { session_id: 'sid-g-rm', agent_id: 'aw-rm', agent_type: 'paceflow:artifact-writer', tool_name: 'Write', tool_input: { file_path: path.join(d, 'changes', 'chg-20260504-99.md'), content: '---\nstatus: planned\nschema-version: "7.0"\n---\n# x\n' } } });
+  },
+};
+
+// 覆盖缺口登记（no-silent-caps）：以下 deny 出口【未】行为锁定，降级到 T-003 的
+// DENY_REASONS 表结构测试 + 源码 grep 断言（每个 emitDeny call 传对 action、每个 action
+// 在表里、富化标志匹配预期）。降级理由：① 命令探测器/路径谓词族富化均匀（hardDeny
+// 只加逃生口 / denyOrHint hard-note），行为维度已由 CMD_BASH_ARTIFACT + hardDeny 族代表
+// 锁住；② emitDeny 重构把 reason 文案【留在 call site】，这些出口文案不搬家 → 文案漂移
+// 风险低；③ 部分出口需非确定性状态（内部 throw / 资源锁竞争 / root-choice-pending）难
+// 稳定触发。T-002 逐条定这些 action 的 escapeHatch/dirHint 期望值时以本清单为准。
+const GOLDEN_DEFERRED = {
+  '命令探测器（bash/ps/monitor，uniform hardDeny+逃生口 / denyOrHint hard-note）': [
+    'DENY_BASH_ARTIFACT_RUNTIME', 'DENY_POWERSHELL_ARTIFACT_RUNTIME', 'DENY_MONITOR_ARTIFACT_RUNTIME',
+    'DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE', 'DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE', 'DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE',
+    'DENY_BASH_PROJECT_ROOT_MARKER', 'DENY_POWERSHELL_PROJECT_ROOT_MARKER', 'DENY_MONITOR_PROJECT_ROOT_MARKER',
+    'DENY_POWERSHELL_ARTIFACT', 'DENY_MONITOR_ARTIFACT', // bash 变体已锁（CMD_BASH_ARTIFACT），PS/Monitor 同 hard-note
+  ],
+  'file-path 谓词（uniform hardDeny+逃生口）': [
+    'DENY_LOCAL_ARTIFACT_ROOT_CHOICE', 'DENY_PROJECT_ROOT_MARKER', 'DENY_ARTIFACT_RUNTIME_CONTROL',
+  ],
+  'root-choice-pending 状态（denyOrHint，soft 同 NATIVE_PLAN 已锁）': [
+    'DENY_ARTIFACT_ROOT_CHOICE', 'DENY_AGENT_ARTIFACT_ROOT_CHOICE',
+  ],
+  'agent 派发 edge（uniform raw 无富化）': [
+    'DENY_AGENT_LEGACY_ARTIFACT_LOCK', 'DENY_AGENT_ARTIFACT_BASE', 'DENY_AGENT_BATCH_RESERVED_MISMATCH',
+    'DENY_AGENT_ID_RESERVATION', 'DENY_AGENT_RESERVED_PROMPT_REQUIRED', 'DENY_AGENT_RESERVED_PROMPT_MISMATCH',
+    'DENY_AGENT_CHANGE_OWNER_STALE',
+  ],
+  '并发/完整性 raw（uniform raw 无富化，部分需锁竞争/vault 路由）': [
+    'DENY_ARTIFACT_RESERVATION_MISMATCH', 'DENY_ARTIFACT_RESOURCE_LOCK', 'DENY_ARTIFACT_CONCURRENT_WRITE',
+    'DENY_REDIRECT', 'DENY_WRITE_ARTIFACT', 'DENY_ARTIFACT_ROOT_CONFIG',
+  ],
+  'fail-closed catch（内部 throw 难确定性触发）': [
+    'CATCH_FAIL_CLOSED',
+  ],
+};
+
+let goldenSnapshot = {};
+if (fs.existsSync(GOLDEN_SNAPSHOT_PATH)) {
+  try { goldenSnapshot = JSON.parse(fs.readFileSync(GOLDEN_SNAPSHOT_PATH, 'utf8')); } catch(e) { goldenSnapshot = {}; }
+}
+const goldenResults = {};
+for (const [label, build] of Object.entries(GOLDEN_CASES)) {
+  test(`GOLDEN ${label}`, () => {
+    const got = build();
+    goldenResults[label] = got;
+    if (GOLDEN_UPDATE) return; // \u66f4\u65b0\u6a21\u5f0f\uff1a\u53ea\u91c7\u96c6\u4e0d\u65ad\u8a00
+    const want = goldenSnapshot[label];
+    assert.ok(want, `\u9ec4\u91d1\u57fa\u7ebf\u7f3a ${label}\uff08\u9996\u6b21\u9700 UPDATE_GOLDEN=1 \u751f\u6210\uff09`);
+    assert.strictEqual(got.decision, want.decision, `${label} decision \u6f02\u79fb\uff1agot=${got.decision} want=${want.decision}`);
+    assert.strictEqual(got.text, want.text, `${label} \u6587\u6848\u6f02\u79fb\uff1a\n--- got ---\n${got.text}\n--- want ---\n${want.text}`);
+  });
+}
+if (GOLDEN_UPDATE) {
+  fs.mkdirSync(path.dirname(GOLDEN_SNAPSHOT_PATH), { recursive: true });
+  const merged = { ...goldenSnapshot, ...goldenResults }; // \u4fdd\u7559\u672a\u5728\u672c\u6b21\u8dd1\u7684\u65e7 label
+  fs.writeFileSync(GOLDEN_SNAPSHOT_PATH, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+  console.log(`  [GOLDEN] \u5df2\u66f4\u65b0\u57fa\u7ebf\u5feb\u7167: \u672c\u6b21 ${Object.keys(goldenResults).length} \u6761\uff0c\u5408\u8ba1 ${Object.keys(merged).length} \u6761 \u2192 ${GOLDEN_SNAPSHOT_PATH}`);
+}
+
+// \u8986\u76d6\u62a5\u544a + \u4e00\u81f4\u6027\u5b88\u536b\uff1a\u884c\u4e3a\u9501\u5b9a\u6570 vs \u7ed3\u6784\u964d\u7ea7\u6570\u663e\u5f0f\u53ef\u89c1\uff08no-silent-caps\uff09\u3002
+test('GOLDEN coverage: \u884c\u4e3a\u9501\u5b9a + \u7ed3\u6784\u964d\u7ea7\u6e05\u5355\u5b8c\u6574\u3001\u4e92\u4e0d\u91cd\u53e0', () => {
+  const behavioralLabels = Object.keys(GOLDEN_CASES);
+  const deferredCodes = Object.values(GOLDEN_DEFERRED).flat();
+  // \u884c\u4e3a\u9501\u5b9a\u7684 label \u91cc\u7684 action \u5173\u952e\u8bcd\u4e0d\u5f97\u540c\u65f6\u51fa\u73b0\u5728 deferred\uff08\u9632\u4e00\u4e2a\u51fa\u53e3\u65e2\u58f0\u79f0\u9501\u4e86\u53c8\u58f0\u79f0\u964d\u7ea7\uff09\u3002
+  // label \u7528 <\u7ec4>_<\u51fa\u53e3>__<\u53d8\u4f53> \u5f62\u6001\uff0c\u4e0e deferred \u7684 DENY_ \u5168\u79f0\u975e\u540c\u540d\u7a7a\u95f4\uff0c\u8fd9\u91cc\u505a\u8ba1\u6570\u53ef\u89c1\u6027 + \u53bb\u91cd\u5b88\u536b\u3002
+  assert.ok(behavioralLabels.length >= 33, `\u884c\u4e3a\u9501\u5b9a label \u5e94 \u226533\uff0c\u5b9e\u9645 ${behavioralLabels.length}`);
+  assert.strictEqual(new Set(deferredCodes).size, deferredCodes.length, 'GOLDEN_DEFERRED \u5185\u4e0d\u5f97\u6709\u91cd\u590d action code');
+  console.log(`  [GOLDEN] \u8986\u76d6: \u884c\u4e3a\u9501\u5b9a ${behavioralLabels.length} label\uff08\u542b main/teammate \u53d8\u4f53\uff09\uff0c\u7ed3\u6784\u964d\u7ea7 ${deferredCodes.length} action code\uff08\u2192 T-003 DENY_REASONS \u8868\u6d4b\u8bd5\uff09`);
+});
+
+// \u9ec4\u91d1\u57fa\u7ebf\u884c\u4e3a\u9501\u5b9a\u7684\u53bb\u91cd action code\uff08\u4e0e GOLDEN_CASES \u4e00\u4e00\u5bf9\u5e94\uff09\u3002\u4e0e GOLDEN_DEFERRED \u5408\u5e76 = \u5168\u90e8 deny \u51fa\u53e3 census\u3002
+const GOLDEN_COVERED_CODES = [
+  'DENY_V6_NO_ACTIVE', 'DENY_V6_C_PHASE', 'DENY_V6_E_PHASE', 'DENY_V6_INDEX_MALFORMED', 'DENY_V6_DETAIL_MISSING',
+  'DENY_NATIVE_PLAN', 'DENY', 'DENY_BASH_ARTIFACT',
+  'DENY_BAD_STDIN', 'DENY_BAD_TOOL', 'DENY_MISSING_FILE_PATH', 'DENY_DIRECT_ARTIFACT_WRITE', 'DENY_DIRECT_ARTIFACT_EDIT', 'DENY_V6_MARKER',
+  'DENY_AGENT_TARGET_REQUIRED', 'DENY_AGENT_ARTIFACT_DIR', 'DENY_AGENT_LIFECYCLE_PROMPT', 'DENY_AGENT_NEWER_SCHEMA', 'DENY_AGENT_CHANGE_OWNER',
+  'DENY_ARTIFACT_STATUS_INVALID', 'DENY_WRITE_EXISTING_ARTIFACT', 'DENY_ARCHIVE_WITHOUT_INDEX_MARKER', 'DENY_WRITE_FOREIGN_OWNER', 'DENY_ARTIFACT_RESERVATION_MISSING',
+];
+
+// \u7ed3\u6784\u5b8c\u6574\u6027\uff08CHG-20260614-13 T-003\uff09\uff1a\u6e90\u7801 regex \u65ad\u8a00 emitDeny \u6536\u655b + DENY_REASONS \u8868\u8986\u76d6\u5168\u90e8
+// deny \u51fa\u53e3\uff08\u542b\u96be\u8fbe\u7684\u964d\u7ea7\u51fa\u53e3\uff09\uff0c\u8865\u9ec4\u91d1\u57fa\u7ebf\u884c\u4e3a\u9501\u8986\u76d6\u4e0d\u5230\u7684 no-silent-caps \u5b8c\u6574\u6027\u3002
+test('GOLDEN structural: emitDeny \u5355\u51fa\u53e3\u6536\u655b + DENY_REASONS \u8868\u8986\u76d6\u5168\u90e8 deny action code', () => {
+  const src = fs.readFileSync(path.join(HOOKS_DIR, 'pre-tool-use.js'), 'utf8');
+  // 1) DENY_REASONS \u8868\u952e\uff08\u6a21\u5757\u7ea7 2 \u7a7a\u683c\u7f29\u8fdb\uff09
+  const tableStart = src.indexOf('const DENY_REASONS = {');
+  const tableEnd = src.indexOf('\nfunction isArtifactWriterAgent');
+  assert.ok(tableStart >= 0 && tableEnd > tableStart, 'DENY_REASONS \u8868\u5757\u5b9a\u4f4d\u5931\u8d25');
+  const tableBlock = src.slice(tableStart, tableEnd);
+  // \u5b57\u7b26\u7c7b\u542b 0-9\uff1aaction code \u542b\u6570\u5b57\uff08DENY_V6_C_PHASE \u7b49\uff09\uff0c\u6f0f 0-9 \u4f1a\u628a code \u8170\u65a9\u6210 DENY_V\u3002
+  const tableKeys = new Set([...tableBlock.matchAll(/^ {2}(DENY[A-Z0-9_]*):/gm)].map(m => m[1]));
+  // 2) emitDeny \u7b2c\u4e00\u53c2 action code\uff08\u53bb ${teammateTag} \u540e\u7f00\uff09\u5fc5\u987b\u5728\u8868\u91cc\u2014\u2014\u5426\u5219\u8fd0\u884c\u65f6 emitDeny throw
+  const emitted = new Set([...src.matchAll(/emitDeny\(\s*[`'"]([A-Z0-9_]+)/g)].map(m => m[1]));
+  assert.ok(emitted.size >= 30, `emitDeny \u51fa\u53e3\u5e94 \u226530\uff0c\u5b9e\u9645 ${emitted.size}\uff08\u8fc1\u79fb\u53ef\u80fd\u4e0d\u5b8c\u6574\uff09`);
+  for (const code of emitted) assert.ok(tableKeys.has(code), `emitDeny \u51fa\u53e3 ${code} \u7f3a DENY_REASONS \u8868\u9879\uff08\u8fd0\u884c\u65f6\u4f1a throw fail-closed\uff09`);
+  // 3) emitDeny fail-fast \u5b88\u536b\u5b58\u5728\uff08\u672a\u767b\u8bb0 code \u629b\u9519\uff0c\u9632\u65b0\u51fa\u53e3\u6f0f\u767b\u8bb0\uff09
+  assert.ok(/\u672a\u5728 DENY_REASONS \u767b\u8bb0\u7684 deny action code/.test(src), 'emitDeny \u5e94\u5bf9\u672a\u767b\u8bb0 code fail-fast \u629b\u9519');
+  // 4) \u6536\u655b\u5b8c\u6574\u6027\uff1a\u9664 emitDeny \u5185\u90e8\u51fa\u53e3 + \u5168\u5c40 catch fail-closed\uff0c\u6e90\u7801\u4e0d\u5e94\u518d\u6709\u624b\u5199 permissionDecision deny \u51fa\u53e3
+  const denyOutlets = [...src.matchAll(/permissionDecision:\s*['"]deny['"]/g)].length;
+  assert.strictEqual(denyOutlets, 2, `\u624b\u5199 deny \u51fa\u53e3\u5e94\u53ea\u5269 emitDeny \u5185\u90e8 + catch fail-closed\uff08\u5171 2\uff09\uff0c\u5b9e\u9645 ${denyOutlets}`);
+  // 5) \u5b8c\u6574\u6027\uff08no-silent-caps\uff09\uff1a\u884c\u4e3a\u9501\u5b9a + \u7ed3\u6784\u964d\u7ea7\u51fa\u53e3\uff08\u9664 CATCH_FAIL_CLOSED \u72ec\u7acb raw\uff09\u5168\u90e8\u5728\u8868\u91cc
+  const census = [...GOLDEN_COVERED_CODES, ...Object.values(GOLDEN_DEFERRED).flat().filter(c => c !== 'CATCH_FAIL_CLOSED')];
+  for (const code of census) assert.ok(tableKeys.has(code), `\u51fa\u53e3 census \u4e2d ${code} \u7f3a DENY_REASONS \u8868\u9879\uff08\u5b8c\u6574\u6027\u7834\u574f\uff09`);
+  console.log(`  [GOLDEN] \u7ed3\u6784: DENY_REASONS ${tableKeys.size} \u9879\uff1bemitDeny \u6536\u655b ${emitted.size} \u51fa\u53e3\u5168\u5728\u8868\uff1bcensus ${census.length} \u5168\u8986\u76d6\uff1b\u624b\u5199 deny \u51fa\u53e3\u6536\u655b\u81f3 ${denyOutlets}`);
+});
+
 cleanupAll();
 
 const total = t.passed + t.failed;

@@ -1,0 +1,134 @@
+{
+  "FLOW_NO_ACTIVE__main": {
+    "decision": "deny",
+    "text": "本项目没有活跃 CHG/HOTFIX。请先创建 CHG 后再写代码。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n预留编号 = 主 session 先运行 Bash: node \"<HOOKS>/reserve-artifact-id.js\" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部\n派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：\nartifact_dir: <DIR>/\noperation: create-chg\nexecution-context: <helper 输出>\nreserved-id: <helper 输出或 hook deny 输出>\nreserved-file-prefix: <helper 输出或 hook deny 输出>\ntitle: <变更标题>\ntasks:\n- T-001: <首个任务>\n若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file-prefix 作为 fallback；收到后原样写入 prompt 重派。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FLOW_NO_ACTIVE__teammate": {
+    "decision": "deny",
+    "text": "本项目没有活跃 CHG/HOTFIX。请先创建 CHG 后再写代码。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n预留编号 = 主 session 先运行 Bash: node \"<HOOKS>/reserve-artifact-id.js\" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部\n派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：\nartifact_dir: <DIR>/\noperation: create-chg\nexecution-context: <helper 输出>\nreserved-id: <helper 输出或 hook deny 输出>\nreserved-file-prefix: <helper 输出或 hook deny 输出>\ntitle: <变更标题>\ntasks:\n- T-001: <首个任务>\n若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file-prefix 作为 fallback；收到后原样写入 prompt 重派。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）"
+  },
+  "FLOW_C_PHASE__main": {
+    "decision": "deny",
+    "text": "C 阶段未完成：CHG-20260504-01 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FLOW_C_PHASE__teammate": {
+    "decision": "deny",
+    "text": "C 阶段未完成：CHG-20260504-01 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）"
+  },
+  "FLOW_E_PHASE__main": {
+    "decision": "deny",
+    "text": "E 阶段未就绪：CHG-20260504-01 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FLOW_E_PHASE__teammate": {
+    "decision": "deny",
+    "text": "E 阶段未就绪：CHG-20260504-01 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）"
+  },
+  "FLOW_INDEX_MALFORMED__main": {
+    "decision": "deny",
+    "text": "索引行格式损坏：CHG-20260504-01 的 CHG/HOTFIX 行必须独占一行，并以 \"- [ ] [[...]]\"、\"[/]\"、\"[x]\"、\"[!]\" 或 \"[-]\" 开头。\n请派 artifact-writer 修复索引行边界；修复后再继续写项目文件。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FLOW_INDEX_MALFORMED__teammate": {
+    "decision": "deny",
+    "text": "索引行格式损坏：CHG-20260504-01 的 CHG/HOTFIX 行必须独占一行，并以 \"- [ ] [[...]]\"、\"[/]\"、\"[x]\"、\"[!]\" 或 \"[-]\" 开头。\n请派 artifact-writer 修复索引行边界；修复后再继续写项目文件。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）"
+  },
+  "FLOW_DETAIL_MISSING__main": {
+    "decision": "deny",
+    "text": "详情文件缺失：CHG-20260504-01 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FLOW_DETAIL_MISSING__teammate": {
+    "decision": "deny",
+    "text": "详情文件缺失：CHG-20260504-01 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）"
+  },
+  "FLOW_NATIVE_PLAN__main": {
+    "decision": "deny",
+    "text": "已自动创建 Artifact 模板于 <DIR>/（spec.md, task.md, walkthrough.md, findings.md, corrections.md）。Artifact 根目录：<DIR>/（选择=local；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）。检测到未桥接的原生计划文件：<DIR>/docs/plans/<TODAY>-feature.md。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 CHG 并记录同步标记；桥接完成后再重试本次代码写入。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FLOW_NATIVE_PLAN__teammate": {
+    "decision": "context",
+    "text": "PACE 提醒（teammate 模式）：已自动创建 Artifact 模板于 <DIR>/（spec.md, task.md, walkthrough.md, findings.md, corrections.md）。Artifact 根目录：<DIR>/（选择=local；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）。检测到未桥接的原生计划文件：<DIR>/docs/plans/<TODAY>-feature.md。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 CHG 并记录同步标记；桥接完成后再重试本次代码写入。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FAILCLOSED_BAD_STDIN": {
+    "decision": "deny",
+    "text": "PACE hook 无法解析 Claude Code 提供的 Write/Edit JSON 输入。为避免绕过 artifact 保护，本次写入已阻止；请重试工具调用。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FAILCLOSED_BAD_TOOL": {
+    "decision": "deny",
+    "text": "PACE hook 收到缺失或未知工具名：Glob。本 hook 只允许处理 Write/Edit/MultiEdit/Agent/Bash/PowerShell/Monitor，已阻止以避免绕过保护。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "FAILCLOSED_MISSING_FILE_PATH": {
+    "decision": "deny",
+    "text": "PACE hook 缺少 tool_input.file_path，无法判断写入是否会修改 artifact。为避免绕过保护，本次写入已阻止；请重试工具调用。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "HARDDENY_DIRECT_WRITE": {
+    "decision": "deny",
+    "text": "禁止主 session/非 artifact-writer 使用 Write 直接修改流程 artifact：changes/chg-20260504-01.md。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n流程 artifact 只能由 paceflow:artifact-writer 通过受保护的 Write/Edit/MultiEdit 路径写入。\n请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "HARDDENY_DIRECT_EDIT": {
+    "decision": "deny",
+    "text": "禁止主 session/非 artifact-writer 使用 Edit 直接修改流程 artifact：changes/chg-20260504-01.md。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n流程 artifact 只能由 paceflow:artifact-writer 通过受保护的 Write/Edit/MultiEdit 路径写入。\n请派 artifact-writer 执行 create-chg / update-chg / close-chg / archive-chg / record-finding / record-correction；不要改用 Write/Edit/MultiEdit 或 Bash 绕过。\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "HARDDENY_V6_MARKER__main": {
+    "decision": "deny",
+    "text": "禁止主 session 直接写入 VERIFIED/verified-date 标志；请派 artifact-writer 执行对应批准/验证/审计/收尾操作，字段格式见 Skill(paceflow:artifact-management)。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "HARDDENY_V6_MARKER__teammate": {
+    "decision": "deny",
+    "text": "禁止主 session 直接写入 VERIFIED/verified-date 标志；请派 artifact-writer 执行对应批准/验证/审计/收尾操作，字段格式见 Skill(paceflow:artifact-management)。\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "AGENT_TARGET_REQUIRED": {
+    "decision": "deny",
+    "text": "派 artifact-writer 执行 update-chg 时缺少明确 target。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n请重派同一个 agent，并在 prompt 顶部使用完整模板：\nartifact_dir: <DIR>/\noperation: update-chg\ntarget: CHG-YYYYMMDD-NN\nsection: tasks\naction: update-status\ntask-id: T-NNN\nnew-status: [/] | [!] | [x] | [-]\nstatus-reason: <new-status=[!] 时必填；其他状态按需说明>\n不要只在正文或摘要里提到 CHG-ID；hook 不会用正文中随便出现的 ID 判断 owner。"
+  },
+  "AGENT_ARTIFACT_DIR": {
+    "decision": "deny",
+    "text": "派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：<DIR>/\n当前 prompt 中的 artifact_dir 是：/wrong/path/not/the/artdir/\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n请重派同一个 agent，并使用完整 prompt 顶部模板：\nartifact_dir: <DIR>/\noperation: create-chg\nexecution-context: <helper 输出>\nreserved-id: <helper 输出或 hook deny 输出>\nreserved-file-prefix: <helper 输出或 hook deny 输出（含 <slug>.md 占位，原样保留不替换）>\ntitle: <变更标题>\ntasks:\n  - T-001: <任务标题与验收>\nbackground: <Why>\nscope: <What>\ntechnical-decision: <How>\nartifact_dir 仅用于 PaceFlow artifacts：spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**。\n不要让 artifact-writer 自行推断或改写 artifact_dir。"
+  },
+  "AGENT_LIFECYCLE_PROMPT": {
+    "decision": "deny",
+    "text": "派 artifact-writer 执行 C 阶段批准时缺少必填字段：approval-confirmed: true, approval-source, approval-evidence。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\nC 阶段批准是确认边界：主 session 可以基于用户明确执行指令、已接受方案或 AskUserQuestion 设置 approval-confirmed: true，但必须写明确认来源与证据。\n请重派同一个 agent，并使用完整 prompt 顶部模板：\nartifact_dir: <DIR>/\noperation: update-chg\ntarget: CHG-20260504-01\naction: approve\napproval-confirmed: true\napproval-source: user-directive | ask-user-question | accepted-plan | prior-approved-plan\napproval-evidence: <用户原话或已确认方案摘要>\n若批准后立即开始，请改用 action=approve-and-start 并提供 task-id。"
+  },
+  "AGENT_NEWER_SCHEMA": {
+    "decision": "deny",
+    "text": "检测到 artifact schema 8 高于当前插件支持的 7.0，不能派当前 artifact-writer 管理该数据（会用 7.0 逻辑裁判或创建模板写坏新数据）。请升级 PACEflow 插件并 reload 全部 session（含其他 worktree）后再派 artifact-writer。"
+  },
+  "AGENT_CHANGE_OWNER": {
+    "decision": "deny",
+    "text": "CHG-20260504-01 正由另一个 Claude Code session 负责，当前 session 不应接手更新或收尾。\nowner: worktree=worktree-a branch=branch-a state=active\n请回到该 worktree/session 完成、暂停或取消；当前 fresh owner 仍有效时，不要由本 session 接手。"
+  },
+  "RAW_STATUS_INVALID": {
+    "decision": "deny",
+    "text": "CHG/HOTFIX 详情 frontmatter status 非法：bogus。允许值：planned / in-progress / completed / archived / cancelled。create-chg 初始状态必须是 planned。"
+  },
+  "RAW_WRITE_EXISTING": {
+    "decision": "deny",
+    "text": "禁止使用 Write 覆盖已有 artifact：changes/chg-20260504-01.md。create-chg 若遇到同名文件必须重新分配 CHG-ID；更新已有 artifact 请使用 Edit。"
+  },
+  "CMD_BASH_ARTIFACT__main": {
+    "decision": "deny",
+    "text": "禁止使用 Bash 修改 artifact 文件。artifact 只能通过 artifact-writer 的 Write/Edit 路径修改，以便 hook 能检查格式和索引一致性。\n允许用 Bash 读取 artifact（test/grep/cat/wc 等），但禁止 sed -i、重定向、rm/mv/cp/touch/mkdir、脚本写文件等会改变 artifact 的命令。\n如果是 CRLF 导致 Edit 匹配失败，请直接重试 Edit；hook 会在 Edit/MultiEdit 前把 artifact 换行机械归一化为 LF。\n被拦截的命令：sed -i 's/a/b/' <DIR>/task.md\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "CMD_BASH_ARTIFACT__teammate": {
+    "decision": "deny",
+    "text": "禁止使用 Bash 修改 artifact 文件。artifact 只能通过 artifact-writer 的 Write/Edit 路径修改，以便 hook 能检查格式和索引一致性。\n允许用 Bash 读取 artifact（test/grep/cat/wc 等），但禁止 sed -i、重定向、rm/mv/cp/touch/mkdir、脚本写文件等会改变 artifact 的命令。\n如果是 CRLF 导致 Edit 匹配失败，请直接重试 Edit；hook 会在 Edit/MultiEdit 前把 artifact 换行机械归一化为 LF。\n被拦截的命令：sed -i 's/a/b/' <DIR>/task.md\nArtifact 根目录：<DIR>/（选择=auto；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）"
+  },
+  "SOFT_SIGNAL_DENY__main": {
+    "decision": "deny",
+    "text": "已自动创建 Artifact 模板于 <DIR>/（spec.md, task.md, walkthrough.md, findings.md, corrections.md）。Artifact 根目录：<DIR>/（选择=local；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）。检测到 PACE 项目（manual）但 task.md 中无活跃任务。请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n预留编号 = 主 session 先运行 Bash: node \"<HOOKS>/reserve-artifact-id.js\" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部\n派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：\nartifact_dir: <DIR>/\noperation: create-chg\nexecution-context: <helper 输出>\nreserved-id: <helper 输出或 hook deny 输出>\nreserved-file-prefix: <helper 输出或 hook deny 输出>\ntitle: <变更标题>\ntasks:\n- T-001: <首个任务>\n若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file-prefix 作为 fallback；收到后原样写入 prompt 重派。\ntask.md 格式：任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN-<slug>.md，并同步 task.md 索引。\n索引行格式：- [ ] [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]（wikilink 用详情文件名全名 + |纯ID 别名；旧无 slug 文件用 [[chg-YYYYMMDD-NN]]）\n任务状态：[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 暂停/阻塞 | [-] 跳过\n变更状态：[ ] 规划中 | [/] 进行中 | [x] 完成 | [-] 废弃 | [!] 暂停/阻塞\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "SOFT_SIGNAL_DENY__teammate": {
+    "decision": "context",
+    "text": "PACE 提醒（teammate 模式）：已自动创建 Artifact 模板于 <DIR>/（spec.md, task.md, walkthrough.md, findings.md, corrections.md）。Artifact 根目录：<DIR>/（选择=local；配置文件=<DIR>/.pace/artifact-root；Project Root=<DIR>；mode=current；仅用于 spec.md / task.md / walkthrough.md / findings.md / corrections.md / changes/**）。检测到 PACE 项目（manual）但 task.md 中无活跃任务。请先执行 P-A-C 流程（Plan→Artifact→Check）定义任务后再写代码。\n流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)\n预留编号 = 主 session 先运行 Bash: node \"<HOOKS>/reserve-artifact-id.js\" --operation create-chg，并把输出原样放到 artifact-writer prompt 顶部\n派 artifact-writer create-chg 时，Agent prompt 顶部必须包含：\nartifact_dir: <DIR>/\noperation: create-chg\nexecution-context: <helper 输出>\nreserved-id: <helper 输出或 hook deny 输出>\nreserved-file-prefix: <helper 输出或 hook deny 输出>\ntitle: <变更标题>\ntasks:\n- T-001: <首个任务>\n若未先运行 helper，hook 会用 deny 文案返回 reserved-id / reserved-file-prefix 作为 fallback；收到后原样写入 prompt 重派。\ntask.md 格式：任务详情不写入 task.md。请派 artifact-writer create-chg 创建 changes/chg-YYYYMMDD-NN-<slug>.md，并同步 task.md 索引。\n索引行格式：- [ ] [[chg-YYYYMMDD-NN-<slug>|chg-YYYYMMDD-NN]] 变更标题 #change [tasks:: T-001~T-003] [worktree:: main] [branch:: main]（wikilink 用详情文件名全名 + |纯ID 别名；旧无 slug 文件用 [[chg-YYYYMMDD-NN]]）\n任务状态：[ ] 未开始 | [/] 进行中 | [x] 完成 | [!] 暂停/阻塞 | [-] 跳过\n变更状态：[ ] 规划中 | [/] 进行中 | [x] 完成 | [-] 废弃 | [!] 暂停/阻塞\n若你（用户）不需要 PACEflow 管理本项目，可运行 /paceflow:disable 停用；仅本 session 临时停用可运行 /paceflow:pause。"
+  },
+  "RAW_ARCHIVE_WITHOUT_INDEX_MARKER": {
+    "decision": "deny",
+    "text": "禁止在根索引缺少 ARCHIVE 标记时先把详情归档：changes/chg-20260504-01.md。\n缺少 ARCHIVE 标记：task.md\n请先修复根索引双区结构，再执行 close-chg / archive-chg；不要留下详情 archived 但索引仍活跃的半归档状态。"
+  },
+  "RAW_WRITE_FOREIGN_OWNER": {
+    "decision": "deny",
+    "text": "禁止写入由其他活跃 session 持有的 CHG 详情：changes/chg-20260504-01.md（owner disposition: foreign-fresh）。\n该 CHG 不是本次 artifact-writer 派发的目标，也未经 owner-takeover 三字段握手接手。\n请只修改本次派发目标 CHG 的详情；如确需接手该 CHG，先在 Agent 派发时带 takeover 三字段。"
+  },
+  "RAW_RESERVATION_MISSING": {
+    "decision": "deny",
+    "text": "artifact-writer 正在新建 changes/chg-20260504-99.md，但当前 session/agent 没有 hook 预留编号。\n请从主 session 运行 reserve-artifact-id helper，把 helper 输出放进 artifact-writer prompt 顶部后重派。\n不要让 agent 自行扫描索引分配 CHG/HOTFIX/CORRECTION 编号。"
+  }
+}

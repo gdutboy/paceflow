@@ -26,6 +26,8 @@ tests/*
 # 例外：agent 测试框架是产品资产（v6.0.0 起），但运行结果除外
 !tests/agent-tests/
 tests/agent-tests/results/
+# 例外：deny 出口黄金基线快照（CHG-20260614-13，emitDeny 重构安全网，必须随源码提交）
+!tests/golden/
 
 # 本地开发工具（不随 Plugin 分发）
 bump-version.js

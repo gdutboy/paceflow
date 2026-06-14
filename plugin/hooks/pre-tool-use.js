@@ -97,6 +97,78 @@ const {
   markerMutationDenyReason,
 } = require('./pre-tool-use/marker-guard');
 
+// DENY_REASONS（CHG-20260614-13 T-002/T-003）：deny action code → 富化与分类元数据。
+// emitDeny 据此对 reason 做表驱动富化（dirHint 内层、escapeHatch 外层，复刻 denyOrHint 顺序）
+// 再写 stdout + log。reason 文案仍在各 call site 构造（不搬家 → 文案零漂移）。
+// 字段：
+//   category    —— 语义分类（仅文档/审计用，不影响行为）。
+//   escapeHatch —— 是否追加 PACE 退出提示（/paceflow:disable|pause）。流程门与 hardDeny 保护门为 true；
+//                  raw（数据错误/完整性/并发/派发正确性/内部 fail-closed）为 false（disable 修不了这些）。
+//   dirHint     —— 是否追加 appendArtifactDirHint（artifact 根目录说明）。denyOrHint 流程门为 true；
+//                  hardDeny 默认 false，例外 DENY_DIRECT_ARTIFACT_EDIT（原 caller 预包）为 true。
+//   teammateMode—— 'hard'（hardDeny/raw：硬 deny 无 note）| 'hard-note'（denyOrHint hardInTeammate：硬 deny+回报 note）
+//                  | 'soft'（denyOrHint：teammate 转 additionalContext 提示，避免死锁流程引导类门）。
+// 黄金基线锁（tests/golden/deny-outlets.snapshot.json）逐字验证可达出口；难达出口由本表 + 结构测试守完整性。
+const DENY_REASONS = {
+  // —— 流程门 soft（denyOrHint 无 hardInTeammate）——
+  DENY_AGENT_ARTIFACT_ROOT_CHOICE: { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'soft' },
+  DENY_ARTIFACT_ROOT_CHOICE:       { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'soft' },
+  DENY_NATIVE_PLAN:                { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'soft' },
+  DENY:                            { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'soft' },
+  // —— 流程门 hard-note（denyOrHint hardInTeammate:true）——
+  DENY_BASH_ARTIFACT:              { category: 'integrity', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_POWERSHELL_ARTIFACT:        { category: 'integrity', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_MONITOR_ARTIFACT:           { category: 'integrity', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_V6_INDEX_MALFORMED:         { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_V6_DETAIL_MISSING:          { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_V6_NO_ACTIVE:               { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_V6_C_PHASE:                 { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  DENY_V6_E_PHASE:                 { category: 'flow-gate', escapeHatch: true, dirHint: true, teammateMode: 'hard-note' },
+  // —— hardDeny（escapeHatch only, teammate hard）——
+  DENY_BAD_STDIN:                  { category: 'fail-closed',    escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_ROOT_CONFIG:       { category: 'config-error',   escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE:       { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE: { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE:    { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_BASH_PROJECT_ROOT_MARKER:       { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_POWERSHELL_PROJECT_ROOT_MARKER: { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_MONITOR_PROJECT_ROOT_MARKER:    { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_BASH_ARTIFACT_RUNTIME:       { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_POWERSHELL_ARTIFACT_RUNTIME: { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_MONITOR_ARTIFACT_RUNTIME:    { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_BAD_TOOL:                   { category: 'fail-closed',    escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_MISSING_FILE_PATH:          { category: 'fail-closed',    escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_LOCAL_ARTIFACT_ROOT_CHOICE: { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_PROJECT_ROOT_MARKER:        { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_RUNTIME_CONTROL:   { category: 'runtime-control', escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_DIRECT_ARTIFACT_WRITE:      { category: 'integrity',      escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  DENY_DIRECT_ARTIFACT_EDIT:       { category: 'integrity',      escapeHatch: true, dirHint: true,  teammateMode: 'hard' }, // 例外：原 caller 预包 dirHint
+  DENY_V6_MARKER:                  { category: 'integrity',      escapeHatch: true, dirHint: false, teammateMode: 'hard' },
+  // —— raw（无富化, teammate hard）——
+  DENY_AGENT_NEWER_SCHEMA:           { category: 'schema-version', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_ARTIFACT_DIR:           { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_LIFECYCLE_PROMPT:       { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_LEGACY_ARTIFACT_LOCK:   { category: 'concurrency',    escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_ARTIFACT_BASE:          { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_BATCH_RESERVED_MISMATCH:{ category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_ID_RESERVATION:         { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_RESERVED_PROMPT_REQUIRED:{ category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_RESERVED_PROMPT_MISMATCH:{ category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_TARGET_REQUIRED:        { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_CHANGE_OWNER:           { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_AGENT_CHANGE_OWNER_STALE:     { category: 'agent-dispatch', escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_WRITE_FOREIGN_OWNER:          { category: 'integrity',      escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_ARCHIVE_WITHOUT_INDEX_MARKER: { category: 'integrity',      escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_STATUS_INVALID:      { category: 'data-error',     escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_RESERVATION_MISSING: { category: 'data-error',     escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_RESERVATION_MISMATCH:{ category: 'data-error',     escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_RESOURCE_LOCK:       { category: 'concurrency',    escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_ARTIFACT_CONCURRENT_WRITE:    { category: 'concurrency',    escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_REDIRECT:                     { category: 'integrity',      escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_WRITE_EXISTING_ARTIFACT:      { category: 'integrity',      escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+  DENY_WRITE_ARTIFACT:               { category: 'integrity',      escapeHatch: false, dirHint: false, teammateMode: 'hard' },
+};
+
 function isArtifactWriterAgent(stdin) {
   return paceUtils.isArtifactWriterAgentType(stdin.agentType);
 }
@@ -203,29 +275,43 @@ paceUtils.withStdinParsed((stdin) => {
     // 旧版只查 disable，已含 pause 指引的文案会被叠加第二条逃生口）。
     return (r.includes('/paceflow:disable') || r.includes('/paceflow:pause')) ? r : `${r}\n${PACE_ESCAPE_HATCH}`;
   }
-  function denyOrHint(reason, { hardInTeammate = false } = {}) {
-    const enrichedReason = withEscapeHatch(paceUtils.appendArtifactDirHint(cwd, reason));
-    // teammate = 纯执行者，任务管理归主 session（单一权威源）。流程引导类 deny（artifact-root 选择/迁移/桥接，
-    // 需主 session 与用户交互完成）对 teammate 软化为提示，避免死锁；但写代码门（hardInTeammate）即使 teammate
-    // 也硬阻断 + 回报引导，避免 teammate 在未批准/无活跃 CHG/索引损坏时越界写代码绕过 PACE。
-    if (isTeammate() && !hardInTeammate) {
-      return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${enrichedReason}` } };
-    }
-    const finalReason = (isTeammate() && hardInTeammate)
-      ? `${enrichedReason}\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）`
-      : enrichedReason;
-    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: finalReason } };
-  }
+  // 原 denyOrHint 三族富化逻辑（CHG-20260614-13 起）已吸收进 emitDeny + DENY_REASONS 表。
+  // teammate 语义保留：teammate = 纯执行者，任务管理归主 session（单一权威源）。流程引导类 deny
+  // （artifact-root 选择/迁移/桥接，需主 session 与用户交互完成）对 teammate 软化为提示（teammateMode:'soft'）
+  // 避免死锁；写代码门 / 完整性门即使 teammate 也硬阻断 + 回报引导（teammateMode:'hard-note'），避免
+  // teammate 在未批准/无活跃 CHG/索引损坏时越界写代码绕过 PACE。
+  // hardDeny（CHG-20260614-13 起）：薄包装委托 emitDeny，保留 24 个调用点不变。原 hardDeny 语义
+  // = withEscapeHatch(reason) + 硬 deny + log{proj,tool,file,...fields,dur}，对应 DENY_REASONS 里
+  // escapeHatch:true / dirHint:false / teammateMode:'hard'（DIRECT_ARTIFACT_EDIT 例外 dirHint:true，
+  // 其 2 个调用点已去 caller 预包，交 emitDeny 的 dh:true 富化）。tool/file 在此显式补入 fields。
   function hardDeny(reason, action, fields = {}) {
-    const output = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: withEscapeHatch(reason)
-      }
-    };
+    return emitDeny(action, reason, { tool: toolName, file: filePath, ...fields });
+  }
+  // emitDeny（CHG-20260614-13）：表驱动单 deny 出口，收敛原 hardDeny/denyOrHint/raw 三族。
+  // action 查 DENY_REASONS 决定富化（dirHint 内层 + escapeHatch 外层，复刻 denyOrHint 顺序）与
+  // teammate 行为（hard / hard-note / soft）；reason 文案仍由各 call site 构造（不搬家→零漂移）。
+  // log 只自动注入 proj + dur（真正普适字段）；tool/file 由 caller 按原 log 形态传入 fields，
+  // 保各出口 log 逐字保真（hardDeny/raw 写盘出口原带 tool/file，agent 派发/denyOrHint 出口原不带）。
+  // action 可带 ${teammateTag} 后缀（仅 log 用），查表用去后缀的 base code。未登记 code 直接抛错
+  // （fail-fast，防新出口漏登记）。
+  function emitDeny(action, reason, fields = {}) {
+    const baseCode = String(action).replace(/_TEAMMATE$/, '');
+    const meta = DENY_REASONS[baseCode];
+    if (!meta) throw new Error(`emitDeny: 未在 DENY_REASONS 登记的 deny action code: ${baseCode}`);
+    let r = String(reason);
+    if (meta.dirHint) r = paceUtils.appendArtifactDirHint(cwd, r);
+    if (meta.escapeHatch) r = withEscapeHatch(r);
+    let output;
+    if (meta.teammateMode === 'soft' && isTeammate()) {
+      output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `PACE 提醒（teammate 模式）：${r}` } };
+    } else {
+      const finalReason = (meta.teammateMode === 'hard-note' && isTeammate())
+        ? `${r}\n（teammate 模式：任务管理归主 session，请回报 team-lead 先完成批准/编排再执行，不要由 teammate 直接写代码或改 artifact。）`
+        : r;
+      output = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: finalReason } };
+    }
     process.stdout.write(JSON.stringify(output));
-    log(projectLogEntry('PreToolUse', action, { proj, tool: toolName, file: filePath, ...fields, dur: Date.now() - t0 }));
+    log(projectLogEntry('PreToolUse', action, { proj, ...fields, dur: Date.now() - t0 }));
     return output;
   }
   function heartbeatChangeOwners(reason) {
@@ -394,59 +480,33 @@ paceUtils.withStdinParsed((stdin) => {
         const newerSchema = paceUtils.detectNewerSchemaData(cwd);
         if (newerSchema.detected) {
           const reason = `检测到 artifact schema ${newerSchema.maxVersion} 高于当前插件支持的 7.0，不能派当前 artifact-writer 管理该数据（会用 7.0 逻辑裁判或创建模板写坏新数据）。请升级 PACEflow 插件并 reload 全部 session（含其他 worktree）后再派 artifact-writer。`;
-          const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', `DENY_AGENT_NEWER_SCHEMA${teammateTag}`, { proj, max_version: newerSchema.maxVersion, dur: Date.now() - t0 }));
+          emitDeny(`DENY_AGENT_NEWER_SCHEMA${teammateTag}`, reason, { max_version: newerSchema.maxVersion });
           return;
         }
       }
       if (isArtifactWriterAgentTool(stdin) && needsArtifactRootChoice) {
-        const output = denyOrHint(artifactRootChoiceReason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_AGENT_ARTIFACT_ROOT_CHOICE${teammateTag}`, {
-          proj,
+        emitDeny(`DENY_AGENT_ARTIFACT_ROOT_CHOICE${teammateTag}`, artifactRootChoiceReason, {
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
       if (isArtifactWriterAgentTool(stdin) && !promptHasExactArtifactDir(stdin.toolInput.prompt, artDir)) {
         const declaredArtifactDir = extractPromptArtifactDir(stdin.toolInput.prompt);
         const reason = agentArtifactDirDenyReason(artDir, declaredArtifactDir, stdin.toolInput.prompt);
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason
-          }
-        };
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_DIR', {
-          proj,
+        emitDeny('DENY_AGENT_ARTIFACT_DIR', reason, {
           agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
           artifact_dir: displayDir(artDir),
           declared_artifact_dir: declaredArtifactDir ? displayDir(declaredArtifactDir) : '',
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
       if (isArtifactWriterAgentTool(stdin)) {
         const lifecycleReason = agentLifecyclePromptDenyReason(stdin.toolInput.prompt, artDir);
         if (lifecycleReason) {
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: lifecycleReason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', 'DENY_AGENT_LIFECYCLE_PROMPT', {
-            proj,
+          emitDeny('DENY_AGENT_LIFECYCLE_PROMPT', lifecycleReason, {
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             reason: lifecycleReason.split('\n')[0],
-            dur: Date.now() - t0,
-          }));
+          });
           return;
         }
         const legacyLock = paceUtils.readArtifactWriterLock(cwd);
@@ -454,22 +514,12 @@ paceUtils.withStdinParsed((stdin) => {
           const legacyCheck = paceUtils.artifactWriterLockMatches(cwd, '__paceflow-new-agent__');
           if (!legacyCheck.ok && legacyCheck.reason !== 'stale-cleared') {
             const reason = legacyArtifactWriterLockDenyReason(legacyLock);
-            const output = {
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: reason
-              }
-            };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_AGENT_LEGACY_ARTIFACT_LOCK', {
-              proj,
+            emitDeny('DENY_AGENT_LEGACY_ARTIFACT_LOCK', reason, {
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
               lock: legacyLock.path,
               owner: legacyLock.sessionId || '',
-              dur: Date.now() - t0,
-            }));
+            });
             return;
           }
         }
@@ -478,22 +528,12 @@ paceUtils.withStdinParsed((stdin) => {
           paceUtils.clearArtifactReservation(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
           const errorLine = ensured.error ? `\n底层错误：${ensured.error}` : '';
           const reason = `PACE hook 无法在 artifact_dir 创建完整 Artifact 基础结构：${displayDir(artDir)}\n仍缺失：${ensured.missingAfter.join(', ')}${errorLine}\n请检查路径/权限后重试；禁止让 artifact-writer 自行创建 base changes/ 或根索引模板。`;
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', 'DENY_AGENT_ARTIFACT_BASE', {
-            proj,
+          emitDeny('DENY_AGENT_ARTIFACT_BASE', reason, {
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             artifact_dir: displayDir(artDir),
             missing: ensured.missingAfter.join(', '),
             error: ensured.error,
-            dur: Date.now() - t0,
-          }));
+          });
           return;
         }
         const operation = paceUtils.operationFromAgentPrompt(stdin.toolInput.prompt);
@@ -518,22 +558,12 @@ paceUtils.withStdinParsed((stdin) => {
                 FORMAT_SNIPPETS.skillRef,
                 `请先在主 session 运行 Bash: node "${paceUtils.RESERVE_ARTIFACT_ID_SCRIPT}" --operation create-chg --count ${batchBlocks.blocks.length}，把输出的每个 reserved-id 原样放进对应 --- CHG i/N --- 块后重派；不要手写或复用旧 session 的 reserved-id。`,
               ].join('\n');
-              const output = {
-                hookSpecificOutput: {
-                  hookEventName: "PreToolUse",
-                  permissionDecision: "deny",
-                  permissionDecisionReason: reason
-                }
-              };
-              process.stdout.write(JSON.stringify(output));
-              log(projectLogEntry('PreToolUse', 'DENY_AGENT_BATCH_RESERVED_MISMATCH', {
-                proj,
+              emitDeny('DENY_AGENT_BATCH_RESERVED_MISMATCH', reason, {
                 agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
                 artifact_dir: displayDir(artDir),
                 reserved: badId,
                 blocks: batchBlocks.blocks.length,
-                dur: Date.now() - t0,
-              }));
+              });
               return;
             }
           }
@@ -557,41 +587,21 @@ paceUtils.withStdinParsed((stdin) => {
                 reservation.lock && reservation.lock.ok ? `当前 sequence 锁：${paceUtils.formatArtifactResourceLock(reservation.lock)}` : `原因：${reservation.reason || 'unknown'}`,
                 '请稍后重试；不要让 agent 自行扫描索引分配编号。'
               ].join('\n');
-              const output = {
-                hookSpecificOutput: {
-                  hookEventName: "PreToolUse",
-                  permissionDecision: "deny",
-                  permissionDecisionReason: reason
-                }
-              };
-              process.stdout.write(JSON.stringify(output));
-              log(projectLogEntry('PreToolUse', 'DENY_AGENT_ID_RESERVATION', {
-                proj,
+              emitDeny('DENY_AGENT_ID_RESERVATION', reason, {
                 agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
                 artifact_dir: displayDir(artDir),
                 operation,
                 reason: reservation.reason || '',
-                dur: Date.now() - t0,
-              }));
+              });
               return;
             }
             const reason = reservationRequiredReason(operation, artDir, reservation, cwd);
-            const output = {
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: reason
-              }
-            };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_REQUIRED', {
-              proj,
+            emitDeny('DENY_AGENT_RESERVED_PROMPT_REQUIRED', reason, {
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
               operation,
               reserved: reservation.id || reservation.fileRel || reservation.filePrefix || '',
-              dur: Date.now() - t0,
-            }));
+            });
             return;
           }
 
@@ -601,22 +611,12 @@ paceUtils.withStdinParsed((stdin) => {
             : paceUtils.readArtifactReservation(cwd, { sessionId: stdin.sessionId, agentId: stdin.agentId });
           if (!reservationMatchesExplicit(reservation, explicit)) {
             const reason = reservationExplicitMissingReason(operation, explicit);
-            const output = {
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: reason
-              }
-            };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_AGENT_RESERVED_PROMPT_MISMATCH', {
-              proj,
+            emitDeny('DENY_AGENT_RESERVED_PROMPT_MISMATCH', reason, {
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
               operation,
               reserved: explicit.id || explicit.fileRel || explicit.filePrefix || '',
-              dur: Date.now() - t0,
-            }));
+            });
             return;
           }
           reservation = { reserved: true, ...reservation };
@@ -630,20 +630,10 @@ paceUtils.withStdinParsed((stdin) => {
             promptTemplateForOperation({ prompt: stdin.toolInput.prompt, artDir, operation }),
             '不要只在正文或摘要里提到 CHG-ID；hook 不会用正文中随便出现的 ID 判断 owner。'
           ].join('\n');
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', 'DENY_AGENT_TARGET_REQUIRED', {
-            proj,
+          emitDeny('DENY_AGENT_TARGET_REQUIRED', reason, {
             agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
             operation,
-            dur: Date.now() - t0,
-          }));
+          });
           return;
         }
         const targetChangeId = operation === 'create-chg'
@@ -666,23 +656,13 @@ paceUtils.withStdinParsed((stdin) => {
                 ? '该 session 可能仍活跃；优先在原 session 完成、暂停或取消。若用户明确要求本 session 接手（先用 AskUserQuestion 确认），重派同一 artifact-writer 并加入 owner-takeover-confirmed: true / owner-takeover-source: user-directive / owner-takeover-evidence: <用户原话>。'
                 : '请回到该 worktree/session 完成、暂停或取消；当前 fresh owner 仍有效时，不要由本 session 接手。'
             ].join('\n');
-            const output = {
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: reason
-              }
-            };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER', {
-              proj,
+            emitDeny('DENY_AGENT_CHANGE_OWNER', reason, {
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               target: targetChangeId,
               owner_session: ownerStatus.owner.sessionId || '',
               owner_state: ownerStatus.owner.state || '',
               owner_worktree: ownerStatus.owner.worktree || '',
-              dur: Date.now() - t0,
-            }));
+            });
             return;
           }
           // CHG-20260611-02：sibling-detached（原 session 正常关闭）/ sibling-stale（疑似 crash）
@@ -697,21 +677,11 @@ paceUtils.withStdinParsed((stdin) => {
               'owner-takeover-source: user-directive',
               'owner-takeover-evidence: <用户明确要求当前 session 接手的原话>'
             ].join('\n');
-            const output = {
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: reason
-              }
-            };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_AGENT_CHANGE_OWNER_STALE', {
-              proj,
+            emitDeny('DENY_AGENT_CHANGE_OWNER_STALE', reason, {
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               target: targetChangeId,
               owner_session: ownerStatus.owner.sessionId || '',
-              dur: Date.now() - t0,
-            }));
+            });
             return;
           }
         }
@@ -788,13 +758,9 @@ paceUtils.withStdinParsed((stdin) => {
           (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
         const reason = bashArtifactDenyReason(bashCommand);
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_BASH_ARTIFACT${teammateTag}`, {
-          proj,
+        emitDeny(`DENY_BASH_ARTIFACT${teammateTag}`, reason, {
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
       log(projectLogEntry('PreToolUse', 'PASS_BASH', { proj, dur: Date.now() - t0 }));
@@ -814,13 +780,9 @@ paceUtils.withStdinParsed((stdin) => {
           powershellCommandReferencesArtifact(powershellCommand, cwd, artDir));
       if (mutatesArtifact) {
         const reason = powershellArtifactDenyReason(powershellCommand);
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_POWERSHELL_ARTIFACT${teammateTag}`, {
-          proj,
+        emitDeny(`DENY_POWERSHELL_ARTIFACT${teammateTag}`, reason, {
           command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
       log(projectLogEntry('PreToolUse', 'PASS_POWERSHELL', { proj, dur: Date.now() - t0 }));
@@ -841,13 +803,9 @@ paceUtils.withStdinParsed((stdin) => {
           (bashCommandReferencesArtifact(bashCommand, cwd, artDir) || bashShellCommandReferencesArtifact(bashCommand, cwd, artDir)));
       if (mutatesArtifact) {
         const reason = monitorArtifactDenyReason(bashCommand);
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_MONITOR_ARTIFACT${teammateTag}`, {
-          proj,
+        emitDeny(`DENY_MONITOR_ARTIFACT${teammateTag}`, reason, {
           command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
       log(projectLogEntry('PreToolUse', 'PASS_MONITOR', { proj, dur: Date.now() - t0 }));
@@ -1001,9 +959,7 @@ paceUtils.withStdinParsed((stdin) => {
               '该 CHG 不是本次 artifact-writer 派发的目标，也未经 owner-takeover 三字段握手接手。',
               '请只修改本次派发目标 CHG 的详情；如确需接手该 CHG，先在 Agent 派发时带 takeover 三字段。',
             ].join('\n');
-            const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_WRITE_FOREIGN_OWNER', { proj, target: writeOwnerChangeId, artifact: artifactRelForMutation, disposition: writeOwner.disposition, dur: Date.now() - t0 }));
+            emitDeny('DENY_WRITE_FOREIGN_OWNER', reason, { target: writeOwnerChangeId, artifact: artifactRelForMutation, disposition: writeOwner.disposition });
             return;
           }
         }
@@ -1020,24 +976,14 @@ paceUtils.withStdinParsed((stdin) => {
               `缺少 ARCHIVE 标记：${missingArchive.join(', ')}`,
               '请先修复根索引双区结构，再执行 close-chg / archive-chg；不要留下详情 archived 但索引仍活跃的半归档状态。'
             ].join('\n');
-            const output = {
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: reason
-              }
-            };
-            process.stdout.write(JSON.stringify(output));
-            log(projectLogEntry('PreToolUse', 'DENY_ARCHIVE_WITHOUT_INDEX_MARKER', {
-              proj,
+            emitDeny('DENY_ARCHIVE_WITHOUT_INDEX_MARKER', reason, {
               tool: toolName,
               file: filePath,
               artifact: artifactRelForMutation,
               missing: missingArchive.join(','),
               agent_id: stdin.agentId,
               agent_type: stdin.agentType,
-              dur: Date.now() - t0,
-            }));
+            });
             return;
           }
         }
@@ -1047,24 +993,14 @@ paceUtils.withStdinParsed((stdin) => {
         const status = String(fm.status || '').replace(/^["']|["']$/g, '').trim();
         if (status && !['planned', 'in-progress', 'completed', 'archived', 'cancelled'].includes(status)) {
           const reason = `CHG/HOTFIX 详情 frontmatter status 非法：${status}。允许值：planned / in-progress / completed / archived / cancelled。create-chg 初始状态必须是 planned。`;
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_STATUS_INVALID', {
-            proj,
+          emitDeny('DENY_ARTIFACT_STATUS_INVALID', reason, {
             tool: toolName,
             file: filePath,
             artifact: artifactRelForMutation,
             status,
             agent_id: stdin.agentId,
             agent_type: stdin.agentType,
-            dur: Date.now() - t0,
-          }));
+          });
           return;
         }
       }
@@ -1083,23 +1019,13 @@ paceUtils.withStdinParsed((stdin) => {
             '请从主 session 运行 reserve-artifact-id helper，把 helper 输出放进 artifact-writer prompt 顶部后重派。',
             '不要让 agent 自行扫描索引分配 CHG/HOTFIX/CORRECTION 编号。'
           ].join('\n');
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISSING', {
-            proj,
+          emitDeny('DENY_ARTIFACT_RESERVATION_MISSING', reason, {
             tool: toolName,
             file: filePath,
             artifact: artifactRelForMutation,
             agent_id: stdin.agentId,
             agent_type: stdin.agentType,
-            dur: Date.now() - t0,
-          }));
+          });
           return;
         }
         if (!reservation) {
@@ -1113,24 +1039,14 @@ paceUtils.withStdinParsed((stdin) => {
           : { ok: true };
         if (!reservationMatch.ok) {
           const reason = artifactReservationDenyReason(reservationMatch, artifactRelForMutation);
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          };
-          process.stdout.write(JSON.stringify(output));
-          log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_RESERVATION_MISMATCH', {
-            proj,
+          emitDeny('DENY_ARTIFACT_RESERVATION_MISMATCH', reason, {
             tool: toolName,
             file: filePath,
             artifact: artifactRelForMutation,
             agent_id: stdin.agentId,
             agent_type: stdin.agentType,
             expected: reservationMatch.expected,
-            dur: Date.now() - t0,
-          }));
+          });
           return;
         }
       }
@@ -1145,16 +1061,7 @@ paceUtils.withStdinParsed((stdin) => {
       });
       if (!lockAttempt.acquired) {
         const reason = artifactResourceLockDenyReason(lockAttempt, resource, artifactRelForMutation);
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason
-          }
-        };
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_RESOURCE_LOCK', {
-          proj,
+        emitDeny('DENY_ARTIFACT_RESOURCE_LOCK', reason, {
           tool: toolName,
           file: filePath,
           artifact: artifactRelForMutation,
@@ -1162,8 +1069,7 @@ paceUtils.withStdinParsed((stdin) => {
           agent_id: stdin.agentId,
           agent_type: stdin.agentType,
           reason: lockAttempt.reason,
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
       artifactResourceLockHeld = resource;
@@ -1186,23 +1092,13 @@ paceUtils.withStdinParsed((stdin) => {
           `当前 artifact 正由 artifact-writer 写入，禁止主 session/其他 agent 同时修改 ${artifactRelForMutation}。`,
           '请等待 artifact 写入结束后再重试。'
         ].join('\n');
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason
-          }
-        };
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', 'DENY_ARTIFACT_CONCURRENT_WRITE', {
-          proj,
+        emitDeny('DENY_ARTIFACT_CONCURRENT_WRITE', reason, {
           tool: toolName,
           file: filePath,
           artifact: artifactRelForMutation,
           resource,
           owner: existingLock.sessionId,
-          dur: Date.now() - t0,
-        }));
+        });
         return;
       }
     }
@@ -1218,15 +1114,7 @@ paceUtils.withStdinParsed((stdin) => {
       }
       const correctPath = path.join(artDir, cwdArtifactRel).replace(/\\/g, '/');
       const reason = `当前 artifact_dir 是 ${displayDir(artDir)}。请将 artifact file_path 修改为：${correctPath}`;
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason
-        }
-      };
-      process.stdout.write(JSON.stringify(output));
-      log(projectLogEntry('PreToolUse', 'DENY_REDIRECT', { proj, tool: toolName, file: filePath, artifact: cwdArtifactRel, redirect: correctPath, dur: Date.now() - t0 }));
+      emitDeny('DENY_REDIRECT', reason, { tool: toolName, file: filePath, artifact: cwdArtifactRel, redirect: correctPath });
       return;
     }
   }
@@ -1249,7 +1137,7 @@ paceUtils.withStdinParsed((stdin) => {
   if (isArtifactWriterManagedRel(artifactRelForMutation) && isEditMutationTool(toolName) &&
       paceSignal !== 'artifact' && !isArtifactWriterAgent(stdin)) {
     return hardDeny(
-      paceUtils.appendArtifactDirHint(cwd, directArtifactMutationDenyReason(toolName, artifactRelForMutation)),
+      directArtifactMutationDenyReason(toolName, artifactRelForMutation), // dirHint 由 emitDeny dh:true 富化
       'DENY_DIRECT_ARTIFACT_EDIT',
       {
         artifact: artifactRelForMutation,
@@ -1294,28 +1182,12 @@ paceUtils.withStdinParsed((stdin) => {
         paceUtils.releaseArtifactResourceLock(cwd, artifactResourceLockHeld, { sessionId: stdin.sessionId, agentId: stdin.agentId });
       }
       const reason = `禁止使用 Write 覆盖已有 artifact：${artifactRelForMutation}。create-chg 若遇到同名文件必须重新分配 CHG-ID；更新已有 artifact 请使用 Edit。`;
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason
-        }
-      };
-      process.stdout.write(JSON.stringify(output));
-      log(projectLogEntry('PreToolUse', 'DENY_WRITE_EXISTING_ARTIFACT', { proj, tool: toolName, file: filePath, artifact: artifactRelForMutation, dur: Date.now() - t0 }));
+      emitDeny('DENY_WRITE_EXISTING_ARTIFACT', reason, { tool: toolName, file: filePath, artifact: artifactRelForMutation });
       return;
     }
     if (PROTECTED_ARTIFACTS.includes(fileName) && fs.existsSync(filePath)) {
       const reason = `禁止使用 Write 覆盖已有的 ${fileName}，请使用 Edit 工具进行修改。Write 会丢失全部历史内容。${FORMAT_SNIPPETS.skillRef}`;
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason
-        }
-      };
-      process.stdout.write(JSON.stringify(output));
-      log(projectLogEntry('PreToolUse', 'DENY_WRITE_ARTIFACT', { proj, tool: toolName, file: filePath, reason, dur: Date.now() - t0 }));
+      emitDeny('DENY_WRITE_ARTIFACT', reason, { tool: toolName, file: filePath, reason });
       return;
     }
   }
@@ -1406,7 +1278,7 @@ paceUtils.withStdinParsed((stdin) => {
 
     if (isArtifactWriterManagedRel(artifactRelForMutation) && !isArtifactWriterAgent(stdin)) {
       return hardDeny(
-        paceUtils.appendArtifactDirHint(cwd, directArtifactMutationDenyReason(toolName, artifactRelForMutation)),
+        directArtifactMutationDenyReason(toolName, artifactRelForMutation), // dirHint 由 emitDeny dh:true 富化
         'DENY_DIRECT_ARTIFACT_EDIT',
         {
           artifact: artifactRelForMutation,
@@ -1458,9 +1330,7 @@ paceUtils.withStdinParsed((stdin) => {
           `索引行格式损坏：${ids} 的 CHG/HOTFIX 行必须独占一行，并以 "- [ ] [[...]]"、"[/]"、"[x]"、"[!]" 或 "[-]" 开头。`,
           '请派 artifact-writer 修复索引行边界；修复后再继续写项目文件。'
         ].join('\n');
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_INDEX_MALFORMED${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        emitDeny(`DENY_V6_INDEX_MALFORMED${teammateTag}`, reason, { ids });
         return;
       }
 
@@ -1468,9 +1338,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (missingDetails.length > 0) {
         const ids = missingDetails.map(e => e.id).join(', ');
         const reason = `详情文件缺失：${ids} 对应 changes/<id>.md 不存在。请派 artifact-writer create-chg 或修复 wikilink。`;
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_DETAIL_MISSING${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        emitDeny(`DENY_V6_DETAIL_MISSING${teammateTag}`, reason, { ids });
         return;
       }
     }
@@ -1486,9 +1354,7 @@ paceUtils.withStdinParsed((stdin) => {
         const reason = (doneEntries.length > 0
           ? `本项目当前只有已完成/跳过索引，请先派 artifact-writer close-chg 收尾归档，或 create-chg 创建新的变更后再写代码。archive-chg 仅用于已 verified 的单独归档修复。${FORMAT_SNIPPETS.closeOp}`
           : `本项目没有活跃 CHG/HOTFIX。请先创建 CHG 后再写代码。\n${artifactWriterCreateChgHint(artDir)}`) + siblingHint;
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_NO_ACTIVE${teammateTag}`, { proj, tool: toolName, dur: Date.now() - t0 }));
+        emitDeny(`DENY_V6_NO_ACTIVE${teammateTag}`, reason, { tool: toolName });
         return;
       }
 
@@ -1496,9 +1362,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (approvedEntries.length === 0) {
         const ids = gatedEntries.map(e => e.id).join(', ');
         const reason = `C 阶段未完成：${ids} 的详情文件缺少 <!-- APPROVED -->，且没有进行中任务。请确认用户是否已批准；若已批准并准备开始，派 artifact-writer approve-and-start，并带批准来源、证据和要开始的 task-id。字段格式见 Skill(paceflow:artifact-management)。`;
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_C_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        emitDeny(`DENY_V6_C_PHASE${teammateTag}`, reason, { ids });
         return;
       }
 
@@ -1510,9 +1374,7 @@ paceUtils.withStdinParsed((stdin) => {
       if (runnableEntries.length === 0) {
         const ids = approvedEntries.map(e => e.id).join(', ');
         const reason = `E 阶段未就绪：${ids} 已批准但索引/详情状态未进入可执行状态，或仍有 [!] 暂停/阻塞任务。若本次刚获得用户批准并准备开始，请派 artifact-writer approve-and-start；若此前已暂停/阻塞并确认恢复，请派 update-chg action=update-status 将当前任务标为 [/] 并联动 frontmatter/index 状态。字段格式见 Skill(paceflow:artifact-management)。`;
-        const output = denyOrHint(reason, { hardInTeammate: true });
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_V6_E_PHASE${teammateTag}`, { proj, ids, dur: Date.now() - t0 }));
+        emitDeny(`DENY_V6_E_PHASE${teammateTag}`, reason, { ids });
         return;
       }
 
@@ -1555,9 +1417,7 @@ paceUtils.withStdinParsed((stdin) => {
     const nativePlan = getNativePlanPath(cwd);
     if (nativePlan) {
       if (needsArtifactRootChoice) {
-        const output = denyOrHint(artifactRootChoiceReason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+        emitDeny(`DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, artifactRootChoiceReason, { signal: paceSignal, tool: toolName, file: filePath });
         return;
       }
       let createdFiles = [];
@@ -1568,9 +1428,7 @@ paceUtils.withStdinParsed((stdin) => {
         ? `已自动创建 Artifact 模板于 ${displayDir(artDir)}（${createdFiles.join(', ')}）。${artifactRootHint}。`
         : `${artifactRootHint}。`;
       const reason = `${createdMsg}检测到未桥接的原生计划文件：${nativePlan}。请先调用 Skill(paceflow:pace-bridge)，按该 skill 将当前计划桥接为 CHG 并记录同步标记；桥接完成后再重试本次代码写入。`;
-      const output = denyOrHint(reason);
-      process.stdout.write(JSON.stringify(output));
-      log(projectLogEntry('PreToolUse', `DENY_NATIVE_PLAN${teammateTag}`, { proj, plan: nativePlan, dur: Date.now() - t0 }));
+      emitDeny(`DENY_NATIVE_PLAN${teammateTag}`, reason, { plan: nativePlan });
       return;
     }
   }
@@ -1586,9 +1444,7 @@ paceUtils.withStdinParsed((stdin) => {
     // I-06: isPaceProject() 返回 false 或字符串，truthy 检查等价于四重比较
     if (paceSignal) {
       if (needsArtifactRootChoice) {
-        const output = denyOrHint(artifactRootChoiceReason);
-        process.stdout.write(JSON.stringify(output));
-        log(projectLogEntry('PreToolUse', `DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, dur: Date.now() - t0 }));
+        emitDeny(`DENY_ARTIFACT_ROOT_CHOICE${teammateTag}`, artifactRootChoiceReason, { signal: paceSignal, tool: toolName, file: filePath });
         return;
       }
       // T-076: DENY 前懒创建缺失的模板文件；幂等同内容创建，不需要 artifact-writer 写锁。
@@ -1618,9 +1474,7 @@ paceUtils.withStdinParsed((stdin) => {
       } else {
         reason = `${createdMsg}检测到 PACE 激活信号（${paceSignal}）但 task.md 不存在。\n${artifactWriterCreateChgHint(artDir)}\n${FORMAT_SNIPPETS.skillRef}`;
       }
-      const output = denyOrHint(reason);
-      process.stdout.write(JSON.stringify(output));
-      log(projectLogEntry('PreToolUse', `DENY${teammateTag}`, { proj, signal: paceSignal, tool: toolName, file: filePath, created: createdFiles.join(', '), reason, dur: Date.now() - t0 }));
+      emitDeny(`DENY${teammateTag}`, reason, { signal: paceSignal, tool: toolName, file: filePath, created: createdFiles.join(', '), reason });
       return;
     }
 
