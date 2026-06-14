@@ -7,7 +7,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 }
 const { isPaceProject, getProjectName, resolveProjectCwd, createLogger, logEntry } = paceUtils;
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
 const proj = getProjectName(cwd);

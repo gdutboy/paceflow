@@ -22,7 +22,9 @@
  * @param {{ limitChars?: number }} [opts] - limitChars 为总字符预算（默认 Infinity 不截）。
  *   使用 String.length（chars）对齐 Claude Code per-hook 10K characters cap。
  *   head 永不截；L3 用 limitChars − headChars 的剩余预算逐条装，超出截断并标 truncated。
- * @returns {{ text: string, truncated: boolean }} text 是装配结果；truncated 表示 L3 是否被截。
+ * @returns {{ text: string, truncated: boolean, headOverflow: boolean, headChars: number }}
+ *   text 是装配结果；truncated 表示 L3 被截或 head 超限；headOverflow 表示 head 自身超 limitChars
+ *   （head 仍全保留，仅作信号供 caller 记 OVER_BUDGET）；headChars 是 head 实际字符数。
  */
 function assembleWithBudget(layers, opts) {
   const limitChars = opts && Number.isFinite(opts.limitChars) ? opts.limitChars : Infinity;
@@ -36,6 +38,10 @@ function assembleWithBudget(layers, opts) {
   ];
   const headText = head.join('');
   // 用 String.length 计 chars，对齐 Claude Code per-hook characters cap。
+  // headOverflow（CHG-20260614-10）：head 永不截（CHG-B 信噪比优先），但 head 自身超 limit 时置信号，
+  //   让 caller 记 OVER_BUDGET 日志——否则整段被 Claude persist 成 2KB preview、上下文恢复残废而无任何痕迹。
+  //   根治在源头（layers 给活跃 CHG 摘要 header 加 count cap 防 l0 无界）；此信号是兜底可见性。
+  const headOverflow = headText.length > limitChars;
   const remain = Math.max(0, limitChars - headText.length);
   // L3「相关经验与提醒」用剩余预算逐条装包，超出即停，附「已省略 N 条」footer。
   const { kept, omitted } = packL3(layers.l3 || [], remain);
@@ -43,7 +49,7 @@ function assembleWithBudget(layers, opts) {
   if (omitted > 0) {
     tail += `\n=== 相关提醒已省略 ${omitted} 条（注入预算 ${limitChars} chars）===\n按需 Read 对应 artifact（findings.md / 相关讨论笔记）查看完整内容。\n`;
   }
-  return { text: headText + tail, truncated: omitted > 0 };
+  return { text: headText + tail, truncated: omitted > 0 || headOverflow, headOverflow, headChars: headText.length };
 }
 
 /**

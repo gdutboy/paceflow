@@ -7,6 +7,8 @@ const {
   VAULT_PATH,
   ARTIFACT_ROOT_CHOICE_MAX_CHARS,
 } = require('./constants');
+// v5/v6 检测原语下沉单一 detection 模块（CHG-20260614-11），与门面共享同一份消除双实现漂移
+const { hasChangesDir, legacyV5FilesInDir } = require('./detection');
 
 function resolveProjectCwd() {
   return process.env.CLAUDE_PROJECT_DIR
@@ -243,11 +245,6 @@ function hasGitRootMarker(dir) {
   try { return fs.existsSync(path.join(dir, '.git')); } catch(e) { return false; }
 }
 
-function hasChangesDir(dir) {
-  // PU-002：用 isDirectory 区分目录与同名文件，避免同名文件 changes（非目录）被误判为 PACE 项目
-  try { return !!dir && fs.statSync(path.join(dir, 'changes')).isDirectory(); } catch(e) { return false; }
-}
-
 function artifactDirFromChoiceForRoot(root, choice) {
   const raw = normalizeRuntimeChoice(choice);
   if (!raw) return null;
@@ -276,48 +273,6 @@ function hasV6ArtifactRoot(dir, { includeEnv = true } = {}) {
     }
   }
   return false;
-}
-
-function legacyV5FilesInDir(dir) {
-  if (!dir || hasChangesDir(dir)) return [];
-  const signatures = {
-    'task.md': /<!-- ARCHIVE -->|#\s*项目任务追踪|##\s*活跃任务|###\s*(?:CHG|HOTFIX)-/i,
-    'implementation_plan.md': /<!-- ARCHIVE -->|#\s*实施计划|##\s*变更索引|##\s*活跃变更详情|###\s*(?:CHG|HOTFIX)-/i,
-    'walkthrough.md': /<!-- ARCHIVE -->|#\s*工作记录|##\s*最近工作/i,
-    'findings.md': /<!-- ARCHIVE -->|#\s*调研记录|##\s*未解决问题|##\s*Corrections\s*记录/i,
-  };
-  const contents = {};
-  const detected = Object.entries(signatures).filter(([file, re]) => {
-    try {
-      const fp = path.join(dir, file);
-      if (!fs.existsSync(fp)) return false;
-      const head = fs.readFileSync(fp, 'utf8').slice(0, 20000);
-      contents[file] = head;
-      return re.test(head);
-    } catch(e) {
-      return false;
-    }
-  }).map(([file]) => file);
-  if (detected.length > 0) return detected;
-
-  try {
-    for (const file of ['task.md', 'implementation_plan.md']) {
-      if (!contents[file]) {
-        const fp = path.join(dir, file);
-        if (fs.existsSync(fp)) contents[file] = fs.readFileSync(fp, 'utf8').slice(0, 20000);
-      }
-    }
-    const task = contents['task.md'] || '';
-    const impl = contents['implementation_plan.md'] || '';
-    const hasTaskRoot = /^#\s*(?:Task|Tasks|项目任务|项目任务追踪)\s*$/im.test(task);
-    const hasImplRoot = /^#\s*(?:Implementation\s+Plan|Plan|实施计划)\s*$/im.test(impl);
-    const hasTaskCheckbox = /^- \[[ x\/!\-]\]\s+\S/m.test(task);
-    const hasImplCheckbox = /^- \[[ x\/!\-]\]\s+\S/m.test(impl);
-    if (hasTaskRoot && hasImplRoot && hasTaskCheckbox && hasImplCheckbox) {
-      return ['task.md', 'implementation_plan.md'];
-    }
-  } catch(e) {}
-  return [];
 }
 
 function hasLegacyV5Root(dir, { includeEnv = true } = {}) {
@@ -534,4 +489,6 @@ module.exports = {
   getProjectStateDir,
   getProjectRuntimeDir,
   executionContextForCwd,
+  hasChangesDir,
+  legacyV5FilesInDir,
 };

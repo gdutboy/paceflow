@@ -25,7 +25,7 @@ const { buildLayers } = require('./session-start/layers');
 const { assembleWithBudget } = require('./session-start/budget');
 const { applyRuntimeEffects, applyArtifactGroupEffects } = require('./session-start/runtime-effects');
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
@@ -210,8 +210,20 @@ if (Array.isArray(state._logs)) {
 }
 
 // === 预算装配 + 单次输出 ===
-const { text } = assembleWithBudget(layers, { limitChars: SESSION_OUTPUT_BUDGET_CHARS });
+const { text, headOverflow, headChars } = assembleWithBudget(layers, { limitChars: SESSION_OUTPUT_BUDGET_CHARS });
 process.stdout.write(text);
+
+// headOverflow（CHG-20260614-10）：head 自身超 char 预算时记 OVER_BUDGET——否则整段被 Claude
+//   persist 成 2KB preview、上下文恢复残废而无任何日志痕迹。根治在 layers 活跃 CHG header cap，此为兜底可见性。
+if (headOverflow) {
+  log(paceUtils.projectLogEntry(cwd, 'SessionStart', 'OVER_BUDGET', {
+    cwd,
+    proj,
+    head_chars: headChars,
+    limit: SESSION_OUTPUT_BUDGET_CHARS,
+    active_chg: (state.activeChangeSummaries && state.activeChangeSummaries.length) || 0,
+  }));
+}
 
 log(paceUtils.projectLogEntry(cwd, 'SessionStart', 'INJECT', {
   cwd,

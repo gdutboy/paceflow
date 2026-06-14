@@ -24,10 +24,20 @@ const _vaultTmpDir = path.join(os.tmpdir(), `pace-e2e-vault-${Date.now()}`);
 fs.mkdirSync(path.join(_vaultTmpDir, 'projects'), { recursive: true });
 process.env.PACE_VAULT_PATH = _vaultTmpDir;
 
+// CHG-20260614-08: 注入独立 tmp 日志，杜绝 e2e 写源码树 plugin/hooks/pace-hooks.log
+// （跨进程共享 + 1MB 砍半的结构性 flaky 根因）。每轮 run 一个 fresh 文件；子 hook 经
+// process.env 继承 PACE_LOG_PATH，覆盖 runHook/runHookDetailed/直接 reserve helper 全部 spawn。
+const _origLogPath = process.env.PACE_LOG_PATH;
+const E2E_LOG_PATH = path.join(os.tmpdir(), `pace-e2e-log-${Date.now()}-${process.pid}.log`);
+process.env.PACE_LOG_PATH = E2E_LOG_PATH;
+
 function cleanupAll() {
   if (_origVaultPath === undefined) delete process.env.PACE_VAULT_PATH;
   else process.env.PACE_VAULT_PATH = _origVaultPath;
+  if (_origLogPath === undefined) delete process.env.PACE_LOG_PATH;
+  else process.env.PACE_LOG_PATH = _origLogPath;
   try { fs.rmSync(_vaultTmpDir, { recursive: true, force: true }); } catch(e) {}
+  try { fs.rmSync(E2E_LOG_PATH, { force: true }); fs.rmSync(`${E2E_LOG_PATH}.lock`, { force: true }); } catch(e) {}
   t.cleanup();
 }
 
@@ -353,12 +363,6 @@ function codeEditStdin(dir) {
   return { tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'src.js'), old_string: 'a', new_string: 'b' } };
 }
 
-// W2/TS-01：日志增量守卫——logger 在 >1MB 时截断保留后半，after 可能短于 before，
-// 此时裸 after.slice(before.length) 返回空字符串致日志断言误判；守卫则返回全部 after。
-function logDelta(before, after) {
-  return after.length >= before.length ? after.slice(before.length) : after;
-}
-
 function makeLegacyProject(label) {
   const dir = makeTmpDir(label);
   fs.writeFileSync(path.join(dir, 'task.md'), '# Task\n\n- [ ] Legacy task\n\n<!-- ARCHIVE -->\n', 'utf8');
@@ -369,14 +373,6 @@ function makeLegacyProject(label) {
 }
 
 console.log('\n--- session-start.js ---');
-
-test('W2. logDelta 在日志被 1MB 截断（after 短于 before）时返回全部 after 而非空字符串', () => {
-  // logger.js 在日志 > 1MB 时截断保留后半，after.length < before.length；裸 after.slice(before.length)
-  // 会返回空字符串致日志增量断言误判。logDelta 守卫：after 短于 before 时返回全部 after。
-  assert.strictEqual(logDelta('aaaa', 'aaaabb'), 'bb', '正常增量取尾部新增');
-  assert.strictEqual(logDelta('aaaabbbb', 'cc'), 'cc', '截断后 after 短于 before → 返回全部 after 而非空');
-  assert.strictEqual(logDelta('', 'xx'), 'xx', 'before 为空 → 返回全部 after');
-});
 
 test('1. 非 PACE 项目静默放行', () => {
   const dir = makeTmpDir('ss-empty');
@@ -1461,10 +1457,25 @@ test('9aa. 未知 subagent 仍不能写 APPROVED / VERIFIED 标志', () => {
   assert.ok(r.stdout.includes('artifact-writer'));
 });
 
+test('LOG-ISOLATION: 注入 PACE_LOG_PATH 后 hook 不写源码树 pace-hooks.log（等价锁）', () => {
+  // CHG-20260614-08 T-001/T-002 等价锁：遍历断言「设了 PACE_LOG_PATH 后源码树
+  // plugin/hooks/pace-hooks.log 的 mtime/size 不变」，覆盖会 log 的 hook，防某 hook 漏改仍污染。
+  const srcLog = path.join(HOOKS_DIR, 'pace-hooks.log');
+  const stat = () => (fs.existsSync(srcLog) ? `${fs.statSync(srcLog).mtimeMs}:${fs.statSync(srcLog).size}` : 'absent');
+  const before = stat();
+  const dir = makeV6Project('log-isolation');
+  // 覆盖多个会写日志的 hook（pre/post-tool-use、session-start、stop）
+  runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
+  runHook('session-start.js', { cwd: dir, stdin: {} });
+  runHook('stop.js', { cwd: dir, stdin: {} });
+  assert.strictEqual(stat(), before, '注入 PACE_LOG_PATH 后源码树 pace-hooks.log 的 mtime/size 不应变化');
+  assert.ok(fs.existsSync(E2E_LOG_PATH), 'hook 应写入注入的 E2E 独立日志而非源码树');
+});
+
 test('9ab. marker 日志包含 agent_id / agent_type', () => {
   const dir = makeV6Project('ptu-marker-agent-log');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
-  const logFile = path.join(HOOKS_DIR, 'pace-hooks.log');
+  const logFile = E2E_LOG_PATH;
   const before = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
 
   runHook('pre-tool-use.js', {
@@ -1498,7 +1509,7 @@ test('9ab. marker 日志包含 agent_id / agent_type', () => {
 
   const after = fs.readFileSync(logFile, 'utf8');
   const projectLogLines = after.split('\n').filter(line => line.includes(projectNameForDir(dir))).join('\n');
-  const delta = projectLogLines || logDelta(before, after);
+  const delta = projectLogLines || after.slice(before.length);
   assert.ok(delta.includes('act=DENY_V6_MARKER'));
   assert.ok(delta.includes('agent_id=agent-log-deny'));
   assert.ok(delta.includes('agent_type=code-reviewer'));
@@ -1843,7 +1854,7 @@ test('9c2a. PreToolUse 关键路径日志包含 artifact_dir 与 choice', () => 
   fs.writeFileSync(path.join(dir, '.pace-enabled'), '');
   fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
-  const logFile = path.join(HOOKS_DIR, 'pace-hooks.log');
+  const logFile = E2E_LOG_PATH;
   const before = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
   const r = runHook('pre-tool-use.js', { cwd: dir, stdin: codeEditStdin(dir) });
   assert.ok(r.stdout.includes('"deny"'));
@@ -2957,6 +2968,19 @@ test('RES-batch7. reserve --count 末尾缺值 → fail-closed（不静默回落
   });
   assert.notStrictEqual(r.code, 0);
   assert.ok(!r.stdout.includes('reserved-id:'), '缺值必须 fail-closed');
+});
+
+test('RES-count-peek. reserve --count 后跟 flag → 走统一「参数缺值」fail-closed（不吞后续 flag，与 --operation/--cwd 一致，补 A4 缺口）', () => {
+  const dir = makeV6Project('reserve-count-peek', { withIndex: false, detail: false });
+  const r = runReserveHelper({
+    cwd: dir,
+    args: ['--operation', 'create-chg', '--count', '--cwd', dir],
+    env: { CLAUDE_CODE_SESSION_ID: 'sid-count-peek' },
+  });
+  assert.notStrictEqual(r.code, 0);
+  assert.ok(!r.stdout.includes('reserved-id:'), '缺值 fail-closed 不预留');
+  assert.ok(r.stdout.includes('参数缺值') && r.stdout.includes('--count'),
+    '--count 后跟 flag 应走统一 DENY_MISSING_VALUE「参数缺值」（与 --operation/--cwd 一致），而非「非法 count」误吞 --cwd');
 });
 
 test('RES-batch8. reserve --count 科学计数法/超上限 → fail-closed', () => {
@@ -6956,12 +6980,12 @@ test('19b. PreCompact 只记录匹配当前项目的 native plan（快照退役�
 
 test('21. StopFailure PACE 项目记录日志', () => {
   const dir = makeV6Project('sf-v6');
-  const logFile = path.join(HOOKS_DIR, 'pace-hooks.log');
+  const logFile = E2E_LOG_PATH;
   const before = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
   const r = runHook('stop-failure.js', { cwd: dir, stdin: { error_type: 'rate_limit', stop_reason: 'api_error' } });
   assert.strictEqual(r.code, 0);
   const after = fs.readFileSync(logFile, 'utf8');
-  const delta = logDelta(before, after);
+  const delta = after.slice(before.length);
   assert.ok(delta.includes('StopFailure'));
   assert.ok(delta.includes('rate_limit'));
 });
@@ -7056,7 +7080,7 @@ test('22c. PostToolUseFailure 写失败直接释放 index:changes 锁（v7 半�
     agentId: 'agent-index-fail',
     file: path.join(dir, 'task.md'),
   });
-  const beforeLog = fs.existsSync(path.join(HOOKS_DIR, 'pace-hooks.log')) ? fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8') : '';
+  const beforeLog = fs.existsSync(E2E_LOG_PATH) ? fs.readFileSync(E2E_LOG_PATH, 'utf8') : '';
   const r = runHook('post-tool-use-failure.js', {
     cwd: dir,
     stdin: {
@@ -7070,8 +7094,8 @@ test('22c. PostToolUseFailure 写失败直接释放 index:changes 锁（v7 半�
   });
   assert.strictEqual(r.code, 0);
   assert.ok(!fs.existsSync(lockPath), 'v7: 单文件写失败没有半开事务态，直接释放锁减少并发阻塞');
-  const afterLog = fs.readFileSync(path.join(HOOKS_DIR, 'pace-hooks.log'), 'utf8');
-  const delta = logDelta(beforeLog, afterLog);
+  const afterLog = fs.readFileSync(E2E_LOG_PATH, 'utf8');
+  const delta = afterLog.slice(beforeLog.length);
   assert.ok(delta.includes('RELEASE_ARTIFACT_RESOURCE_LOCK'));
   assert.ok(!delta.includes('index-transaction-open-after-failure'));
 });

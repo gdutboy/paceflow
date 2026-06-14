@@ -19,7 +19,7 @@ const {
 
 const EXPECTED_TITLE = '## artifact-writer 报告';
 const TIMESTAMP_LINE = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]$/;
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 const log = createLogger(LOG);
 const cwd = resolveProjectCwd();
 const proj = getProjectName(cwd);

@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const paceUtils = require('./pace-utils');
 
-const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
+const LOG_PATH = paceUtils.defaultLogPath();
 const log = paceUtils.createLogger(LOG_PATH);
 const SELF_PATH = path.resolve(__dirname, 'set-activation.js').replace(/\\/g, '/');
 

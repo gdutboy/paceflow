@@ -2750,6 +2750,113 @@ test('createLogger — 轮转后对齐到换行符', () => {
   assert.ok(content.includes('after-rotate'), '应包含轮转后写入的内容');
 });
 
+// LOGENV：PACE_LOG_PATH 可注入日志路径（CHG-20260614-08 T-001，根治 e2e 写源码树共享日志 flaky）
+test('LOGENV-1: defaultLogPath 优先返回 PACE_LOG_PATH 注入值', () => {
+  const orig = process.env.PACE_LOG_PATH;
+  try {
+    process.env.PACE_LOG_PATH = '/tmp/pace-inject-xyz.log';
+    assert.strictEqual(paceUtils.defaultLogPath(), '/tmp/pace-inject-xyz.log');
+  } finally {
+    if (orig === undefined) delete process.env.PACE_LOG_PATH; else process.env.PACE_LOG_PATH = orig;
+  }
+});
+
+test('LOGENV-2: defaultLogPath 缺省回退 plugin/hooks/pace-hooks.log', () => {
+  const orig = process.env.PACE_LOG_PATH;
+  try {
+    delete process.env.PACE_LOG_PATH;
+    const p = paceUtils.defaultLogPath();
+    assert.ok(p.endsWith(path.join('hooks', 'pace-hooks.log')), `缺省应回退 hooks/pace-hooks.log，实际 ${p}`);
+    assert.ok(!p.includes('undefined') && !p.includes('..'), `回退路径应规整无 .. 残留，实际 ${p}`);
+  } finally {
+    if (orig === undefined) delete process.env.PACE_LOG_PATH; else process.env.PACE_LOG_PATH = orig;
+  }
+});
+
+test('LOGENV-3: createLogger() 空参写入 PACE_LOG_PATH 注入的日志', () => {
+  const orig = process.env.PACE_LOG_PATH;
+  const tmp = path.join(makeTmpDir('logenv'), 'inject.log');
+  try {
+    process.env.PACE_LOG_PATH = tmp;
+    paceUtils.createLogger()('LOGENV3-line\n');
+    assert.ok(fs.readFileSync(tmp, 'utf8').includes('LOGENV3-line'), 'createLogger() 空参应写入注入路径');
+  } finally {
+    if (orig === undefined) delete process.env.PACE_LOG_PATH; else process.env.PACE_LOG_PATH = orig;
+  }
+});
+
+test('LOGENV-4: createLogger(显式路径) 仍写显式路径（向后兼容，优先于 env）', () => {
+  const orig = process.env.PACE_LOG_PATH;
+  const tmp = path.join(makeTmpDir('logenv-explicit'), 'explicit.log');
+  try {
+    process.env.PACE_LOG_PATH = '/tmp/should-not-be-used.log';
+    paceUtils.createLogger(tmp)('LOGENV4-line\n');
+    assert.ok(fs.readFileSync(tmp, 'utf8').includes('LOGENV4-line'), '显式路径优先于 env');
+    assert.ok(!fs.existsSync('/tmp/should-not-be-used.log'), 'env 不应在显式路径时被使用');
+  } finally {
+    if (orig === undefined) delete process.env.PACE_LOG_PATH; else process.env.PACE_LOG_PATH = orig;
+  }
+});
+
+test('LOGENV-5: 无 hook 硬编码源码树日志路径（全部经 PACE_LOG_PATH 可注入）', () => {
+  // 等价/结构锁：遍历 hooks 目录而非逐个硬编码，断言无 hook 绕过 defaultLogPath
+  // 直接写 path.join(__dirname,'pace-hooks.log') —— 否则该 hook 在 e2e 仍污染源码树。
+  const hooksDir = path.join(__dirname, '..', 'plugin', 'hooks');
+  const files = fs.readdirSync(hooksDir).filter((f) => f.endsWith('.js'));
+  const offenders = [];
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(hooksDir, f), 'utf8');
+    if (/createLogger\(\s*path\.join\(/.test(src)) offenders.push(`${f}: createLogger(path.join...)`);
+    if (/=\s*path\.join\(\s*__dirname\s*,\s*['"]pace-hooks\.log['"]\s*\)/.test(src)) offenders.push(`${f}: const LOG = path.join(__dirname,'pace-hooks.log')`);
+  }
+  assert.strictEqual(offenders.length, 0, `这些 hook 仍硬编码日志路径绕过 PACE_LOG_PATH:\n${offenders.join('\n')}`);
+});
+
+// DETECT：v5/v6 检测原语下沉单一 detection 模块（CHG-20260614-11，去门面/path-utils 双实现漂移）
+function mkDetectFixtures() {
+  const v6 = makeTmpDir('detect-v6'); fs.mkdirSync(path.join(v6, 'changes'));
+  const v5cn = makeTmpDir('detect-v5cn'); fs.writeFileSync(path.join(v5cn, 'task.md'), '# 项目任务追踪\n## 活跃任务\n<!-- ARCHIVE -->\n');
+  const v5en = makeTmpDir('detect-v5en');
+  fs.writeFileSync(path.join(v5en, 'task.md'), '# Tasks\n- [ ] a\n');
+  fs.writeFileSync(path.join(v5en, 'implementation_plan.md'), '# Implementation Plan\n- [ ] b\n');
+  const todo = makeTmpDir('detect-todo'); fs.writeFileSync(path.join(todo, 'task.md'), '# My Tasks\n- [ ] buy milk\n');
+  const empty = makeTmpDir('detect-empty');
+  // v5sig：触发 implementation_plan.md / walkthrough.md / findings.md 三条签名分支（task.md 签名外的覆盖）
+  const v5sig = makeTmpDir('detect-v5sig');
+  fs.writeFileSync(path.join(v5sig, 'implementation_plan.md'), '# 实施计划\n## 变更索引\n');
+  fs.writeFileSync(path.join(v5sig, 'walkthrough.md'), '# 工作记录\n## 最近工作\n');
+  fs.writeFileSync(path.join(v5sig, 'findings.md'), '# 调研记录\n## 未解决问题\n');
+  return { v6, v5cn, v5en, todo, empty, v5sig };
+}
+
+test('DETECT-1: detection 模块 hasChangesDir/legacyV5FilesInDir 行为正确', () => {
+  const detection = require('../plugin/hooks/pace-utils/detection');
+  const fx = mkDetectFixtures();
+  assert.strictEqual(detection.hasChangesDir(fx.v6), true, 'v6 有 changes/ → hasChangesDir true');
+  assert.deepStrictEqual(detection.legacyV5FilesInDir(fx.v6), [], 'v6 → 非 legacy');
+  assert.strictEqual(detection.hasChangesDir(fx.v5cn), false, 'v5 无 changes/');
+  assert.ok(detection.legacyV5FilesInDir(fx.v5cn).includes('task.md'), 'v5 中文根+ARCHIVE → 检出 task.md');
+  assert.deepStrictEqual(detection.legacyV5FilesInDir(fx.v5en).sort(), ['implementation_plan.md', 'task.md'], 'v5 英文双根+checkbox → 检出双根');
+  assert.deepStrictEqual(detection.legacyV5FilesInDir(fx.todo), [], 'generic todo（# My Tasks 非根标题）→ false positive 防护');
+  assert.deepStrictEqual(detection.legacyV5FilesInDir(fx.empty), [], '空目录 → 非 legacy');
+  const sig = detection.legacyV5FilesInDir(fx.v5sig).sort();
+  assert.deepStrictEqual(sig, ['findings.md', 'implementation_plan.md', 'walkthrough.md'], 'impl/walkthrough/findings 三条签名分支均命中');
+});
+
+test('DETECT-2: 门面 getV5MigrationInfo.files / path-utils / detection 三方对同组 fixture 结论一致（等价锁，穿越下沉不变）', () => {
+  const detection = require('../plugin/hooks/pace-utils/detection');
+  const pathUtils = require('../plugin/hooks/pace-utils/path-utils');
+  const fx = mkDetectFixtures();
+  for (const dir of Object.values(fx)) {
+    const viaDetection = detection.legacyV5FilesInDir(dir).slice().sort();
+    const viaPathUtils = pathUtils.legacyV5FilesInDir(dir).slice().sort();
+    const viaFacade = getV5MigrationInfo(dir).files.slice().sort();
+    assert.deepStrictEqual(viaPathUtils, viaDetection, `path-utils 与 detection legacyV5FilesInDir 对 ${dir} 一致`);
+    assert.deepStrictEqual(viaFacade, viaDetection, `门面 getV5MigrationInfo.files 与 detection 对 ${dir} 一致`);
+    assert.strictEqual(pathUtils.hasChangesDir(dir), detection.hasChangesDir(dir), `hasChangesDir 对 ${dir} 一致`);
+  }
+});
+
 test('logEntry — 字段单行化并截断长值', () => {
   const entry = paceUtils.logEntry('PreToolUse', 'DENY', {
     reason: 'line1\nline2|pipe',
@@ -3143,7 +3250,8 @@ test('pace-utils 子模块可直接 require 且导出关键符号', () => {
     'line-endings': ['normalizeLineEndings', 'hasNonNullVerifiedDate'],
     session: ['parseHookStdin', 'currentSessionId', 'isArtifactWriterAgentType'],
     'path-utils': ['normalizePath', 'resolveToolFilePath', 'resolveEffectiveProjectRoot', 'getProjectRuntimeDir'],
-    logger: ['createLogger', 'logEntry'],
+    detection: ['hasChangesDir', 'legacyV5FilesInDir'],
+    logger: ['createLogger', 'defaultLogPath', 'logEntry'],
     plans: [],
     'change-id': ['normalizeChangeId', 'detailPathForId', 'slugForChangeId'],
     'change-analysis': [],

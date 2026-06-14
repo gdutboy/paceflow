@@ -11,7 +11,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.exit(0);
 }
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();
 const proj = paceUtils.getProjectName(cwd);

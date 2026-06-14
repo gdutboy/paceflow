@@ -32,6 +32,7 @@ pace-bridge 不直接 Edit `task.md`。桥接的唯一写入路径是派 `artifa
 - Helper 命令来源顺序的权威定义见 Skill(paceflow:pace-workflow)「Helper 命令来源」（本节不再复制）。速记：优先复制 SessionStart / PreToolUse 给出的完整命令；无 hook 输出但本 skill 已加载时以 skill 根目录拼 fallback；不扫描 `~/.claude/plugins/cache` 猜版本。按当前动作选择下面一条模板运行；这不是顺序执行清单：
 
 ```bash
+node "<skill-root>/../../hooks/set-project-root.js" --mode independent
 node "<skill-root>/../../hooks/set-artifact-root.js" --choice local|vault
 node "<skill-root>/../../hooks/reserve-artifact-id.js" --operation create-chg
 node "<skill-root>/../../hooks/sync-plan.js" --plan "<已桥接的 plan 绝对路径>"

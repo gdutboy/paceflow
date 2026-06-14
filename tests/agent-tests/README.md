@@ -2,6 +2,16 @@
 
 > v6.0.0 Phase A-D 测试套件。Phase A/B/C/D 均有 baseline 用例。
 
+## 现状（2026-06，CHG-20260614-09）
+
+> [!IMPORTANT]
+> **本套件不在自动回归网（`node tests/run-all.js`）内**，是半自动「session 内驱动真 artifact-writer LLM agent」的契约抽查。`node run-tests.js dummy` 只跑 mock 框架自测，不碰真 agent。
+>
+> - **fixtures 仍为 v6 形态**：`cases/**` 的 `setup.pre_files` 种子帧带 v6 字段（`schema-version: "6.0"` + `aliases`/`tags`/`completed-date`），产品 schema 已升 v7.0 9-key 封闭合同。真跑前需把这些 fixtures 重写为 v7（专门 follow-up，非本次范围）。
+> - **休眠**：最近真实（非 dummy）跑停在 2026-06-02。一次完整真跑约 34 case × 35-40K tokens。
+> - **新增 schema 值漂移检测能力**（`verify-output.checkFrontmatterSchemaVersion` + 可选 `validations.frontmatter_schema_version: "7.0"`）：让未来真跑能抓「agent 写出陈旧 schema-version」而非只查存在；已在 `tests/test-agent-tests-helpers.js`（ATF-03/03b，进 run-all 自动回归）单测。
+> - agent 契约本身被每个 PACEflow session 实时 dogfood（create/approve/close 真实派遣），形式套件价值在系统化负例与 CI 回归。复活待遇见 [[finding-2026-06-14-agent-tests-v6-fixture-stale-suite-dormant]]。
+
 ## 目录结构
 
 ```

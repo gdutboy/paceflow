@@ -13,7 +13,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 //   （ts/todayISO/readActive/countByStatus/summarizeActiveChanges）已随 snapshot 删除一并移除。
 const { isPaceProject, getProjectName } = paceUtils;
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();

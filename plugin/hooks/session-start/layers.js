@@ -700,11 +700,18 @@ function ownerDisplay(summary) {
 //   而 assembleWithBudget 只截 l3、head（含 l0）永不截，宣称的第④层「全局兜底」对任务本体无效。
 //   自带跨 CHG 累计护栏，防多个 in-progress CHG（含忘 close 的累积）线性撑破 9500/10000。
 const TASK_INJECTION_TOTAL_MAX = 3000;
+// 活跃 CHG 摘要 header 条数上限（CHG-20260614-10）：30+ 活跃 CHG 下 header 行无界累积撑爆 head
+//   → head 超 10K char/hook cap → 整段被 persist 成 2KB preview（上下文恢复残废根因，记忆 claude-hook-output-10k）。
+//   summaries 已在 buildLayers 按 running 优先 + CHG-ID 升序排序，超出 N 的以长尾指针收口（保前 N 高优先）。
+const ACTIVE_CHG_SUMMARY_MAX = 12;
 
 function renderActiveChangeSummary(state, paceUtils) {
-  const summaries = state.activeChangeSummaries;
-  if (!(summaries.length > 0)) return '';
+  const allSummaries = state.activeChangeSummaries;
+  if (!(allSummaries.length > 0)) return '';
   let out = `=== 活跃 CHG 摘要 ===\n`;
+  // header cap（CHG-20260614-10）：只展开前 N 条（buildLayers 已按优先级排序），超出长尾指针收口防 head 无界撑爆。
+  const summaries = allSummaries.slice(0, ACTIVE_CHG_SUMMARY_MAX);
+  const omittedChg = allSummaries.length - summaries.length;
   let taskBudgetUsed = 0;            // 跨 CHG 任务本体累计 chars（P2 总量护栏）
   let taskBudgetPointerShown = false;
   for (const s of summaries) {
@@ -728,6 +735,9 @@ function renderActiveChangeSummary(state, paceUtils) {
       }
     }
   }
+  if (omittedChg > 0) {
+    out += `（另有 ${omittedChg} 个活跃 CHG 未在摘要展开，Read task.md 查看全部）\n`;
+  }
   out += `继续、恢复或收口已有 CHG 前，先 Read 对应 changes/<id>.md，确认任务清单、实施详情和工作记录；本摘要只用于定位，不替代 CHG 详情。\n`;
   out += '\n';
   return out;
@@ -744,7 +754,11 @@ function renderChangeSetProgress(state) {
   }
   if (!(changeSetGroups.size > 0)) return '';
   let out = `=== change-set 整体进度 ===\n`;
-  for (const [name, members] of changeSetGroups) {
+  // group cap（CHG-20260614-10）：change-set 进度同样 push 进 l0，N 个独立 change-set 时无界累积撑大 head；
+  //   与活跃 CHG 摘要同标准 cap 前 N 组（Map 保插入序＝buildLayers 已排序的优先序），超出长尾指针收口。
+  const groupEntries = [...changeSetGroups].slice(0, ACTIVE_CHG_SUMMARY_MAX);
+  const omittedGroups = changeSetGroups.size - groupEntries.length;
+  for (const [name, members] of groupEntries) {
     // change-set 进度按阶段序列展示（纯 change-set-seq 升序 → 同 stop.js 成组提醒对称），
     // 不沿用 buildLayers 的 running 优先排序——进度看的是「2/5, 3/5, 4/5, 5/5」阶段顺序。
     members.sort((a, b) =>
@@ -760,6 +774,9 @@ function renderChangeSetProgress(state) {
     const pendingCount = members.length - runningCount;
     const statusDesc = runningCount > 0 ? `还有 ${runningCount} 个执行中 + ${pendingCount} 个待执行` : `还有 ${pendingCount} 个待执行`;
     out += `- change-set ${name}：${statusDesc}（${seqs}）${totalSuffix}\n`;
+  }
+  if (omittedGroups > 0) {
+    out += `（另有 ${omittedGroups} 个 change-set 进度未展开，Read task.md 查看全部）\n`;
   }
   out += `一个 change-set 是一组规划好的可闭环 CHG；逐个 approve-and-start 执行，勿遗漏后续阶段。\n\n`;
   return out;

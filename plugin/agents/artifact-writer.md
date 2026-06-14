@@ -197,6 +197,13 @@ test -d "$ARTIFACT_DIR/changes" && echo EXISTS || echo MISSING
 **必填**：`trigger-quote` / `wrong-behavior`（≥20 字符）/ `correct-behavior`（≥20 字符）/ `trigger-scenario` / `root-cause`
 **必填二选一**：`knowledge-link` 或 `project-scope: project-only`
 
+### 7. update-finding
+**必填**：`target`（finding-id）
+**可选（至少其一）**：`status`（迁移 open→investigating/accepted/rejected/merged/blocked；`rejected` 须带 `rejection-reason` ≥10 字符）/ `change-link` / `append`
+
+### 8. update-index
+**必填**：`target`（`findings.md` | `corrections.md`）/ `action: reorder`
+
 ## 正向输入模板
 
 主 session prompt 顶部应使用结构化字段。字段值取自这些结构化字段；缺字段时报告 `missing-fields`，由主 session 补齐后重派。

@@ -8,7 +8,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 }
 const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, classifyChange } = paceUtils;
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);

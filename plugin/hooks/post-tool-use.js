@@ -9,7 +9,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
 }
 const { isPaceProject, countCodeFiles, readActive, checkArchiveFormat, ARTIFACT_FILES, CODE_EXTS, VAULT_PATH, getArtifactDir, getProjectName, ts, FORMAT_SNIPPETS, getActiveChangeEntries, countDetailTasks, isChangeVerified, isChangeReviewed } = paceUtils;
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();

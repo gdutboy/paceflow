@@ -6,7 +6,7 @@ const path = require('path');
 const paceUtils = require('./pace-utils');
 const { flagValue } = require('./pace-utils/cli-args');
 
-const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
+const LOG_PATH = paceUtils.defaultLogPath();
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {
@@ -26,8 +26,9 @@ function parseArgs(argv) {
     } else if (arg === '--session-id') {
       const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.sessionId = v; i++; }
     } else if (arg === '--count') {
-      // 用哨兵区分「未传 --count」(null) 与「--count 缺值/取到空」('')，后者也要 fail-closed
-      args.count = i + 1 < argv.length ? String(argv[++i]) : '';
+      // 与其他 flag 同口径用 flagValue peek（CHG-20260614-14 补 A4 缺口）：后跟另一个 flag 或缺失
+      // 即 missingValue fail-closed，不吞后续 flag、不静默回落（args.count 留 null 由 missingValue 拦）。
+      const v = flagValue(argv, i); if (v === null) args.missingValue.push(arg); else { args.count = v; i++; }
     } else if (arg.startsWith('-')) {
       args.unknown.push(arg);
     } else if (!args.operation && !arg.startsWith('-')) {

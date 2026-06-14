@@ -792,6 +792,9 @@ module.exports = function createLockUtils(ctx) {
     return result.reservations[0];
   }
 
+  // @see pre-tool-use/agent-lifecycle-guard.js reservationMatchesExplicit —— 两函数防守同一不变量
+  //   （编号必来自 hook 预留）的两半：本函数判实际写入的目标文件 rel，reservationMatchesExplicit 判
+  //   agent prompt 声明的 explicit 字段。两者 filePrefix 容错须同为 startsWith；改一侧须同步另一侧。
   function reservationMatchesArtifactRel(reservation, artifactRel) {
     if (!reservation || !artifactRel) return { ok: true };
     const rel = String(artifactRel || '').replace(/\\/g, '/');

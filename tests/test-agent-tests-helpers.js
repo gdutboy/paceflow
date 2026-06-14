@@ -126,6 +126,29 @@ test('ATF-02b. 显式 report_title_strict 与 raw_must_contain 在 agent raw 为
   assert.ok(result.validations.some((v) => v.name === 'raw_must_contain' && !v.ok), 'raw_must_contain 在 raw 空时应判 fail');
 });
 
+test('ATF-03. verify-output schema-version 漂移检测：v6 输出对 7.0 期望判 fail，v7 判 pass', () => {
+  // CHG-20260614-09（轻量保活）：给契约套件加 schema 值漂移检测能力——让未来真跑能抓
+  // 「agent 写出陈旧 schema-version」而非只查存在（fixtures 仍 v6 形态、待专门重写）。
+  const dir = t.makeTmpDir('schema-drift');
+  const write = (name, fm) => { const p = path.join(dir, name); fs.writeFileSync(p, fm); return p; };
+  const v6 = write('chg-v6.md', '---\nstatus: planned\nschema-version: "6.0"\n---\n# x\n');
+  const v7 = write('chg-v7.md', '---\nstatus: planned\nschema-version: "7.0"\n---\n# x\n');
+  const missing = write('chg-missing.md', '---\nstatus: planned\n---\n# x\n');
+  assert.strictEqual(verifyHelper.checkFrontmatterSchemaVersion(v6, '7.0').ok, false, 'v6 输出对 7.0 期望应判漂移 fail');
+  assert.strictEqual(verifyHelper.checkFrontmatterSchemaVersion(v7, '7.0').ok, true, 'v7 输出对 7.0 期望应 pass');
+  assert.strictEqual(verifyHelper.checkFrontmatterSchemaVersion(missing, '7.0').ok, false, '缺 schema-version 判 fail');
+  assert.strictEqual(verifyHelper.checkFrontmatterSchemaVersion(v6).ok, true, '不传期望版本时退化为只查存在（向后兼容）');
+});
+
+test('ATF-03b. frontmatter_schema_version 是合法 validation key（不被 fail-closed 当未知键）', () => {
+  const { dir, variables } = setupEmptyFixture('verify-schema-version-key');
+  const result = verifyHelper.verify({
+    setup: { fixture: 'empty-v6' },
+    expected: { validations: { frontmatter_schema_version: '7.0' } },
+  }, dir, variables, { status: 'SUCCESS' });
+  assert.ok(!result.validations.some((v) => v.name && v.name.startsWith('unknown_validation')), 'frontmatter_schema_version 应被识别为合法 validation key');
+});
+
 console.log('\n--- claude-output-to-report ---');
 
 test('claude-output-to-report convert 支持 JSON result usage 与 SUCCESS 状态', () => {

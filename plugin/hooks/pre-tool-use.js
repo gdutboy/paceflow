@@ -38,7 +38,7 @@ const {
 // v7（CHG-20260611-08 T-003）：写保护集合改用 constants 单源导出（含退役的 impl_plan tombstone 保护）。
 const { PROTECTED_ARTIFACTS } = paceUtils;
 
-const LOG = path.join(__dirname, 'pace-hooks.log');
+const LOG = paceUtils.defaultLogPath();
 // W-8: 使用共享日志轮转函数
 const log = paceUtils.createLogger(LOG);
 const cwd = paceUtils.resolveProjectCwd();

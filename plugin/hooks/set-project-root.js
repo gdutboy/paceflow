@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const paceUtils = require('./pace-utils');
 
-const LOG_PATH = path.join(__dirname, 'pace-hooks.log');
+const LOG_PATH = paceUtils.defaultLogPath();
 const log = paceUtils.createLogger(LOG_PATH);
 
 function parseArgs(argv) {

@@ -59,6 +59,9 @@ schema-version: "7.0"
 
 **封闭合同（hook `validateFrontmatterSchema` 确定性校验）**：上方 9 个 key 是 CHG 帧的完整集合——**缺失任一 key 或出现集合外 key 都报 `format-violation`**。key 恒在、未到阶段值为 `null`。CHG ID 由文件名唯一承载，type 由文件名前缀承载，关联调研走正文 wikilink。`change-set`/`change-set-seq` 同样 key 恒在：batch 成员只改值，单 CHG 保持 `null`。
 
+> [!NOTE]
+> **强制层级**：封闭合同由 PostToolUse 写盘后软提示（warning 级）即时打回运行中的 artifact-writer 自修、并由 Stop 完成度门兜底；**非 PreToolUse 写时 deny，也不回滚已落盘 frontmatter**。「确定性校验」指校验判定本身确定（同输入同结论、机器可复算），不指写时硬拦截。下文各帧的 `format-violation` 均为此 WARN 软门语义。
+
 ### 2.2 finding
 
 ```yaml

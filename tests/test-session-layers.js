@@ -197,6 +197,60 @@ test('SL-10. 活跃 CHG 摘要 running 优先 + 同档 CHG-ID 升序', () => {
   assert.ok(pos('CHG-20260608-07') < pos('CHG-20260608-08'), 'backlog 档内 CHG-ID 升序 07<08');
 });
 
+// --- CHG-20260614-10: head 自身超预算信号（headOverflow）+ 活跃 CHG header cap ---
+test('SL-HO-1. head 自身超 limit → headOverflow=true + truncated=true，但 head 仍全保留（CHG-B 不截 head）', () => {
+  const bigHead = 'H'.repeat(12000); // 超 9500 预算的超大 head 段
+  const layers = { l1head: [bigHead], l0: ['L0关键\n'], l1: [], l2: [], l3: ['F1\n'] };
+  const { text, truncated, headOverflow, headChars } = assembleWithBudget(layers, { limitChars: 9500 });
+  assert.strictEqual(headOverflow, true, 'head 超 limit 应置 headOverflow=true');
+  assert.strictEqual(truncated, true, 'headOverflow 时 truncated 也为 true（caller 旧逻辑可感知）');
+  assert.ok(text.includes(bigHead) && text.includes('L0关键'), 'head 永不截——超限也全保留（CHG-B 信噪比优先）');
+  assert.ok(headChars >= 12000, 'headChars 反映真实 head 长度供 OVER_BUDGET 日志');
+});
+
+test('SL-HO-2. head 在预算内 + L3 部分省略 → headOverflow=false（truncated 只反映 L3，golden 不变）', () => {
+  const layers = { l1head: ['HEAD\n'], l0: ['L0\n'], l1: ['L1\n'], l2: ['L2\n'], l3: ['F1\n', 'x'.repeat(20000)] };
+  const { truncated, headOverflow } = assembleWithBudget(layers, { limitChars: 9500 });
+  assert.strictEqual(headOverflow, false, 'head 在预算内 headOverflow=false');
+  assert.strictEqual(truncated, true, 'L3 省略仍 truncated=true（与原行为一致）');
+});
+
+test('SL-CAP-1. >ACTIVE_CHG_SUMMARY_MAX 个活跃 CHG → 只展开前 N + 长尾指针（防 header 撑爆 head）', () => {
+  const summaries = [];
+  for (let i = 1; i <= 20; i++) summaries.push(mkSummary(`CHG-20260601-${String(i).padStart(2, '0')}`, 'running', `${i}/20`));
+  const state = makeActiveState({ activeChangeSummaries: summaries });
+  const l0Text = buildLayers(state, 'startup', paceUtils).l0.join('');
+  assert.ok(l0Text.includes('另有') && l0Text.includes('活跃 CHG'), '>N 应附「另有 M 个活跃 CHG」长尾指针');
+  assert.ok(l0Text.includes('CHG-20260601-01'), '前 N 个应展开');
+  assert.ok(!l0Text.includes('CHG-20260601-20'), '超出 N 的不展开 header（防无界累积撑爆 head）');
+});
+
+test('SL-CAP-2. ≤ N 个活跃 CHG → 全展开、无 CHG 长尾指针（golden 不变）', () => {
+  const state = makeActiveState({
+    activeChangeSummaries: [mkSummary('CHG-20260601-01', 'running', '1/2'), mkSummary('CHG-20260601-02', 'running', '2/2')],
+  });
+  const l0Text = buildLayers(state, 'startup', paceUtils).l0.join('');
+  assert.ok(!l0Text.includes('个活跃 CHG 未在摘要展开'), '≤N 不应出现活跃 CHG 长尾指针');
+  assert.ok(l0Text.includes('CHG-20260601-01') && l0Text.includes('CHG-20260601-02'), '全展开');
+});
+
+test('SL-SAT. 满载 20 活跃 CHG（各自独立 change-set）端到端 head <9500（两处 cap 生效，不触发 headOverflow）', () => {
+  // 端到端字符上限回归网（opus 审计 + release-surface 评审建议）：覆盖活跃 CHG 摘要 header cap
+  //   与 change-set 进度 group cap 两条 l0 路径，证满载下 head 落在 per-hook 10K char cap 之下。
+  const summaries = [];
+  for (let i = 1; i <= 20; i++) {
+    const s = mkSummary(`CHG-20260601-${String(i).padStart(2, '0')}`, 'running', '1/1');
+    s.changeSet = `cs-${i}`; // 各自独立 change-set —— 最坏：change-set 进度行随组数线性增长
+    s.tasks = { items: [`- [/] T-001 任务标题占位 ${'x'.repeat(40)}`], omitted: 0, mode: 'full' };
+    summaries.push(s);
+  }
+  const state = makeActiveState({ activeChangeSummaries: summaries });
+  const layers = buildLayers(state, 'startup', paceUtils);
+  const { headChars, headOverflow } = assembleWithBudget(layers, { limitChars: 9500 });
+  assert.ok(headChars < 9500, `满载 20 CHG / 20 change-set 下 head 应 <9500（两处 cap 生效），实测 ${headChars}`);
+  assert.strictEqual(headOverflow, false, '两处 cap 后满载不应触发 headOverflow');
+});
+
 // --- 11. CHG-B：change-set 进度按纯 seq 升序（与 stop.js 成组提醒对称，不受 running 优先影响）---
 test('SL-11. change-set 进度按 change-set-seq 升序展示', () => {
   const state = makeActiveState({

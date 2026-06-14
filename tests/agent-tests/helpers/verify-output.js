@@ -25,7 +25,7 @@ const EXPECTED_KEYS = new Set([
   'raw_must_contain', 'max_tokens', 'max_duration_ms', 'max_tool_uses', 'cleanup',
 ]);
 const VALIDATION_KEYS = new Set([
-  'frontmatter_schema', 'wikilink_integrity', 'cross_index_consistency',
+  'frontmatter_schema', 'frontmatter_schema_version', 'wikilink_integrity', 'cross_index_consistency',
   'chg_id_pattern', 'finding_id_pattern', 'correction_id_pattern',
   'frontmatter_status', 'finding_status', 'summary_length_le_200',
   'impact_in_index_row', 'correction_index_contains',
@@ -123,6 +123,23 @@ function checkFrontmatterSchema(filePath) {
   const fm = parseFrontmatter(content);
   if (!fm) return { ok: false, reason: 'no frontmatter' };
   if (!fm['schema-version']) return { ok: false, reason: 'missing schema-version' };
+  return { ok: true, frontmatter: fm };
+}
+
+// schema-version 值漂移检测（CHG-20260614-09 轻量保活）：除查存在外，可选比对实际值与期望版本。
+// 让契约套件真跑时能抓「agent 写出陈旧 schema-version」，而非只查字段存在。
+// expectedVersion 省略时退化为只查存在（向后兼容 frontmatter_schema: pass）。
+function checkFrontmatterSchemaVersion(filePath, expectedVersion) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const fm = parseFrontmatter(content);
+  if (!fm) return { ok: false, reason: 'no frontmatter' };
+  const actual = fm['schema-version'];
+  if (!actual) return { ok: false, reason: 'missing schema-version' };
+  // parseFrontmatter 不剥 YAML 引号（真实 artifact 写 schema-version: "7.0"），比对前两侧剥引号
+  const stripQuotes = (s) => String(s).replace(/^["']|["']$/g, '');
+  if (expectedVersion && stripQuotes(actual) !== stripQuotes(expectedVersion)) {
+    return { ok: false, reason: `schema-version 漂移：期望 ${expectedVersion} 实际 ${actual}` };
+  }
   return { ok: true, frontmatter: fm };
 }
 
@@ -365,6 +382,20 @@ function verify(testCase, targetDir, variables, agentReport) {
         if (isIndexFile(fp)) continue;
         const r = checkFrontmatterSchema(fp);
         validations.push({ name: `frontmatter_schema:${path.basename(fp)}`, ok: r.ok, reason: r.reason });
+      }
+    }
+  }
+
+  // schema-version 值漂移检测（可选）：validations.frontmatter_schema_version 给定版本字符串（如 "7.0"），
+  // 则比对 created files 实际 schema-version 值是否相等，抓 agent 写出陈旧版本。
+  const expectedSchemaVersion = (exp.validations || {}).frontmatter_schema_version;
+  if (expectedSchemaVersion) {
+    for (const rel of (exp.files_created || [])) {
+      const { matches } = resolveExpectedFiles(targetDir, rel, variables, exp);
+      for (const fp of matches) {
+        if (isIndexFile(fp)) continue;
+        const r = checkFrontmatterSchemaVersion(fp, expectedSchemaVersion);
+        validations.push({ name: `frontmatter_schema_version:${path.basename(fp)}`, ok: r.ok, reason: r.reason });
       }
     }
   }
@@ -870,4 +901,4 @@ function setupInputBody(testCase, variables) {
   return typeof body === 'string' ? renderVariables(body, variables) : '';
 }
 
-module.exports = { verify, checkBelowArchive, parseFrontmatter };
+module.exports = { verify, checkBelowArchive, parseFrontmatter, checkFrontmatterSchemaVersion };

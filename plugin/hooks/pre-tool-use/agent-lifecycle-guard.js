@@ -164,10 +164,10 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
       `target: ${id}`,
       'verification-confirmed: true',
       'complete-open-tasks: true',
-      'verify-summary: <已运行并读取的验证结果>',
       'review-confirmed: true',
       'review-source: manual | <所选 review agent 名>',
       "review-findings: <P0/P1/P2/P3 计数 + 各自处置（HOTFIX/won't-fix finding/record-finding 的 wikilink）>",
+      'verify-summary: <已运行并读取的验证结果>',
       'implementation-notes:',
       '  - T-NNN: <该任务实际改动——改了哪些文件、关键实现、对应 commit>',
       'walkthrough-summary: <完成摘要>',
@@ -312,6 +312,10 @@ function reservationRelForLookup(explicit) {
   return '';
 }
 
+// @see pace-utils/locks.js reservationMatchesArtifactRel —— 两函数防守同一不变量（CHG/HOTFIX/
+//   CORRECTION 编号必来自 hook 预留）的两半：本函数判 agent prompt 声明的 explicit 字段（id/fileRel），
+//   reservationMatchesArtifactRel 判实际写入的目标文件 rel。两者 filePrefix 容错须同为 startsWith；
+//   改一侧的容错策略须同步另一侧，避免「prompt 路径放行但写盘路径拦」类不对称回归。
 function reservationMatchesExplicit(reservation, explicit) {
   if (!reservation) return false;
   if (explicit.id && reservation.id !== explicit.id) return false;

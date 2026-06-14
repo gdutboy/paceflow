@@ -21,13 +21,13 @@ PACEflow 的运行时行为必须由以下位置定义：
 ## 常用验证
 
 ```bash
-node tests/test-pace-utils.js
-node tests/test-hooks-e2e.js
-node tests/test-session-layers.js
-node tests/test-migrate-v7.js
-node tests/test-agent-tests-helpers.js
-claude plugin validate ./plugin
-git diff --check
+# 一条命令聚合全部核心套件 + claude plugin validate + git diff --check
+# 任一子套件非零退出即整体非零退出，杜绝手敲漏跑某套件致回归静默漏网
+node tests/run-all.js
+
+# 迭代时按名分片只跑某套件（子串匹配套件名：pace-utils / hooks-e2e /
+# session-layers / migrate-v7 / agent-helpers / run-all-self / plugin-validate / git-diff-check）
+PACE_TEST_FILTER=hooks-e2e node tests/run-all.js
 ```
 
 可选本地手动安装检查：如果当前工作区有未跟踪的 `install.js` 与 `tests/test-install.js` 本地副本，可以额外运行 `node tests/test-install.js`。`install.js` / `verify.js` 只作为本地 smoke 或手动安装健康检查工具；marketplace 安装以 `plugin/.claude-plugin/plugin.json`、`plugin/hooks/hooks.json` 和 `plugin/**` 发布面为准。
