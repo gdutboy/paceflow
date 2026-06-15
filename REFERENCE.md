@@ -1,6 +1,6 @@
-# PACEflow v7.2.9 参考手册
+# PACEflow v7.2.10 参考手册
 
-> 最后更新：2026-06-13
+> 最后更新：2026-06-15
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify-Review)
 > v6 决策：不兼容 v5 活跃流程；v5 内容只作为 ARCHIVE 历史。
 

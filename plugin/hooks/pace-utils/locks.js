@@ -49,7 +49,7 @@ module.exports = function createLockUtils(ctx) {
 
   function operationFromAgentPrompt(prompt) {
     const text = String(prompt || '');
-    const byField = text.match(/^\s*(?:operation|指令)\s*[:=]\s*([a-z0-9-]+)/mi);
+    const byField = text.match(/^\s*(?:operation|指令)\s*[:=][^\S\n]*([a-z0-9-]+)/mi);
     if (byField) return byField[1].toLowerCase();
     const known = text.match(/\b(create-chg|update-chg|archive-chg|close-chg|record-finding|record-correction)\b/i);
     if (known) return known[1].toLowerCase();

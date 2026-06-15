@@ -264,6 +264,16 @@ function promptFieldValue(prompt, field) {
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
 }
 
+// P3-1（CHG-20260615-06）：operation/action 等单行 lifecycle 字段取值——冒号后只吞同行空白
+// （[^\S\n]，空白但非换行），不跨换行吞下一字段。刻意区别于 promptFieldValue 的 \s*（后者故意
+// 跨换行，让 implementation-notes / verify-summary 等「field:\n  - 缩进列表」多行值仍判非空）。
+// `operation:\ntitle: x` 应解析为 operation 空值，而非把下一行 title: 当成 operation 的值。
+function promptFieldValueSameLine(prompt, field) {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = String(prompt || '').match(new RegExp(`(?:^|[\\n,，;；])\\s*${escaped}\\s*[:=][^\\S\\n]*([^\\n,，;；]+)`, 'mi'));
+  return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
+}
+
 function explicitReservationFromPrompt(prompt) {
   const id = promptFieldValue(prompt, 'reserved-id').toUpperCase();
   const fileRel = promptFieldValue(prompt, 'reserved-file').replace(/\\/g, '/');
@@ -393,12 +403,12 @@ function firstToken(value) {
 }
 
 function promptDeclaredOperation(prompt) {
-  const value = firstToken(promptFieldValue(prompt, 'operation')) || firstToken(promptFieldValue(prompt, '指令')) || paceUtils.operationFromAgentPrompt(prompt);
+  const value = firstToken(promptFieldValueSameLine(prompt, 'operation')) || firstToken(promptFieldValueSameLine(prompt, '指令')) || paceUtils.operationFromAgentPrompt(prompt);
   return value.toLowerCase();
 }
 
 function promptDeclaredAction(prompt) {
-  const value = firstToken(promptFieldValue(prompt, 'action'));
+  const value = firstToken(promptFieldValueSameLine(prompt, 'action'));
   if (value) return value.toLowerCase();
   const text = String(prompt || '');
   const m = text.match(/(?:^|[\n,，;；])\s*(approve-and-start|update-status|approve)(?=$|[\s,，;；:：])/i);
