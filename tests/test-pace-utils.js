@@ -816,6 +816,23 @@ test('SST-LAZY-FALLBACK: 廉价 candidate 无 close operation 时仍读 transcri
   assert.strictEqual(r.target, 'CHG-20260303-03', 'transcript 兜底仍生效');
 });
 
+test('locks 2.6: reservationMatchesArtifactRel 契约锁——fail-open 仅 null 输入 + 真 mismatch 检出（CHG-20260615-02）', () => {
+  const m = paceUtils.reservationMatchesArtifactRel;
+  const resv = { filePrefix: 'changes/chg-20260101-01-' };
+  // fail-open 契约（「检查不适用」路径，非跳过校验）：缺 reservation 或缺 rel → ok:true
+  assert.strictEqual(m(null, 'changes/chg-20260101-01-x.md').ok, true, 'null reservation → fail-open ok');
+  assert.strictEqual(m(resv, '').ok, true, 'null/空 artifactRel → fail-open ok');
+  // 正向匹配两路：① 带 slug 全名 startsWith filePrefix；② 精确 stem.md（lookup 推的无 slug 名）
+  assert.strictEqual(m(resv, 'changes/chg-20260101-01-some-slug.md').ok, true, '带 slug 全名匹配');
+  assert.strictEqual(m(resv, 'changes/chg-20260101-01.md').ok, true, '精确 stem.md 匹配');
+  // 真 mismatch（rel 是 CHG 模式但指向另一个 id）→ ok:false + expected/actual，护栏不被 fail-open 吞掉
+  const bad = m(resv, 'changes/chg-20260202-02-other.md');
+  assert.strictEqual(bad.ok, false, '不同 CHG id → mismatch 检出（非误放行）');
+  assert.ok(bad.expected && bad.actual, 'mismatch 返回 expected/actual 供 deny 文案');
+  // 非 reserved-id 模式的 rel（普通 artifact）→ ok:true（该函数只校验 reserved-id 文件，其余不适用）
+  assert.strictEqual(m(resv, 'task.md').ok, true, '非 reserved-id 模式 rel 不适用→ok');
+});
+
 test('change-id helpers: CHG/HOTFIX 归一与非法值拒绝', () => {
   const dir = makeTmpDir('change-id-helpers');
   assert.strictEqual(normalizeChangeId(' chg-20260514-01 '), 'CHG-20260514-01');

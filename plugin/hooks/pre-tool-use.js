@@ -241,6 +241,36 @@ function worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRel) {
 }
 
 // S-1: 统一 stdin 解析
+// 命令工具（Bash/PowerShell/Monitor）改 local-artifact-root-choice / project-root-marker 的 deny 判定。
+// CHG-20260615-02（structure-backlog 1.3）：这两组各 3 个守卫原在 paceEntrySignal 块内（signal 路径，
+// 命令分支前）与块外（区 B，无 signal 时命令工具落此兜底）逐字写两遍、靠人工同步。抽成命名 helper 供两
+// 路径共用消漂移。hardDeny 是主函数局部闭包，故 helper 只返 {reason,action,fields} 描述符，调用点调 hardDeny。
+// 返回首个命中守卫的描述符，无命中返回 null。
+function commandLocalArtifactRootChoiceDeny(toolName, bashCommand, powershellCommand, cwd) {
+  if (isBashTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
+    return { reason: paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`), action: 'DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE', fields: { command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '), authoritative: paceUtils.getArtifactRootChoicePath(cwd) } };
+  }
+  if (isPowerShellTool(toolName) && powershellCommandMutatesLocalArtifactRootChoice(powershellCommand, cwd)) {
+    return { reason: paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`), action: 'DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE', fields: { command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '), authoritative: paceUtils.getArtifactRootChoicePath(cwd) } };
+  }
+  if (isMonitorTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
+    return { reason: paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`), action: 'DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE', fields: { command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '), authoritative: paceUtils.getArtifactRootChoicePath(cwd) } };
+  }
+  return null;
+}
+function commandProjectRootMarkerDeny(toolName, bashCommand, powershellCommand, cwd) {
+  if (isBashTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
+    return { reason: paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`), action: 'DENY_BASH_PROJECT_ROOT_MARKER', fields: { command: String(bashCommand).slice(0, 160).replace(/\n/g, ' ') } };
+  }
+  if (isPowerShellTool(toolName) && powershellCommandMutatesProjectRootMarker(powershellCommand, cwd)) {
+    return { reason: paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`), action: 'DENY_POWERSHELL_PROJECT_ROOT_MARKER', fields: { command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' ') } };
+  }
+  if (isMonitorTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
+    return { reason: paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`), action: 'DENY_MONITOR_PROJECT_ROOT_MARKER', fields: { command: String(bashCommand).slice(0, 160).replace(/\n/g, ' ') } };
+  }
+  return null;
+}
+
 paceUtils.withStdinParsed((stdin) => {
   try {
   const t0 = Date.now();
@@ -407,63 +437,10 @@ paceUtils.withStdinParsed((stdin) => {
         choice_path: rootConfigError.choicePath,
       });
     }
-    if (isBashTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
-      return hardDeny(
-        paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-        'DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE',
-        {
-          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-          authoritative: paceUtils.getArtifactRootChoicePath(cwd),
-        }
-      );
-    }
-    if (isPowerShellTool(toolName) && powershellCommandMutatesLocalArtifactRootChoice(powershellCommand, cwd)) {
-      return hardDeny(
-        paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
-        'DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE',
-        {
-          command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
-          authoritative: paceUtils.getArtifactRootChoicePath(cwd),
-        }
-      );
-    }
-    if (isMonitorTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
-      return hardDeny(
-        paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-        'DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE',
-        {
-          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-          authoritative: paceUtils.getArtifactRootChoicePath(cwd),
-        }
-      );
-    }
-    if (isBashTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
-      return hardDeny(
-        paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-        'DENY_BASH_PROJECT_ROOT_MARKER',
-        {
-          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-        }
-      );
-    }
-    if (isPowerShellTool(toolName) && powershellCommandMutatesProjectRootMarker(powershellCommand, cwd)) {
-      return hardDeny(
-        paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
-        'DENY_POWERSHELL_PROJECT_ROOT_MARKER',
-        {
-          command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
-        }
-      );
-    }
-    if (isMonitorTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
-      return hardDeny(
-        paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-        'DENY_MONITOR_PROJECT_ROOT_MARKER',
-        {
-          command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-        }
-      );
-    }
+    const localChoiceDeny = commandLocalArtifactRootChoiceDeny(toolName, bashCommand, powershellCommand, cwd);
+    if (localChoiceDeny) return hardDeny(localChoiceDeny.reason, localChoiceDeny.action, localChoiceDeny.fields);
+    const projectMarkerDeny = commandProjectRootMarkerDeny(toolName, bashCommand, powershellCommand, cwd);
+    if (projectMarkerDeny) return hardDeny(projectMarkerDeny.reason, projectMarkerDeny.action, projectMarkerDeny.fields);
     if (isAgentTool(toolName)) {
       // codex P2：artifact-writer Agent 派遣路径的 newer-schema 让位——8.0 数据不派旧 artifact-writer
       // 管理（会走 7.0 artifact-dir/lifecycle/base 裁判或创建 v7 模板写坏新数据）。与 V7F-5 直写写保护
@@ -828,36 +805,8 @@ paceUtils.withStdinParsed((stdin) => {
       }
     );
   }
-  if (isBashTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
-    return hardDeny(
-      paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-      'DENY_BASH_LOCAL_ARTIFACT_ROOT_CHOICE',
-      {
-        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
-      }
-    );
-  }
-  if (isPowerShellTool(toolName) && powershellCommandMutatesLocalArtifactRootChoice(powershellCommand, cwd)) {
-    return hardDeny(
-      paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
-      'DENY_POWERSHELL_LOCAL_ARTIFACT_ROOT_CHOICE',
-      {
-        command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
-        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
-      }
-    );
-  }
-  if (isMonitorTool(toolName) && bashCommandMutatesLocalArtifactRootChoice(bashCommand, cwd)) {
-    return hardDeny(
-      paceUtils.localArtifactRootChoiceDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-      'DENY_MONITOR_LOCAL_ARTIFACT_ROOT_CHOICE',
-      {
-        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-        authoritative: paceUtils.getArtifactRootChoicePath(cwd),
-      }
-    );
-  }
+  const localChoiceDeny = commandLocalArtifactRootChoiceDeny(toolName, bashCommand, powershellCommand, cwd);
+  if (localChoiceDeny) return hardDeny(localChoiceDeny.reason, localChoiceDeny.action, localChoiceDeny.fields);
   if (isFileMutationTool(toolName) && paceUtils.isProjectRootMarkerPath(cwd, filePath)) {
     return hardDeny(
       paceUtils.projectRootMarkerDenyReason(cwd),
@@ -869,33 +818,8 @@ paceUtils.withStdinParsed((stdin) => {
       }
     );
   }
-  if (isBashTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
-    return hardDeny(
-      paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-      'DENY_BASH_PROJECT_ROOT_MARKER',
-      {
-        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-      }
-    );
-  }
-  if (isPowerShellTool(toolName) && powershellCommandMutatesProjectRootMarker(powershellCommand, cwd)) {
-    return hardDeny(
-      paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(powershellCommand || '').slice(0, 500)}`),
-      'DENY_POWERSHELL_PROJECT_ROOT_MARKER',
-      {
-        command: String(powershellCommand).slice(0, 160).replace(/\n/g, ' '),
-      }
-    );
-  }
-  if (isMonitorTool(toolName) && bashCommandMutatesProjectRootMarker(bashCommand, cwd)) {
-    return hardDeny(
-      paceUtils.projectRootMarkerDenyReason(cwd, `被拦截的命令：${String(bashCommand || '').slice(0, 500)}`),
-      'DENY_MONITOR_PROJECT_ROOT_MARKER',
-      {
-        command: String(bashCommand).slice(0, 160).replace(/\n/g, ' '),
-      }
-    );
-  }
+  const projectMarkerDeny = commandProjectRootMarkerDeny(toolName, bashCommand, powershellCommand, cwd);
+  if (projectMarkerDeny) return hardDeny(projectMarkerDeny.reason, projectMarkerDeny.action, projectMarkerDeny.fields);
   if (isFileMutationTool(toolName) && paceUtils.isArtifactRuntimeControlPath(cwd, filePath)) {
     return hardDeny(
       `禁止使用 ${toolName} 修改 PaceFlow artifact 写入控制运行态：${filePath}。锁、编号计数与 reservation 只能由 hook 管理；不要手写或删除运行态文件。`,
