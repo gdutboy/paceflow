@@ -155,6 +155,31 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/set-project-root.js" --mode independent
 
 ---
 
+## 快速开始
+
+前提：插件已安装（见上方「安装」），并在项目运行过 `/paceflow:enable`。
+
+### 一次改动
+
+以「加一个小功能」为例：
+
+1. 让 Claude 写代码。没有活跃且已获批的 CHG 时，写代码的工具调用被 deny。
+2. Claude 创建 CHG（标题 + 任务清单）。
+3. 你批准（一句「开始」）。批准前详情无 `APPROVED`，写代码持续被 deny；`APPROVED` 只能由你触发写入，AI 不能自批。
+4. 批准后写代码放行。
+
+前四步是一次改动的最短闭环。
+
+### 收尾时发生什么
+
+5. 验证：Claude 运行验证并记录；未验证时 Stop 阻止结束会话。
+6. 审计：收尾前对本次改动做一次 review 并记录。
+7. 收尾：`close` 补全任务状态、写验证/审计标记、归档、追加一条工作记录。
+
+命令：`/paceflow:status` 状态 · `/paceflow:pause` 本会话暂停 · `/paceflow:disable` 停用（不删 artifact）。
+
+---
+
 ## 特色功能
 
 ### Superpowers 全流程集成
