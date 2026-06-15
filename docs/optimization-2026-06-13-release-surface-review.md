@@ -63,7 +63,7 @@
 | --- | --- | --- |
 | README `$PLUGIN_DIR` → `${CLAUDE_PLUGIN_ROOT}` + 普通 shell 一行 fallback | 3 处 + 文首声明 | `README.md:75,86,124` |
 | helper `--cwd`/`--operation` 下沉 `set-activation` 的 peek-next 守卫为公共 `parseArgs` | 1 公共函数 + 3 调用 + 反向 e2e | `reserve-artifact-id.js:24`、`set-project-root.js:21`、`set-activation.js:35-36` |
-| `pace-utils.js` 导出对象 `escapeRegex` 重复 3 次 → 留 1 处 | 删 2 行 | `pace-utils.js:88,135,207` |
+| ~~`pace-utils.js` 导出对象 `escapeRegex` 重复 3 次 → 留 1 处~~ **【撤回·误读非冗余】** | — | **2026-06-15 定锚证伪**：实为依赖注入——`:88` 从 path-utils 导入（唯一定义源 `path-utils.js:484`）+ `:139/211` 注入 change-analysis/plans 工厂。删任一即 break 工厂，无需修改 |
 | README「token 降低 57%」是 v5.1.0 旧基准 → 改定性或换 v7 实测 | 1 句 | `README.md:157`、`CHANGELOG.md:287/439` |
 | `CLAUDE.md` 验证清单补 `test-session-layers.js` + `test-migrate-v7.js` | 2 行 | `CLAUDE.md:22-27` |
 | Stop 的 `background_tasks` 提取上移到 `session.js parseHookStdin` 归一 | 单点 | `stop.js:80` |
