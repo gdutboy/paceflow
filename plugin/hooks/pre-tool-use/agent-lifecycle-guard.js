@@ -232,8 +232,14 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
 function agentArtifactDirDenyReason(artDir, declared = '', prompt = '') {
   const dir = displayDir(artDir);
   const declaredLine = declared ? `\n当前 prompt 中的 artifact_dir 是：${displayDir(declared)}` : '';
+  // 缺啥列啥（CHG-20260615-03 T-001）：artifact_dir gate 是派遣门第一道串行早返，缺 artifact_dir 时
+  //   到不了后面的 operation/lifecycle 校验层。若 operation 也没声明，在本条 deny 一并点名，免「修了
+  //   artifact_dir 重派又撞 operation 缺失」第二次往返。operation 是后续必填字段的前提（它决定该带哪些）。
+  const operationMissingLine = promptDeclaredOperation(prompt)
+    ? ''
+    : '\n另：当前 prompt 也未声明 operation: 行——请一并补上（operation 决定本次该带哪些必填字段，缺它无法校验后续字段）。';
   return [
-    `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}`,
+    `派 paceflow:artifact-writer 时缺少或写错当前 artifact_dir。当前项目已启用 PaceFlow，hook 解析出的 artifact 目录是：${dir}${declaredLine}${operationMissingLine}`,
     FORMAT_SNIPPETS.skillRef,
     '请重派同一个 agent，并使用完整 prompt 顶部模板：',
     promptTemplateForOperation({ prompt, artDir }),
@@ -653,14 +659,14 @@ function agentLifecyclePromptDenyReason(prompt, artDir = '') {
   return '';
 }
 
-function legacyArtifactWriterLockDenyReason(lock) {
+function legacyArtifactWriterLockDenyReason() {
   return [
     '检测到旧版本 artifact-writer 项目级写锁仍在当前项目中，已阻止本次派遣以避免跨版本并发写入。',
     '请等待当前 artifact-writer 结束后重试；不要用 Bash 删除或改写写锁。若长时间未恢复，请查看 pace-hooks.log。'
   ].join('\n');
 }
 
-function artifactResourceLockDenyReason(lockAttempt, resource, artifactRel) {
+function artifactResourceLockDenyReason(artifactRel) {
   return [
     `当前 artifact 正被其他 artifact-writer 写入，已阻止修改 ${artifactRel}。`,
     '不要循环重试或删除运行态文件；请等待对方写入完成后重新 Read 目标 artifact，再重试本次 artifact-writer 操作。'

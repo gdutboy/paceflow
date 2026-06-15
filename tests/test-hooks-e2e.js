@@ -2425,6 +2425,41 @@ test('9haa0b. 已写 artifact-root 但无 PACE 信号时 artifact-writer 仍进�
   assert.ok(!fs.existsSync(path.join(dir, 'changes')), '缺 artifact_dir 时不应先创建 artifact 模板');
 });
 
+test('9haa0c. artifact-writer 派遣同时缺 artifact_dir + operation → deny 一次列全两项（CHG-20260615-03 T-001 缺啥列啥）', () => {
+  const dir = makeTmpDir('agent-missing-both');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-missing-both',
+      tool_name: 'Agent',
+      tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: 'title: 测试' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'));
+  assert.ok(r.stdout.includes('缺少或写错当前 artifact_dir'), 'artifact_dir 缺失仍点名');
+  assert.ok(r.stdout.includes('也未声明 operation'), 'operation 缺失也一并点名（一次列全、免二次往返）');
+});
+
+test('9haa0d. artifact-writer 缺 artifact_dir 但 operation 已声明 → 不冗余追加 operation 提示（零回归）', () => {
+  const dir = makeTmpDir('agent-missing-artdir-only');
+  fs.mkdirSync(path.join(dir, '.pace'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.pace', 'artifact-root'), 'local\n', 'utf8');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-agent-missing-artdir-only',
+      tool_name: 'Agent',
+      tool_input: { subagent_type: 'paceflow:artifact-writer', description: 'x', prompt: 'operation: create-chg\ntitle: 测试' },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('缺少或写错当前 artifact_dir'), 'artifact_dir 缺失点名');
+  assert.ok(!r.stdout.includes('也未声明 operation'), 'operation 已声明时不追加 operation 提示');
+});
+
 test('9haa1. v5 布局上 artifact-writer create-chg 不再被 v5 拦截，走常规 reservation 门（CHG-20260612-02）', () => {
   const dir = makeLegacyProject('agent-legacy-v5');
   const r = runHook('pre-tool-use.js', {

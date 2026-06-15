@@ -28,6 +28,10 @@ node tests/run-all.js
 # 迭代时按名分片只跑某套件（子串匹配套件名：pace-utils / hooks-e2e /
 # session-layers / migrate-v7 / agent-helpers / run-all-self / plugin-validate / git-diff-check）
 PACE_TEST_FILTER=hooks-e2e node tests/run-all.js
+
+# 发版后核整段 release 区间 whitespace：push 后 @{upstream}..HEAD=0，upstream 区间查不到已推送的
+# release diff；显式给上一个 release 的 commit 覆盖整段 release 区间 git diff --check（避免 post-push 盲区）
+PACE_RELEASE_BASE=<上一个 release 的 commit> node tests/run-all.js
 ```
 
 可选本地手动安装检查：如果当前工作区有未跟踪的 `install.js` 与 `tests/test-install.js` 本地副本，可以额外运行 `node tests/test-install.js`。`install.js` / `verify.js` 只作为本地 smoke 或手动安装健康检查工具；marketplace 安装以 `plugin/.claude-plugin/plugin.json`、`plugin/hooks/hooks.json` 和 `plugin/**` 发布面为准。

@@ -482,7 +482,7 @@ paceUtils.withStdinParsed((stdin) => {
         if (legacyLock.ok) {
           const legacyCheck = paceUtils.artifactWriterLockMatches(cwd, '__paceflow-new-agent__');
           if (!legacyCheck.ok && legacyCheck.reason !== 'stale-cleared') {
-            const reason = legacyArtifactWriterLockDenyReason(legacyLock);
+            const reason = legacyArtifactWriterLockDenyReason();
             emitDeny('DENY_AGENT_LEGACY_ARTIFACT_LOCK', reason, {
               agent: stdin.toolInput.subagent_type || stdin.toolInput.subagentType,
               artifact_dir: displayDir(artDir),
@@ -965,7 +965,7 @@ paceUtils.withStdinParsed((stdin) => {
         toolName,
       });
       if (!lockAttempt.acquired) {
-        const reason = artifactResourceLockDenyReason(lockAttempt, resource, artifactRelForMutation);
+        const reason = artifactResourceLockDenyReason(artifactRelForMutation);
         emitDeny('DENY_ARTIFACT_RESOURCE_LOCK', reason, {
           tool: toolName,
           file: filePath,
