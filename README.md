@@ -1,19 +1,41 @@
 # PACEflow
 
-> 一套 Claude Code Hook 系统，通过**确定性拦截**（而非提示词建议）强制码前先规划、获批、再执行，解决 AI 编程"一上来就写代码、改着改着迷路"的问题。
+> **PACEflow 是一套 Claude Code hook，强制 AI 编码按「先规划、获批，再写代码、验证、收尾」的顺序走——靠在工具调用层拦截，而不是靠提示词提醒。**
 
 ## 核心理念
 
-AI 编程最大的问题不是代码质量，而是**过程控制**——AI 会跳过规划直接写代码，写到一半迷路，改完不验证就收工。
+### 它不做什么
 
-PACEflow 不是靠 system prompt 去"建议"AI 做这些事（AI 可以无视建议），而是在 Claude Code 的 Hook 层**物理拦截**：
+- 不会让 AI 更聪明，它不改模型能力。
+- 不抓 bug、不管代码质量。代码好坏取决于 AI 能力和你的测试、review，流程管不了。
+- 不替你写 spec、不替你做设计，它不产出任何内容。
+- 不判断你「验证得对不对、审计得够不够」，它只确认这些步骤发生过、留了记录，内容对错交给人。
+- 不防 AI 或你刻意绕过。你随时能关掉它；它防的是无意的跳步和遗忘，不是蓄意作弊。
 
-> **设计哲学**：Hooks 提供 100% 确定性保障；Skills / agent references 提供模型执行指引。仓库 `CLAUDE.md` 只作为维护入口，不承载 PACEflow 用户工作流规范。
+### 它做什么
 
-- 没有活跃 `[[chg-*]]` / `[[hotfix-*]]`？写代码的工具调用直接 **deny**，AI 被迫先创建变更
-- 详情文件没有 `<!-- APPROVED -->`？还是 **deny**
-- 主 session 试图手写 `<!-- APPROVED -->` / `<!-- VERIFIED -->` / `verified-date`？直接 **deny**，必须派 artifact writer agent
-- CHG completed 但没 verified、verified 后没 reviewed、或 reviewed 后没归档？Stop hook **阻止退出**（未验证/未审计/未归档同属完成度检查，统一 block + 连阻 3 次降级、不死锁）
+AI 写代码时的典型问题不在质量，在过程：一上来就动手、中途迷失方向、改完不验证就收工。CLAUDE.md 里写「请先规划」AI 可以无视（指令遵守率约 70–85%）。PACEflow 把这些约束放进 hook，确定性执行：
+
+- 没有获批的活跃变更（CHG），写代码的工具调用会被拒绝。
+- 没验证就想结束会话，会被 Stop hook 拦下。
+- 跳过顺序（没批准就验证、没验证就审计），会被拒绝。
+
+它只保证一件事：该走的步骤走到了、顺序对、留下了记录。
+
+### 它和 TDD / SDD / OpenSpec / Spec Kit 不是竞品
+
+它们决定写什么——什么测试、什么 spec、什么设计；PACEflow 只保证这些被执行。两者在不同的层：
+
+| 层 | 工具 | 负责 |
+|----|------|------|
+| 内容 | TDD / SDD / OpenSpec / Spec Kit | 写什么测试、spec、设计 |
+| 执行 | **PACEflow** | 确保它们真的被做（hook 拦截） |
+
+OpenSpec、Spec Kit 也有「spec → plan → tasks」的流程，但它们靠约定推动；PACEflow 靠 hook 兜底。它们告诉你做什么，PACEflow 保证你做了。两者一起用（用 `pace-bridge` 把外部 plan 接进 CHG），不必二选一。
+
+### 它适合谁
+
+价值取决于项目。长期、较大、多人、生产或高风险的项目，过程失控代价高，PACEflow 回报明显；一次性原型、抛弃脚本、随手试验，它只是负担——别用，或只开最轻的档。
 
 ### PACE 六阶段
 
