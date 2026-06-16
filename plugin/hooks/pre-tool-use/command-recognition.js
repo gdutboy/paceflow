@@ -64,7 +64,7 @@ function scanRedirectTargets(command, options = {}) {
       const endQuote = c[j++];
       while (j < c.length && c[j] !== endQuote) target += c[j++];
     } else {
-      while (j < c.length && !/[\s;&|<>]/.test(c[j])) target += c[j++];
+      while (j < c.length && !/[\s;&|<>()]/.test(c[j])) target += c[j++];   // 停止集含 () — 修 #3 子shell/命令替换紧贴闭合 ) 切坏目标（CHG-20260616-02）
     }
     if (target) {
       targets.push(target);

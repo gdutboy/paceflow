@@ -224,7 +224,7 @@ function bashOutputRedirectTargets(command) {
 
 function bashCommandPathTokens(command) {
   const tokens = [];
-  const re = /"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|<>]+)/g;
+  const re = /"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s;&|<>()]+)/g;   // 未引号 token 停止集含 () — 修 #3 子shell 紧贴闭合 ) 切坏 token（CHG-20260616-02）
   let match;
   while ((match = re.exec(String(command || ''))) !== null) {
     const token = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? '').trim();

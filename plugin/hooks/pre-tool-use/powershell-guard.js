@@ -66,7 +66,7 @@ function stripHereStrings(command) {
 
 function powershellCommandTokens(command) {
   const tokens = [];
-  const re = /"((?:`.|[^"])*)"|'([^']*)'|([^\s;|<>]+)/g;
+  const re = /"((?:`.|[^"])*)"|'([^']*)'|([^\s;|<>(){}]+)/g;   // 未引号 token 停止集含 (){} — 修 #3 PS 分组/子表达式/脚本块紧贴闭合符切坏 token（CHG-20260616-02；R 审计补 {}：PS {cmd} 脚本块紧贴 } 合法且 PS 无 brace expansion，故含 {}；bash 侧只含 () 不含 {}）
   let match;
   while ((match = re.exec(stripHereStrings(command))) !== null) {
     const token = (match[1] ?? match[2] ?? match[3] ?? '').trim();

@@ -1,4 +1,4 @@
-# PACEflow v7.2.11 参考手册
+# PACEflow v7.2.12 参考手册
 
 > 最后更新：2026-06-16
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify-Review)
@@ -171,7 +171,7 @@ artifact-writer 逐块建 N 个 `changes/<id>.md`（各写 `change-set` + `chang
 | `post-tool-use.js` | schema/wikilink/直接 C-V 写入/correction knowledge 提醒；verified 未 reviewed 时 `review-missing` 软提醒 |
 | `post-tool-use-failure.js` | 写入/验证工具失败后提醒不要误判完成 |
 | `subagent-stop.js` | 观察 `artifact-writer` 报告标题/状态并记录 transcript |
-| `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致；阻止「completed+verified 但未 reviewed」（未审计）退出 |
+| `stop.js` | 阻止未完成、未 verified、verified 未归档、索引不一致；阻止「completed+verified 但未 reviewed」（未审计）退出；CC v2.1.145+ 提供 `background_tasks` 时后台任务运行场景放行（详见下方） |
 | `task-list-sync.js` | legacy 兼容 observer；当前插件不注册任务面板 hook，PACE 权威仍是 `changes/<id>.md` |
 | `pre-compact.js` | native plan 兜底检测（落 current-native-plan 供 SessionStart 桥接消费）；快照机制已退役 |
 | `stop-failure.js` | API 错误中断日志 |
@@ -191,6 +191,8 @@ Helper 脚本不是 hook 事件，但属于发布运行时入口：
 Helper 成功返回 exit code 0；业务校验失败返回 exit code 2 并在 stdout 给出可读修复信息。Hook 脚本自身通常以容错为主，除 PreToolUse/Stop 的明确阻断外，不把内部错误升级为 shell 崩溃。
 
 REVIEWED 门是 `stop.js` 的 Stop hook 门、不是 PreToolUse 门，因此不进 §5.1 的 PreToolUse 档位表。它在 teammate 模式跟随 `stop.js` 现有的「teammate 全门 exit 0」放行，与 verify 门同（未审计提醒与未验证提醒同属一组 warning，teammate 下一并软化）。
+
+`stop.js` 的后台任务放行：Claude Code v2.1.145+ 在 Stop 输入提供 `background_tasks` 时，PACEflow 把「running CHG 仍有未完成 T-NNN，但后台 Workflow/subagent/team/shell 任务仍在运行」的场景视为主 session 暂停等待后台结果，放行 Stop 并显示可见提醒；结构损坏、未验证、待归档仍照常阻断。与 README「CHG 生命周期与 Deferred」一致，避免读本节形成「有未完成任务一律阻断」的错误心智模型。
 
 ## 5.1 PreToolUse 拒绝档位与 teammate 降级
 

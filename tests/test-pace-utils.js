@@ -639,6 +639,43 @@ test('powershell-guard RES-GUARD: `n/`r 语句分隔后的 mutating 识别（PSG
   assert.ok(powershellGuard.powershellCommandReferencesArtifact('Set-Content ta`sk.md x', dir, dir), 'ta`sk.md 仍匹配 task.md');
 });
 
+// ============================================================
+// #3 子shell/命令替换内紧贴闭合 ) 绕过写保护修复（CHG-20260616-02 T-001）
+// 动词锚点 extraChars 含 (){}（当分隔符识别动词），但 token/redirect 停止集漏 ()，
+// 致 (rm task.md) 切成 'task.md)' 精确匹配 artifact 失配。只加 () 不加 {}（bash } 前
+// 语法必有 ;/换行、紧贴不存在，加 {} 反而切坏 brace expansion cp a.{js,ts}）。
+// ============================================================
+console.log('\n--- #3 紧贴闭合符绕过修复 ---');
+
+test('#3 scanRedirectTargets: 紧贴闭合 ) 的 redirect 目标切对、不吞 )（CHG-20260616-02 T-001）', () => {
+  assert.deepStrictEqual(scanRedirectTargets('(echo x > task.md)', '\\'), ['task.md'], '子shell 闭合 )');
+  assert.deepStrictEqual(scanRedirectTargets('$(echo x > changes/y.md)', '\\'), ['changes/y.md'], '命令替换闭合 )');
+  // 反向 over-block：引号目标内的 ) 走引号分支保留完整、不切
+  assert.deepStrictEqual(scanRedirectTargets('echo x > "a(b).md"', '\\'), ['a(b).md'], '引号目标含 () 不切');
+});
+
+test('#3 bash/ps mutatesArtifact: 子shell/命令替换包裹删除不绕过写保护（紧贴闭合 )）（CHG-20260616-02 T-001）', () => {
+  const dir = makeTmpDir('subshell-bypass-3');
+  const bmut = (cmd) => bashGuard.bashCommandMutatesArtifact(cmd, dir, dir);
+  const pmut = (cmd) => powershellGuard.powershellCommandMutatesArtifact(cmd, dir, dir);
+  assert.ok(bmut('(rm task.md)'), 'bash 子shell (rm task.md)');
+  assert.ok(bmut('$(rm task.md)'), 'bash 命令替换 $(rm task.md)');
+  assert.ok(bmut('(echo x > task.md)'), 'bash 子shell redirect');
+  assert.ok(pmut('(Remove-Item task.md)'), 'ps 分组 (Remove-Item task.md)');
+  assert.ok(pmut('$(Remove-Item task.md)'), 'ps 子表达式 $(...)');
+  // R 审计补：PS 脚本块 {} 紧贴 } 缺口——PS {cmd} 脚本块紧贴 } 合法（不同 bash 必有 ;）、
+  // 且 PS 无 brace expansion，故 PS token 停止集需加 {}（bash 侧不加，见下对照）。
+  assert.ok(pmut('{Remove-Item task.md}'), 'ps 脚本块 {} 紧贴');
+  assert.ok(pmut('& {Remove-Item task.md}'), 'ps & 脚本块紧贴 }');
+  // 反向 over-block：非 artifact 不误拦 + 裸命令回归 + bash 不加 {} 对照
+  assert.ok(!bmut('(rm other.txt)'), 'bash 非 artifact 不拦');
+  assert.ok(bmut('rm task.md'), 'bash 裸 rm（回归）');
+  assert.ok(bmut('{ rm task.md; }'), 'bash command-group 已拦（} 前有 ;，bash 不需加 {}）');
+  assert.ok(!pmut('(Remove-Item other.txt)'), 'ps 非 artifact 不拦');
+  assert.ok(!pmut('{Get-Content task.md}'), 'ps 脚本块只读不误拦（over-block 反向）');
+  assert.ok(pmut('Remove-Item task.md'), 'ps 裸（回归）');
+});
+
 test('powershell-guard RES-GUARD: `n 分隔删 runtime-control 锁被拦截', () => {
   const dir = makeTmpDir('ps-backtick-n-lock');
   const mut = (cmd) => powershellGuard.powershellCommandMutatesArtifactRuntimeControl(cmd, dir);
