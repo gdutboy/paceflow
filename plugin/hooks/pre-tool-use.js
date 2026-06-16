@@ -840,11 +840,6 @@ paceUtils.withStdinParsed((stdin) => {
   // worktree get a soft note only; PaceFlow hard-gates artifact semantics, not generic
   // edits to every path the user may explicitly request.
   const isInsideProject = normalizedFile.startsWith(projectBoundaryWithSlash) || !!artifactRelForMutation;
-  // P 阶段规划产物（docs/plans、docs/superpowers/{specs,plans}）豁免 projectMutationNeedsGate 第二条件：
-  //   这些是 brainstorming/writing-plans 先于任何 CHG 的规划写入，非 CHG 执行。代码文件(isCodeFile)仍走第一条件
-  //   被 gate；docs/ 下非规划子目录(REFERENCE/README)也不豁免（防 under-block，FINDING-2026-06-08-...e-gate-false-deny）。
-  const isPlanningArtifact = isInsideProject && !artifactRelForMutation && normalizedFile.startsWith(projectBoundaryWithSlash)
-    && paceUtils.PLANNING_ARTIFACT_DIRS.some(d => normalizedFile.slice(projectBoundaryWithSlash.length).startsWith(d + '/'));
   const hostNonArtifactWriteNote = isFileMutationTool(toolName) && paceSignal
     ? worktreeHostNonArtifactWriteNote(cwd, artDir, filePath, artifactRelForMutation)
     : '';
@@ -1214,17 +1209,16 @@ paceUtils.withStdinParsed((stdin) => {
     }
 
     const ownerStatusById = new Map(actionableEntries.map(e => [e.id, paceUtils.changeOwnerStatus(cwd, e.id, stdin.sessionId)]));
-    const currentOwnedActionableEntries = actionableEntries.filter(e => {
-      const ownerStatus = ownerStatusById.get(e.id);
-      return ownerStatus.current && ownerStatus.disposition !== 'current-closed';
-    });
     // CHG-20260611-02 收紧：写码门排除同目录其他 session 持有的 CHG（B 不搭 A 便车）；
     // foreign worktree 的既有搭便车行为不动（范围见 spec §3.1 消费点 3，后议 finding）。
     const nonSiblingActionableEntries = actionableEntries.filter(e => !String(ownerStatusById.get(e.id).disposition || '').startsWith('sibling-'));
     const currentToolIsArtifactWriter = isArtifactWriterAgent(stdin);
     const artifactWriterArtifactMutation = currentToolIsArtifactWriter && !!artifactRelForMutation;
-    const projectMutationNeedsGate = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || (isFileMutationTool(toolName) && currentOwnedActionableEntries.length > 0 && !isPlanningArtifact));
-    const gatedEntries = isCodeFile ? nonSiblingActionableEntries : currentOwnedActionableEntries;
+    // CHG-20260616-01 T-001：写码门回归单一判据「文件是不是代码」——删执行期完整性门第二分支
+    //（原「持有 owned actionable CHG 时非代码文件也门控」）。非代码文件（文档/配置）不再进流程门、
+    // 一律放行；artifact 完整性门（structuralCheckNeeded / marker / 直写）独立保留，不受影响。
+    const projectMutationNeedsGate = !artifactWriterArtifactMutation && isInsideProject && isCodeFile;
+    const gatedEntries = nonSiblingActionableEntries;
     const structuralCheckNeeded = !artifactWriterArtifactMutation && isInsideProject && (isCodeFile || isFileMutationTool(toolName));
 
     if (structuralCheckNeeded) {

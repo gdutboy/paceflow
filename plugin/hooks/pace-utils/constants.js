@@ -2,8 +2,17 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v7.2.10';
-const CODE_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte'];
+const PACE_VERSION = 'v7.2.11';
+// CHG-20260616-01 T-002：补无歧义主流语言扩展名——让写码门对这些语言用户也能启动（确定性门是兜底非
+// 攻防完备：歧义项 .m/.r/.pl/.sql 故意不补，over-block 代价 > under-block，宁漏不误伤）。
+// 注意双消费：除写码门(isCodeFile)外，本集合还供 countCodeFiles → detectSoftSignal/SOFT_WARN 软提示复用
+// （isPaceProject 硬激活已不靠 code-count，补全只温和扩大软提示覆盖面，无硬门控副作用）。
+const CODE_EXTS = [
+  '.ts', '.js', '.py', '.go', '.rs', '.java', '.tsx', '.jsx', '.vue', '.svelte',
+  '.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.hh',
+  '.rb', '.php', '.cs', '.swift', '.kt', '.kts', '.scala', '.dart', '.lua',
+  '.sh', '.bash', '.zsh', '.ex', '.exs', '.clj', '.cljs', '.cljc', '.hs', '.erl', '.jl', '.mm',
+];
 // v7（CHG-20260611-08）：implementation_plan.md 退役出 artifact 集合——task.md 是唯一 CHG 索引。
 const ARTIFACT_FILES = ['spec.md', 'task.md', 'walkthrough.md', 'findings.md', 'corrections.md'];
 // 写保护集合（pre-tool-use / bash-guard / powershell-guard 共用）：impl_plan 虽退役出
@@ -94,12 +103,8 @@ const SESSION_SCOPED_FLAG_PREFIXES = [
   'post-continue-',
 ];
 
-// plan-sync 桥接检测目录（hasPlanFiles/listPlanFiles）；E 门控规划产物豁免另见下方 PLANNING_ARTIFACT_DIRS（多含 specs），新增规划路径需同步评估两者。
+// plan-sync 桥接检测目录（hasPlanFiles/listPlanFiles）。
 const PLAN_DIRS = ['docs/plans', 'docs/superpowers/plans'];
-
-// P 阶段规划产物目录：projectMutationNeedsGate 豁免——brainstorming/writing-plans 先于任何 CHG 的规划产物
-// （specs = design doc，plans = 实现计划），非 CHG 执行写入。只豁免这些精确路径，不豁免整个 docs/（防 under-block）。
-const PLANNING_ARTIFACT_DIRS = ['docs/plans', 'docs/superpowers/plans', 'docs/superpowers/specs'];
 
 module.exports = {
   PACE_VERSION,
@@ -136,5 +141,4 @@ module.exports = {
   SESSION_SCOPED_FLAGS,
   SESSION_SCOPED_FLAG_PREFIXES,
   PLAN_DIRS,
-  PLANNING_ARTIFACT_DIRS,
 };
