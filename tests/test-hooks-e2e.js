@@ -1337,6 +1337,28 @@ test('9. 主 session 直接写 VERIFIED → DENY artifact-writer 操作', () => 
   assert.ok(r.stdout.includes('对应批准/验证/审计/收尾操作'));
 });
 
+test('9dm. 主 session Edit 把 verified-date/reviewed-date 改非 null（无 comment marker）→ DENY_V6_MARKER（date-only 旁路守护；CHG-20260616-03 T-003 / P3.10）', () => {
+  const dir = makeV6Project('ptu-marker-date-only');
+  const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
+  // date-only：new_string 是含 verified-date 非 null 的完整文首 frontmatter（hasNonNullVerifiedDate 只认文首 frontmatter）、
+  // 无 <!-- VERIFIED --> comment，仍应被 setVerifiedDate 分支拦。用 Edit（paceSignal=artifact 时让位 marker 门）——
+  // 注意 Write 整文件会先撞 DENY_DIRECT_ARTIFACT_WRITE（无 marker 让位守卫），到不了 marker 门，故必须 Edit。
+  const baseV = chgDetail({ approved: false });
+  const rv = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: baseV, new_string: baseV.replace('verified-date: null', 'verified-date: 2026-06-16T12:00:00+08:00') } },
+  });
+  assert.ok(rv.stdout.includes('deny'), 'verified-date 改非 null（无 comment）应 DENY');
+  assert.ok(rv.stdout.includes('对应批准/验证/审计/收尾操作'), 'marker DENY 文案（date-only，非 DIRECT_ARTIFACT）');
+  const baseR = chgDetail({ approved: false });
+  const rr = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: { tool_name: 'Edit', tool_input: { file_path: fp, old_string: baseR, new_string: baseR.replace('reviewed-date: null', 'reviewed-date: 2026-06-16T12:00:00+08:00') } },
+  });
+  assert.ok(rr.stdout.includes('deny'), 'reviewed-date 改非 null（无 comment）应 DENY');
+  assert.ok(rr.stdout.includes('对应批准/验证/审计/收尾操作'), 'reviewed date-only marker DENY 文案');
+});
+
 test('9m. MultiEdit 直接写 VERIFIED → DENY artifact-writer 操作', () => {
   const dir = makeV6Project('ptu-marker-multiedit');
   const fp = path.join(dir, 'changes', 'chg-20260504-01.md');
@@ -4814,6 +4836,31 @@ test('9hc4a1b. update-chg 缺 action 或未知 action 在 Agent 启动前 DENY',
   }
 });
 
+test('9hc4a1c. update-chg action 空值后紧跟字段不被吞成非空 action（对称 9haa0f operation 版；CHG-20260616-03 T-003 / P3.16）', () => {
+  const dir = makeV6Project('agent-update-chg-action-empty');
+  const r = runHook('pre-tool-use.js', {
+    cwd: dir,
+    stdin: {
+      tool_name: 'Agent',
+      tool_input: {
+        subagent_type: 'paceflow:artifact-writer',
+        description: 'Update CHG',
+        prompt: [
+          `artifact_dir: ${dir.replace(/\\/g, '/')}/`,
+          'operation: update-chg',
+          'target: CHG-20260504-01',
+          'action:',
+          'task-id: T-001',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  assert.ok(r.stdout.includes('"deny"'), 'action 空值应 deny');
+  assert.ok(r.stdout.includes('update-chg 的 action 只能是'), 'action 空值报缺 action');
+  assert.ok(!r.stdout.includes('action「task-id'), '不把下一行 task-id: 误当 action 报 unknown');
+});
+
 test('9hc4a2. archive-chg 缺 walkthrough-summary 在 Agent 启动前 DENY', () => {
   const dir = makeV6Project('agent-archive-missing-summary');
   const r = runHook('pre-tool-use.js', {
@@ -7309,6 +7356,37 @@ test('23c. SubagentStop 在 close/archive 已离开活跃索引后兜底标记 o
   const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
   assert.strictEqual(owner.state, 'closed');
   assert.strictEqual(owner.operation, 'close-chg');
+});
+
+test('23d. SubagentStop close subagent 停止但 target 仍在活跃索引 → 不误标 owner closed（target-still-active 兜底；CHG-20260616-03 T-003 / P3.11）', () => {
+  const dir = makeV6Project('sas-close-target-still-active', {
+    indexMark: '[/]',
+    detail: chgDetail({ status: 'in-progress', task: '[/]', approved: true }),
+  });
+  const ownerPath = seedChangeOwner(dir, 'CHG-20260504-01', {
+    sessionId: 'sid-sas-still',
+    agentId: 'agent-sas-still',
+    state: 'closing',
+  });
+  const transcriptPath = path.join(dir, 'agent-close-still.jsonl');
+  fs.writeFileSync(transcriptPath, JSON.stringify({
+    type: 'user',
+    message: { content: ['operation: close-chg', 'target: CHG-20260504-01', 'verification-confirmed: true'].join('\n') },
+  }) + '\n', 'utf8');
+  const r = runHook('subagent-stop.js', {
+    cwd: dir,
+    stdin: {
+      session_id: 'sid-sas-still',
+      agent_id: 'agent-sas-still',
+      agent_type: 'paceflow:artifact-writer',
+      agent_transcript_path: transcriptPath,
+      last_assistant_message: '## artifact-writer 报告\n\n**状态**：SUCCESS\n',
+    },
+  });
+  assert.strictEqual(r.code, 0);
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  assert.notStrictEqual(owner.state, 'closed', 'target 仍在活跃索引时不误标 closed（target-still-active 兜底）');
+  assert.strictEqual(owner.state, 'closing', 'owner 保持 closing 待目标真正离开活跃区');
 });
 
 test('23a. SubagentStop artifact-writer 缺报告标题时注入格式提醒', () => {

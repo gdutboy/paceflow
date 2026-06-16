@@ -715,7 +715,7 @@ module.exports = function createLockUtils(ctx) {
     if (!lock.acquired) return { ok: false, reason: 'sequence-locked', lock: lock.lock };
     try {
       let current = 0;
-      try { current = Number(fs.readFileSync(counterPath, 'utf8').trim()) || 0; } catch(e) {}
+      try { current = Math.floor(Number(fs.readFileSync(counterPath, 'utf8').trim())) || 0; } catch(e) {}   // Math.floor（CHG-20260616-03 T-002 / P3.4）：counter 文件被外部损坏成浮点('3.7')时整数化，防产非整数编号；NaN 经 || 0 兜底
       const first = Math.max(current, existingMax || 0) + 1;
       const numbers = [];
       for (let i = 0; i < n; i++) numbers.push(first + i);

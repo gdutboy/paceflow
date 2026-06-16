@@ -223,7 +223,7 @@ function promptTemplateForOperation({ prompt = '', artDir = '', operation = '', 
 
   return [
     ...lines,
-    'operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction | update-finding',
+    'operation: create-chg | update-chg | close-chg | archive-chg | record-finding | record-correction | update-finding | update-index',
     'target: CHG-YYYYMMDD-NN 或 HOTFIX-YYYYMMDD-NN（create-chg / record-finding / record-correction 除外；update-finding 的 target 是 FINDING-id）',
     'action: <operation=update-chg 时必填>',
   ].join('\n');

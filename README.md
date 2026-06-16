@@ -14,7 +14,7 @@
 
 ### 它做什么
 
-AI 写代码时的典型问题不在质量，在过程：一上来就动手、中途迷失方向、改完不验证就收工。CLAUDE.md 里写「请先规划」AI 可以无视（指令遵守率约 70–85%）。PACEflow 把这些约束放进 hook，确定性执行：
+AI 写代码时的典型问题不在质量，在过程：一上来就动手、中途迷失方向、改完不验证就收工。CLAUDE.md 里写「请先规划」AI 可以无视（自然语言指令常被忽略，遵守率不稳定）。PACEflow 把这些约束放进 hook，确定性执行：
 
 - 没有获批的活跃变更（CHG），写代码的工具调用会被拒绝。
 - 没验证就想结束会话，会被 Stop hook 拦下。
@@ -214,7 +214,7 @@ brainstorming（需求探索 + 方案设计）
 
 - 首次启用可选择将 Artifact 存储到 `projects/<项目名>/` 或本地项目目录，选择写入 `.pace/artifact-root`
 - Git worktree 自动沿用宿主项目的 artifact 目录，避免临时 worktree 分叉出独立记录
-- `artifact-writer` 派遣前可用 `hooks/reserve-artifact-id.js` 预留 CHG/CORRECTION 编号；pace-bridge 收尾可用 `hooks/sync-plan.js` 标记 plan 已同步；真实写入时按详情文件或索引资源短暂加锁，多 worktree 只在共享索引写入窗口串行
+- `artifact-writer` 派遣前可用 `hooks/reserve-artifact-id.js` 预留 CHG/HOTFIX/CORRECTION 编号；pace-bridge 收尾可用 `hooks/sync-plan.js` 标记 plan 已同步；真实写入时按详情文件或索引资源短暂加锁，多 worktree 只在共享索引写入窗口串行
 - 想看 SessionStart 实际注入给模型什么（新 session / compact 后均可），运行 `hooks/print-session-context.js`（加 `--compact` 看 compact 后注入）；它设 `PACE_PRINT_ONLY` 只读预览、不重置 Stop 计数器也不写 `.pace`
 - `knowledge/` + `thoughts/` 沉淀可复用经验
 - 会话启动自动注入关联笔记摘要
@@ -465,6 +465,7 @@ paceflow/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v7.2.13 | 2026-06-16 | **P3 工程卫生收口——文档修正 + 小代码守护 + 测试补全**（v7.2.10 审计 P3 清单 11 条）：**文档**——REFERENCE §3 补 `update-finding`/`update-index` 行；README:217 补 HOTFIX（`CHG/HOTFIX/CORRECTION`）+ 版本表 v6.0.12 跳号注 + :17「指令遵守率 70-85%」软化为定性（去未证实数字）；artifact-writer-spec §5 加退役注脚（§5.2/§5.6.2 是 implementation_plan 退役空位——R 审计发现初版重编号会漂移 9 处指令文件入向引用，改注脚消除困惑、不动引用、零耦合）。**小代码**（每条配套测试 + 验反向）——bash-guard `MUTATING_VERB_SOURCE` 加 `ln`（`ln -sf`/hard link 覆盖 artifact 绕过缺口，反向验非 artifact `ln` 放行）；locks.js counter 读取加 `Math.floor` 整数化（防外部写浮点 `'3.7'` 产非整数编号 `CHG-date-4.7`，NaN 经 `||0` 兜底）；agent-lifecycle-guard 默认恢复模板补 `update-index`。**测试守护**（纯加不动产品代码）——9hc4a1c（action 空值不吞字段，对称 operation 版）/ 9dm（marker date-only 旁路 Edit 仍 DENY_V6_MARKER，经 3 次 systematic-debug 定位真实可达路径是 Edit 让位 marker 门）/ 23d（subagent-stop target-still-active 兜底不误标 owner closed）。opus 对抗审计 P0=0 + 1 P1（§5 重编号引用漂移）复核为真后改 B 方案（撤回重编号+注脚）修毕。`node tests/run-all.js` 8/8：test-hooks-e2e 448、test-pace-utils 297、test-session-layers 48、test-migrate-v7 16、test-agent-tests-helpers 11、run-all-self 6 |
 | v7.2.12 | 2026-06-16 | **修子shell/命令替换内紧贴闭合符绕过 Bash/PS 写保护 + REFERENCE 补 background_tasks Stop 放行说明**（v7.2.10 审计 P2 剩余）：**#3**——动词锚点 extraChars 含 `(){}`（当分隔符识别动词）但三处 token/redirect 停止集（command-recognition `scanRedirectTargets` / bash-guard / powershell-guard）漏分组闭合符，致 `(rm task.md)` 切成 `task.md)` 精确匹配 artifact 失配，`(rm task.md)`/`$(rm task.md)`/`(Remove-Item task.md)` 子shell/命令替换绕过写保护（实测 `bashCommandMutatesArtifact('(rm task.md)')`=false vs 裸 rm=true）。修：bash/共享侧只加 `()`（不加 `{}`——bash command-group `}` 前语法必有 `;`、紧贴不存在，且加 `{}` 会切坏 brace expansion `cp a.{js,ts}`）；**R 审计补 PS 侧加 `{}`**——PS `{cmd}` 脚本块紧贴 `}` 合法且 PS 无 brace expansion，`{Remove-Item task.md}` 漏被 reviewer 抓出、主 session 实测复核坐实后本 CHG 修（同一「分组闭合符」概念两 shell 语法约束不同、不能一刀切）。over-block 反向：引号目标走引号分支不受影响。**#10**——REFERENCE §5 补 background_tasks Stop 放行说明对齐 README（避免「有未完成任务一律阻断」错误心智模型）。R 审计另发现 bash 反引号命令替换形式绕过（MUTATING_ANCHOR 缺反引号字符、与停止集正交、预存缺口）→ record-finding 留 backlog。TDD 红→绿 + opus 对抗审计 P0/P1=0。`node tests/run-all.js` 8/8：test-hooks-e2e 445、test-pace-utils 295、test-session-layers 48、test-migrate-v7 16、test-agent-tests-helpers 11、run-all-self 6 |
 | v7.2.11 | 2026-06-16 | **写码门回归单一判据——删执行期完整性门第二分支 + 补主流语言 CODE_EXTS 白名单**：审计 #1 揭示写码门两问题——(a) `CODE_EXTS` 仅 10 种扩展名，C/Ruby/PHP/Shell 等真源码在无 owned CHG 时被当「非代码」放行（under-block，写码门对这些语言用户失效）；(b) `projectMutationNeedsGate` 第二分支让非代码文件门控依赖「是否持有 owned CHG」，同一文件有无 CHG 行为不一致、且误伤 plan md（曾打 `isPlanningArtifact` 补丁救场）。定锚确认第二分支声称的「把改动归属到 CHG」**架构不可达**（hook 无文件↔CHG 账本、放行只看「有 ≥1 runnable CHG」不绑具体 CHG、`implementation-notes` 是 AI 自我声明无 diff 核对），实际只在用 deny 文档写入逼 `approve-and-start`、服务不可达目标却制造真实痛点。**T-001**——删第二分支（连 `isPlanningArtifact`/`PLANNING_ARTIFACT_DIRS` 补丁一起删）+ 简化 `gatedEntries`：非代码文件（文档/配置）不再因「持有 owned CHG」进 C/E 流程门、一律放行；artifact 完整性门（marker/直写/索引损坏/详情缺失）独立保留不动。**T-002**——`CODE_EXTS` 补 28 个无歧义主流语言扩展名（C/C++/Ruby/PHP/C#/Swift/Kotlin/Scala/Dart/Lua/Shell/Elixir/Clojure/Haskell/Erlang/Julia/ObjC++），歧义项 `.m/.r/.pl/.sql` 不补（over-block 代价 > under-block，宁漏不误伤）。定位：写码门是「行动时刻流程在场门」，非变更账本/路径裁判/攻防完备；确定性门是兜底非主防线（要靠后缀才拦得住时前面入口引导已全失效）。TDD 红→绿（CGS-1 非代码放行 / CEX-1 补的扩展名 deny）+ opus 对抗审计 P0/P1/P2=0。`node tests/run-all.js` 8/8：test-hooks-e2e 445、test-pace-utils 293、test-session-layers 48、test-migrate-v7 16、test-agent-tests-helpers 11、run-all-self 6 |
 | v7.2.10 | 2026-06-15 | **codex v7.2.9 审计 P3 收口——operation/action 空行 parser same-line 化 + REFERENCE 日期同步**：**P3-1（operation 空行 parser 缺口）**——`promptFieldValue` / `operationFromAgentPrompt` 冒号后的空白匹配会跨换行吞掉下一字段，`operation:` 后直接换行再写 `title:` 会被解析成 operation=`title:`，致 v7.2.9「缺啥列啥」漏掉空 operation 形态、补 artifact_dir 后 lifecycle 门报误导性「operation『title:』不在受支持的 8 类指令内」而非「缺少明确 operation」（安全上仍 deny，非放行漏洞）。新增 `promptFieldValueSameLine`（冒号后只吞同行空白、不跨换行），`promptDeclaredOperation` / `promptDeclaredAction` + `operationFromAgentPrompt` byField 改用之；**全局 `promptFieldValue` / `promptHasNonEmptyField` 一律不碰**——保护 implementation-notes / verify-summary 等「字段名后换行接缩进列表」的多行值靠跨换行匹配判非空的行为（codex 建议的「全局让分隔空白不跨换行」方案经主 session 复核会把这些多行值误判为缺失 → close-chg missing-fields 误 deny，故弃用，改采其 same-line parser 第一方案）。lifecycle 门已有「operation 为空 → 缺少明确 operation」分支，修好取值后自动走对、无需改门。**P3-2**——REFERENCE「最后更新」2026-06-13 同步 2026-06-15。TDD 红→绿（9haa0e 缺 artifact_dir 路径列全 / 9haa0f lifecycle 路径报缺 operation 非 unknown）。`node tests/run-all.js` 8/8：test-hooks-e2e 442、test-pace-utils 293、test-session-layers 48、test-migrate-v7 16、test-agent-tests-helpers 11、run-all-self 6 |
@@ -538,6 +539,7 @@ paceflow/
 | v6.0.15 | 2026-05-06 | 新增 `update-chg action=approve-and-start` 与 `close-chg`，合并批准+开始、验证+归档收尾链路；hook/skill/guidebook 同步推荐合并操作 |
 | v6.0.14 | 2026-05-06 | `todowrite-sync.js` 更名为 `task-list-sync.js`，公开文档统一为 Claude 任务列表同步；Stop 对活跃区残留 `archived/cancelled/[-]` 增加阻断修复 |
 | v6.0.13 | 2026-05-06 | Stop / SessionStart / Claude 任务列表同步改用统一 CHG 分类器，planned backlog 不再阻断 Stop 或计入当前任务列表 |
+| v6.0.12 | — | 版本号跳过，无单独 release（开发中递增，未独立发布） |
 | v6.0.11 | 2026-05-06 | 修复 worktree 本地 `changes/` 详情 artifact 分裂风险；PACE 项目写入 hook 解析失败 fail-closed；显式覆盖 MultiEdit；SessionStart 任务列表提示改看详情 T-NNN；worktree 识别收紧；marker 日志补 agent 身份；plugin validate clean pass |
 | v6.0.10 | 2026-05-06 | 重新验证 Claude Code 任务工具语义：交互式 `TaskCreate/TaskUpdate` + 非交互/SDK `TodoWrite` 双轨；任务同步提示改为 Claude 任务列表，并补 TaskCreate/TaskUpdate 回归测试 |
 | v6.0.9 | 2026-05-06 | 修复 `artifact-writer` subagent 写入 `APPROVED` / `VERIFIED` 被 PreToolUse 误伤；主 session 直接手写仍 deny |
@@ -561,4 +563,4 @@ v5 历史快照见 `CHANGELOG.md`；v6 当前历史以本表为准。
 
 ---
 
-**版本**: v7.2.12 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify-Review)
+**版本**: v7.2.13 | **运行时**: Node.js | **平台**: Windows / macOS / Linux | **协议**: PACE (Plan-Artifact-Check-Execute-Verify-Review)

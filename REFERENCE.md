@@ -1,4 +1,4 @@
-# PACEflow v7.2.12 参考手册
+# PACEflow v7.2.13 参考手册
 
 > 最后更新：2026-06-16
 > 协议：PACE (Plan-Artifact-Check-Execute-Verify-Review)
@@ -80,7 +80,9 @@ projects/<project>/
 | `archive-chg` | 归档已 verified CHG/HOTFIX |
 | `close-chg` | 验证确认后合并完成、折叠 VERIFIED + REVIEWED + 归档与 walkthrough |
 | `record-finding` | 写 `changes/findings/<id>.md` + `findings.md` 摘要索引 |
+| `update-finding` | 改已记录 finding 状态（如改判 won't-fix：`status: rejected` + `rejection-reason`） |
 | `record-correction` | 写 `changes/corrections/<id>.md` + `corrections.md` 摘要索引 |
+| `update-index` | 重排索引（`findings.md`/`corrections.md` 活跃区按日期降序新→旧，`action=reorder`） |
 
 主 session 禁止直接写 `APPROVED`、`VERIFIED`、`verified-date`、`REVIEWED`、`reviewed-date`，也禁止在索引文件（`task.md`）中写内嵌详情。
 

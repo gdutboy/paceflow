@@ -137,6 +137,8 @@ schema-version: "7.0"
 
 ## 5. 索引行模板（4 个索引文件各一）
 
+> 注：§5.2 与 §5.6.2 原为 implementation_plan.md 模板，v7 退役后编号保留空位——刻意不重编号，避免其他指令文件（archive-chg / close-chg / record-finding / record-correction / update-index）对 §5.x 章节号的入向引用漂移。
+
 ### 5.1 task.md
 
 ```

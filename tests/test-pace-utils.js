@@ -574,6 +574,16 @@ test('bash-guard 1.4-dedup: bashCommandMutatesArtifact 组合谓词链（Bash/Mo
   assert.ok(!mut('grep x task.md'), '只读 grep 不误判');
 });
 
+test('#P3.2 ln 是 mutating 动词——ln 涉 artifact 被拦 + 非 artifact 不误伤（CHG-20260616-03 T-002）', () => {
+  const dir = makeTmpDir('bg-ln');
+  const mut = (cmd) => bashGuard.bashCommandMutatesArtifact(cmd, dir, dir);
+  assert.ok(bashGuard.bashCommandLooksMutating('ln -sf x task.md'), 'ln 识别为 mutating 动词');
+  assert.ok(mut('ln -sf x task.md'), 'ln -sf 覆盖 artifact 为符号链接被拦');
+  assert.ok(mut('ln task.md backup'), 'ln 为 artifact 建 hard link（绕过入口）被拦');
+  // over-block 反向：ln 不涉及 artifact 不误拦
+  assert.ok(!mut('ln -s /usr/bin/foo /usr/local/bin/foo'), 'ln 不涉 artifact 不误拦');
+});
+
 // ============================================================
 // powershell-guard 识别层修复（CHG-20260604-01 T-003：PSG-01~04 + A08）
 // ============================================================
@@ -1127,6 +1137,20 @@ test('reserveArtifactId 为 create-chg 原子分配 CHG 编号并写 reservation
   });
   assert.strictEqual(second.reserved, true);
   assert.ok(second.id.endsWith('-02'));
+});
+
+test('#P3.4 sequence counter 被外部写成浮点不产非整数编号（CHG-20260616-03 T-002）', () => {
+  const dir = makeTmpDir('counter-float');
+  fs.mkdirSync(path.join(dir, 'changes'), { recursive: true });
+  reserveArtifactId(dir, { sessionId: 'sid-cf', artifactDir: dir, operation: 'create-chg', prompt: 'operation: create-chg' });
+  // 模拟运行态 counter 文件被外部损坏成浮点
+  const seqDir = path.join(getProjectRuntimeDir(dir), 'sequences');
+  const counters = fs.readdirSync(seqDir).filter(f => f.endsWith('.counter'));
+  assert.ok(counters.length > 0, 'counter 文件已生成');
+  fs.writeFileSync(path.join(seqDir, counters[0]), '3.7\n', 'utf8');
+  const second = reserveArtifactId(dir, { sessionId: 'sid-cf-2', artifactDir: dir, operation: 'create-chg', prompt: 'operation: create-chg' });
+  assert.ok(second.reserved, 'second reserve ok');
+  assert.ok(/^CHG-\d{8}-\d+$/.test(second.id), 'counter 浮点损坏后编号仍整数格式（无小数）：' + second.id);
 });
 
 test('R-47: counter 缺失时 existingMax 识别带 slug 的 CHG/HOTFIX 文件名，不重发同 ID', () => {

@@ -24,9 +24,9 @@ const INPLACE_EDITOR_SOURCE = '(?:' + [
 ].join('|') + ')';
 
 const MUTATING_VERB_SOURCE = '(?:' + [
-  'rm', 'mv', 'cp', 'touch', 'mkdir', 'rmdir', 'truncate', 'tee', 'dd',
+  'rm', 'mv', 'cp', 'ln', 'touch', 'mkdir', 'rmdir', 'truncate', 'tee', 'dd',
   'install', 'chmod', 'chown', 'dos2unix', 'unix2dos',
-].join('|') + ')\\b';
+].join('|') + ')\\b';   // ln（CHG-20260616-03 T-002 / P3.2）：符号链接覆盖 artifact 或为 artifact 建 hard link 绕过入口，均 mutating
 
 const MUTATING_PATTERNS = [
   new RegExp(MUTATING_ANCHOR + '(?:' + INPLACE_EDITOR_SOURCE + '|' + MUTATING_VERB_SOURCE + "|git\\s+(?:checkout|restore|clean|reset|mv|rm)\\b)", 'i'),
