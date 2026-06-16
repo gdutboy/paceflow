@@ -23,7 +23,7 @@ body: <完整 Markdown 正文>
 
 - `title`（必填）
 - `summary`（必填，≤ 200 字符）
-- `type`（必填，枚举：`research` | `observation` | `comparison` | `bug-report`）
+- `type`（必填，枚举：`research` | `observation` | `comparison` | `bug-report`——写入索引行 `[type:: <type>]` meta）
 - `impact`（必填，枚举：`P0` | `P1` | `P2` | `P3`）
 - `body`（必填，Markdown 内容，含背景/发现/方案/调研来源）
 - `related-changes`（可选，wikilink list——写入索引行 `[change::]` meta）
@@ -31,7 +31,7 @@ body: <完整 Markdown 正文>
 - `status`（默认 `open`，可选 `investigating` / `accepted` / `rejected` / `merged` / `blocked`）
 - `rejection-reason`（status=rejected 时必填，≥ 10 字符——写入正文末尾「拒绝理由」段）
 
-> frontmatter 只含 `status` / `date` / `schema-version` 三个 key（spec §2.2 封闭合同）；`title`/`summary`/`type`/`impact` 等输入写入索引行与正文。
+> frontmatter 只含 `status` / `date` / `schema-version` 三个 key（spec §2.2 封闭合同）；`title`/`summary`/`impact`/`type` 等输入写入索引行（`type` 落 `[type:: <type>]` meta）与正文。
 
 `body` 是 opaque Markdown payload，必须原样写入详情文件：
 - body 按主 session 原文逐字符写入，保持段落顺序、代码块、表格、引用块、重复内容完全不变
@@ -62,7 +62,7 @@ body: <完整 Markdown 正文>
 ## 索引行
 
 ```
-- [<checkbox>] [[finding-yyyy-mm-dd-slug|<title>]] — <summary> #finding [date:: YYYY-MM-DD] [impact:: P<N>] [<extra-meta>]
+- [<checkbox>] [[finding-yyyy-mm-dd-slug|<title>]] — <summary> #finding [date:: YYYY-MM-DD] [impact:: P<N>] [type:: <type>] [<extra-meta>]
 ```
 
 `<checkbox>` 按 status 映射（spec §4）：

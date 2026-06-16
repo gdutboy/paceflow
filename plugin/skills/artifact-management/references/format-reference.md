@@ -49,7 +49,7 @@ task.md 是唯一 CHG 索引，只存 wikilink 索引行，不写 CHG 三级标�
 
 ## 摘要索引
 
-- [ ] [[finding-2026-05-04-hook-schema|hook schema 校验缺口]] — schema violation 需要 PostToolUse 提醒 #finding [date:: 2026-05-04] [impact:: P1]
+- [ ] [[finding-2026-05-04-hook-schema|hook schema 校验缺口]] — schema violation 需要 PostToolUse 提醒 #finding [date:: 2026-05-04] [impact:: P1] [type:: observation]
 
 <!-- ARCHIVE -->
 ```

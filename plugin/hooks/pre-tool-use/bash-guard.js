@@ -8,9 +8,10 @@ const { ARTIFACT_FILES, PROTECTED_ARTIFACTS } = paceUtils;
 const GUARD_PROTECTED_FILES = [...new Set([...ARTIFACT_FILES, ...PROTECTED_ARTIFACTS])];
 const { segmentAnchorPrefix, scanRedirectTargets, commandRunsScriptEngine, BASH_WRAPPERS } = require('./command-recognition');
 
-// 段首锚点（共享识别层）：覆盖 命令起始 / 换行 / ;&| / 分组 (){} / && / for…do / wrapper（env/sudo/...）。
+// 段首锚点（共享识别层）：覆盖 命令起始 / 换行 / ;&| / 分组 (){} / 反引号命令替换 ` / && / for…do / wrapper（env/sudo/...）。
 // 该锚点同时喂 runtime-control(hardDeny) 与 artifact-write(denyOrHint) 两条处置档——修一处即修两分支（BG-01）。
-const MUTATING_ANCHOR = segmentAnchorPrefix({ extraChars: '\\n;&|(){}', wrappers: BASH_WRAPPERS, allowLoops: true });
+// extraChars 末尾反引号：与 $() 命令替换对称，锚定反引号内 mutating 动词（CHG-20260616-07；反引号在 bash 仅命令替换语义、PS 侧是转义符不加，over-block 低）。
+const MUTATING_ANCHOR = segmentAnchorPrefix({ extraChars: '\\n;&|(){}`', wrappers: BASH_WRAPPERS, allowLoops: true });
 
 // in-place 文件编辑器：直接改写目标文件（区别于写 stdout）。BG-02 补全 --in-place / 拆分 -i / sponge / gawk -i inplace / ex / vim -es。
 const INPLACE_EDITOR_SOURCE = '(?:' + [

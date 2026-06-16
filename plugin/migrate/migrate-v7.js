@@ -50,7 +50,7 @@ const TOMBSTONE = `# 实施计划（已退役）
 ${ARCHIVE_MARKER}
 `;
 
-const FINDINGS_HEADER_COMMENT = '<!-- 格式：- [状态] [[finding-id|title]] — summary #finding [date::] [impact::] [change::] -->';
+const FINDINGS_HEADER_COMMENT = '<!-- 格式：- [状态] [[finding-id|title]] — summary #finding [date::] [impact::] [type::] [change::] -->';
 
 function parseArgs(argv) {
   const args = { cwd: '', dryRun: false, hygiene: false, restore: '' };

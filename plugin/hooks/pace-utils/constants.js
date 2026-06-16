@@ -2,7 +2,7 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v7.2.14';
+const PACE_VERSION = 'v7.2.15';
 // CHG-20260616-01 T-002：补无歧义主流语言扩展名——让写码门对这些语言用户也能启动（确定性门是兜底非
 // 攻防完备：歧义项 .m/.r/.pl/.sql 故意不补，over-block 代价 > under-block，宁漏不误伤）。
 // 注意双消费：除写码门(isCodeFile)外，本集合还供 countCodeFiles → detectSoftSignal/SOFT_WARN 软提示复用
@@ -74,8 +74,6 @@ const FORMAT_SNIPPETS = {
   setArtifactRootHelper: `选择 artifact root = 用户选择后运行 Bash: node "${SET_ARTIFACT_ROOT_SCRIPT}" --choice local 或 --choice vault`,
   setProjectRootHelper: `声明独立 Project Root = 在子目录 cwd 运行 Bash: node "${SET_PROJECT_ROOT_SCRIPT}" --mode independent`,
   archiveOp: '归档 = 派 artifact-writer archive-chg：详情 status→archived，task.md 的索引行移动到 ARCHIVE 下方',
-  findingsFormat: '- [状态] [[finding-id|标题]] — 摘要 [date:: YYYY-MM-DD] [impact:: P0-P3]',
-  findingsDetail: 'finding 详情写入 changes/findings/<id>.md；findings.md 只保留摘要索引。',
   walkthroughDetail: '| YYYY-MM-DD | [[chg-YYYYMMDD-NN-<slug>\\|chg-YYYYMMDD-NN]] 完成摘要 [worktree:: main] [branch:: main] | CHG-YYYYMMDD-NN |（表格内 wikilink 别名分隔符必须写 \\| 转义，否则裸 | 会切坏表格列）',
   skillRef: '流程参考：先调用 Skill(paceflow:pace-workflow)；artifact/CHG 字段格式参考 Skill(paceflow:artifact-management)',
 };
