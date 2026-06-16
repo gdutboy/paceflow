@@ -6,7 +6,7 @@ try { paceUtils = require('./pace-utils'); } catch(e) {
   process.stderr.write(`PACE: pace-utils.js 加载失败: ${e.message}\n`);
   process.exit(0);
 }
-const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, COMPLETION_PHRASES, getActiveChangeEntries, classifyChange } = paceUtils;
+const { ts, todayISO, isPaceProject, countCodeFiles, ARTIFACT_FILES, readActive, checkArchiveFormat, countByStatus, isTeammate, getArtifactDir, getProjectName, FORMAT_SNIPPETS, getActiveChangeEntries, classifyChange } = paceUtils;
 
 const LOG = paceUtils.defaultLogPath();
 const MAX_BLOCKS = 3; // 连续阻止超过此数后降级为软提醒
@@ -143,7 +143,6 @@ try {
 const t0 = Date.now();
 // S-1: 统一 stdin 解析
 const stdin = paceUtils.parseStdinSync();
-const lastMessage = stdin.lastMessage;
 const backgroundTasks = activeBackgroundTasks(stdin);
 const hasBackgroundTasks = backgroundTasks.length > 0;
 log(projectLogEntry('Stop', 'ENTRY', { proj }));
@@ -177,7 +176,7 @@ if (paceSignal === 'artifact') {
   // batch create 把每个新 CHG 索引行 prepend 到活跃区顶部，getActiveChangeEntries 因而返回创建倒序（如 08→05）。
   // 待执行/提醒列表应按执行顺序展示，故按 CHG-ID 升序做一次稳定排序：reserve --count N 取连号，
   // 故 id 升序 ⟺ change-set-seq 分子升序，一处 sort 同时修好 deferred 单条与 change-set 成组两个提醒消费点。
-  // sort 只重排展示顺序、不改集合；Stop 的 warnings/deny/pass 与 completionPending/foreignOwnedIds 累加均与顺序无关，行为等价。
+  // sort 只重排展示顺序、不改集合；Stop 的 warnings/deny/pass 与 foreignOwnedIds 累加均与顺序无关，行为等价。
   classifiedEntries.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
   // 前向兼容 guard（CHG-20260612-04）：数据 schema 比本 hook 新 → Stop 的全部 PACE 检查
@@ -191,7 +190,6 @@ if (paceSignal === 'artifact') {
     }
   }
 
-  let completionPending = 0;
   let requiresWalkthrough = false;
   // CS-FOREIGN: 记录 foreign-owner 成员，供下方 change-set 成组提醒跳过（与本循环 foreign 跳过对称）。
   const foreignOwnedIds = new Set();
@@ -270,8 +268,6 @@ if (paceSignal === 'artifact') {
       }));
       continue;
     }
-
-    completionPending += change.tasks.pending;
 
     if (change.category === 'running') {
       if (!change.approved) {
@@ -362,10 +358,6 @@ if (paceSignal === 'artifact') {
     if (aged > 0) addWarning('user-action', `changes/findings/ 有 ${aged} 个 open finding 超过 14 天未流转，请询问用户采纳、否定或保持开放。`);
   } catch(e) {}
 
-  if (lastMessage && COMPLETION_PHRASES.test(lastMessage) && completionPending > 0) {
-    addWarning('execution', `AI 声称完成，但详情文件中仍有 ${completionPending} 个未完成任务。请继续执行、明确暂停/阻塞，或用 update-chg action=update-status 标记 [-] 跳过；若验证已通过并准备收尾，可派 close-chg complete-open-tasks: true。`);
-  }
-
 } else if (taskActive) {
   // v5 布局或无 changes/ 的 task.md 活跃内容不再阻断 Stop（CHG-20260612-02）：
   // 布局提示由 SessionStart / PostToolUse 一句性承载，Stop 只记录。
@@ -399,14 +391,6 @@ if (paceSignal !== 'artifact' && taskListFlags.some(f => fs.existsSync(f)) && ta
     for (const flag of taskListFlags) {
       try { fs.unlinkSync(flag); } catch(e) {}
     }
-  }
-}
-
-// T-424: 交叉验证移出 warnings.length===0 守卫，确保已有 warning 时仍检测虚假完成声明
-if (paceSignal !== 'artifact' && lastMessage && taskActive && COMPLETION_PHRASES.test(lastMessage)) {
-  const { pending } = countByStatus(taskActive, { topLevelOnly: true });
-  if (pending > 0) {
-    addWarning('execution', `AI 声称完成，但 task.md 还有 ${pending} 个活跃任务。请先完成或标记 [-] 跳过，再归档到 ARCHIVE 下方。标记 [-] 时需在同行或 findings 中记录跳过理由。${FORMAT_SNIPPETS.archiveOp}`);
   }
 }
 

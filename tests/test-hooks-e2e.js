@@ -5922,8 +5922,8 @@ test('10a1c. 畸形 background_tasks 不触发 Stop 软通过', () => {
   assert.ok(!r.stdout.includes('后台任务仍在运行'));
 });
 
-test('10a2. 后台任务不放过 running CHG 的虚假完成声明', () => {
-  const dir = makeV6Project('stop-background-work-false-complete', {
+test('10a2. 后台任务运行时声称完成软放行（COMPLETION_PHRASES 话术门已删，不再越过 background 软放行）', () => {
+  const dir = makeV6Project('stop-background-work-claim-complete', {
     walkToday: false,
     detail: chgDetail({
       status: 'in-progress',
@@ -5942,8 +5942,46 @@ test('10a2. 后台任务不放过 running CHG 的虚假完成声明', () => {
       last_assistant_message: '任务完成',
     },
   });
+  // Stop 是确定性事件信号；后台任务在跑时，AI 说「任务完成」指「这轮做完、等后台返回」，
+  // 不应再被 lastMessage 话术门越过 background 软放行（消解 v7.2.11 实测 805 误伤）。
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stderr, '');
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.systemMessage.includes('后台任务仍在运行'));
+  assert.ok(!r.stderr.includes('AI 声称完成'));
+});
+
+test('10a2b. 话术门删除后：无 background + 声称完成 + running CHG 有 pending → 仍 BLOCK（确定性任务状态兜底，拦截不丢）', () => {
+  const dir = makeV6Project('stop-claim-complete-no-bg', {
+    walkToday: false,
+    detail: chgDetail({
+      status: 'in-progress',
+      approved: true,
+      tasks: [
+        '- [/] T-001 执行中',
+        '- [ ] T-002 待完成',
+      ],
+    }),
+  });
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { session_id: 'sid-claim-no-bg', last_assistant_message: '任务完成' },
+  });
+  // 删 COMPLETION_PHRASES 门后，真实「未完成」拦截由确定性的 running-pending 检查独扛。
   assert.strictEqual(r.code, 2);
-  assert.ok(r.stderr.includes('AI 声称完成'));
+  assert.ok(r.stderr.includes('未完成任务'), '确定性 running-pending 检查兜底 BLOCK');
+  assert.ok(!r.stderr.includes('AI 声称完成'), '话术门已删，不再出现「AI 声称完成」文案');
+});
+
+test('10a2c. legacy 话术门删除后：legacy task.md + 声称完成 + pending → 不再 BLOCK（与「task.md 活跃内容不阻断 Stop」一致）', () => {
+  const dir = makeLegacyProject('stop-legacy-claim-complete');
+  const r = runHook('stop.js', {
+    cwd: dir,
+    stdin: { stop_hook_active: false, last_assistant_message: '任务完成' },
+    env: { PACE_VAULT_PATH: '' },
+  });
+  assert.strictEqual(r.code, 0, 'legacy 路径不再因声称完成而 BLOCK');
+  assert.ok(!r.stderr.includes('AI 声称完成'));
 });
 
 test('10a3. 后台任务不放过 artifact 结构不一致（v7 换源：索引 [x] vs 详情未完成）', () => {

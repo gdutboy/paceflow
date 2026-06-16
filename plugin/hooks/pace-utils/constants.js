@@ -2,7 +2,7 @@ const path = require('path');
 
 const HOOKS_DIR = path.resolve(__dirname, '..');
 
-const PACE_VERSION = 'v7.2.13';
+const PACE_VERSION = 'v7.2.14';
 // CHG-20260616-01 T-002：补无歧义主流语言扩展名——让写码门对这些语言用户也能启动（确定性门是兜底非
 // 攻防完备：歧义项 .m/.r/.pl/.sql 故意不补，over-block 代价 > under-block，宁漏不误伤）。
 // 注意双消费：除写码门(isCodeFile)外，本集合还供 countCodeFiles → detectSoftSignal/SOFT_WARN 软提示复用
@@ -50,7 +50,6 @@ const PACE_ARTIFACT_ROOT_CONTENT = 'spec.md / task.md / walkthrough.md / finding
 
 const ARCHIVE_MARKER = '<!-- ARCHIVE -->';
 const ARCHIVE_PATTERN = /^<!-- ARCHIVE -->\r?$/m;
-const COMPLETION_PHRASES = /(?:任务完成|已完成所有|全部完成|归档完毕)/;
 
 const SKILL_DIRS = [
   'pace-workflow',
@@ -135,7 +134,6 @@ module.exports = {
   PACE_ARTIFACT_ROOT_CONTENT,
   ARCHIVE_MARKER,
   ARCHIVE_PATTERN,
-  COMPLETION_PHRASES,
   SKILL_DIRS,
   FORMAT_SNIPPETS,
   SESSION_SCOPED_FLAGS,

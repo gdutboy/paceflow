@@ -77,7 +77,7 @@
 | deferred 软提醒（backlog/ready/blocked 不拦截只提醒） | isDeferredCategory | 不动 |
 | change-set 成组提醒 | 同 set 未执行成员 | 不动 |
 | foreign 跳过 / sibling 软化（硬警告转软提醒） | ownerStatus disposition | 不动 |
-| AI 声称完成检测（COMPLETION_PHRASES vs pending） | lastMessage 匹配 | 不动 |
+| ~~AI 声称完成检测（COMPLETION_PHRASES vs pending）~~ | ~~lastMessage 匹配~~ | **CHG-20260616-04 退役**：话术门删除——Stop 是确定性事件信号，不再读 lastMessage 调制放行，确定性 running-pending 检查独扛；COMPLETION_PHRASES 常量摘除 |
 | findings 超期催办 / walkthrough 当日记录检查 | aged/requiresWalkthrough | 不动 |
 | **新增（v7）** schema 合同兜底检测 | 活跃 entry 帧违反合同 | **CHG-09** |
 
