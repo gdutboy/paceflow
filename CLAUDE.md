@@ -35,3 +35,20 @@ PACE_RELEASE_BASE=<上一个 release 的 commit> node tests/run-all.js
 ```
 
 可选本地手动安装检查：如果当前工作区有未跟踪的 `install.js` 与 `tests/test-install.js` 本地副本，可以额外运行 `node tests/test-install.js`。`install.js` / `verify.js` 只作为本地 smoke 或手动安装健康检查工具；marketplace 安装以 `plugin/.claude-plugin/plugin.json`、`plugin/hooks/hooks.json` 和 `plugin/**` 发布面为准。
+
+## 发版
+
+版本号 bump 用 `bump-version.js`，一条命令同步 5 处，**不要手动逐个 Edit**（手动易漏某处或改错 changelog 行）：
+
+```bash
+# 从 paceflow/ 运行（或从仓库根 node paceflow/bump-version.js）
+node bump-version.js --dry-run v7.2.16   # 先预览将改哪些文件
+node bump-version.js v7.2.16             # 同步 5 处：constants.js PACE_VERSION / plugin.json / marketplace.json / REFERENCE.md 标题 / README.md 版本行（footer）
+```
+
+脚本**不覆盖**、仍需手动的两处：
+
+- `README.md` 版本历史表格新增一行 changelog（人读描述，脚本不生成）
+- `CLAUDE.md` 等散文里残留的版本号（如有）
+
+收尾仍走上面「常用验证」：`node tests/run-all.js` 8/8 → commit → push → 三向确认 `git rev-parse HEAD` == `git rev-parse origin/master` == `git ls-remote origin master`（防 commit/push 链短路推旧 HEAD 静默漏发）。
